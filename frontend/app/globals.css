@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f6f7fb;
+  --surface: #ffffff;
+  --surface-muted: #f1f2f7;
+  --foreground: #14151f;
+  --foreground-muted: #62667a;
+  --border: #e4e6ef;
+
+  --primary: #4338ca;
+  --primary-hover: #372ea8;
+  --primary-foreground: #ffffff;
+  --primary-soft: #eef0fd;
+
+  --success: #0f9d58;
+  --success-soft: #e5f7ed;
+  --warning: #b7791f;
+  --warning-soft: #fdf3e0;
+  --danger: #d92d20;
+  --danger-soft: #fdedec;
+  --info: #0b7285;
+  --info-soft: #e4f6f8;
+
+  --radius-card: 0.875rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-border: var(--border);
+
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0d0e14;
+    --surface: #15161f;
+    --surface-muted: #1b1d29;
+    --foreground: #edeef5;
+    --foreground-muted: #9497ab;
+    --border: #262838;
+
+    --primary: #6366f1;
+    --primary-hover: #7678f5;
+    --primary-foreground: #ffffff;
+    --primary-soft: #1e1f38;
+
+    --success-soft: #103524;
+    --warning-soft: #362a10;
+    --danger-soft: #3a1715;
+    --info-soft: #0f2e33;
+  }
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
