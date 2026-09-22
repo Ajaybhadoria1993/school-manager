@@ -21,7 +21,7 @@ function conversationRoom(conversationId: string) {
  */
 export function initSocket(httpServer: HttpServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
-    cors: { origin: env.clientUrl, credentials: true },
+    cors: { origin: env.clientUrls, credentials: true },
   });
 
   io.use((socket, next) => {

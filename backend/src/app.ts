@@ -18,7 +18,7 @@ if (env.nodeEnv === "production") app.set("trust proxy", 1);
 
 app.use(helmet());
 app.use(compression());
-app.use(cors({ origin: env.clientUrl, credentials: true }));
+app.use(cors({ origin: env.clientUrls, credentials: true }));
 if (env.nodeEnv !== "test") app.use(morgan(env.nodeEnv === "development" ? "dev" : "combined"));
 app.use(cookieParser());
 app.use(express.json({ limit: "5mb" }));
