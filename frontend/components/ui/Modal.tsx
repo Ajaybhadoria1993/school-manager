@@ -28,8 +28,8 @@ export function Modal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 px-4 py-10 backdrop-blur-[2px]">
-      <div className={cn("w-full rounded-2xl border border-border bg-surface shadow-xl", widthClass)}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-navy/45 px-4 py-10 backdrop-blur-sm">
+      <div className={cn("w-full rounded-2xl border border-border bg-surface shadow-modal", widthClass)}>
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold text-foreground">{title}</h2>
           <button

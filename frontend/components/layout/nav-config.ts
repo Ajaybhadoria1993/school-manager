@@ -1,18 +1,10 @@
 import {
-  LayoutDashboard,
-  Users,
-  UserCog,
-  CalendarCheck,
-  Wallet,
-  BookOpen,
-  MessageSquare,
-  FileBadge,
-  Settings,
   Building2,
-  Baby,
-  CalendarOff,
+  LayoutDashboard,
+  School,
   type LucideIcon,
 } from "lucide-react";
+import { MODULES } from "@/lib/modules";
 import type { UserRole } from "@/types";
 
 export interface NavItem {
@@ -20,89 +12,66 @@ export interface NavItem {
   href: string;
   icon: LucideIcon;
   roles: UserRole[];
+  /** The menu heading this item sits under. Items of one group are kept next to each other. */
+  group: string;
+  /** Show the number of schools waiting for approval next to the label. */
+  showPendingBadge?: boolean;
+  /** Planned but not built yet: the menu marks it "Soon" and its page explains what it will do. */
   comingSoon?: boolean;
 }
 
+const SCHOOL_ROLES: UserRole[] = [
+  "school_admin",
+  "principal",
+  "accountant",
+  "teacher",
+];
+
+// The first two are real today; the rest come from lib/modules.ts and open a preview page.
 export const NAV_ITEMS: NavItem[] = [
   {
     label: "Dashboard",
     href: "/dashboard",
     icon: LayoutDashboard,
-    roles: ["super_admin", "school_admin", "principal", "accountant", "teacher", "parent", "student"],
+    roles: [
+      "super_admin",
+      "school_admin",
+      "principal",
+      "accountant",
+      "teacher",
+      "parent",
+      "student",
+    ],
+    group: "Overview",
   },
   {
-    label: "My Children",
-    href: "/my-children",
-    icon: Baby,
-    roles: ["parent"],
-  },
-  {
-    label: "Students",
-    href: "/students",
-    icon: Users,
-    roles: ["super_admin", "school_admin", "principal", "teacher", "accountant"],
-  },
-  {
-    label: "Staff",
-    href: "/staff",
-    icon: UserCog,
-    roles: ["super_admin", "school_admin", "principal"],
-  },
-  {
-    label: "Leave",
-    href: "/leave",
-    icon: CalendarOff,
-    roles: ["super_admin", "school_admin", "principal", "teacher"],
-  },
-  {
-    label: "Attendance",
-    href: "/attendance",
-    icon: CalendarCheck,
-    roles: ["super_admin", "school_admin", "principal", "teacher"],
-  },
-  {
-    label: "Fees",
-    href: "/fees",
-    icon: Wallet,
-    roles: ["super_admin", "school_admin", "principal", "accountant", "parent"],
-  },
-  {
-    label: "Academics",
-    href: "/academics",
-    icon: BookOpen,
-    roles: ["super_admin", "school_admin", "principal", "teacher"],
-  },
-  {
-    label: "Communication",
-    href: "/communication",
-    icon: MessageSquare,
-    roles: ["super_admin", "school_admin", "principal", "teacher", "parent"],
-  },
-  {
-    label: "Certificates",
-    href: "/certificates",
-    icon: FileBadge,
-    roles: ["super_admin", "school_admin", "principal", "accountant"],
-  },
-  {
-    label: "Users & Logins",
-    href: "/users",
-    icon: Users,
-    roles: ["super_admin", "school_admin", "principal"],
-  },
-  {
-    label: "School Setup",
-    href: "/settings",
-    icon: Settings,
-    roles: ["super_admin", "school_admin"],
-  },
-  {
-    label: "Tenants",
-    href: "/super-admin/tenants",
+    label: "Schools",
+    href: "/super-admin/schools",
     icon: Building2,
     roles: ["super_admin"],
+    group: "Overview",
+    showPendingBadge: true,
   },
+  {
+    label: "My school",
+    href: "/school",
+    icon: School,
+    roles: ["school_admin", "principal"],
+    group: "Overview",
+  },
+  ...MODULES.map<NavItem>((m) => ({
+    label: m.label,
+    href: `/modules/${m.slug}`,
+    icon: m.icon,
+    roles: SCHOOL_ROLES,
+    group: m.group,
+    comingSoon: true,
+  })),
 ];
+
+/** The menu heading as the person sees it: the platform team has a single "Platform" section. */
+export const groupLabel = (group: string, role: UserRole) =>
+  role === "super_admin" ? "Platform" : group;
 
 export const ROLE_LABELS: Record<UserRole, string> = {
   super_admin: "Super Admin",

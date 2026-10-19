@@ -3,13 +3,14 @@ import { cn } from "@/lib/utils";
 
 type Tone = "neutral" | "primary" | "success" | "warning" | "danger" | "info";
 
+// Pill badges: a tint, a darker text colour and a hairline of the same hue, as the design system defines them.
 const toneClasses: Record<Tone, string> = {
-  neutral: "bg-surface-muted text-foreground-muted",
-  primary: "bg-primary-soft text-primary",
-  success: "bg-success-soft text-success",
-  warning: "bg-warning-soft text-warning",
-  danger: "bg-danger-soft text-danger",
-  info: "bg-info-soft text-info",
+  neutral: "border-[#cbd5e1] bg-surface-muted text-[#334155]",
+  primary: "border-[#bfdbfe] bg-primary-soft text-primary-deep",
+  success: "border-success-line bg-success-soft text-success",
+  warning: "border-warning-line bg-warning-soft text-warning",
+  danger: "border-danger-line bg-danger-soft text-danger",
+  info: "border-info-line bg-info-soft text-info",
 };
 
 export function Badge({
@@ -20,7 +21,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+        "inline-flex h-6 items-center rounded-full border px-2.5 text-xs font-semibold",
         toneClasses[tone],
         className
       )}

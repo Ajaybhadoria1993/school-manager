@@ -1,4 +1,4 @@
-# Sunrise School ERP — Frontend
+# EduShiksha — Frontend
 
 Next.js (App Router) + TypeScript + Tailwind CSS frontend for the School ERP platform.
 

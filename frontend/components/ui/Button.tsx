@@ -12,17 +12,19 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantClasses: Record<Variant, string> = {
-  primary: "bg-primary text-primary-foreground hover:bg-primary-hover shadow-sm",
-  secondary: "bg-surface-muted text-foreground hover:bg-border",
-  outline: "border border-border bg-surface text-foreground hover:bg-surface-muted",
+  primary:
+    "bg-primary text-primary-foreground shadow-[0_4px_10px_-2px_rgb(37_99_235/0.4)] hover:bg-primary-hover hover:shadow-[0_6px_14px_-2px_rgb(37_99_235/0.45)]",
+  secondary: "bg-primary-soft text-primary-deep hover:bg-[#dbe7ff]",
+  outline: "border border-border bg-surface text-foreground shadow-sm hover:bg-background hover:border-[#cbd5e1]",
   ghost: "text-foreground-muted hover:bg-surface-muted hover:text-foreground",
-  danger: "bg-danger text-white hover:opacity-90 shadow-sm",
+  danger: "bg-[#dc2626] text-white shadow-sm hover:bg-danger",
 };
 
+// 40px is the desktop height, 44px (lg) is for touch-first screens such as sign-in.
 const sizeClasses: Record<Size, string> = {
-  sm: "h-8 px-3 text-sm gap-1.5",
+  sm: "h-9 px-3.5 text-sm gap-1.5",
   md: "h-10 px-4 text-sm gap-2",
-  lg: "h-11 px-5 text-base gap-2",
+  lg: "h-11 px-5 text-sm gap-2",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -32,7 +34,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={disabled || loading}
         className={cn(
-          "inline-flex items-center justify-center rounded-lg font-medium transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+          "inline-flex items-center justify-center rounded-lg font-semibold transition-all duration-150 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
           variantClasses[variant],
           sizeClasses[size],
           className

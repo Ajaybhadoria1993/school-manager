@@ -1,42 +1,13 @@
 import { Router } from "express";
-import authRoutes from "./auth.routes";
-import tenantRoutes from "./tenant.routes";
-import branchRoutes from "./branch.routes";
-import academicYearRoutes from "./academicYear.routes";
-import academicsRoutes from "./academics.routes";
-import studentRoutes from "./student.routes";
-import staffRoutes from "./staff.routes";
-import leaveRoutes from "./leave.routes";
-import attendanceRoutes from "./attendance.routes";
-import feeRoutes from "./fee.routes";
-import dashboardRoutes from "./dashboard.routes";
-import userRoutes from "./user.routes";
-import timetableRoutes from "./timetable.routes";
-import homeworkRoutes from "./homework.routes";
-import examRoutes from "./exam.routes";
-import communicationRoutes from "./communication.routes";
-import certificateRoutes from "./certificate.routes";
-import guardianRoutes from "./guardian.routes";
+import authRoutes from "../main/auth/routes/v1/auth.routes";
+import tenantRoutes from "../main/tenants/routes/v1/tenants.routes";
+import onboardingRoutes from "../main/onboarding/routes/v1/onboarding.routes";
 
+// One line per feature module. Add new modules here as they are built.
 const router = Router();
 
 router.use("/auth", authRoutes);
 router.use("/tenants", tenantRoutes);
-router.use("/branches", branchRoutes);
-router.use("/academic-years", academicYearRoutes);
-router.use("/academics", academicsRoutes);
-router.use("/students", studentRoutes);
-router.use("/staff", staffRoutes);
-router.use("/leave", leaveRoutes);
-router.use("/attendance", attendanceRoutes);
-router.use("/fees", feeRoutes);
-router.use("/dashboard", dashboardRoutes);
-router.use("/users", userRoutes);
-router.use("/timetable", timetableRoutes);
-router.use("/homework", homeworkRoutes);
-router.use("/exams", examRoutes);
-router.use("/communication", communicationRoutes);
-router.use("/certificates", certificateRoutes);
-router.use("/guardians", guardianRoutes);
+router.use("/onboarding", onboardingRoutes);
 
 export default router;

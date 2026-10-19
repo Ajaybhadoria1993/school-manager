@@ -3,7 +3,6 @@ import cors from "cors";
 import morgan from "morgan";
 import helmet from "helmet";
 import compression from "compression";
-import cookieParser from "cookie-parser";
 import mongoSanitize from "express-mongo-sanitize";
 import { env } from "./config/env";
 import routes from "./routes";
@@ -12,27 +11,25 @@ import { apiLimiter } from "./middleware/rateLimit";
 
 const app = express();
 
-// Behind a reverse proxy (nginx/load balancer) in production, so req.ip and
-// the rate limiter reflect the real client IP rather than the proxy's.
-if (env.nodeEnv === "production") app.set("trust proxy", 1);
+// Behind a reverse proxy in production, so req.ip (used by the rate limiters) is the real client.
+if (env.isProduction) app.set("trust proxy", 1);
 
 app.use(helmet());
 app.use(compression());
-app.use(cors({ origin: env.clientUrls, credentials: true }));
+// Auth uses the Authorization header, not cookies, so credentialed CORS is not needed.
+app.use(cors({ origin: env.clientUrls }));
 if (env.nodeEnv !== "test") app.use(morgan(env.nodeEnv === "development" ? "dev" : "combined"));
-app.use(cookieParser());
-app.use(express.json({ limit: "5mb" }));
-app.use(express.urlencoded({ extended: true }));
-// Strips any request key starting with "$" or containing "." (e.g. a
-// crafted `classId[$ne]=null` query param), so user input can never be
-// interpreted as a MongoDB query operator.
+app.use(express.json({ limit: "1mb" }));
+// Strips keys starting with "$" or containing "." from the body/query so user input can
+// never be interpreted as a MongoDB operator (e.g. { "email": { "$ne": null } }).
 app.use(mongoSanitize());
 
 app.get("/health", (_req, res) => {
   res.json({ success: true, status: "ok", env: env.nodeEnv });
 });
 
-app.use("/api", apiLimiter, routes);
+// Versioned, so a mobile app already in people's hands keeps working when /v2 arrives.
+app.use("/api/v1", apiLimiter, routes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

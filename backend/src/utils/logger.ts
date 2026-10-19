@@ -1,34 +1,31 @@
 /**
- * Minimal structured logger. Swap the body of `reportError` for a real
- * error-monitoring SDK (Sentry, Datadog, etc.) when a DSN/API key is
- * available — every unhandled error in the app already flows through here
- * via errorHandler.ts, so that's the only place that needs to change.
+ * Minimal logger. JSON lines in production, readable text otherwise, silent for
+ * info/warn in tests. Never pass secrets, tokens or passwords to these functions.
+ * Swap the body of `reportError` for an error-monitoring SDK later; every
+ * unhandled error already flows through it via middleware/errorHandler.ts.
  */
+const isTest = process.env.NODE_ENV === "test";
+const isProd = process.env.NODE_ENV === "production";
+
+function write(level: "info" | "warn" | "error", message: string, meta?: Record<string, unknown>) {
+  if (isTest && level !== "error") return;
+  const sink = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
+  if (isProd) {
+    sink(JSON.stringify({ level, message, ...meta, time: new Date().toISOString() }));
+  } else {
+    sink(`[${level}] ${message}${meta && Object.keys(meta).length ? " " + JSON.stringify(meta) : ""}`);
+  }
+}
+
 export const logger = {
-  info(message: string, meta?: Record<string, unknown>) {
-    // eslint-disable-next-line no-console
-    console.log(JSON.stringify({ level: "info", message, ...meta, time: new Date().toISOString() }));
-  },
-  warn(message: string, meta?: Record<string, unknown>) {
-    // eslint-disable-next-line no-console
-    console.warn(JSON.stringify({ level: "warn", message, ...meta, time: new Date().toISOString() }));
-  },
+  info: (message: string, meta?: Record<string, unknown>) => write("info", message, meta),
+  warn: (message: string, meta?: Record<string, unknown>) => write("warn", message, meta),
   error(message: string, err?: unknown, meta?: Record<string, unknown>) {
-    // eslint-disable-next-line no-console
-    console.error(
-      JSON.stringify({
-        level: "error",
-        message,
-        error: err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : err,
-        ...meta,
-        time: new Date().toISOString(),
-      })
-    );
+    const error = err instanceof Error ? { name: err.name, message: err.message, stack: err.stack } : err;
+    write("error", message, { ...(error ? { error } : {}), ...meta });
   },
 };
 
 export function reportError(err: unknown, context?: Record<string, unknown>) {
   logger.error("unhandled_error", err, context);
-  // TODO: forward to Sentry/Datadog once a DSN is configured, e.g.
-  // if (env.sentryDsn) Sentry.captureException(err, { extra: context });
 }

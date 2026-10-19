@@ -1,0 +1,19 @@
+# Local development database. Start with:  docker compose up -d
+# Data lives in the named volume `school_mongo_data` (survives container restarts).
+services:
+  mongo:
+    image: mongo:7
+    container_name: school-mongo
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017" # bound to localhost only
+    volumes:
+      - school_mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  school_mongo_data:

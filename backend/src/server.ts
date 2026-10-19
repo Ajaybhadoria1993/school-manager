@@ -1,34 +1,41 @@
 import { createServer } from "http";
 import mongoose from "mongoose";
 import app from "./app";
-import { env } from "./config/env";
+import { env, isSmtpConfigured } from "./config/env";
 import { connectDB } from "./config/db";
-import { initSocket } from "./realtime/socket";
+import { getDummyHash } from "./utils/authUtils";
+import { PasswordService } from "./main/auth/services/password.service";
 import { logger, reportError } from "./utils/logger";
 
 async function main() {
   await connectDB();
-  const httpServer = createServer(app);
-  initSocket(httpServer);
+  // Make sure unique/TTL indexes exist before taking traffic.
+  await mongoose.connection.syncIndexes();
+  // Pay the one-off cost of the stand-in password hash now, so the first sign-in with an unknown email
+  // is not slower than the rest (which would give it away).
+  await getDummyHash();
 
+  const httpServer = createServer(app);
   httpServer.listen(env.port, () => {
-    logger.info(`School ERP API + realtime listening on http://localhost:${env.port}`, { env: env.nodeEnv });
+    logger.info(`API listening on http://localhost:${env.port}`, { env: env.nodeEnv });
+    if (!isSmtpConfigured) {
+      logger.warn("SMTP is not configured: emails are only logged, not sent (set SMTP_* in backend/.env).");
+    }
   });
 
   async function shutdown(signal: string) {
     logger.info("Shutting down", { signal });
-    httpServer.close(() => logger.info("HTTP server closed"));
+    httpServer.close();
+    await PasswordService.idle(); // reset emails still being prepared after their response was sent
     await mongoose.disconnect();
     process.exit(0);
   }
-
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
 }
 
-// A crash here means the process is in an unknown state — log it clearly
-// and exit so the process manager (pm2/systemd/k8s) restarts a clean one,
-// rather than silently continuing with corrupted state.
+// An unhandled failure leaves the process in an unknown state: log it and exit so the
+// process manager restarts a clean one.
 process.on("unhandledRejection", (reason) => {
   reportError(reason, { source: "unhandledRejection" });
   process.exit(1);
