@@ -1,8 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import {
-  BadgeIndianRupee,
-  CalendarCheck,
   GraduationCap,
   Megaphone,
   ShieldCheck,
