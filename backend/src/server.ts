@@ -6,11 +6,22 @@ import { connectDB } from "./config/db";
 import { getDummyHash } from "./utils/authUtils";
 import { PasswordService } from "./main/auth/services/password.service";
 import { logger, reportError } from "./utils/logger";
+import { seedSuperAdmin } from "./seed/superAdmin.seed";
 
 async function main() {
   await connectDB();
   // Make sure unique/TTL indexes exist before taking traffic.
   await mongoose.connection.syncIndexes();
+  // Hosts without a shell (Render's free plan) cannot run `npm run seed:superadmin`: create the super admin here when its
+  // credentials are set. An existing one is left alone; changing its password still needs the seed's --reset-password.
+  if (process.env.SUPER_ADMIN_EMAIL && process.env.SUPER_ADMIN_PASSWORD) {
+    // A bad SUPER_ADMIN_* value must not keep the API down: log it and carry on.
+    await seedSuperAdmin()
+      .then(({ status, email }) => {
+        if (status === "created") logger.info(`Super admin created on startup. Email: ${email}`);
+      })
+      .catch((err) => reportError(err, { source: "superAdminSeed" }));
+  }
   // Pay the one-off cost of the stand-in password hash now, so the first sign-in with an unknown email
   // is not slower than the rest (which would give it away).
   await getDummyHash();
