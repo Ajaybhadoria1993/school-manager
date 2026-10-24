@@ -11,13 +11,8 @@ import {
   STATE_BOARDS,
   STATE_BOARD_CHOICE,
 } from "../../tenants/constants";
-
-/**
- * An optional form field: an empty box (or null) means "not given", but a filled box must be valid,
- * with its own error message. (A plain `.optional()` would reject "" and a union would hide the message.)
- */
-const optional = <T extends z.ZodTypeAny>(schema: T) =>
-  z.preprocess((v) => (v === null || (typeof v === "string" && v.trim() === "") ? undefined : v), schema.optional());
+import { academicYearInputSchema } from "../../academics/schemas/academicYear.schemas";
+import { INDIAN_MOBILE, optional, phoneNumber } from "../../../utils/formFields";
 
 const currentYear = new Date().getFullYear();
 
@@ -28,20 +23,6 @@ const inFormOrder =
     order.filter((value) => picked.includes(value));
 
 const classIndex = (c: (typeof CLASS_LEVELS)[number]) => CLASS_LEVELS.indexOf(c);
-
-/**
- * An Indian number as the 10 digits after +91, whichever way it was typed: "+91 98765 43210",
- * "09876543210" (the trunk 0), "0755-2345678" (a landline with its STD code), or the digits alone.
- */
-const nationalNumber = (value: unknown): unknown => {
-  if (typeof value !== "string") return value;
-  let digits = value.replace(/[\s\-().]/g, "");
-  if (digits.startsWith("+91")) digits = digits.slice(3);
-  else if (/^91\d{10}$/.test(digits)) digits = digits.slice(2);
-  else if (/^0\d{10}$/.test(digits)) digits = digits.slice(1);
-  return digits;
-};
-const phoneNumber = (message: string, pattern = /^\d{10}$/) => z.preprocess(nationalNumber, z.string().regex(pattern, message));
 
 /** One board the school follows, with the medium(s) it is taught in and its own affiliation number. */
 const boardEntrySchema = z
@@ -76,7 +57,11 @@ const boardEntrySchema = z
     mediums: entry.mediums,
   }));
 
-/** Step 1: the school itself: what it is, what it follows and teaches, which classes, how big, its numbers. */
+/**
+ * Step 1: the school itself: what it is, what it follows and teaches, which classes, how big, its numbers, and its first
+ * academic year (name, first and last day: the school's own dates). The month the session starts in is read from that year's
+ * start date, so the two can never disagree.
+ */
 export const step1Schema = z
   .object({
     schoolName: z.string().trim().min(2, "Enter the school name").max(150),
@@ -92,7 +77,9 @@ export const step1Schema = z
       .int("Enter a whole number")
       .min(1, "Enter the number of students")
       .max(50000, "That looks too high"),
-    sessionStartMonth: z.coerce.number({ message: "Choose a month" }).int().min(1, "Choose a month").max(12, "Choose a month"),
+    academicYear: academicYearInputSchema,
+    // Accepted from older clients but not used: the saved month always comes from the academic year's start date.
+    sessionStartMonth: optional(z.coerce.number({ message: "Choose a month" }).int().min(1, "Choose a month").max(12, "Choose a month")),
     udiseCode: optional(z.string().trim().regex(/^\d{11}$/, "UDISE+ code is 11 digits")),
     establishedYear: optional(
       z.coerce
@@ -125,7 +112,8 @@ export const step1Schema = z
         message: "The last class cannot be lower than the first class",
       });
     }
-  });
+  })
+  .transform((d) => ({ ...d, sessionStartMonth: d.academicYear.startDate.getUTCMonth() + 1 }));
 
 /** Step 2: where it is and how to reach it. */
 export const step2Schema = z.object({
@@ -148,8 +136,8 @@ export const step3Schema = z
     adminName: z.string().trim().min(2, "Enter your full name").max(100),
     designation: z.enum(DESIGNATIONS, { message: "Choose your role in the school" }),
     designationOther: optional(z.string().trim().min(2, "Tell us your role").max(50)),
-    mobile: phoneNumber("Enter a 10-digit mobile number", /^[6-9]\d{9}$/),
-    alternateMobile: optional(phoneNumber("Enter a 10-digit mobile number", /^[6-9]\d{9}$/)),
+    mobile: phoneNumber("Enter a 10-digit mobile number", INDIAN_MOBILE),
+    alternateMobile: optional(phoneNumber("Enter a 10-digit mobile number", INDIAN_MOBILE)),
   })
   .superRefine((d, ctx) => {
     if (d.designation === OTHER_CHOICE && !d.designationOther) {

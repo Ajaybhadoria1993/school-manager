@@ -1,4 +1,6 @@
 import { ApiError } from "../../../utils/ApiError";
+import type { IAcademicYear } from "../../academics/models/AcademicYear";
+import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { logger } from "../../../utils/logger";
 import { ONBOARDING_STEP_COUNT, DATA_STEPS } from "../../tenants/constants";
 import { Tenant, type ApprovalStatus, type ITenant } from "../../tenants/models/Tenant";
@@ -10,7 +12,7 @@ import {
   type OnboardingProgress,
 } from "../../tenants/services/tenantState";
 import { User, type IUser } from "../../users/models/User";
-import { step1Schema, step2Schema, step3Schema, step4Schema } from "../schemas/onboarding.schemas";
+import { step1Schema, step2Schema, step3Schema, step4Schema, type Step1Input } from "../schemas/onboarding.schemas";
 
 /** While a school is in one of these states its administrator may still edit the form. */
 const EDITABLE: ApprovalStatus[] = ["onboarding", "rejected"];
@@ -31,24 +33,28 @@ interface Caller {
 const LOCKED = () =>
   ApiError.forbidden("This application is with the platform team and cannot be edited right now.", "ONBOARDING_LOCKED");
 
-async function load(caller: Caller): Promise<{ tenant: ITenant; admin: IUser }> {
-  const [tenant, admin] = await Promise.all([Tenant.findById(caller.tenantId), User.findById(caller.userId)]);
+async function load(caller: Caller): Promise<{ tenant: ITenant; admin: IUser; year: IAcademicYear | null }> {
+  const [tenant, admin, year] = await Promise.all([
+    Tenant.findById(caller.tenantId),
+    User.findById(caller.userId),
+    AcademicYearService.onboardingYear(caller.tenantId),
+  ]);
   if (!tenant || !admin) throw ApiError.notFound("School not found", "NOT_FOUND");
-  return { tenant, admin };
+  return { tenant, admin, year };
 }
 
-function toState(tenant: ITenant, admin: IUser): OnboardingState {
+function toState(tenant: ITenant, admin: IUser, year: IAcademicYear | null): OnboardingState {
   return {
     approvalStatus: tenant.approvalStatus,
     onboarding: toOnboardingProgress(tenant),
     rejectionReason: tenant.approvalStatus === "rejected" ? (tenant.review?.rejectionReason ?? null) : null,
-    steps: buildSchoolSteps(tenant, admin),
+    steps: buildSchoolSteps(tenant, admin, year),
   };
 }
 
 /** Which of steps 1-4 are not valid yet, judged from what is actually stored (not from what the browser says). */
-function missingSteps(tenant: ITenant, admin: IUser): number[] {
-  const steps = buildSchoolSteps(tenant, admin);
+function missingSteps(tenant: ITenant, admin: IUser, year: IAcademicYear | null): number[] {
+  const steps = buildSchoolSteps(tenant, admin, year);
   const missing: number[] = [];
   if (!step1Schema.safeParse(steps[1]).success) missing.push(1);
   if (!step2Schema.safeParse(steps[2]).success) missing.push(2);
@@ -59,15 +65,17 @@ function missingSteps(tenant: ITenant, admin: IUser): number[] {
 
 export class OnboardingService {
   static async getState(caller: Caller): Promise<OnboardingState> {
-    const { tenant, admin } = await load(caller);
-    return toState(tenant, admin);
+    const { tenant, admin, year } = await load(caller);
+    return toState(tenant, admin, year);
   }
 
   static async saveStep(caller: Caller, step: number, body: unknown): Promise<OnboardingState> {
-    const { tenant, admin } = await load(caller);
+    const { tenant, admin, year } = await load(caller);
     if (!EDITABLE.includes(tenant.approvalStatus)) throw LOCKED();
 
     const set: Record<string, unknown> = {};
+    // The academic year is its own record (see AcademicYear); it is written right after the school update succeeded.
+    let yearInput: Step1Input["academicYear"] | null = null;
     // The administrator's own details live on their user record; written only after the school update succeeded.
     let adminUpdate: Record<string, unknown> | null = null;
 
@@ -81,6 +89,7 @@ export class OnboardingService {
       set["profile.highestClass"] = d.highestClass;
       set["profile.approxStudents"] = d.approxStudents;
       set["profile.sessionStartMonth"] = d.sessionStartMonth;
+      yearInput = d.academicYear;
       set["profile.udiseCode"] = d.udiseCode ?? "";
       set["profile.establishedYear"] = d.establishedYear ?? null;
     } else if (step === 2) {
@@ -106,7 +115,7 @@ export class OnboardingService {
       };
     } else if (step === 4) {
       step4Schema.parse(body);
-      const missing = missingSteps(tenant, admin).filter((s) => s !== 4);
+      const missing = missingSteps(tenant, admin, year).filter((s) => s !== 4);
       if (missing.length > 0) {
         throw ApiError.badRequest("Finish the earlier steps first.", "ONBOARDING_INCOMPLETE", { missingSteps: missing });
       }
@@ -133,6 +142,17 @@ export class OnboardingService {
     }
     if (!updated) throw LOCKED();
     if (adminUpdate) await User.updateOne({ _id: admin._id }, { $set: adminUpdate });
+    let savedYear = year;
+    if (yearInput) {
+      try {
+        savedYear = await AcademicYearService.saveOnboardingYear(tenant._id, yearInput);
+      } catch (err) {
+        // Without its academic year step 1 is not done: take it off the list again so the progress never claims otherwise.
+        // (The school and its year are two records and this database has no multi-record transactions, so this undoes by hand.)
+        await Tenant.updateOne({ _id: tenant._id }, { $pull: { "onboarding.completedSteps": 1 } }).catch(() => undefined);
+        throw err;
+      }
+    }
 
     // Progress is derived from the steps that are done, never trusted from the browser.
     const done = new Set(updated.onboarding.completedSteps);
@@ -157,17 +177,17 @@ export class OnboardingService {
     );
 
     const freshAdmin = await User.findById(admin._id);
-    return toState(fresh ?? updated, freshAdmin ?? admin);
+    return toState(fresh ?? updated, freshAdmin ?? admin, savedYear);
   }
 
   /** Sends the finished form to the platform team for a decision. */
   static async submit(caller: Caller): Promise<OnboardingState> {
-    const { tenant, admin } = await load(caller);
+    const { tenant, admin, year } = await load(caller);
     if (!EDITABLE.includes(tenant.approvalStatus)) {
       throw ApiError.conflict("This school was already submitted.", "INVALID_STATE");
     }
 
-    const missing = missingSteps(tenant, admin);
+    const missing = missingSteps(tenant, admin, year);
     if (missing.length > 0) {
       throw ApiError.badRequest("Some steps are not finished yet.", "ONBOARDING_INCOMPLETE", { missingSteps: missing });
     }
@@ -187,6 +207,6 @@ export class OnboardingService {
       logger.error("Failed to notify super admins about a submission", err)
     );
 
-    return toState(submitted, admin);
+    return toState(submitted, admin, year);
   }
 }

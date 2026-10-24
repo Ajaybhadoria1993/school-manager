@@ -1,3 +1,4 @@
+import type { IAcademicYear } from "../../academics/models/AcademicYear";
 import type { IUser } from "../../users/models/User";
 import type { ITenant } from "../models/Tenant";
 
@@ -25,8 +26,13 @@ export interface SchoolSteps {
     lowestClass: string | null;
     highestClass: string | null;
     approxStudents: number | null;
-    /** 1-12; April until the school says otherwise. */
+    /** 1-12: the month of the academic year's start date (April for an older school that gave nothing). */
     sessionStartMonth: number;
+    /**
+     * The school's first academic year, as named in this form: calendar days "2026-04-01", "" until saved. `status` is
+     * "pending" until the school is approved, then "active"; null while there is none.
+     */
+    academicYear: { name: string; startDate: string; endDate: string; status: string | null };
     udiseCode: string;
     establishedYear: number | null;
   };
@@ -58,7 +64,11 @@ export interface SchoolSteps {
 
 type AdminLike = Pick<IUser, "name" | "phone" | "alternatePhone" | "designation" | "designationOther">;
 
-export function buildSchoolSteps(tenant: ITenant, admin: AdminLike | null): SchoolSteps {
+type YearLike = Pick<IAcademicYear, "name" | "startDate" | "endDate" | "status">;
+
+const calendarDay = (date: Date) => date.toISOString().slice(0, 10);
+
+export function buildSchoolSteps(tenant: ITenant, admin: AdminLike | null, year: YearLike | null = null): SchoolSteps {
   const profile = tenant.profile ?? {};
   const address = tenant.address ?? {};
   return {
@@ -76,6 +86,9 @@ export function buildSchoolSteps(tenant: ITenant, admin: AdminLike | null): Scho
       highestClass: profile.highestClass ?? null,
       approxStudents: profile.approxStudents ?? null,
       sessionStartMonth: profile.sessionStartMonth ?? 4,
+      academicYear: year
+        ? { name: year.name, startDate: calendarDay(year.startDate), endDate: calendarDay(year.endDate), status: year.status }
+        : { name: "", startDate: "", endDate: "", status: null },
       udiseCode: profile.udiseCode ?? "",
       establishedYear: profile.establishedYear ?? null,
     },

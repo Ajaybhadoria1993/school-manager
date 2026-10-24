@@ -73,6 +73,14 @@ export interface ITenant {
     sessionStartMonth?: number;
   };
 
+  /**
+   * The school's own switches for how its data is kept. A missing value means the default.
+   * `sectionDetailsRequired`: a section must have its seats and its room (default true); the school can make them optional.
+   */
+  settings?: {
+    sectionDetailsRequired?: boolean;
+  };
+
   onboarding: {
     status: OnboardingStatus;
     /** The next step to do, 1-based. */
@@ -157,6 +165,10 @@ const tenantSchema = new Schema<ITenant>(
       highestClass: { type: String, enum: CLASS_LEVELS },
       approxStudents: { type: Number },
       sessionStartMonth: { type: Number },
+    },
+
+    settings: {
+      sectionDetailsRequired: { type: Boolean },
     },
 
     onboarding: {

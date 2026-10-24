@@ -22,6 +22,9 @@ import { errorHandler } from "../../../middleware/errorHandler";
 import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { AuthToken } from "../../auth/models/AuthToken";
 import { RefreshToken } from "../../auth/models/RefreshToken";
+import { AcademicYear } from "../../academics/models/AcademicYear";
+import { Section } from "../../academics/models/Section";
+import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { Tenant } from "../../tenants/models/Tenant";
 import { User } from "../../users/models/User";
 
@@ -36,6 +39,7 @@ const step1 = {
   highestClass: "12",
   approxStudents: 850,
   sessionStartMonth: 4,
+  academicYear: { name: "2026-2027", startDate: "2026-04-01", endDate: "2027-03-31" },
   udiseCode: "27210100101",
   establishedYear: 1998,
 };
@@ -217,6 +221,7 @@ describe("onboarding form", () => {
     expect(res.body.data.steps[1].schoolName).toBe("Sunrise Public School");
     expect(res.body.data.steps[2].schoolEmail).toBe("principal@sunrise.example");
     expect(res.body.data.steps[1]).toMatchObject({ boards: [], sessionStartMonth: 4 });
+    expect(res.body.data.steps[1].academicYear).toEqual({ name: "", startDate: "", endDate: "", status: null });
     expect(res.body.data.steps[3]).toMatchObject({ adminName: "Asha Verma" });
   });
 
@@ -374,7 +379,8 @@ describe("onboarding form", () => {
 
     it("saves classes, size and session with step 1, so step 3 is only about the administrator", async () => {
       const { session } = await selfRegister();
-      await put(session.accessToken, 1, { ...step1, lowestClass: "LKG", highestClass: "8", approxStudents: 420, sessionStartMonth: 6 });
+      const juneToMay = { name: "2026-27", startDate: "2026-06-01", endDate: "2027-05-31" };
+      await put(session.accessToken, 1, { ...step1, lowestClass: "LKG", highestClass: "8", approxStudents: 420, academicYear: juneToMay });
       const state = (await request(app).get("/api/v1/onboarding").set(auth(session.accessToken))).body.data;
       expect(state.steps[1]).toMatchObject({ lowestClass: "LKG", highestClass: "8", approxStudents: 420, sessionStartMonth: 6 });
       expect(Object.keys(state.steps[3]).sort()).toEqual(["adminName", "alternateMobile", "designation", "designationOther", "mobile"]);
@@ -886,5 +892,153 @@ describe("suspending and reactivating a school", () => {
     expect(early.status).toBe(409);
     expect(early.body.code).toBe("INVALID_STATE");
     expect((await Tenant.findById(waiting.tenantId))?.isActive).toBe(true);
+  });
+});
+
+describe("the academic year (named in step 1, switched on by the approval)", () => {
+  const messages = (res: request.Response) =>
+    Object.fromEntries((res.body.details ?? []).map((d: { path: string; message: string }) => [d.path, d.message]));
+  const yearsOf = (tenantId: string) => AcademicYear.find({ tenantId }).lean();
+
+  it("is required, with a message per field, and its end must come after its start", async () => {
+    const { session } = await selfRegister();
+    const token = session.accessToken as string;
+    const { academicYear: _left, ...withoutYear } = step1;
+
+    const missing = await put(token, 1, withoutYear);
+    expect(missing.status).toBe(400);
+    expect(messages(missing)).toMatchObject({ academicYear: "Enter the academic year" });
+
+    const blank = await put(token, 1, { ...step1, academicYear: { name: "", startDate: "", endDate: "" } });
+    expect(messages(blank)).toMatchObject({
+      "academicYear.name": "Enter the academic year name, for example 2026-2027",
+      "academicYear.startDate": "Choose the start date",
+      "academicYear.endDate": "Choose the end date",
+    });
+
+    const backwards = await put(token, 1, { ...step1, academicYear: { name: "2026-2027", startDate: "2027-03-31", endDate: "2026-04-01" } });
+    expect(messages(backwards)).toMatchObject({ "academicYear.endDate": "The end date must be after the start date" });
+    const sameDay = await put(token, 1, { ...step1, academicYear: { name: "2026-2027", startDate: "2026-04-01", endDate: "2026-04-01" } });
+    expect(messages(sameDay)).toMatchObject({ "academicYear.endDate": "The end date must be after the start date" });
+
+    const impossible = await put(token, 1, { ...step1, academicYear: { name: "2026-2027", startDate: "2026-02-30", endDate: "2027-03-31" } });
+    expect(messages(impossible)).toMatchObject({ "academicYear.startDate": "Choose a valid start date" });
+    const typo = await put(token, 1, { ...step1, academicYear: { name: "2026-2027", startDate: "2026-04-01", endDate: "2062-03-31" } });
+    expect(messages(typo)).toMatchObject({ "academicYear.endDate": "An academic year can be at most two years long" });
+
+    // Nothing half-saved: no year, and step 1 is not counted as done.
+    expect(await yearsOf(session.tenant.id)).toHaveLength(0);
+    const state = (await request(app).get("/api/v1/onboarding").set(auth(token))).body.data;
+    expect(state.onboarding.completedSteps).not.toContain(1);
+  });
+
+  it("takes the school's own dates (not April to March), keeps one pending year however often it is saved, and reads it back", async () => {
+    const { session } = await selfRegister();
+    const token = session.accessToken as string;
+    const tenantId = session.tenant.id as string;
+
+    expect((await put(token, 1, { ...step1, academicYear: { name: "2026", startDate: "2026-01-05", endDate: "2026-12-20" } })).status).toBe(200);
+    // A retry, and three saves at the same moment: still one record.
+    expect((await put(token, 1, step1)).status).toBe(200);
+    const together = await Promise.all(
+      ["2026-27 A", "2026-27 B", "2026-27 C"].map((name) =>
+        put(token, 1, { ...step1, academicYear: { name, startDate: "2026-06-15", endDate: "2027-04-30" } })
+      )
+    );
+    expect(together.map((r) => r.status)).toEqual([200, 200, 200]);
+
+    const years = await yearsOf(tenantId);
+    expect(years).toHaveLength(1);
+    expect(years[0]).toMatchObject({ status: "pending", source: "onboarding", activatedAt: null });
+    expect(years[0].startDate.toISOString()).toBe("2026-06-15T00:00:00.000Z");
+    expect(years[0].endDate.toISOString()).toBe("2027-04-30T00:00:00.000Z");
+
+    // Signing in again (a fresh read) shows what is stored, and the session month follows the start date.
+    const again = await request(app).post("/api/v1/auth/login").send({ email: "principal@sunrise.example", password: PASSWORD });
+    const state = (await request(app).get("/api/v1/onboarding").set(auth(again.body.data.accessToken))).body.data;
+    expect(state.steps[1].academicYear).toEqual({ name: years[0].name, startDate: "2026-06-15", endDate: "2027-04-30", status: "pending" });
+    expect(state.steps[1].sessionStartMonth).toBe(6);
+    expect((await Tenant.findById(tenantId))?.profile?.sessionStartMonth).toBe(6);
+  });
+
+  it("must be named before a form saved without one can be submitted", async () => {
+    const { session } = await selfRegister();
+    const token = session.accessToken as string;
+    await fillAll(token);
+    // As if step 1 had been saved before academic years existed.
+    await AcademicYear.deleteMany({ tenantId: session.tenant.id });
+    const res = await request(app).post("/api/v1/onboarding/submit").set(auth(token));
+    expect(res.status).toBe(400);
+    expect(res.body.details.missingSteps).toEqual([1]);
+  });
+
+  it("stays pending while the school waits and after a rejection; approval makes it the one active year, exactly once", async () => {
+    const { token, tenantId } = await submittedSchool();
+    const su = await superToken();
+
+    // The super admin sees it on the review page.
+    const review = (await request(app).get(`/api/v1/tenants/${tenantId}/review`).set(auth(su))).body.data;
+    expect(review.steps[1].academicYear).toEqual({ name: "2026-2027", startDate: "2026-04-01", endDate: "2027-03-31", status: "pending" });
+
+    // A pending school cannot reach the school's screens, so it cannot read or set up a year either.
+    expect((await request(app).get("/api/v1/academics/academic-years/current").set(auth(token))).body.code).toBe("TENANT_NOT_APPROVED");
+
+    await request(app).post(`/api/v1/tenants/${tenantId}/reject`).set(auth(su)).send({ reason: "The UDISE+ code does not match. Please correct it." });
+    expect((await yearsOf(tenantId)).map((y) => y.status)).toEqual(["pending"]);
+
+    // The school fixes its dates and resubmits: the same record is updated.
+    expect((await put(token, 1, { ...step1, academicYear: { name: "2026-2027", startDate: "2026-04-10", endDate: "2027-03-31" } })).status).toBe(200);
+    await put(token, 4, { confirmed: true });
+    expect((await request(app).post("/api/v1/onboarding/submit").set(auth(token))).status).toBe(200);
+    expect(await yearsOf(tenantId)).toHaveLength(1);
+
+    // Two approvals at the same moment: one wins, the other is told it is already decided.
+    const both = await Promise.all([1, 2].map(() => request(app).post(`/api/v1/tenants/${tenantId}/approve`).set(auth(su)).send({})));
+    expect(both.map((r) => r.status).sort()).toEqual([200, 409]);
+
+    const years = await yearsOf(tenantId);
+    expect(years).toHaveLength(1);
+    expect(years[0]).toMatchObject({ status: "active", name: "2026-2027" });
+    expect(years[0].activatedAt).toBeTruthy();
+    expect(years[0].startDate.toISOString().slice(0, 10)).toBe("2026-04-10");
+
+    const current = await request(app).get("/api/v1/academics/academic-years/current").set(auth(token));
+    expect(current.status).toBe(200);
+    expect(current.body.data).toEqual({
+      year: { id: years[0]._id.toString(), name: "2026-2027", startDate: "2026-04-10", endDate: "2027-03-31", status: "active", activatedAt: years[0].activatedAt!.toISOString() },
+      needsSetUp: false,
+    });
+    // It is not set up a second time.
+    const setUp = await request(app).post("/api/v1/academics/academic-years/initial").set(auth(token)).send({ name: "2027-2028", startDate: "2027-04-01", endDate: "2028-03-31" });
+    expect(setUp.status).toBe(409);
+  });
+
+  it("is switched on by the first read if the approval could not do it, and never for a school that is not approved", async () => {
+    const { token, tenantId } = await submittedSchool();
+    await request(app).post(`/api/v1/tenants/${tenantId}/approve`).set(auth(await superToken())).send({});
+    // As if switching it on had failed during the approval.
+    await AcademicYear.updateMany({ tenantId }, { $set: { status: "pending", activatedAt: null } });
+
+    const current = await request(app).get("/api/v1/academics/academic-years/current").set(auth(token));
+    expect(current.body.data.year).toMatchObject({ name: "2026-2027", status: "active" });
+    expect((await yearsOf(tenantId)).map((y) => y.status)).toEqual(["active"]);
+
+    // The repair checks the approval first: a pending school's year is left pending.
+    const waiting = await submittedSchool("Moonrise Public School", "principal@moonrise.example");
+    expect(await AcademicYearService.current(waiting.tenantId)).toEqual({ year: null, needsSetUp: false });
+    expect((await yearsOf(waiting.tenantId)).map((y) => y.status)).toEqual(["pending"]);
+  });
+
+  it("is the year of every section the school makes once it is approved", async () => {
+    const { token, tenantId } = await submittedSchool();
+    await request(app).post(`/api/v1/tenants/${tenantId}/approve`).set(auth(await superToken())).send({});
+    const [year] = await yearsOf(tenantId);
+
+    const made = await request(app).post("/api/v1/academics/classes").set(auth(token)).send({ name: "Hobby Club", sectionCount: 2 });
+    expect(made.status).toBe(201);
+    const sections = await Section.find({ tenantId, classId: made.body.data.id }).lean();
+    expect(sections.map((s) => String(s.academicYearId))).toEqual([String(year._id), String(year._id)]);
+    const structure = (await request(app).get("/api/v1/academics/structure").set(auth(token))).body.data;
+    expect(structure.academicYear).toEqual({ id: String(year._id), name: "2026-2027" });
   });
 });

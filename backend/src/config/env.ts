@@ -31,8 +31,8 @@ export const env = {
   nodeEnv,
   isProduction,
   appName: process.env.APP_NAME ?? "EduShiksha",
-  // First entry is the public URL of the web app, used to build links in emails.
-  clientUrls: (process.env.CLIENT_URL ?? "http://localhost:3000")
+  // First entry is the public URL of the web app, used to build links in emails (the React app: 5173 in development).
+  clientUrls: (process.env.CLIENT_URL ?? "http://localhost:5173")
     .split(",")
     .map((url) => url.trim())
     .filter(Boolean),

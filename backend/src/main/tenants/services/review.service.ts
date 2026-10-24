@@ -1,5 +1,8 @@
 import type { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
+import { reportError } from "../../../utils/logger";
+import { AcademicYearService } from "../../academics/services/academicYear.service";
+import { StructureService } from "../../academics/services/structure.service";
 import { RefreshToken } from "../../auth/models/RefreshToken";
 import { User } from "../../users/models/User";
 import { Tenant, type ITenant } from "../models/Tenant";
@@ -76,14 +79,18 @@ export class ReviewService {
     if (!tenant) throw NOT_FOUND();
     const { suspension } = tenant;
     const peopleIds = [tenant.review?.reviewedBy, suspension?.suspendedBy, suspension?.reactivatedBy].filter((id): id is Types.ObjectId => Boolean(id));
-    const [admin, people] = await Promise.all([adminOf(tenant._id), User.find({ _id: { $in: peopleIds } }).select("name").lean()]);
+    const [admin, people, year] = await Promise.all([
+      adminOf(tenant._id),
+      User.find({ _id: { $in: peopleIds } }).select("name").lean(),
+      AcademicYearService.onboardingYear(tenant._id),
+    ]);
     const names = new Map(people.map((p) => [p._id.toString(), p.name]));
     const nameOf = (id?: Types.ObjectId) => (id ? names.get(id.toString()) ?? null : null);
     const [item] = await toListItems([tenant]);
 
     return {
       tenant: item,
-      steps: buildSchoolSteps(tenant, admin),
+      steps: buildSchoolSteps(tenant, admin, year),
       onboarding: toOnboardingProgress(tenant),
       admin: admin
         ? { name: admin.name, email: admin.email, emailVerifiedAt: admin.emailVerifiedAt?.toISOString() ?? null }
@@ -118,6 +125,16 @@ export class ReviewService {
       "review.rejectionReason": "",
       "review.note": note ?? "",
     });
+    // The academic year the school named at sign-up becomes its active year (sections made from now on belong to it). A
+    // failure here must never undo the approval: the next read of the current year finishes the job (AcademicYearService.current).
+    await AcademicYearService.activateOnboardingYear(tenant._id).catch((err) =>
+      reportError(err, { step: "activate the academic year from the school profile", tenantId })
+    );
+    // The school's Classes page starts with the classes it named at sign-up. A failure here must never undo the approval:
+    // the page then simply starts empty and offers the same setup by hand.
+    await StructureService.startFromProfile(tenant).catch((err) =>
+      reportError(err, { step: "start classes from the school profile", tenantId })
+    );
     const admin = await adminOf(tenant._id);
     if (admin) notifySchoolApproved(tenant, { name: admin.name, email: admin.email });
     return (await toListItems([tenant]))[0];
