@@ -1,7 +1,7 @@
 import { createServer } from "http";
 import mongoose from "mongoose";
 import app from "./app";
-import { env, isSmtpConfigured } from "./config/env";
+import { env, isEmailConfigured } from "./config/env";
 import { connectDB } from "./config/db";
 import { getDummyHash } from "./utils/authUtils";
 import { PasswordService } from "./main/auth/services/password.service";
@@ -18,8 +18,8 @@ async function main() {
   const httpServer = createServer(app);
   httpServer.listen(env.port, () => {
     logger.info(`API listening on http://localhost:${env.port}`, { env: env.nodeEnv });
-    if (!isSmtpConfigured) {
-      logger.warn("SMTP is not configured: emails are only logged, not sent (set SMTP_* in backend/.env).");
+    if (!isEmailConfigured) {
+      logger.warn("Email is not configured: emails are only logged, not sent (set BREVO_API_KEY or SMTP_* in backend/.env).");
     }
   });
 
