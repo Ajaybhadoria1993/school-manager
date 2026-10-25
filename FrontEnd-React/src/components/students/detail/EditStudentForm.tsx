@@ -69,7 +69,9 @@ export function EditStudentForm({
   const classHasSections = useCallback((id: string) => !!structure.classes.find((c) => c.id === id)?.sections.length, [structure]);
   // A field of the school's own that is off is still shown (and can be changed or cleared) while this student has an answer for it.
   const [ownFields] = useState(() => custom.map((f) => (f.mode === "hidden" && student.custom?.[f.key] !== undefined ? { ...f, mode: "optional" as const } : f)));
-  const form = useStudentForm(initial, { mode: "edit", classHasSections, rules, custom: ownFields });
+  // The previous school is needed for Class 1 to 12 and not before it: the student's class (as it is changed here) says which.
+  const classNameOf = useCallback((id: string) => structure.classes.find((c) => c.id === id)?.name, [structure]);
+  const form = useStudentForm(initial, { mode: "edit", classHasSections, rules, classNameOf, custom: ownFields });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [overCapacityFor, setOverCapacityFor] = useState<string | null>(null);

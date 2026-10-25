@@ -1,4 +1,5 @@
 import type { UserRole } from "../users/models/User";
+import { classNumber } from "./classNumber";
 
 /**
  * Who may admit students and change them. One list, so a "reception" role (the front desk that does admissions) is added by
@@ -67,14 +68,14 @@ export const STUDENT_SHEET_COLUMNS = [
   { key: "parentEmail", header: "Parent's Email", kind: "optional", width: 24, note: "Optional. Saved for the primary contact." },
   { key: "fatherOccupation", header: "Father's Occupation", kind: "optional", width: 18, note: "What the father does (farmer, teacher, business...)." },
   { key: "motherOccupation", header: "Mother's Occupation", kind: "optional", width: 18, note: "What the mother does (homemaker, teacher...)." },
-  { key: "address", header: "Address", kind: "required", width: 28, note: "House and street, at least 3 characters." },
+  { key: "address", header: "Address", kind: "optional", width: 28, note: "House and street, at least 3 characters." },
   { key: "area", header: "Area or Landmark", kind: "optional", width: 22, note: "The colony, area or a landmark near the house." },
-  { key: "city", header: "City", kind: "required", width: 14, note: "The city, town or village." },
-  { key: "state", header: "State", kind: "required", width: 18, note: "A state or union territory of India, as in the list." },
-  { key: "pincode", header: "PIN Code", kind: "required", width: 10, note: "6 digits." },
+  { key: "city", header: "City", kind: "optional", width: 14, note: "The city, town or village." },
+  { key: "state", header: "State", kind: "optional", width: 18, note: "A state or union territory of India, as in the list." },
+  { key: "pincode", header: "PIN Code", kind: "optional", width: 10, note: "6 digits." },
   { key: "bloodGroup", header: "Blood Group", kind: "optional", width: 12, note: "A+, A-, B+, B-, AB+, AB-, O+ or O-." },
   { key: "category", header: "Category", kind: "optional", width: 16, note: "General, OBC, SC, ST, EWS or Prefer not to say." },
-  { key: "previousSchool", header: "Previous School", kind: "optional", width: 24, note: "The school the student comes from." },
+  { key: "previousSchool", header: "Previous School", kind: "optional", width: 24, note: "The school the student comes from, if your old register has it." },
   { key: "lastClass", header: "Last Class", kind: "optional", width: 12, note: "The class the student finished there, for example Class 4." },
   { key: "tcNumber", header: "TC No.", kind: "optional", width: 12, note: "The transfer certificate's number." },
   { key: "tcDate", header: "TC Date", kind: "optional", width: 13, note: "DD-MM-YYYY." },
@@ -166,37 +167,73 @@ export const DEFAULT_FIELD_RULES = Object.fromEntries(STUDENT_FORM_FIELDS.map((f
 export const LENIENT_FIELD_RULES = Object.fromEntries(STUDENT_FORM_FIELDS.map((f) => [f.key, "optional"])) as FieldRules;
 
 /**
+ * Details no school can change, whatever it chooses on the Export screen: the address is always needed (house and street, city, state
+ * and PIN code), and so is the previous school's name for a student of Class 1 to 12 (`needsForClass`: before Class 1 it is optional).
+ */
+export const FIXED_RULES = {
+  addressLine1: "required",
+  addressCity: "required",
+  addressState: "required",
+  addressPincode: "required",
+  previousSchoolName: "required",
+} as const satisfies Partial<Record<FormFieldKey, FieldMode>>;
+/** Details that are always asked (a school may make them needed or optional, never not asked). */
+export const ALWAYS_ASKED_RULES: readonly FormFieldKey[] = ["category"];
+/** The previous school's boxes: needed (when the school says so) only for a student of Class 1 to 12. */
+export const PREVIOUS_SCHOOL_RULES: readonly FormFieldKey[] = ["previousSchoolName", "previousSchoolLastClass", "previousSchoolTcNumber"];
+
+/** A school's decisions with what no school can change put right (an older setting that says otherwise is read the right way). */
+export function normaliseRules(rules: FieldRules): FieldRules {
+  const next: FieldRules = { ...rules, ...FIXED_RULES };
+  for (const key of ALWAYS_ASKED_RULES) if (next[key] === "hidden") next[key] = "optional";
+  return next;
+}
+
+/**
+ * What a school needs of ONE admission, by the class the student goes into: the previous school (its name, the last class there and
+ * the TC number) is needed only for a student of Class 1 to 12, as the school decided; for any other class (Nursery, LKG, UKG...), or
+ * when the class is not known, nothing of it is needed. The rest of the school's needs are the same for every class.
+ */
+export function needsForClass(needs: SchoolNeeds, className: string | null | undefined): SchoolNeeds {
+  if (className && classNumber(className) !== null) return needs;
+  const rules = { ...needs.rules };
+  for (const key of PREVIOUS_SCHOOL_RULES) if (rules[key] === "required") rules[key] = "optional";
+  return { ...needs, rules };
+}
+
+/**
  * Every column an export can have, in the order of the catalog, with its heading until the school renames it. `locked` columns are
- * in every export (a sheet of students without their name or class is no list of students).
+ * in every export and cannot be turned off: the details every school keeps (the name, gender, birthday, age, category, class and
+ * section, both parents' names and the mobile numbers, the address and the previous school).
  */
 export const EXPORT_COLUMNS = [
   { key: "admissionNumber", heading: "Admission No." },
   { key: "studentName", heading: "Student Name", locked: true },
   { key: "firstName", heading: "First Name" },
   { key: "lastName", heading: "Last Name" },
-  { key: "gender", heading: "Gender" },
-  { key: "dateOfBirth", heading: "Date of Birth" },
-  { key: "age", heading: "Age" },
-  { key: "category", heading: "Category" },
+  { key: "gender", heading: "Gender", locked: true },
+  { key: "dateOfBirth", heading: "Date of Birth", locked: true },
+  { key: "age", heading: "Age", locked: true },
+  { key: "category", heading: "Category", locked: true },
   { key: "className", heading: "Class", locked: true },
-  { key: "sectionName", heading: "Section" },
+  { key: "sectionName", heading: "Section", locked: true },
   { key: "rollNumber", heading: "Roll No." },
   { key: "admissionDate", heading: "Admission Date" },
-  { key: "fatherName", heading: "Father's Name" },
-  { key: "fatherMobile", heading: "Father's Mobile" },
+  { key: "fatherName", heading: "Father's Name", locked: true },
+  { key: "fatherMobile", heading: "Father's Mobile", locked: true },
   { key: "fatherOccupation", heading: "Father's Occupation" },
-  { key: "motherName", heading: "Mother's Name" },
-  { key: "motherMobile", heading: "Mother's Mobile" },
+  { key: "motherName", heading: "Mother's Name", locked: true },
+  { key: "motherMobile", heading: "Mother's Mobile", locked: true },
   { key: "motherOccupation", heading: "Mother's Occupation" },
   { key: "guardianName", heading: "Guardian's Name" },
   { key: "guardianMobile", heading: "Guardian's Mobile" },
   { key: "guardianRelation", heading: "Guardian's Relation" },
   { key: "parentEmail", heading: "Parent's Email" },
-  { key: "address", heading: "Address" },
+  { key: "address", heading: "Address", locked: true },
   { key: "area", heading: "Area or Landmark" },
-  { key: "city", heading: "City or Village" },
-  { key: "state", heading: "State" },
-  { key: "pincode", heading: "PIN Code" },
+  { key: "city", heading: "City or Village", locked: true },
+  { key: "state", heading: "State", locked: true },
+  { key: "pincode", heading: "PIN Code", locked: true },
   { key: "bloodGroup", heading: "Blood Group" },
   { key: "aadhaarNumber", heading: "Aadhaar No." },
   { key: "samagraId", heading: "Samagra ID" },
@@ -213,7 +250,7 @@ export const EXPORT_COLUMNS = [
   { key: "feeConcession", heading: "Fee Concession" },
   { key: "transportRoute", heading: "Transport Route" },
   { key: "transportStop", heading: "Transport Stop" },
-  { key: "previousSchool", heading: "Previous School" },
+  { key: "previousSchool", heading: "Previous School", locked: true },
   { key: "lastClass", heading: "Last Class" },
   { key: "tcNumber", heading: "TC No." },
   { key: "tcDate", heading: "TC Date" },
@@ -227,6 +264,7 @@ export const DEFAULT_EXPORT_LAYOUT: ExportColumnKey[] = [
   "admissionNumber",
   "studentName",
   "gender",
+  "dateOfBirth",
   "age",
   "category",
   "className",

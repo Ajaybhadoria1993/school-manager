@@ -25,6 +25,11 @@ const binary = (res: NodeJS.ReadableStream, done: (err: Error | null, body: Buff
 const download = (token: string, path: string) => request(app).get(`${api}${path}`).set(auth(token)).buffer(true).parse(binary as any);
 
 const YEAR = { name: "2026-2027", startDate: "2026-04-01", endDate: "2027-03-31" };
+/** The columns every export has (the details every school keeps), in the catalog's order. */
+const LOCKED_KEYS = [
+  "studentName", "gender", "dateOfBirth", "age", "category", "className", "sectionName", "fatherName", "fatherMobile", "motherName", "motherMobile",
+  "address", "city", "state", "pincode", "previousSchool",
+];
 /** Valid Aadhaar numbers (their last digit is the Verhoeff check digit). */
 const AADHAAR = ["234567890124", "345678901238", "456789012341"];
 
@@ -69,10 +74,11 @@ describe("a school's needs (its fields, set on Manage school > Students > Export
     // What is not in the default export is not asked until the school turns it on (one list for the form and the file).
     expect(res.body.data.fields).toMatchObject({ admissionDate: "hidden", samagraId: "hidden", religion: "hidden", rteSeat: "hidden", previousSchoolTcDate: "optional" });
     expect(res.body.data.exportIsDefault).toBe(true);
-    expect(res.body.data.exportColumns.slice(0, 4)).toEqual([
+    expect(res.body.data.exportColumns.slice(0, 5)).toEqual([
       { key: "admissionNumber", heading: "Admission No." },
       { key: "studentName", heading: "Student Name" },
       { key: "gender", heading: "Gender" },
+      { key: "dateOfBirth", heading: "Date of Birth" },
       { key: "age", heading: "Age" },
     ]);
   });
@@ -142,14 +148,15 @@ describe("a school's needs (its fields, set on Manage school > Students > Export
 
   it("follows what the school changes: a detail made optional is not asked, one made needed is", async () => {
     const s = await school();
-    const saved = await put(s.token, "/settings", { fields: { aadhaarNumber: "optional", previousSchoolName: "hidden", previousSchoolLastClass: "optional", previousSchoolTcNumber: "optional", bloodGroup: "required" } });
+    const saved = await put(s.token, "/settings", { fields: { aadhaarNumber: "optional", previousSchoolLastClass: "optional", previousSchoolTcNumber: "optional", bloodGroup: "required" } });
     expect(saved.status).toBe(200);
-    expect(saved.body.data.fields).toMatchObject({ aadhaarNumber: "optional", previousSchoolName: "hidden", bloodGroup: "required", category: "required" });
+    expect(saved.body.data.fields).toMatchObject({ aadhaarNumber: "optional", previousSchoolLastClass: "optional", bloodGroup: "required", category: "required" });
 
-    const res = await post(s.token, "", complete(s.class5, { aadhaarNumber: undefined, previousSchool: undefined }));
+    // The previous school's name is always needed in Class 1 to 12; its last class and TC number are what the school made optional.
+    const res = await post(s.token, "", complete(s.class5, { aadhaarNumber: undefined, previousSchool: { name: "Little Flower School" } }));
     expect(res.status).toBe(400);
     expect(details(res)).toEqual([{ path: "bloodGroup", message: "Choose the blood group" }]);
-    expect((await post(s.token, "", complete(s.class5, { aadhaarNumber: undefined, previousSchool: undefined, bloodGroup: "B+" }))).status).toBe(201);
+    expect((await post(s.token, "", complete(s.class5, { aadhaarNumber: undefined, previousSchool: { name: "Little Flower School" }, bloodGroup: "B+" }))).status).toBe(201);
   });
 
   it("refuses a needs list it cannot follow, and lets only the people who admit change it", async () => {
@@ -203,6 +210,119 @@ describe("a school's needs (its fields, set on Manage school > Students > Export
     const mother = asha.guardians.find((g: { relation: string }) => g.relation === "Mother");
     const noJob = await patch(s.token, `/guardians/${mother.id}`, { occupation: "" });
     expect(details(noJob)).toEqual([{ path: "occupation", message: "Enter the occupation" }]);
+  });
+});
+
+describe("the details every school has (they cannot be turned off): the Excel's fixed columns, the address, the previous school by class", () => {
+  const FIXED_COLUMNS = [
+    "studentName", "gender", "dateOfBirth", "age", "category", "className", "sectionName", "fatherName", "fatherMobile", "motherName", "motherMobile",
+    "address", "city", "state", "pincode", "previousSchool",
+  ];
+  const nursery = async (token: string) => (await request(app).post(`${academics}/classes`).set(auth(token)).send({ name: "Nursery", sectionCount: 0 })).body.data.id as string;
+
+  it("a new school's Excel has the birthday next to the gender, and every fixed column is in every layout", async () => {
+    const s = await school("Sunrise Public School", "classic");
+    const res = await get(s.token, "/settings");
+    expect(res.body.data.exportColumns.slice(0, 5).map((c: { key: string }) => c.key)).toEqual(["admissionNumber", "studentName", "gender", "dateOfBirth", "age"]);
+    for (const key of FIXED_COLUMNS) expect(res.body.data.exportColumns.map((c: { key: string }) => c.key), key).toContain(key);
+
+    const bare = await put(s.token, "/settings", { exportColumns: [{ key: "studentName", heading: "Name" }, { key: "className", heading: "Class" }] });
+    expect(bare.status).toBe(400);
+    expect(details(bare)).toContainEqual({
+      path: "exportColumns",
+      message: "Student Name, Gender, Date of Birth, Age, Category, Class, Section, Father's Name, Father's Mobile, Mother's Name, Mother's Mobile, Address, City or Village, State, PIN Code and Previous School are in every export",
+    });
+    // With the others given, a layout is kept in the order the school chose; what it adds on top is its own.
+    const layout = [...FIXED_COLUMNS.slice().reverse(), "religion"].map((key) => ({ key, heading: `H ${key}` }));
+    expect((await put(s.token, "/settings", { exportColumns: layout })).status).toBe(200);
+  });
+
+  it("a layout saved before these columns were fixed gets them back where they belong when it is read (nothing the school chose is lost)", async () => {
+    const s = await school("Sunrise Public School", "classic");
+    await StudentSettings.updateOne(
+      { tenantId: s.tenantId },
+      { $set: { exportColumns: [{ key: "studentName", heading: "Naam" }, { key: "className", heading: "Kaksha" }, { key: "religion", heading: "Dharm" }] } }
+    );
+    const res = await get(s.token, "/settings");
+    expect(res.body.data.exportIsDefault).toBe(false);
+    expect(res.body.data.exportColumns.map((c: { key: string }) => c.key)).toEqual([
+      "studentName", "gender", "dateOfBirth", "age", "category", "className", "sectionName", "fatherName", "fatherMobile", "motherName", "motherMobile",
+      // Each comes back right after the nearest column before it in the catalog that the layout has (the previous school is the catalog's
+      // last group, so after Religion here).
+      "address", "city", "state", "pincode", "religion", "previousSchool",
+    ]);
+    // Its own headings stay; the ones that came back have the usual ones.
+    expect(res.body.data.exportColumns.find((c: { key: string }) => c.key === "studentName").heading).toBe("Naam");
+    expect(res.body.data.exportColumns.find((c: { key: string }) => c.key === "className").heading).toBe("Kaksha");
+    expect(res.body.data.exportColumns.find((c: { key: string }) => c.key === "dateOfBirth").heading).toBe("Date of Birth");
+  });
+
+  it("the address is always needed and the category is always asked: the school cannot change them, and an older setting is read the right way", async () => {
+    const s = await school("Sunrise Public School", "classic");
+    for (const key of ["addressLine1", "addressCity", "addressState", "addressPincode", "previousSchoolName"]) {
+      for (const mode of ["optional", "hidden"]) {
+        const res = await put(s.token, "/settings", { fields: { [key]: mode } });
+        expect(details(res), `${key} ${mode}`).toContainEqual({ path: `fields.${key}`, message: "This detail is always needed" });
+      }
+      // Saying "needed" is no change at all and is fine.
+      expect((await put(s.token, "/settings", { fields: { [key]: "required" } })).status, key).toBe(200);
+    }
+    const hidden = await put(s.token, "/settings", { fields: { category: "hidden" } });
+    expect(details(hidden)).toContainEqual({ path: "fields.category", message: "This detail is always asked: choose needed or optional" });
+    expect((await put(s.token, "/settings", { fields: { category: "optional" } })).body.data.fields.category).toBe("optional");
+
+    // A school that saved them the other way (before this rule) is read the right way.
+    await StudentSettings.updateOne(
+      { tenantId: s.tenantId },
+      { $set: { fields: [{ key: "addressCity", mode: "hidden" }, { key: "addressLine1", mode: "optional" }, { key: "category", mode: "hidden" }, { key: "previousSchoolName", mode: "optional" }] } }
+    );
+    const read = (await get(s.token, "/settings")).body.data.fields;
+    expect(read).toMatchObject({ addressCity: "required", addressLine1: "required", category: "optional", previousSchoolName: "required" });
+  });
+
+  it("the previous school is needed from Class 1 to 12 and optional before it (Nursery, LKG, UKG): the class says which", async () => {
+    const s = await school("Sunrise Public School", "classic");
+    const small = await nursery(s.token);
+    const base = { firstName: "Asha", lastName: "Verma", gender: "Female", dateOfBirth: "2016-05-14", sectionId: null, address: { line1: "12 MG Road", city: "Bhopal", state: "Madhya Pradesh", pincode: "462001" }, guardians: [{ name: "Ravi Verma", relation: "Father", isPrimary: true, mobile: "9876543210" }] };
+
+    const numbered = await post(s.token, "", { ...base, classId: s.class5 });
+    expect(numbered.status).toBe(400);
+    expect(details(numbered)).toEqual([{ path: "previousSchool.name", message: "Enter the previous school's name" }]);
+
+    // A child who comes into the first years of school has no previous school to give; one that is given is kept.
+    const preschool = await post(s.token, "", { ...base, classId: small });
+    expect(preschool.status, JSON.stringify(preschool.body)).toBe(201);
+    expect(preschool.body.data.previousSchool).toBeNull();
+    const sibling = await post(s.token, "", { ...base, firstName: "Bina", classId: small, previousSchool: { name: "Little Flower Play School" }, guardians: [{ name: "Anil Rao", relation: "Father", isPrimary: true, mobile: "9111111111" }] });
+    expect(sibling.status).toBe(201);
+    expect(sibling.body.data.previousSchool).toMatchObject({ name: "Little Flower Play School" });
+
+    const ok = await post(s.token, "", { ...base, firstName: "Cara", classId: s.class5, previousSchool: { name: "Little Flower School" }, guardians: [{ name: "Imran Ali", relation: "Father", isPrimary: true, mobile: "9222222222" }] });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+  });
+
+  it("the last class and the TC number, when the school needs them, are needed from Class 1 too and never before it; a change follows the student's class", async () => {
+    const s = await school("Sunrise Public School", "default");
+    await put(s.token, "/settings", { fields: { aadhaarNumber: "optional", category: "optional" } });
+    const small = await nursery(s.token);
+    const base = { ...complete(s.class5), aadhaarNumber: undefined, previousSchool: undefined };
+    const numbered = await post(s.token, "", base);
+    expect(details(numbered)).toEqual(
+      expect.arrayContaining([
+        { path: "previousSchool.name", message: "Enter the previous school's name" },
+        { path: "previousSchool.lastClass", message: "Enter the last class at the previous school" },
+        { path: "previousSchool.tcNumber", message: "Enter the TC number" },
+      ])
+    );
+    const early = await post(s.token, "", { ...base, classId: small });
+    expect(early.status, JSON.stringify(early.body)).toBe(201);
+
+    // A change: emptying the previous school of a student of Class 1 to 12 is refused; of a student of Nursery it is fine.
+    const grown = await post(s.token, "", { ...base, firstName: "Dev", classId: s.class5, previousSchool: { name: "Old School", lastClass: "Class 4", tcNumber: "TC/1" }, guardians: [{ name: "Anil Rao", relation: "Father", isPrimary: true, mobile: "9111111111", occupation: "Driver" }, { name: "Sita Rao", relation: "Mother", isPrimary: false, occupation: "Nurse" }] });
+    expect(grown.status, JSON.stringify(grown.body)).toBe(201);
+    const refused = await patch(s.token, `/${grown.body.data.id}`, { previousSchool: null });
+    expect(details(refused)).toEqual(expect.arrayContaining([{ path: "previousSchool.name", message: "Enter the previous school's name" }]));
+    expect((await patch(s.token, `/${early.body.data.id}`, { previousSchool: null })).status).toBe(200);
   });
 });
 
@@ -273,10 +393,12 @@ describe("the export in the school's own layout", () => {
     await post(s.token, "", complete(s.class5, { rteSeat: true }));
     await post(s.token, "", complete(s.class5, { firstName: "Kabir", aadhaarNumber: AADHAAR[1], guardians: [{ name: "Anil Rao", relation: "Father", isPrimary: true, mobile: "9111111111", occupation: "Driver" }] }));
 
+    // The columns every export has, the class first and the names of three of them in the school's own words, then two more.
+    const fixed = ((await get(s.token, "/settings")).body.data.exportColumns as { key: string; heading: string }[]).filter((c) => LOCKED_KEYS.includes(c.key));
+    const own: Record<string, string> = { className: "Kaksha", studentName: "Chhatra ka naam", fatherName: "Pita" };
     const layout = [
       { key: "className", heading: "Kaksha" },
-      { key: "studentName", heading: "Chhatra ka naam" },
-      { key: "fatherName", heading: "Pita" },
+      ...fixed.filter((c) => c.key !== "className").map((c) => ({ key: c.key, heading: own[c.key] ?? c.heading })),
       { key: "aadhaarNumber", heading: "Aadhaar" },
       { key: "rteSeat", heading: "RTE" },
     ];
@@ -289,11 +411,14 @@ describe("the export in the school's own layout", () => {
       await workbook.xlsx.load((await download(s.token, "/export")).body as unknown as ArrayBuffer);
       return workbook.getWorksheet("Students")!;
     })();
-    expect((sheet.getRow(1).values as unknown[]).slice(1)).toEqual(["Kaksha", "Chhatra ka naam", "Pita", "Aadhaar", "RTE"]);
-    expect((sheet.getRow(2).values as unknown[]).slice(1)).toEqual(["Class 5", "Asha Verma", "Ravi Verma", AADHAAR[0], "Yes"]);
-    expect((sheet.getRow(3).values as unknown[]).slice(1)).toEqual(["Class 5", "Kabir Verma", "Anil Rao", AADHAAR[1], "No"]);
+    const headings = (sheet.getRow(1).values as unknown[]).slice(1);
+    expect(headings).toEqual(layout.map((c) => c.heading));
+    // Each student's row, by the school's headings.
+    const rowOf = (n: number) => Object.fromEntries(headings.map((h, i) => [h as string, (sheet.getRow(n).values as unknown[])[i + 1]]));
+    expect(rowOf(2)).toMatchObject({ Kaksha: "Class 5", "Chhatra ka naam": "Asha Verma", Pita: "Ravi Verma", Aadhaar: AADHAAR[0], RTE: "Yes", "Date of Birth": "14-05-2016" });
+    expect(rowOf(3)).toMatchObject({ Kaksha: "Class 5", "Chhatra ka naam": "Kabir Verma", Pita: "Anil Rao", Aadhaar: AADHAAR[1], RTE: "No" });
     // The Aadhaar column is text, so Excel keeps all 12 digits.
-    expect(sheet.getColumn(4).numFmt).toBe("@");
+    expect(sheet.getColumn(headings.indexOf("Aadhaar") + 1).numFmt).toBe("@");
 
     const preview = await get(s.token, "/export/preview");
     expect(preview.status).toBe(200);
@@ -314,9 +439,10 @@ describe("the export in the school's own layout", () => {
       { key: "c_hgt001", label: "Height (cm)", type: "number", mode: "optional" },
       { key: "c_join01", label: "Hostel from", type: "date", mode: "optional" },
     ];
+    // The columns every export has (and what a new school starts with), then three of its own.
+    const usual = (await get(s.token, "/settings")).body.data.exportColumns as { key: string; heading: string }[];
     const layout = [
-      { key: "studentName", heading: "Student Name" },
-      { key: "className", heading: "Class" },
+      ...usual,
       { key: "c_house1", heading: "House" },
       { key: "c_join01", heading: "Hostel from" },
       { key: "c_fee001", heading: "Fee paid" },
@@ -355,8 +481,10 @@ describe("the export in the school's own layout", () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load((await download(s.token, "/export")).body as unknown as ArrayBuffer);
     const sheet = workbook.getWorksheet("Students")!;
-    expect((sheet.getRow(1).values as unknown[]).slice(1)).toEqual(["Student Name", "Class", "House", "Hostel from", "Fee paid"]);
-    expect((sheet.getRow(2).values as unknown[]).slice(1)).toEqual(["Asha Verma", "Class 5", "Blue", "01-04-2026", "Yes"]);
+    const headings = (sheet.getRow(1).values as unknown[]).slice(1);
+    expect(headings).toEqual(layout.map((c) => c.heading));
+    const first = Object.fromEntries(headings.map((h, i) => [h as string, (sheet.getRow(2).values as unknown[])[i + 1]]));
+    expect(first).toMatchObject({ "Student Name": "Asha Verma", Class: "Class 5", House: "Blue", "Hostel from": "01-04-2026", "Fee paid": "Yes" });
 
     // What cannot be: a field's kind changed, a name of the list or twice, a list without choices, a needed tick, a column of no field.
     const refused = await put(s.token, "/settings", {
@@ -379,11 +507,11 @@ describe("the export in the school's own layout", () => {
     const kind = await put(s.token, "/settings", { customFields: own.map((f) => (f.key === "c_hgt001" ? { ...f, type: "text" } : f)) });
     expect(details(kind)).toEqual([{ path: "customFields.3.type", message: "A field keeps its kind: add a new field for another kind" }]);
     const noField = await put(s.token, "/settings", { exportColumns: [...layout, { key: "c_gone01", heading: "Gone" }] });
-    expect(details(noField)).toEqual([{ path: "exportColumns.5.key", message: "Choose a column from the list" }]);
+    expect(details(noField)).toEqual([{ path: `exportColumns.${layout.length}.key`, message: "Choose a column from the list" }]);
 
     // Deleted: out of the form (no longer needed) and out of the saved file layout; the answers stay in the record, unread.
     const deleted = await put(s.token, "/settings", { customFields: own.filter((f) => f.key !== "c_house1") });
-    expect(deleted.body.data.exportColumns.map((c: { key: string }) => c.key)).toEqual(["studentName", "className", "c_join01", "c_fee001"]);
+    expect(deleted.body.data.exportColumns.map((c: { key: string }) => c.key)).toEqual(layout.filter((c) => c.key !== "c_house1").map((c) => c.key));
     expect((await post(s.token, "", complete(s.class5, { firstName: "Kabir", aadhaarNumber: AADHAAR[1], guardians: [{ name: "Anil Rao", relation: "Father", isPrimary: true, mobile: "9111111111", occupation: "Driver" }] }))).status).toBe(201);
 
     // Another school's field is no field here.
@@ -392,10 +520,13 @@ describe("the export in the school's own layout", () => {
     expect(details(elsewhere)).toContainEqual({ path: "custom.c_bus001", message: "This is not one of your school's fields" });
   });
 
-  it("keeps Student Name and Class in every layout, and two columns from sharing a heading", async () => {
+  it("keeps the fixed columns in every layout (the name, the class...), and two columns from sharing a heading", async () => {
     const s = await school("Sunrise Public School", "classic");
     const noName = await put(s.token, "/settings", { exportColumns: [{ key: "className", heading: "Class" }] });
-    expect(details(noName)).toContainEqual({ path: "exportColumns", message: "Student Name and Class are in every export" });
+    expect(details(noName)).toContainEqual({
+      path: "exportColumns",
+      message: "Student Name, Gender, Date of Birth, Age, Category, Class, Section, Father's Name, Father's Mobile, Mother's Name, Mother's Mobile, Address, City or Village, State, PIN Code and Previous School are in every export",
+    });
     const twice = await put(s.token, "/settings", {
       exportColumns: [
         { key: "studentName", heading: "Name" },
@@ -433,6 +564,7 @@ describe("a bulk import and the school's needs", () => {
             classId: s.class5,
             sectionId: null,
             address: { line1: "12 MG Road", city: "Bhopal", state: "Madhya Pradesh", pincode: "462001" },
+            previousSchool: { name: "Little Flower School" },
             guardians: [{ name: "Ravi Verma", relation: "Father", isPrimary: true, mobile: "9876543210" }],
           },
         },
@@ -440,8 +572,9 @@ describe("a bulk import and the school's needs", () => {
     });
     expect(res.status).toBe(200);
     expect(res.body.data.results[0].ok).toBe(true);
+    // The address and the previous school (Class 1 to 12) are not said here: a row without them is refused, not admitted with a warning.
     expect(res.body.data.results[0].warnings).toEqual([
-      "Not in the file, but your school needs it: Category, Aadhaar number, Area or landmark, Previous school, Last class there, TC number, Parent's occupation, Both parents (father and mother), House.",
+      "Not in the file, but your school needs it: Category, Aadhaar number, Area or landmark, Last class there, TC number, Parent's occupation, Both parents (father and mother), House.",
     ]);
     // An answer to a field of the school's own that is given wrong refuses the row.
     const wrong = await post(s.token, "/import", {

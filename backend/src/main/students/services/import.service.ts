@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { Guardian } from "../models/Guardian";
-import { STUDENT_FORM_FIELDS, type SchoolNeeds } from "../constants";
+import { needsForClass, STUDENT_FORM_FIELDS, type SchoolNeeds } from "../constants";
 import {
   admitStudentSchema,
   customIssues,
@@ -12,6 +12,7 @@ import {
   type ImportStudentsInput,
 } from "../schemas/students.schemas";
 import { AdmissionService, type AdmissionYear } from "./admission.service";
+import { classNameOf } from "./classNames";
 import { StudentSettingsService } from "./settings.service";
 
 type Problem = { path: string; message: string };
@@ -75,8 +76,14 @@ export class ImportService {
     const school = new Types.ObjectId(tenantId);
     const year = await AdmissionService.activeYear(school);
     const needs = await StudentSettingsService.needs(tenantId);
+    // The name of each class a row goes into, read once (rows of one file go into few classes).
+    const classes = new Map<string, string | null>();
+    const className = async (classId: string) => {
+      if (!classes.has(classId)) classes.set(classId, await classNameOf(school, classId));
+      return classes.get(classId) ?? null;
+    };
     const results: ImportRowResult[] = [];
-    for (const row of input.rows) results.push(await ImportService.one(tenantId, school, year, row, input, needs));
+    for (const row of input.rows) results.push(await ImportService.one(tenantId, school, year, row, input, needs, className));
     const ok = results.filter((r) => r.ok).length;
     return { dryRun: input.dryRun, results, ok, failed: results.length - ok };
   }
@@ -87,7 +94,8 @@ export class ImportService {
     year: AdmissionYear,
     row: ImportStudentsInput["rows"][number],
     input: ImportStudentsInput,
-    needs: SchoolNeeds
+    needs: SchoolNeeds,
+    className: (classId: string) => Promise<string | null>
   ): Promise<ImportRowResult> {
     const errors: Problem[] = [];
     const warnings: string[] = [];
@@ -105,10 +113,12 @@ export class ImportService {
     if (!parsed.success || errors.length > 0) return { row: row.row, ok: false, errors, warnings };
 
     const student: AdmitStudentInput = parsed.data;
-    // What the school's admission form needs but the row lacks: said, not refused (old registers seldom hold every detail; the
-    // student's page shows what is still to fill in).
+    // What the school's admission form needs but the row lacks (the address, the previous school of a student of Class 1 to 12, the IDs...):
+    // said, never refused. A school brings in the students it already has, and an old register seldom holds every detail; the student's
+    // page shows what is still to fill in. A detail that IS given is still checked (a PIN code of 5 digits is refused above).
+    const rules = needsForClass(needs, await className(student.classId)).rules;
     const ownLacking = needs.custom.filter((f) => f.mode === "required" && f.type !== "yesNo" && !hasAnswer(student.custom?.[f.key])).map((f) => f.label);
-    const lacks = [...new Set([...missingForSchool(student, needs.rules).map((issue) => labelOfIssue(issue.path)), ...ownLacking])];
+    const lacks = [...new Set([...missingForSchool(student, rules).map((issue) => labelOfIssue(issue.path)), ...ownLacking])];
     if (lacks.length > 0) warnings.push(`Not in the file, but your school needs it: ${lacks.join(", ")}.`);
     // A parent the school already has (another child, or a brother earlier in this file) is linked as saved.
     for (const [index, guardian] of student.guardians.entries()) {

@@ -1,13 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import {
-  BadgeIndianRupee,
-  CalendarCheck,
-  GraduationCap,
-  Megaphone,
-  ShieldCheck,
-  type LucideIcon,
-} from "lucide-react";
+import { GraduationCap, Megaphone, ShieldCheck, type LucideIcon } from "lucide-react";
 
 const ACTIONS: { label: string; href: string; icon: LucideIcon }[] = [
   // {

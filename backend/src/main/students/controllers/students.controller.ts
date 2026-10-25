@@ -4,7 +4,7 @@ import { validate } from "../../../middleware/validate";
 import { ApiError } from "../../../utils/ApiError";
 import { asyncHandler } from "../../../utils/asyncHandler";
 import { sendCreated, sendFile, sendOk } from "../../../utils/response";
-import type { SchoolNeeds } from "../constants";
+import { needsForClass, type SchoolNeeds } from "../constants";
 import { Guardian } from "../models/Guardian";
 import { Student } from "../models/Student";
 import type {
@@ -24,6 +24,7 @@ import { StudentSettingsService } from "../services/settings.service";
 const EXPORT_PREVIEW_ROWS = 5;
 import { AdmissionService } from "../services/admission.service";
 import { CapacityService } from "../services/capacity.service";
+import { classNameOf, currentClassNameOf } from "../services/classNames";
 import { GuardianService } from "../services/guardian.service";
 import { ImportService } from "../services/import.service";
 import { GUARDIAN_NOT_FOUND, STUDENT_NOT_FOUND } from "../services/shared";
@@ -112,11 +113,21 @@ export const importStudents = asyncHandler(async (req: Request, res: Response) =
 /**
  * Validates the body with a schema made for this school's needs (its settings: which details the admission form needs, and its own
  * fields). One read of the settings, then the same validation as every route (400 with a message per box).
+ * `classFrom` says where the class is, because the previous school is needed only from Class 1 to 12 (`needsForClass`): "body" is the
+ * class the admission goes into, "student" the class the student is in now; without it the previous school is not held to the school's
+ * needs (a guardian's change has none).
  */
-export const validateForSchool = (schemaFor: (needs: SchoolNeeds) => ZodTypeAny) =>
+export const validateForSchool = (schemaFor: (needs: SchoolNeeds) => ZodTypeAny, classFrom?: "body" | "student") =>
   asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    const needs = await StudentSettingsService.needs(tenantOf(req));
-    validate(schemaFor(needs))(req, res, next);
+    const school = tenantOf(req);
+    const needs = await StudentSettingsService.needs(school);
+    const className =
+      classFrom === "body"
+        ? await classNameOf(school, (req.body as { classId?: unknown } | undefined)?.classId)
+        : classFrom === "student"
+          ? await currentClassNameOf(school, idOf(req))
+          : null;
+    validate(schemaFor(needsForClass(needs, className)))(req, res, next);
   });
 
 /** How this school keeps its students' records: what the admission form needs, and the export's columns. */

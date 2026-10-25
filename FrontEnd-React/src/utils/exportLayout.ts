@@ -2,6 +2,7 @@ import {
   DEFAULT_EXPORT_LAYOUT,
   DEFAULT_FIELD_RULES,
   EXPORT_COLUMNS,
+  FIXED_RULES,
   MAX_EXPORT_HEADING,
   exportColumnOf,
   fieldOf,
@@ -82,6 +83,7 @@ export function moveColumn<T>(items: T[], from: number, to: number): T[] {
  * What the Mandatory switch of a field is:
  *  - `rule`: the school decides (its setting `rule`); a tick (RTE, BPL) is never mandatory;
  *  - `custom`: one of the school's own fields (its own needed / optional);
+ *  - `fixed`: needed whatever the school says, with its own words (the address: "Always"; the previous school: "Class 1–12");
  *  - `always`: the software needs it whatever the school says (the name, gender, birthday, class and section, the primary parent);
  *  - `auto`: made by the software (the admission number, the age);
  *  - `optional`: always optional on the form (a roll number, a second number, a guardian, the email).
@@ -89,6 +91,7 @@ export function moveColumn<T>(items: T[], from: number, to: number): T[] {
 export type FieldNeed =
   | { kind: "rule"; rule: FormFieldKey }
   | { kind: "custom"; field: CustomFieldDef }
+  | { kind: "fixed"; label: string; title: string }
   | { kind: "always" }
   | { kind: "auto" }
   | { kind: "optional" };
@@ -131,6 +134,72 @@ const ALWAYS = new Set<string>(["studentName", "firstName", "lastName", "gender"
 const AUTO = new Set<string>(["admissionNumber", "age"]);
 export const OWN_GROUP = "Your own";
 
+/**
+ * What Add student calls each column of the Excel (the box, or the card and the box). The Excel's name for a field is the heading, which
+ * the school can type over; this is the name on the form. The student's name is one column in the Excel and two boxes on the form; the
+ * age and the admission number are not boxes at all.
+ */
+const FORM_LABELS: Record<ExportColumnKey, string> = {
+  admissionNumber: "made when you press Admit",
+  studentName: "First name + Last name",
+  firstName: "First name",
+  lastName: "Last name",
+  gender: "Gender",
+  dateOfBirth: "Date of birth",
+  age: "shown from the date of birth",
+  category: "Category",
+  className: "Class",
+  sectionName: "Section",
+  rollNumber: "Roll number",
+  admissionDate: "Admission date",
+  fatherName: "Father · Full name",
+  fatherMobile: "Father · Mobile number",
+  fatherOccupation: "Father · Occupation",
+  motherName: "Mother · Full name",
+  motherMobile: "Mother · Mobile number",
+  motherOccupation: "Mother · Occupation",
+  guardianName: "Guardian · Full name",
+  guardianMobile: "Guardian · Mobile number",
+  guardianRelation: "Guardian · Relation",
+  parentEmail: "Parent · Email",
+  address: "House and street",
+  area: "Area or landmark",
+  city: "City or village",
+  state: "State",
+  pincode: "PIN code",
+  bloodGroup: "Blood group",
+  aadhaarNumber: "Aadhaar number",
+  samagraId: "Samagra ID",
+  apaarId: "APAAR ID",
+  pen: "PEN (UDISE+)",
+  srNumber: "SR / Scholar number",
+  religion: "Religion",
+  nationality: "Nationality",
+  emergencyMobile: "Emergency / WhatsApp number",
+  disability: "Disability (CWSN)",
+  medicalNotes: "Medical conditions / allergy",
+  rteSeat: "RTE seat",
+  bpl: "BPL family",
+  feeConcession: "Fee concession",
+  transportRoute: "Transport route",
+  transportStop: "Transport stop",
+  previousSchool: "Previous school · School name",
+  lastClass: "Previous school · Last class there",
+  tcNumber: "Previous school · TC number",
+  tcDate: "Previous school · TC date",
+};
+
+/** What Add student calls a field ("not asked" when it is off and the school decides whether it is asked), for the line under its heading. */
+export function addStudentLabel(key: string, on: boolean, custom: CustomFieldDef[]): string {
+  const own = custom.find((f) => f.key === key);
+  if (own) return on ? own.label : "not asked";
+  const label = FORM_LABELS[key as ExportColumnKey] ?? key;
+  // A field that is not a choice of the school (the name, the birthday, the roll number, the parents' boxes) and one whose rule is fixed
+  // (the address, the previous school) is on the form whatever the Excel has; the ones the school decides about are asked when they are on.
+  const rule = COLUMN_RULES[key as ExportColumnKey];
+  return on || !rule || rule in FIXED_RULES ? label : "not asked";
+}
+
 /** A field of the list or of the school's own: its usual heading, its group, and what its Mandatory is. */
 export function infoOf(key: string, custom: CustomFieldDef[]): { heading: string; group: string; need: FieldNeed; locked: boolean } {
   const own = custom.find((f) => f.key === key);
@@ -140,6 +209,12 @@ export function infoOf(key: string, custom: CustomFieldDef[]): { heading: string
   const group = column?.group ?? "";
   const locked = !!column && isLockedColumn(column.key);
   const rule = COLUMN_RULES[key as ExportColumnKey];
+  if (rule && rule in FIXED_RULES) {
+    // The address is always needed; the previous school is needed from Class 1 and not before it: the school has no switch for them.
+    return rule === "previousSchoolName"
+      ? { heading, group, need: { kind: "fixed", label: "Class 1–12", title: "Needed for Class 1 to 12; optional for Nursery, LKG, UKG" }, locked }
+      : { heading, group, need: { kind: "fixed", label: "Always", title: "Always needed: every student has an address" }, locked };
+  }
   if (rule) return { heading, group, need: { kind: "rule", rule }, locked };
   if (ALWAYS.has(key)) return { heading, group, need: { kind: "always" }, locked };
   if (AUTO.has(key)) return { heading, group, need: { kind: "auto" }, locked };

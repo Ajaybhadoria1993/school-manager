@@ -10,6 +10,7 @@ import {
   type ExportColumnKey,
   type FieldRules,
   type SchoolNeeds,
+  normaliseRules,
 } from "../constants";
 import { StudentSettings, type IExportColumn } from "../models/StudentSettings";
 import type { UpdateStudentSettingsInput } from "../schemas/students.schemas";
@@ -34,19 +35,36 @@ const BUILT_IN = new Set<string>(EXPORT_COLUMNS.map((c) => c.key));
 /** A column the export can write: one of the list, or one of the school's own fields that still exists. */
 const knownColumn = (key: string, custom: CustomFieldDef[]) => BUILT_IN.has(key) || custom.some((f) => f.key === key);
 
+/**
+ * A saved layout with the fixed columns put back where they are missing (a layout saved before they were fixed, or one made by hand):
+ * each goes right after the nearest column before it in the catalog that the layout has, else first. The school's own order, its
+ * headings and its other columns stay as they are.
+ */
+export function withFixedColumns(columns: IExportColumn[]): IExportColumn[] {
+  const next = [...columns];
+  EXPORT_COLUMNS.forEach((column, index) => {
+    if (!("locked" in column && column.locked) || next.some((c) => c.key === column.key)) return;
+    let after = -1;
+    for (let before = index - 1; before >= 0 && after < 0; before--) after = next.findIndex((c) => c.key === EXPORT_COLUMNS[before].key);
+    next.splice(after + 1, 0, { key: column.key, heading: column.heading });
+  });
+  return next;
+}
+
 export class StudentSettingsService {
-  /** The school's settings, with the defaults for everything it has not decided. One read. */
+  /** The school's settings, with the defaults for everything it has not decided and what no school can change put right. One read. */
   static async get(tenantId: string): Promise<StudentSettingsDto> {
     const doc = await StudentSettings.findOne({ tenantId: new Types.ObjectId(tenantId) }).lean();
-    const fields = { ...DEFAULT_FIELD_RULES };
-    for (const f of doc?.fields ?? []) if (f.key in fields) fields[f.key] = f.mode;
+    const stored = { ...DEFAULT_FIELD_RULES };
+    for (const f of doc?.fields ?? []) if (f.key in stored) stored[f.key] = f.mode;
+    const fields = normaliseRules(stored);
     const customFields = (doc?.customFields ?? []).map((f) => ({ key: f.key, label: f.label, type: f.type, options: [...(f.options ?? [])], mode: f.mode }));
     // A field the school deleted leaves the export with it.
     const columns = doc?.exportColumns?.filter((c) => knownColumn(c.key, customFields));
     return {
       fields,
       customFields,
-      exportColumns: columns && columns.length > 0 ? columns.map((c) => ({ key: c.key, heading: c.heading })) : DEFAULT_EXPORT,
+      exportColumns: columns && columns.length > 0 ? withFixedColumns(columns.map((c) => ({ key: c.key, heading: c.heading }))) : DEFAULT_EXPORT,
       exportIsDefault: !columns || columns.length === 0,
       updatedAt: doc?.updatedAt ? doc.updatedAt.toISOString() : null,
     };

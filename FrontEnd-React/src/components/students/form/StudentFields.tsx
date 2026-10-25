@@ -1,4 +1,4 @@
-import { CalendarDays, CalendarPlus, Cake, UserRound } from "lucide-react";
+import { CalendarDays, Cake, UserRound } from "lucide-react";
 import { BLOOD_GROUPS, CATEGORIES, GENDERS, MAX_AGE, MIN_AGE } from "../../../constants/students";
 import { RELIGIONS } from "../../../constants/studentFields";
 import { asks, mayLeave } from "../../../utils/fieldRules";
@@ -8,6 +8,7 @@ import { ageOn, todayInIndia } from "../../../utils/students";
 import { Field } from "../../ui/Field";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
+import { AdmissionDateField } from "./AdmissionDateField";
 import { ChoiceSelect } from "./ChoiceSelect";
 import { FormCard } from "./FormCard";
 import { FORM_GRID } from "./formGrid";
@@ -15,8 +16,9 @@ import { FORM_GRID } from "./formGrid";
 /**
  * The student, in rows of three like a new-patient form: first name, last name and gender; date of birth, admission date and the
  * age they come to (worked out, not typed); category, blood group and religion (each as the school wants it, or not asked).
+ * `admissionDate={false}` leaves the admission date out (the admission page asks it in its Academic step).
  */
-export function StudentFields({ form, mode, index = 0 }: { form: StudentForm; mode: "admit" | "edit"; index?: number }) {
+export function StudentFields({ form, mode, index = 0, admissionDate = true }: { form: StudentForm; mode: "admit" | "edit"; index?: number; admissionDate?: boolean }) {
   const { values } = form;
   const today = todayInIndia();
   const admittedOn = values.admissionDate || today;
@@ -56,19 +58,8 @@ export function StudentFields({ form, mode, index = 0 }: { form: StudentForm; mo
         <Field id={fieldId("dateOfBirth")} label="Date of birth" error={form.errorOf("dateOfBirth")} hint={`${MIN_AGE} to ${MAX_AGE} years old.`}>
           <Input {...form.bind("dateOfBirth")} type="date" icon={CalendarDays} max={today} min="1990-01-01" />
         </Field>
-        {/* An admission may leave it empty (the server takes today) unless the school needs it, or not ask it at all (today); a saved
-            student keeps one, so the edit form always shows it. */}
-        {(mode === "edit" || asks(form.rules, "admissionDate")) && (
-          <Field
-            id={fieldId("admissionDate")}
-            label="Admission date"
-            optional={mode === "admit" && mayLeave(form.rules, "admissionDate")}
-            error={form.errorOf("admissionDate")}
-            hint={mode === "admit" ? "Empty is today; never in the future." : "Never in the future."}
-          >
-            <Input {...form.bind("admissionDate")} type="date" icon={CalendarPlus} max={today} />
-          </Field>
-        )}
+        {/* On the admission page's steps the admission date is in the Academic step, so it is left out here. */}
+        {admissionDate && <AdmissionDateField form={form} mode={mode} />}
         <div>
           <p className="mb-1.5 block text-sm font-semibold text-foreground">Age</p>
           <p

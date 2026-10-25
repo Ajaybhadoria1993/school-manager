@@ -195,7 +195,7 @@ export function PlacementFields({
                       const on = c.id === values.classId;
                       return (
                         <label key={c.id} className="relative block" title={c.name}>
-                          <input type="radio" name={`${name}-class`} value={c.id} checked={on} onChange={() => pickClass(c.id)} className="peer sr-only" />
+                          <input type="radio" name={`${name}-class`} value={c.id} checked={on} onChange={() => pickClass(c.id)} aria-label={c.name} className="peer sr-only" />
                           <span
                             className={cn(
                               "inline-flex h-9 cursor-pointer select-none items-center justify-center gap-1 rounded-lg border text-sm font-semibold transition-all duration-150",

@@ -112,12 +112,15 @@ export default function StudentsPage() {
               Guide
             </Button>
           </WithTip>
-          {!noYear && total > 0 && (
+          {/* The same buttons whether the school has students or not: with nobody yet, Export is where its fields are chosen. */}
+          {!noYear && (
             <WithTip
               tip={
-                active
-                  ? "The students this search and class show, as an Excel file. Choose your school's fields (on / off, mandatory), their headings and order, and see it first."
-                  : "Every student of this year as an Excel file. Choose your school's fields (on / off, mandatory), their headings and order, and see it first."
+                total === 0
+                  ? "Choose your school's fields (on / off, mandatory), their headings and order, and see the Excel before it has any students."
+                  : active
+                    ? "The students this search and class show, as an Excel file. Choose your school's fields (on / off, mandatory), their headings and order, and see it first."
+                    : "Every student of this year as an Excel file. Choose your school's fields (on / off, mandatory), their headings and order, and see it first."
               }
             >
               <Link to={{ pathname: "/school/students/export", search: exportSearch }} className={outlineLink}>
@@ -233,23 +236,13 @@ export default function StudentsPage() {
                     <UserPlus className="size-4" aria-hidden />
                     Add your first student
                   </Link>
-                  <Link to="/school/students/import" className={outlineLink}>
-                    <FileUp className="size-4" aria-hidden />
-                    Upload from Excel
-                  </Link>
-                  <Link to="/school/classes" className="inline-flex h-10 items-center rounded-lg px-4 text-sm font-semibold text-primary-deep hover:bg-primary-soft">
+                  <Link to="/school/classes" className={outlineLink}>
+                    <FolderTree className="size-4" aria-hidden />
                     Check your classes and sections
                   </Link>
                 </>
               }
-            >
-              <p>Press Admit student, fill in one page (the child, the class and section, a parent and the address) and press Admit.</p>
-              <p>Already have your students in Excel? Upload from Excel brings them all in at once, each into their class.</p>
-              <p>
-                Sections need their seats and room (in Classes & Sections), so the form can say how many seats are left. A class without sections
-                takes its students as a whole.
-              </p>
-            </StudentsNotice>
+            />
           ) : (
             <section aria-label="Find and read the students" className="space-y-4">
               <StudentToolbar filters={filters} active={active} structure={structure} capacity={capacity} onChange={change} onClear={clear} />

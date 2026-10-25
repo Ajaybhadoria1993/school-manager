@@ -1,8 +1,8 @@
 import { STATES } from "../constants/schoolOptions";
-import { BLOOD_GROUPS, CATEGORIES } from "../constants/students";
-import { DISABILITIES, LENIENT_FIELD_RULES, RELIGIONS, fieldOf, type CustomFieldDef, type ExportColumnKey, type FieldRules, type FormFieldKey } from "../constants/studentFields";
+import { BLOOD_GROUPS, CATEGORIES, GENDERS } from "../constants/students";
+import { DISABILITIES, LENIENT_FIELD_RULES, RELIGIONS, isCustomKey, type CustomFieldDef, type ExportColumnKey, type FieldRules, type FormFieldKey } from "../constants/studentFields";
 import type { AcademicStructure, ClassItem, ExportColumn, Gender, ImportRowInput, Relation } from "../types";
-import { checkStudentForm, emptyGuardian, emptyStudentForm, pathOfRule, todayInIndia, toAdmission, type GuardianDraft, type StudentFormValues } from "./students";
+import { checkStudentForm, emptyGuardian, emptyStudentForm, todayInIndia, toAdmission, type GuardianDraft, type StudentFormValues } from "./students";
 
 // ---------------------------------------------------------------------------------------------------------------------------
 // What a file's columns can be. The same columns as the server's template (backend/src/main/students/constants.ts
@@ -179,24 +179,30 @@ export const headerKey = (title: string) => title.toLowerCase().replace(/\*/g, "
 export const emptyMapping = () => Object.fromEntries(IMPORT_FIELDS.map((f) => [f.key, null])) as ColumnMapping;
 
 /**
- * The detail an export column holds, so a file the school exported (under its own headings) can be uploaded back. Age is not read, and
- * neither are the school's own fields (the bulk upload does not take them yet).
+ * The detail an export column holds, so a file the school exported (under its own headings) can be uploaded back. Age is not read; the
+ * school's own fields are found by `ownColumnsOf`.
  */
 const importFieldOfExport = (key: string): ImportField | null =>
   key === "studentName" ? "fullName" : key === "age" || !IMPORT_FIELDS.some((f) => f.key === key) ? null : (key as ExportColumnKey as ImportField);
 
 /**
  * Each field gets the first column whose title it is known by; one column is used once (the first fields in the list win). `own` is
- * the school's export layout: a column under a heading the school chose for a detail is that detail, before any other name is tried.
+ * the school's export layout: a column under a heading the school chose for a detail is that detail, before any other name is tried,
+ * and a column under the heading of one of its own fields is left for that field (`ownColumnsOf`), even when it is a usual name.
  */
 export function autoMap(headers: readonly string[], own: readonly ExportColumn[] = []): ColumnMapping {
   const keys = headers.map(headerKey);
   const used = new Set<number>();
   const mapping = emptyMapping();
   for (const column of own) {
-    const field = importFieldOfExport(column.key);
     const index = keys.findIndex((key, i) => key === headerKey(column.heading) && !used.has(i));
-    if (!field || mapping[field] !== null || index < 0) continue;
+    if (index < 0) continue;
+    if (isCustomKey(column.key)) {
+      used.add(index);
+      continue;
+    }
+    const field = importFieldOfExport(column.key);
+    if (!field || mapping[field] !== null) continue;
     mapping[field] = index;
     used.add(index);
   }
@@ -236,42 +242,88 @@ export function assignColumn(mapping: ColumnMapping, column: number, field: Impo
 }
 
 /**
- * The details the file has no column for and every row needs (fields a whole-name column stands in for are not asked). What only the
- * school's own form needs (the address, Aadhaar...) is not here: an upload is never refused for it, each row says what it lacks.
+ * The columns the table gets, empty, when the file opens, because every student needs them and the file has none: the name (one
+ * column for the whole name), gender, date of birth, class, a parent's name and mobile, and the section when a class of the file is
+ * split into sections. Their empty boxes are red and say what to type, so everything is fixed in the table itself. Nothing else is
+ * added: the address, the previous school, the IDs... are optional in a bulk upload.
  */
-export function missingForImport(mapping: ColumnMapping): ImportField[] {
-  const missing: ImportField[] = [];
+export function columnsToAdd(mapping: ColumnMapping, rows: readonly { cells: string[] }[], classes: readonly ClassItem[]): ImportField[] {
+  const add: ImportField[] = [];
   if (mapping.fullName === null) {
-    if (mapping.firstName === null) missing.push("firstName");
-    if (mapping.lastName === null) missing.push("lastName");
+    if (mapping.firstName === null && mapping.lastName === null) add.push("fullName");
+    else {
+      if (mapping.firstName === null) add.push("firstName");
+      if (mapping.lastName === null) add.push("lastName");
+    }
   }
-  for (const key of ["gender", "dateOfBirth", "className"] as const) {
-    if (mapping[key] === null) missing.push(key);
+  for (const key of ["gender", "dateOfBirth", "className"] as const) if (mapping[key] === null) add.push(key);
+  if (mapping.fatherName === null && mapping.motherName === null && mapping.guardianName === null) add.push("fatherName");
+  if (mapping.fatherMobile === null && mapping.motherMobile === null && mapping.guardianMobile === null) add.push("fatherMobile");
+  const classColumn = mapping.className;
+  if (mapping.sectionName === null && classColumn !== null) {
+    const needsOne = rows.some((r) => {
+      const matched = matchClass(tidy(r.cells[classColumn] ?? ""), classes);
+      // A section written in the class cell ("5-C") is fixed in that cell: no new column for it.
+      return !!matched && !matched.sectionId && !matched.unknownSection && !!classes.find((c) => c.id === matched.classId)?.sections.length;
+    });
+    if (needsOne) add.push("sectionName");
   }
-  if (mapping.fatherMobile === null && mapping.motherMobile === null && mapping.guardianMobile === null) missing.push("fatherMobile");
-  return missing;
+  // Nothing else is asked of a file: the address, the previous school and the rest are optional, an old register seldom holds them.
+  return add;
+}
+
+/** A column the table can get: a detail of the list or one of the school's own fields, and the box its value for every row needs. */
+export interface ColumnChoice {
+  value: string;
+  label: string;
+  /** One of a list (a dropdown); otherwise text, or a day. */
+  list?: readonly string[];
+  date?: boolean;
+}
+
+/** What a detail's value for every row is chosen from (gender, class, state...), or nothing for free text. */
+function listOf(field: ImportField, structure: AcademicStructure): readonly string[] | undefined {
+  const lists: Partial<Record<CellInput, readonly string[]>> = {
+    state: STATES,
+    gender: GENDERS,
+    class: structure.classes.map((c) => c.name),
+    bloodGroup: BLOOD_GROUPS,
+    category: CATEGORIES,
+    relation: ["Guardian", "Other"],
+    religion: RELIGIONS,
+    disability: DISABILITIES,
+    yesNo: ["Yes", "No"],
+  };
+  return lists[fieldDef(field).input];
+}
+
+/** The columns the "+" of the table can add: the details of the list not in the table yet, then the school's own fields not in it yet. */
+export function columnChoices(fields: readonly ImportField[], own: readonly CustomFieldDef[], structure: AcademicStructure): ColumnChoice[] {
+  return [
+    ...fields.map((f) => ({ value: f as string, label: fieldDef(f).label, list: listOf(f, structure), date: fieldDef(f).input === "date" })),
+    ...own.map((f) => ({
+      value: f.key,
+      label: `${f.label} (your own)`,
+      list: f.type === "choice" ? f.options : f.type === "yesNo" ? ["Yes", "No"] : undefined,
+      date: f.type === "date",
+    })),
+  ];
 }
 
 /**
- * The details the school's own form needs (its fields, on Students > Export) that the file has no column for. They do not stop a row
- * (each says what it lacks), but the screen offers to add the column with one value for every row (the State of a one-state school).
- * One entry per detail: a parent's occupation is in the file when any of the three occupation columns is.
+ * Which columns of the file are the school's own fields: a title that is the field's name or its heading in the school's export (a
+ * file it exported comes back as it is). A column already read as a detail of the list is left as it is.
  */
-export function missingForSchool(mapping: ColumnMapping, rules: FieldRules | undefined): ImportField[] {
-  if (!rules) return [];
-  const seen = new Set<FormFieldKey>();
-  const missing: ImportField[] = [];
-  for (const field of IMPORT_FIELDS) {
-    const rule = RULE_OF_FIELD[field.key];
-    if (!rule || rules[rule] !== "required" || seen.has(rule)) continue;
-    seen.add(rule);
-    if (IMPORT_FIELDS.every((f) => RULE_OF_FIELD[f.key] !== rule || mapping[f.key] === null)) missing.push(field.key);
+export function ownColumnsOf(headers: readonly string[], custom: readonly CustomFieldDef[], exportColumns: readonly ExportColumn[], taken: ReadonlySet<number>): Record<string, number> {
+  const keys = headers.map(headerKey);
+  const found: Record<string, number> = {};
+  for (const field of custom) {
+    const names = [field.label, ...exportColumns.filter((c) => c.key === field.key).map((c) => c.heading)].map(headerKey);
+    const index = keys.findIndex((key, i) => names.includes(key) && !taken.has(i) && !Object.values(found).includes(i));
+    if (index >= 0) found[field.key] = index;
   }
-  return missing;
+  return found;
 }
-
-/** How a missing detail is named: "Father's mobile" stands for "a parent's mobile" when the file has no mobile column at all. */
-export const missingLabel = (field: ImportField) => (field === "fatherMobile" ? "Parent's mobile" : fieldDef(field).label);
 
 // ---------------------------------------------------------------------------------------------------------------------------
 // Turning what a school typed into what the server takes.
@@ -341,7 +393,7 @@ const STATE_ALIASES: Record<string, string> = {
   mh: "Maharashtra", mn: "Manipur", ml: "Meghalaya", mz: "Mizoram", nl: "Nagaland", od: "Odisha", or: "Odisha", orissa: "Odisha",
   pb: "Punjab", rj: "Rajasthan", sk: "Sikkim", tn: "Tamil Nadu", tg: "Telangana", ts: "Telangana", tr: "Tripura", up: "Uttar Pradesh",
   uk: "Uttarakhand", ut: "Uttarakhand", uttaranchal: "Uttarakhand", wb: "West Bengal", dl: "Delhi", newdelhi: "Delhi", nctofdelhi: "Delhi",
-  jk: "Jammu and Kashmir", jammukashmir: "Jammu and Kashmir", la: "Ladakh", py: "Puducherry", pondicherry: "Puducherry", ch: "Chandigarh",
+  jk: "Jammu and Kashmir", jandk: "Jammu and Kashmir", jammukashmir: "Jammu and Kashmir", la: "Ladakh", py: "Puducherry", pondicherry: "Puducherry", ch: "Chandigarh",
   an: "Andaman and Nicobar Islands", ld: "Lakshadweep", dnhdd: "Dadra and Nagar Haveli and Daman and Diu",
 };
 /** "MP", "m.p.", "madhya pradesh" -> "Madhya Pradesh"; a name not in the list is passed on for the check to refuse. */
@@ -416,10 +468,13 @@ const PRE_PRIMARY: Record<string, string> = {
   ukg: "ukg", "u k g": "ukg", "upper kg": "ukg", "kg 2": "ukg", kg2: "ukg", "sr kg": "ukg", "senior kg": "ukg",
 };
 
-/** The words of a class name, compared without "Class", "Std", ordinals, roman numbers and spelling differences. */
+/** Words around a class's number that are not part of it, wherever they stand ("Class 5", "5th Std"). */
+const CLASS_WORDS = new Set(["class", "std", "standard", "grade", "cls"]);
+
+/** The words of a class name, compared without "Class", "Std", ordinals (also written apart, "5 th"), roman numbers and spelling differences. */
 function classTokens(text: string): string[] {
   const words = text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
-  const rest = ["class", "std", "standard", "grade", "cls"].includes(words[0] ?? "") ? words.slice(1) : words;
+  const rest = words.filter((word, i) => !CLASS_WORDS.has(word) && !(/^(st|nd|rd|th)$/.test(word) && /^\d{1,2}$/.test(words[i - 1] ?? "")));
   return rest.map((word, i) => {
     const ordinal = /^(\d{1,2})(st|nd|rd|th)$/.exec(word);
     if (ordinal) return ordinal[1];
@@ -437,9 +492,10 @@ const sectionKey = (text: string) => text.toLowerCase().replace(/^(section|sec|d
 
 /**
  * The class a value of the file's Class column means, and the section when the value carries one ("5-A", "V B", "LKG A"): the whole
- * value is tried first, then all but its last word as the class and the last word as one of that class's sections.
+ * value is tried first, then all but its last word as the class and the last word as one of that class's sections. When that last word
+ * is no section of the class ("5-C"), the class is still right: `unknownSection` is the word as written, for the row to say so.
  */
-export function matchClass(value: string, classes: readonly ClassItem[]): { classId: string; sectionId: string | null } | null {
+export function matchClass(value: string, classes: readonly ClassItem[]): { classId: string; sectionId: string | null; unknownSection?: string } | null {
   const tokens = classTokens(value);
   if (tokens.length === 0) return null;
   const whole = keyOfTokens(tokens);
@@ -447,32 +503,26 @@ export function matchClass(value: string, classes: readonly ClassItem[]): { clas
   if (direct) return { classId: direct.id, sectionId: null };
   if (tokens.length > 1) {
     const klass = classes.find((c) => classKey(c.name) === keyOfTokens(tokens.slice(0, -1)));
-    const section = klass?.sections.find((s) => sectionKey(s.name) === tokens[tokens.length - 1]);
-    if (klass && section) return { classId: klass.id, sectionId: section.id };
+    if (!klass) return null;
+    const section = klass.sections.find((s) => sectionKey(s.name) === tokens[tokens.length - 1]);
+    if (section) return { classId: klass.id, sectionId: section.id };
+    return { classId: klass.id, sectionId: null, unknownSection: value.split(/[^A-Za-z0-9]+/).filter(Boolean).at(-1) ?? "" };
   }
   return null;
-}
-
-/** The values of the Class column that are no class of the school, with how many rows have each (empty cells are left out). */
-export function unmatchedClasses(rows: readonly { cells: string[] }[], column: number | null, classes: readonly ClassItem[]): { value: string; rows: number }[] {
-  if (column === null) return [];
-  const counts = new Map<string, number>();
-  for (const r of rows) {
-    const value = tidy(r.cells[column] ?? "");
-    if (value && !matchClass(value, classes)) counts.set(value, (counts.get(value) ?? 0) + 1);
-  }
-  return [...counts].map(([value, n]) => ({ value, rows: n }));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------
 // One row of the file as an admission, with what is wrong with it and in which columns.
 // ---------------------------------------------------------------------------------------------------------------------------
 
-/** A problem of a row: the column the person fixes it in (its label), the message, and the fields whose cells are marked. */
+/**
+ * A problem of a row: the column the person fixes it in (its label), the message, and the fields whose cells are marked (a detail of
+ * the list, or the key of one of the school's own fields).
+ */
 export interface RowProblem {
   label: string;
   message: string;
-  fields: ImportField[];
+  fields: string[];
 }
 
 export type GuardianSource = "father" | "mother" | "guardian";
@@ -488,11 +538,6 @@ export interface PreparedRow {
   input: ImportRowInput;
   problems: RowProblem[];
   warnings: string[];
-  /**
-   * What the school's own form needs and this row lacks (Aadhaar number, TC number...): it is uploaded all the same. The screen says it
-   * once for the whole file, with how many rows lack each, not on every row.
-   */
-  lacking: string[];
   /** Where each guardian of the body came from, to name a problem by its column ("Father's mobile"). */
   guardianSources: GuardianSource[];
 }
@@ -506,7 +551,8 @@ const PATH_FIELDS: Record<string, ImportField[]> = {
   dateOfBirth: ["dateOfBirth"],
   admissionDate: ["admissionDate"],
   classId: ["className"],
-  sectionId: ["sectionName", "className"],
+  // The section is typed in its own column (the class itself is right).
+  sectionId: ["sectionName"],
   rollNumber: ["rollNumber"],
   guardians: ["fatherName", "fatherMobile", "motherName", "motherMobile", "guardianName", "guardianMobile"],
   "address.line1": ["address"],
@@ -569,15 +615,13 @@ export const problemOf = (path: string, message: string, sources: readonly Guard
   fields: fieldsOf(path, sources, wholeName),
 });
 
-/** How a row's warning about the school's own needs begins (the server's words too, so its copy of the warning can be left out). */
+/** How a row's warning about the school's own needs begins (the server's words): the screen leaves it out (the table says enough). */
 export const SCHOOL_NEEDS = "Not in the file, but your school needs it";
 
-/** The detail of the school's form a problem's path is about ("address.city" -> addressCity, "guardians.0.occupation" -> guardianOccupation). */
-function ruleOfPath(path: string): FormFieldKey | null {
-  if (path === "guardians") return "secondParent";
-  if (/^guardians\.\d+\.occupation$/.test(path)) return "guardianOccupation";
-  const field = Object.values(RULE_OF_FIELD).find((key) => pathOfRule(key) === path);
-  return field ?? null;
+/** A column of the school's own field in the table: which field, in which column. */
+export interface OwnColumn {
+  field: CustomFieldDef;
+  column: number;
 }
 
 /**
@@ -585,15 +629,14 @@ function ruleOfPath(path: string): FormFieldKey | null {
  * the class and section are matched to the school's ("V", "5-A"), the parents become guardians (the first with a mobile number is the
  * primary contact), and the row is checked with the admission form's own rules and words (`checkStudentForm`), so the screen can say
  * what is wrong, and in which cell, before anything is sent. The server checks every row again.
- * The school's own needs (`rules`: Aadhaar, the address...) do not stop a row, as on the server: what the row lacks is a warning.
+ * The school's own needs (Aadhaar, the address...) do not stop a row, as on the server. The school's own fields that have a column
+ * (`own`) are read by their kind (a day, a number, Yes / No, one of the list) and sent with the row.
  */
 export function prepareRow(
   sheetRow: { row: number; cells: string[] },
   mapping: ColumnMapping,
   structure: AcademicStructure,
-  rules?: FieldRules,
-  /** The school's own fields: the bulk upload does not take them yet, so a needed one is said as lacking (on every row). */
-  custom: CustomFieldDef[] = []
+  own: readonly OwnColumn[] = []
 ): PreparedRow {
   const get = (field: ImportField) => {
     const column = mapping[field];
@@ -612,24 +655,29 @@ export function prepareRow(
     lastName = words.length > 1 ? words[words.length - 1] : "";
   }
 
-  // The class, and the section from its column or from the class value ("5-A").
+  // The class, and the section from its column or from the class value ("5-A"). A section written in the class cell that is not the
+  // class's ("5-C") is said in that cell, where it is fixed.
   const classValue = get("className");
   const matched = classValue ? matchClass(classValue, structure.classes) : null;
   const klass = matched ? structure.classes.find((c) => c.id === matched.classId) : undefined;
   let sectionId: string | null = null;
-  const sectionValue = get("sectionName");
+  const sectionValue = get("sectionName") || matched?.unknownSection || "";
+  const sectionCell: ImportField = get("sectionName") || !matched?.unknownSection ? "sectionName" : "className";
   if (klass) {
+    const names = klass.sections.map((s) => s.name).join(", ");
     if (sectionValue && klass.sections.length > 0) {
       const section = klass.sections.find((s) => sectionKey(s.name) === sectionKey(sectionValue));
       if (section) sectionId = section.id;
-      else problems.push({ label: "Section", message: `${klass.name} has no section "${sectionValue}" this year`, fields: ["sectionName"] });
+      else problems.push({ label: "Section", message: `${klass.name} has sections ${names}, not "${sectionValue}"`, fields: [sectionCell] });
     } else if (sectionValue && klass.sections.length === 0) {
       warnings.push(`${klass.name} has no sections: the section in the file (${sectionValue}) is not used.`);
     } else {
       sectionId = matched?.sectionId ?? null;
+      // The class is right; it is split into sections, so the row needs one (typed in the Section column).
+      if (!sectionId && klass.sections.length > 0) problems.push({ label: "Section", message: `${klass.name} has sections ${names}: type one`, fields: ["sectionName"] });
     }
   } else if (classValue) {
-    problems.push({ label: "Class", message: `"${classValue}" is not a class of your school`, fields: ["className"] });
+    problems.push({ label: "Class", message: `Your school has no "${classValue}": type one of your classes`, fields: ["className"] });
   }
   const section = klass?.sections.find((s) => s.id === sectionId);
 
@@ -684,32 +732,44 @@ export function prepareRow(
 
   const admissionNumber = get("admissionNumber").toUpperCase();
   if (admissionNumber && !ADMISSION_NUMBER.test(admissionNumber)) problems.push({ label: "Admission no.", message: ADMISSION_NUMBER_MESSAGE, fields: ["admissionNumber"] });
-  // The lists the form offers as a dropdown (the server's words when a value is not one of them).
+  // The lists the form offers as a dropdown (its check never sees a value outside them there): the server's words, or what to write.
+  if (values.gender && !(GENDERS as readonly string[]).includes(values.gender)) problems.push({ label: "Gender", message: "Write Male, Female or Other", fields: ["gender"] });
+  if (values.address.state && !(STATES as readonly string[]).includes(values.address.state)) problems.push({ label: "State", message: "Choose a state from the list", fields: ["state"] });
+  if (values.bloodGroup && !(BLOOD_GROUPS as readonly string[]).includes(values.bloodGroup)) problems.push({ label: "Blood group", message: "Choose a blood group from the list", fields: ["bloodGroup"] });
+  if (values.category && !(CATEGORIES as readonly string[]).includes(values.category)) problems.push({ label: "Category", message: "Choose a category from the list", fields: ["category"] });
   if (values.religion && !(RELIGIONS as readonly string[]).includes(values.religion)) problems.push({ label: "Religion", message: "Choose a religion from the list", fields: ["religion"] });
   if (values.disability && !(DISABILITIES as readonly string[]).includes(values.disability)) problems.push({ label: "Disability (CWSN)", message: "Choose a disability from the list", fields: ["disability"] });
   for (const key of ["rteSeat", "bpl"] as const) {
     if (normaliseYesNo(get(key)) === null) problems.push({ label: fieldDef(key).label, message: "Write Yes or No", fields: [key] });
   }
 
-  // The admission form's own rules, with its words; every detail the school decides about is optional here (said below instead).
-  // The class and section problems above already say what is wrong with them.
+  // The school's own fields that have a column, read by their kind.
+  for (const { field, column } of own) {
+    const raw = tidy(sheetRow.cells[column] ?? "");
+    if (!raw) continue;
+    if (field.type === "yesNo") {
+      const yes = normaliseYesNo(raw);
+      if (yes === null) problems.push({ label: field.label, message: "Write Yes or No", fields: [field.key] });
+      else values.custom[field.key] = yes;
+    } else if (field.type === "date") values.custom[field.key] = normaliseDay(raw);
+    else if (field.type === "choice") values.custom[field.key] = field.options.find((o) => o.toLowerCase() === raw.toLowerCase()) ?? raw;
+    else if (field.type === "number") values.custom[field.key] = raw.replace(/,/g, "").replace(/\.0+$/, "");
+    else values.custom[field.key] = raw;
+  }
+  // Never needed here (an old register seldom has them): only checked for what is typed.
+  const ownFields = own.map((o) => ({ ...o.field, mode: "optional" as const }));
+
+  // The admission form's own rules, with its words. Every detail the school decides about is optional here (the bulk upload is never
+  // refused for them: a school brings in the students it already has, and an old register seldom holds the address, the previous school
+  // or the IDs); a detail that is given is still checked. The class and section problems above already say what is wrong with them.
   const check = { classHasSections: !!klass?.sections.length, admissionDateRequired: false, today: todayInIndia() };
-  const errors = checkStudentForm(values, { ...check, rules: LENIENT_FIELD_RULES });
+  const errors = checkStudentForm(values, { ...check, rules: LENIENT_FIELD_RULES, custom: ownFields });
   if (guardians.length === 0) errors.guardians = "Add at least one parent with a mobile number";
   for (const [path, message] of Object.entries(errors)) {
     if (path === "classId" && classValue) continue;
     if (path === "sectionId" && problems.some((p) => p.label === "Section")) continue;
-    problems.push(problemOf(path, message, sources, wholeName));
-  }
-
-  // What the school's own form needs and the row lacks: admitted all the same (the student's page shows what is left to fill in).
-  const lacks = new Set<string>();
-  if (rules) {
-    for (const path of Object.keys(checkStudentForm(values, { ...check, rules }))) {
-      const rule = path in errors ? null : ruleOfPath(path);
-      if (rule) lacks.add(fieldOf(rule).label);
-    }
-    for (const f of custom) if (f.mode === "required" && f.type !== "yesNo") lacks.add(f.label);
+    const ownField = path.startsWith("custom.") ? ownFields.find((f) => `custom.${f.key}` === path) : undefined;
+    problems.push(ownField ? { label: ownField.label, message, fields: [ownField.key] } : problemOf(path, message, sources, wholeName));
   }
 
   const primaryGuardian = guardians[primary];
@@ -723,11 +783,10 @@ export function prepareRow(
     input: {
       row: sheetRow.row,
       ...(admissionNumber ? { admissionNumber } : {}),
-      student: toAdmission(values, { allowOverCapacity: false, confirmNotDuplicate: false }),
+      student: toAdmission(values, { allowOverCapacity: false, confirmNotDuplicate: false }, ownFields),
     },
     problems,
     warnings,
-    lacking: [...lacks],
     guardianSources: sources,
   };
 }

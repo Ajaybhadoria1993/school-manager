@@ -42,6 +42,7 @@ const admit = (token: string, classId: string, sectionId: string | null, mobile:
       gender: "Female",
       dateOfBirth: "2018-05-14",
       address: { line1: "12 MG Road", city: "Bhopal", state: "Madhya Pradesh", pincode: "462001" },
+      previousSchool: { name: "Little Flower School" },
       classId,
       sectionId,
       guardians: [{ name: "Ravi Verma", relation: "Father", isPrimary: true, mobile }],

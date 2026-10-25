@@ -2,8 +2,10 @@ import { z } from "zod";
 import { INDIAN_STATES } from "../../tenants/constants";
 import { INDIAN_MOBILE, optional, phoneNumber } from "../../../utils/formFields";
 import {
+  ALWAYS_ASKED_RULES,
   BLOOD_GROUPS,
   CATEGORIES,
+  FIXED_RULES,
   CUSTOM_FIELD_TYPES,
   CUSTOM_KEY,
   DISABILITIES,
@@ -307,6 +309,9 @@ const guardianEntry = z
     }
   });
 
+/** What a second father or mother is told (the admission form says the same). */
+const onlyOne = (relation: "Father" | "Mother") => `A child has only one ${relation.toLowerCase()}: choose Guardian or Other for this one`;
+
 /** A roll number: a whole number from 1 to 999, or nothing. */
 const rollNumber = z.preprocess(
   (v) => (v === "" ? null : v),
@@ -353,7 +358,15 @@ export const admitStudentSchema = z
 
     const mobiles = new Set<string>();
     const picked = new Set<string>();
+    // A child has one father and one mother; any number of guardians and others (up to the limit).
+    const parents = new Set<string>();
     input.guardians.forEach((g, i) => {
+      if (g.relation === "Father" || g.relation === "Mother") {
+        if (parents.has(g.relation)) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["guardians", i, "relation"], message: onlyOne(g.relation) });
+        }
+        parents.add(g.relation);
+      }
       if (g.isPrimary && !g.mobile) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["guardians", i, "mobile"], message: "Enter the mobile number" });
       }
@@ -741,7 +754,11 @@ const customFieldsSchema = z
     }))
   );
 const YES_NO_KEYS = new Set<string>(STUDENT_FORM_FIELDS.filter((f) => "yesNo" in f && f.yesNo).map((f) => f.key));
-const LOCKED_HEADINGS = LOCKED_EXPORT_COLUMNS.map((k) => EXPORT_COLUMNS.find((c) => c.key === k)!.heading).join(" and ");
+/** "A, B and C": the columns that are in every export, as a sentence. */
+const LOCKED_HEADINGS = (() => {
+  const names = LOCKED_EXPORT_COLUMNS.map((k) => EXPORT_COLUMNS.find((c) => c.key === k)!.heading);
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
+})();
 
 /**
  * The school's way of keeping records: what the admission form needs (`fields`: a detail and needed / optional / not asked; the
@@ -760,6 +777,9 @@ export const updateStudentSettingsSchema = z
           if (!FORM_KEYS.has(key)) say("This detail cannot be changed");
           else if (!(FIELD_MODES as readonly unknown[]).includes(mode)) say("Choose needed, optional or not asked");
           else if (YES_NO_KEYS.has(key) && mode === "required") say("A yes / no detail is a tick: it cannot be needed");
+          // The address and the previous school are always needed; the category is always asked.
+          else if (key in FIXED_RULES && mode !== FIXED_RULES[key as keyof typeof FIXED_RULES]) say("This detail is always needed");
+          else if ((ALWAYS_ASKED_RULES as readonly string[]).includes(key) && mode === "hidden") say("This detail is always asked: choose needed or optional");
         }
       })
       .transform((fields) => fields as Partial<FieldRules>)
