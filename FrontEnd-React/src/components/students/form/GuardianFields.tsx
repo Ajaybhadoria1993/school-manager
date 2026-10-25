@@ -2,7 +2,7 @@ import { AtSign, BriefcaseBusiness, Loader2, Phone, Search, Star, Trash2, UserRo
 import { RELATIONS } from "../../../constants/students";
 import { fieldId, type StudentForm } from "../../../hooks/useStudentForm";
 import { cn } from "../../../utils/helpers";
-import { formatMobile, keepsDetails, placeLabel } from "../../../utils/students";
+import { formatMobile, keepsDetails, placeLabel, takenRelations } from "../../../utils/students";
 import { isIndianMobile } from "../../../utils/validators";
 import type { Relation } from "../../../types";
 import { ChipPicker } from "../../ui/ChipPicker";
@@ -108,6 +108,8 @@ export function GuardianFields({
               id={fieldId(at("relation"))}
               value={g.relation}
               options={RELATIONS}
+              // A child has one father and one mother: the one another guardian already is cannot be chosen again.
+              disabledValues={[...takenRelations(form.values.guardians, index)]}
               placeholder="Select relation"
               invalid={!!form.errorOf(at("relation"))}
               onChange={(r) => form.setRelation(index, r as Relation)}

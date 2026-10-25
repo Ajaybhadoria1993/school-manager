@@ -76,29 +76,29 @@ export const EXPORT_COLUMNS = [
   { key: "studentName", heading: "Student Name", group: "Student", locked: true },
   { key: "firstName", heading: "First Name", group: "Student" },
   { key: "lastName", heading: "Last Name", group: "Student" },
-  { key: "gender", heading: "Gender", group: "Student" },
-  { key: "dateOfBirth", heading: "Date of Birth", group: "Student" },
-  { key: "age", heading: "Age", group: "Student" },
-  { key: "category", heading: "Category", group: "Student" },
+  { key: "gender", heading: "Gender", group: "Student", locked: true },
+  { key: "dateOfBirth", heading: "Date of Birth", group: "Student", locked: true },
+  { key: "age", heading: "Age", group: "Student", locked: true },
+  { key: "category", heading: "Category", group: "Student", locked: true },
   { key: "className", heading: "Class", group: "Class", locked: true },
-  { key: "sectionName", heading: "Section", group: "Class" },
+  { key: "sectionName", heading: "Section", group: "Class", locked: true },
   { key: "rollNumber", heading: "Roll No.", group: "Class" },
   { key: "admissionDate", heading: "Admission Date", group: "Class" },
-  { key: "fatherName", heading: "Father's Name", group: "Parents" },
-  { key: "fatherMobile", heading: "Father's Mobile", group: "Parents" },
+  { key: "fatherName", heading: "Father's Name", group: "Parents", locked: true },
+  { key: "fatherMobile", heading: "Father's Mobile", group: "Parents", locked: true },
   { key: "fatherOccupation", heading: "Father's Occupation", group: "Parents" },
-  { key: "motherName", heading: "Mother's Name", group: "Parents" },
-  { key: "motherMobile", heading: "Mother's Mobile", group: "Parents" },
+  { key: "motherName", heading: "Mother's Name", group: "Parents", locked: true },
+  { key: "motherMobile", heading: "Mother's Mobile", group: "Parents", locked: true },
   { key: "motherOccupation", heading: "Mother's Occupation", group: "Parents" },
   { key: "guardianName", heading: "Guardian's Name", group: "Parents" },
   { key: "guardianMobile", heading: "Guardian's Mobile", group: "Parents" },
   { key: "guardianRelation", heading: "Guardian's Relation", group: "Parents" },
   { key: "parentEmail", heading: "Parent's Email", group: "Parents" },
-  { key: "address", heading: "Address", group: "Address" },
+  { key: "address", heading: "Address", group: "Address", locked: true },
   { key: "area", heading: "Area or Landmark", group: "Address" },
-  { key: "city", heading: "City or Village", group: "Address" },
-  { key: "state", heading: "State", group: "Address" },
-  { key: "pincode", heading: "PIN Code", group: "Address" },
+  { key: "city", heading: "City or Village", group: "Address", locked: true },
+  { key: "state", heading: "State", group: "Address", locked: true },
+  { key: "pincode", heading: "PIN Code", group: "Address", locked: true },
   { key: "bloodGroup", heading: "Blood Group", group: "More" },
   { key: "aadhaarNumber", heading: "Aadhaar No.", group: "IDs" },
   { key: "samagraId", heading: "Samagra ID", group: "IDs" },
@@ -115,7 +115,7 @@ export const EXPORT_COLUMNS = [
   { key: "feeConcession", heading: "Fee Concession", group: "Fees and transport" },
   { key: "transportRoute", heading: "Transport Route", group: "Fees and transport" },
   { key: "transportStop", heading: "Transport Stop", group: "Fees and transport" },
-  { key: "previousSchool", heading: "Previous School", group: "Previous school" },
+  { key: "previousSchool", heading: "Previous School", group: "Previous school", locked: true },
   { key: "lastClass", heading: "Last Class", group: "Previous school" },
   { key: "tcNumber", heading: "TC No.", group: "Previous school" },
   { key: "tcDate", heading: "TC Date", group: "Previous school" },
@@ -155,11 +155,28 @@ export const isCustomKey = (key: string) => /^c_[a-z0-9]{4,16}$/.test(key);
 /** A new field's key: `c_` and 10 letters and digits (no dots: the server's sanitiser drops dotted keys). */
 export const newCustomKey = () => `c_${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 7)}`.toLowerCase();
 
+/**
+ * Details no school can change (the server's FIXED_RULES): the address is always needed, and so is the previous school's name for a
+ * student of Class 1 to 12 (`effectiveRules`: before Class 1 it is optional).
+ */
+export const FIXED_RULES = {
+  addressLine1: "required",
+  addressCity: "required",
+  addressState: "required",
+  addressPincode: "required",
+  previousSchoolName: "required",
+} as const satisfies Partial<Record<FormFieldKey, FieldMode>>;
+/** Details that are always asked: a school makes them needed or optional, never not asked. */
+export const ALWAYS_ASKED_RULES: readonly FormFieldKey[] = ["category"];
+/** The previous school's boxes: needed (when the school says so) only for a student of Class 1 to 12. */
+export const PREVIOUS_SCHOOL_RULES: readonly FormFieldKey[] = ["previousSchoolName", "previousSchoolLastClass", "previousSchoolTcNumber"];
+
 /** A new school's export, the server's default (also what "Back to the default" puts back). */
 export const DEFAULT_EXPORT_LAYOUT: ExportColumnKey[] = [
   "admissionNumber",
   "studentName",
   "gender",
+  "dateOfBirth",
   "age",
   "category",
   "className",

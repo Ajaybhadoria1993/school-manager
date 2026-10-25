@@ -16,6 +16,8 @@ token-refresh rules. The backend is `../backend`; do not change it from here.
 - **Dropdowns:** only `components/ui/Select.tsx` (HeroUI), never a native `<select>`.
 - **Dialogs and help:** dialogs are `components/ui/AppModal.tsx` (HeroUI Modal, no trigger); first-time help is `components/ui/Hint.tsx`
   (`InfoTip`, `WithTip`, `TipButton`) plus a hint under every form field. "Manage school" pages follow `README.md` > Classes & Sections.
-- No Prettier. Checks: `npm run typecheck && npm run lint && npm run build`.
+- No Prettier. Checks: `npm test && npm run typecheck && npm run lint && npm run build`.
+- **Tests:** Vitest + Testing Library, in a `__tests__` folder next to the code (`README.md` > Tests). A rule in `src/utils` gets a unit
+  test; a fixed bug gets the test that failed first. Page tests stub `fetch`; never call a real server from a test.
 - Dev server is on 5173 and proxies `/api` to `localhost:5000`. The user's own servers use 5000 (API) and 3000 (Next); this
   app defaults to 5173. For tests use other ports (for example API 5001, this app `npx vite --port 5174`) and a throwaway DB.

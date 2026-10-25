@@ -66,14 +66,15 @@ export function IdFields({ form, index = 0 }: { form: StudentForm; index?: numbe
 export function PreviousSchoolFields({ form, index = 0 }: { form: StudentForm; index?: number }) {
   const r = form.rules;
   if (!asks(r, "previousSchoolName")) return null;
-  const firstSchool = !mayLeave(r, "previousSchoolName");
+  // Needed for a student of Class 1 to 12, and not before it (Nursery, LKG, UKG): the class chosen decides.
+  const needed = !mayLeave(r, "previousSchoolName");
   return (
     <FormCard
       index={index}
       icon={School}
       tone="success"
       title="Previous school"
-      description={firstSchool ? "The school the student comes from and the transfer certificate." : "Only when the student comes from another school."}
+      description={needed ? "The school the student comes from, needed from Class 1, and the transfer certificate." : "Only when the student comes from another school (not needed before Class 1)."}
     >
       <div className={FORM_GRID}>
         <RecordBox form={form} rule="previousSchoolName" path="previousSchool.name" label="School name" maxLength={150} />
@@ -85,10 +86,10 @@ export function PreviousSchoolFields({ form, index = 0 }: { form: StudentForm; i
           </Field>
         )}
       </div>
-      {firstSchool && (
+      {needed && (
         <p className="mt-3 flex items-center gap-1.5 text-xs text-foreground-muted">
           <BadgeCheck className="size-3.5 text-success" aria-hidden />
-          Your school needs these. A child's first school? Turn Mandatory off for them on Students &gt; Export.
+          A student of Class 1 to 12 always has a previous school. Nursery, LKG and UKG do not need one.
         </p>
       )}
     </FormCard>

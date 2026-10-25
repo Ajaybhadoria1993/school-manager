@@ -6,9 +6,10 @@ import { Card } from "../ui/Card";
 
 /**
  * A full-width card that says why the list is empty and what to do next (no academic year yet, no classes yet, no students yet, or
- * nobody matches the search), with the next step as a button or link (`children`).
+ * nobody matches the search): a few lines of explanation (`children`, none when the title says it all) and the next step as buttons or
+ * links (`actions`).
  */
-export function StudentsNotice({ icon: Icon, tone, title, children, actions }: { icon: LucideIcon; tone: Tone; title: string; children: ReactNode; actions?: ReactNode }) {
+export function StudentsNotice({ icon: Icon, tone, title, children, actions }: { icon: LucideIcon; tone: Tone; title: string; children?: ReactNode; actions?: ReactNode }) {
   return (
     <Card className="fade-in relative overflow-hidden px-6 py-10 text-center sm:py-12">
       <div aria-hidden className={cn("absolute -right-16 -top-16 size-56 rounded-full bg-gradient-to-br to-transparent blur-3xl", TONES[tone].glow)} />
@@ -16,7 +17,7 @@ export function StudentsNotice({ icon: Icon, tone, title, children, actions }: {
         <Icon className="size-7" />
       </span>
       <h2 className="relative mt-4 text-lg font-bold tracking-tight text-foreground">{title}</h2>
-      <div className="relative mx-auto mt-1.5 max-w-xl space-y-1 text-sm text-foreground-muted">{children}</div>
+      {children && <div className="relative mx-auto mt-1.5 max-w-xl space-y-1 text-sm text-foreground-muted">{children}</div>}
       {actions && <div className="relative mt-5 flex flex-wrap items-center justify-center gap-2.5">{actions}</div>}
     </Card>
   );

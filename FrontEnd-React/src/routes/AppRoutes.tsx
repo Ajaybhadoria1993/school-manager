@@ -49,7 +49,10 @@ const routes: RouteObject[] = [
               { path: "school/students", ...lazyRoute(() => import("../pages/school/Students")) },
               { path: "school/students/new", ...lazyRoute(() => import("../pages/school/StudentAdmit")) },
               { path: "school/students/import", ...lazyRoute(() => import("../pages/school/StudentImport")) },
-              { path: "school/students/export", ...lazyRoute(() => import("../pages/school/StudentExport")) },              { path: "school/students/:id", ...lazyRoute(() => import("../pages/school/StudentDetail")) },
+              { path: "school/students/export", ...lazyRoute(() => import("../pages/school/StudentExport")) },
+              // The school's fields on a page of their own: reachable with no student yet (the Export button needs students).
+              { path: "school/students/fields", ...lazyRoute(() => import("../pages/school/ManageFields")) },
+              { path: "school/students/:id", ...lazyRoute(() => import("../pages/school/StudentDetail")) },
             ],
           },
           {

@@ -4,6 +4,7 @@ import { isIndianMobile } from "../utils/validators";
 import {
   checkStudentForm,
   emptyGuardian,
+  freeRelation,
   getAt,
   mobileDigits,
   setAt,
@@ -13,6 +14,7 @@ import {
 } from "../utils/students";
 import { MAX_GUARDIANS } from "../constants/students";
 import type { CustomFieldDef, FieldRules } from "../constants/studentFields";
+import { effectiveRules } from "../utils/fieldRules";
 
 /** The id a box gets from its path, so a message, a label and "go to the first mistake" all find it. */
 export const fieldId = (path: string) => `student-${path.replace(/\./g, "-")}`;
@@ -46,6 +48,8 @@ export function useStudentForm(
     lookup?: (mobile: string) => Promise<GuardianMatch | null>;
     /** What this school needs (its settings); a needed box left empty has its message. */
     rules?: FieldRules;
+    /** The name of a class, from its id: the previous school is needed only for a student of Class 1 to 12 (the class chosen decides). */
+    classNameOf?: (classId: string) => string | undefined;
     /** The school's own fields (its settings): asked as the school wants each, checked for its kind. */
     custom?: CustomFieldDef[];
   }
@@ -59,7 +63,9 @@ export function useStudentForm(
   const latest = useRef(values);
   latest.current = values;
 
-  const { classHasSections, lookup, mode, rules, custom } = options;
+  const { classHasSections, lookup, mode, rules: schoolRules, classNameOf, custom } = options;
+  // What the school needs of THIS admission: its rules with the address always needed and the previous school needed by the class chosen.
+  const rules = useMemo(() => (schoolRules ? effectiveRules(schoolRules, classNameOf?.(values.classId)) : undefined), [schoolRules, classNameOf, values.classId]);
   const problems = useMemo(
     () =>
       checkStudentForm(values, {
@@ -169,7 +175,9 @@ export function useStudentForm(
   );
 
   const addGuardian = useCallback(() => {
-    setValues((v) => (v.guardians.length >= MAX_GUARDIANS ? v : { ...v, guardians: [...v.guardians, emptyGuardian(false, v.guardians.some((g) => g.relation === "Mother") ? "" : "Mother")] }));
+    // The one added starts as the father or the mother, whichever the child does not have yet, then as a Guardian (a child has one father
+    // and one mother).
+    setValues((v) => (v.guardians.length >= MAX_GUARDIANS ? v : { ...v, guardians: [...v.guardians, emptyGuardian(false, freeRelation(v.guardians))] }));
   }, []);
 
   const removeGuardian = useCallback((index: number) => {
@@ -241,20 +249,33 @@ export function useStudentForm(
     [values, set, touch, revert, errorOf]
   );
 
+  /** In the order of the page: the first of these boxes that is on screen gets the focus (a box of a step not shown is not there). */
+  const focusFirst = useCallback((paths: string[]) => {
+    requestAnimationFrame(() => {
+      const boxes = paths.map((path) => document.getElementById(fieldId(path))).filter((el): el is HTMLElement => !!el);
+      boxes.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+      boxes[0]?.focus();
+      boxes[0]?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  }, []);
+
   /** The one Admit / Save: true when every box is right; otherwise every message shows and the first wrong box gets the focus. */
   const check = useCallback((): boolean => {
     setAttempted(true);
     const wrong = Object.keys(problems);
     if (wrong.length === 0) return true;
-    // In the order of the page: the first box on screen that has a message.
-    requestAnimationFrame(() => {
-      const boxes = wrong.map((path) => document.getElementById(fieldId(path))).filter((el): el is HTMLElement => !!el);
-      boxes.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
-      boxes[0]?.focus();
-      boxes[0]?.scrollIntoView({ block: "center", behavior: "smooth" });
-    });
+    focusFirst(wrong);
     return false;
-  }, [problems]);
+  }, [problems, focusFirst]);
+
+  /** Shows the messages of these boxes (a step of the admission is checked on its own) and puts the focus on the first. */
+  const reveal = useCallback(
+    (paths: string[]) => {
+      setTouched((t) => ({ ...t, ...Object.fromEntries(paths.map((path) => [path, true as const])) }));
+      focusFirst(paths);
+    },
+    [focusFirst]
+  );
 
   /** The server's answer, under the same boxes ([{ path, message }]). */
   const showServerErrors = useCallback((details: unknown) => {
@@ -310,6 +331,8 @@ export function useStudentForm(
     makePrimary,
     showMatch,
     check,
+    reveal,
+    focusFirst,
     showServerErrors,
     setServerErrors,
     rebase,

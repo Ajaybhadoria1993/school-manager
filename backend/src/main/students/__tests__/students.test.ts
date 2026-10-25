@@ -59,6 +59,8 @@ const admission = (classId: string, sectionId: string | null, over: Body = {}): 
   dateOfBirth: "2016-05-14",
   admissionDate: "2026-06-01",
   address: { line1: "12 MG Road", city: "Bhopal", state: "Madhya Pradesh", pincode: "462001" },
+  // Needed from Class 1 to 12 (an admission into Nursery may leave it out).
+  previousSchool: { name: "Little Flower School" },
   classId,
   sectionId,
   guardians: [{ name: "Ravi Verma", relation: "Father", isPrimary: true, mobile: "9876543210" }],
@@ -135,7 +137,7 @@ describe("admitting a student", () => {
       status: "active",
       bloodGroup: "B+",
       category: "OBC",
-      previousSchool: null,
+      previousSchool: { name: "Little Flower School", lastClass: null, tcNumber: null, tcDate: null },
       address: { line1: "12 MG Road", line2: null, city: "Bhopal", state: "Madhya Pradesh", pincode: "462001" },
       place: { className: "Class 5", sectionName: "A", sectionId: s.a, rollNumber: 7 },
       guardians: [
@@ -172,15 +174,18 @@ describe("admitting a student", () => {
     );
     expect(res.body.data.previousSchool).toEqual({ name: "Little Flower School", lastClass: "Class 4", tcNumber: "TC/12", tcDate: "2026-03-30" });
 
+    // A child of Nursery has no previous school to give (it is needed from Class 1): nothing is kept.
+    const nursery = await addClass(s.token, "Nursery");
     const empty = await post(
       s.token,
       "",
-      admission(s.class5.id, s.a, {
+      admission(nursery.id, null, {
         firstName: "Bina",
         previousSchool: { name: "", lastClass: "" },
         guardians: [{ name: "Anil Rao", relation: "Father", isPrimary: true, mobile: "9111111111" }],
       })
     );
+    expect(empty.status, JSON.stringify(empty.body)).toBe(201);
     expect(empty.body.data.previousSchool).toBeNull();
   });
 
@@ -262,6 +267,50 @@ describe("admitting a student", () => {
     expect(await Student.countDocuments({ tenantId: s.tenantId })).toBe(0);
     expect(await Guardian.countDocuments({ tenantId: s.tenantId })).toBe(0);
     expect(await AdmissionCounter.countDocuments({ tenantId: s.tenantId })).toBe(0);
+  });
+
+  it("gives a child one father and one mother at most; a second Father or Mother is refused, any number of Guardians and Others is fine", async () => {
+    const s = await ready();
+    const person = (name: string, relation: string, mobile: string, isPrimary = false) => ({ name, relation, isPrimary, mobile });
+
+    const twoFathers = await post(s.token, "", admission(s.class5.id, s.a, { guardians: [person("Ravi Verma", "Father", "9876543210", true), person("Mohan Verma", "Father", "9876543211")] }));
+    expect(twoFathers.status).toBe(400);
+    expect(details(twoFathers)).toEqual([{ path: "guardians.1.relation", message: "A child has only one father: choose Guardian or Other for this one" }]);
+
+    // The second one is named wherever it stands, and each of two mothers gets its own message.
+    const twoMothers = await post(
+      s.token,
+      "",
+      admission(s.class5.id, s.a, { guardians: [person("Sita Verma", "Mother", "9876543210", true), person("Ravi Verma", "Father", "9876543211"), person("Gita Verma", "Mother", "9876543212")] })
+    );
+    expect(details(twoMothers)).toEqual([{ path: "guardians.2.relation", message: "A child has only one mother: choose Guardian or Other for this one" }]);
+
+    const both = await post(
+      s.token,
+      "",
+      admission(s.class5.id, s.a, {
+        guardians: [
+          person("Ravi Verma", "Father", "9876543210", true),
+          person("Mohan Verma", "Father", "9876543211"),
+          person("Sita Verma", "Mother", "9876543212"),
+          person("Gita Verma", "Mother", "9876543213"),
+        ],
+      })
+    );
+    expect(details(both).map((d) => d.path)).toEqual(["guardians.1.relation", "guardians.3.relation"]);
+    expect(await Student.countDocuments({ tenantId: s.tenantId })).toBe(0);
+    expect(await Guardian.countDocuments({ tenantId: s.tenantId })).toBe(0);
+
+    // A real family: the father, the mother, an uncle as the guardian and a neighbour; nothing is refused.
+    const family = await post(
+      s.token,
+      "",
+      admission(s.class5.id, s.a, {
+        guardians: [person("Ravi Verma", "Father", "9876543210", true), person("Sita Verma", "Mother", "9876543212"), person("Mohan Verma", "Guardian", "9876543211"), person("Anil Rao", "Other", "9876543214")],
+      })
+    );
+    expect(family.status, JSON.stringify(family.body)).toBe(201);
+    expect(family.body.data.guardians.map((g: { relation: string }) => g.relation).sort()).toEqual(["Father", "Guardian", "Mother", "Other"]);
   });
 
   it("gives five admissions at the same moment five different, consecutive admission numbers", async () => {
@@ -718,7 +767,12 @@ describe("changing a student", () => {
 
     const address = await patch(s.token, `/${asha.id}`, { address: { line1: "4 Lake View", line2: "Near the park", city: "Indore", state: "Madhya Pradesh", pincode: "452001" } });
     expect(address.body.data.address).toEqual({ line1: "4 Lake View", line2: "Near the park", city: "Indore", state: "Madhya Pradesh", pincode: "452001" });
-    expect((await patch(s.token, `/${asha.id}`, { previousSchool: null })).body.data.previousSchool).toBeNull();
+    // A student of Class 1 to 12 keeps the previous school (it is needed there); a child of Nursery may have none.
+    const cleared = await patch(s.token, `/${asha.id}`, { previousSchool: null });
+    expect(details(cleared)).toEqual([{ path: "previousSchool.name", message: "Enter the previous school's name" }]);
+    const nursery = await addClass(s.token, "Nursery");
+    const little = (await post(s.token, "", admission(nursery.id, null, { firstName: "Bina", previousSchool: { name: "Play School" }, guardians: [{ name: "Anil Rao", relation: "Father", isPrimary: true, mobile: "9111111111" }] }))).body.data;
+    expect((await patch(s.token, `/${little.id}`, { previousSchool: null })).body.data.previousSchool).toBeNull();
     expect((await patch(s.token, `/${asha.id}`, {})).status).toBe(400);
   });
 

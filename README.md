@@ -67,31 +67,36 @@ Multi-tenant School ERP, built step by step from the specs in [`docs/`](docs/) (
 
 **Manage school: Students** (school admin and principal admit; the accountant can read through the API)
 
-- **Manage school → Students** (`/school/students`): a plain header (the title, **Guide**, **Export**, **Bulk upload**, **Add student**), tiles (students, classes
+- **Manage school → Students** (`/school/students`): a plain header (the title, **Guide**, **Export**, **Bulk upload**, **Add student**: the same buttons with or without students; a new school sees one plain card, *Add your first student* and *Check your classes and sections*), tiles (students, classes
   with students, seats left, full sections) and this academic year's students as a **table** or as colourful **cards** (the List / Grid
   switch). One row of filters: a small search by name or admission number (sent to the server once you stop typing), the class (a dropdown
   with each class's student count and arrows to step to the class before or after) and the section of that class. Numbered
   pages with rows per page. Everything is done by the server (query parameters) and kept in the address.
-- **Admit student** (`/school/students/new`): one page, laid out like a new-patient page: the form as cards on the left, a live preview, a
-  form-completion checklist and tips on the right, and one **Admit** button (with **Clear all**) in a bar pinned to the bottom. The student; the class and a section of the
+- **Add student** (`/school/students/new`): filled in **in steps** like the school's onboarding (Academic, Personal info, Parents and, when
+  the school asks for any of it, More details), laid out like a new-patient page: the form as cards on the left, a live preview, a
+  form-completion checklist and tips on the right, and a bar pinned to the bottom with **Clear all**, **Back**, **Next step** and, on the
+  last step, **Admit**. Next checks only its own step. The class and a section of the
   **current academic year** (each section chip says how many seats are left; a full one asks before it is picked); the parents, starting
   with the **mobile number** (when 10 digits are typed the school's parents are searched once: a parent who already has a child here is
   shown with their children and **linked**, as is or with updated details, never typed twice); the address; the IDs (Aadhaar, checked
-  by its check digit and once per school; Samagra, APAAR, PEN, SR number); the previous school and TC; and more details (religion,
+  by its check digit and once per school; Samagra, APAAR, PEN, SR number); the previous school and TC (needed for Class 1 to 12, optional
+  for Nursery, LKG and UKG); and more details (religion,
   nationality, emergency / WhatsApp number, disability, medical notes, RTE / BPL, fee concession, transport). The **admission number**
-  (`ADM-2026-0001`) is made by the server. Every message shows under
+  (`ADM-2026-0001`) is made by the server. Every school keeps the same core details on this form and as columns of its Excel: name, gender,
+  date of birth, age, category, class and section, both parents, and the address (always needed on this form; an upload is flexible, below). Every message shows under
   its box before anything is sent, in the server's own words. The same child admitted twice (same name, birthday and parent's number) is
   caught and shown first.
 - **A student's page** (`/school/students/:id`): details, this year's class, parents, brothers and sisters (each a link), the class in every
   year, the address, **Edit** (the same form laid out like the admission page, with the student as saved beside it and one **Save changes** in the pinned bar) and **Admit a sibling** (the parents and the address are filled in).
 - **Bulk upload** (`/school/students/import`): the students a school already has, from Excel or CSV. Upload the **sample template**
   (made with the school's own classes) or the school's own sheet as it is; it opens at once as an **editable table**: each column's
-  detail is recognised by its title and can be changed in its heading, every cell can be corrected, a missing column (State...) is added
-  for every row, a class name that is not the school's is changed in every row at once, a row can be left out, and red cells show what
+  detail is recognised by its title and can be changed in its heading, every cell can be corrected, a missing column the person wants (State...) is added
+  from the "+" with one value for every row, a class name that is not the school's is changed in every row at once, a row can be left out, and red cells show what
   to fix with the admission form's own rules. **Upload** then admits the ready rows, each into the class and section of their row
   ("V", "5th", "5-A" are understood); rows the server refuses stay in the table with the reason. The school's own admission numbers
   are kept, a parent already in the school is linked, and nothing is admitted twice.
-  What the school's form needs besides the basics never stops a row: the row says what it lacks. A file the school exported comes
+  **An upload is flexible** (an old register seldom has the address, the previous school or the IDs): only the name, gender, date of birth, class
+  (and section) and a parent's mobile number are needed; what the school's form needs besides never stops a row. A file the school exported comes
   back as it is (its own headings are recognised). No Excel file to upload? Paste a copied table, or type the students in an empty table.
 - **Export** (`/school/students/export`): the school's fields and its Excel on one page. Every field has an **On** switch (on: asked on
   Add student and a column of the Excel; off: neither, and the row stays where it is), a **Mandatory** switch (Add student is not
@@ -174,6 +179,7 @@ Test an invitation on your own mailbox with a plus address, e.g. `you+school1@gm
 ```bash
 cd backend && npm test          # needs the Docker MongoDB running; uses its own school_erp_test database
 cd backend && npm run typecheck
+cd FrontEnd-React && npm test && npm run typecheck && npm run lint && npm run build   # unit, component and page tests (no server needed)
 cd frontend && npm run lint && npx tsc --noEmit && npm run build
 ```
 

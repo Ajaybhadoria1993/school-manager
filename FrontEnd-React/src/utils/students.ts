@@ -101,6 +101,20 @@ export const emptyGuardian = (isPrimary: boolean, relation: Relation | "" = ""):
   manual: false,
 });
 
+/** What a second father or mother is told (the server says the same). */
+export const onlyOne = (relation: "Father" | "Mother") => `A child has only one ${relation.toLowerCase()}: choose Guardian or Other for this one`;
+
+/** The relations the OTHER guardians of the form already have that only one person can have (Father, Mother). */
+export function takenRelations(guardians: readonly GuardianDraft[], except: number): Set<Relation> {
+  return new Set(guardians.flatMap((g, i) => (i !== except && (g.relation === "Father" || g.relation === "Mother") ? [g.relation] : [])));
+}
+
+/** The relation a guardian added next starts with: the father, then the mother, whichever is not there yet, then Guardian. */
+export function freeRelation(guardians: readonly GuardianDraft[]): Relation {
+  const taken = takenRelations(guardians, -1);
+  return !taken.has("Father") ? "Father" : !taken.has("Mother") ? "Mother" : "Guardian";
+}
+
 /** "2026-10-22": today in India, the day the server checks against too. */
 export function todayInIndia(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -330,8 +344,14 @@ export function checkStudentForm(
   const primaries = v.guardians.filter((g) => g.isPrimary).length;
   if (primaries !== 1) put("guardians", MESSAGES.onePrimary);
   const mobiles = new Set<string>();
+  // A child has one father and one mother (an admission only: a saved student's page does not refuse what an older record has).
+  const parentsSeen = new Set<string>();
   v.guardians.forEach((g, i) => {
     const at = (field: string) => `guardians.${i}.${field}`;
+    if (!options.saved && (g.relation === "Father" || g.relation === "Mother")) {
+      if (parentsSeen.has(g.relation)) put(at("relation"), onlyOne(g.relation));
+      parentsSeen.add(g.relation);
+    }
     if (g.mobile) {
       if (!isIndianMobile(g.mobile)) put(at("mobile"), MESSAGES.mobile);
       else if (mobiles.has(g.mobile)) put(at("mobile"), MESSAGES.sameMobile);

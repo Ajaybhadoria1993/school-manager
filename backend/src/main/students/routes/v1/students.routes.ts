@@ -82,10 +82,10 @@ router.post("/import", writers, validate(importStudentsSchema), importStudents);
 router.post("/guardians/lookup", writers, validate(lookupGuardianSchema), lookupGuardian);
 router.patch("/guardians/:id", writers, validate(idParamSchema, "params"), guardianExists, validateForSchool(updateGuardianSchemaFor), updateGuardian);
 
-// An admission and a change are held to what this school needs (its settings).
-router.post("/", writers, validateForSchool(admitSchemaFor), admitStudent);
+// An admission and a change are held to what this school needs (its settings); the previous school by the class (Class 1 to 12 only).
+router.post("/", writers, validateForSchool(admitSchemaFor, "body"), admitStudent);
 router.get("/:id", readers, validate(idParamSchema, "params"), getStudent);
-router.patch("/:id", writers, validate(idParamSchema, "params"), studentExists, validateForSchool(updateSchemaFor), updateStudent);
+router.patch("/:id", writers, validate(idParamSchema, "params"), studentExists, validateForSchool(updateSchemaFor, "student"), updateStudent);
 router.patch("/:id/enrolment", writers, validate(idParamSchema, "params"), studentExists, validate(moveStudentSchema), moveStudent);
 
 export default router;

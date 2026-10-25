@@ -22,6 +22,8 @@ interface FieldProps {
   disabled?: boolean;
   name?: string;
   className?: string;
+  /** Classes for the box itself, merged over its own (a smaller box in a table heading, a coloured one). */
+  triggerClassName?: string;
   /** Only when there is no visible label to point at. */
   "aria-label"?: string;
 }
@@ -76,6 +78,7 @@ function SelectField({
   disabled,
   name,
   className,
+  triggerClassName,
   "aria-label": ariaLabel,
   multiple,
   value,
@@ -129,7 +132,8 @@ function SelectField({
           style === "filled"
             ? "aria-expanded:border-primary aria-expanded:bg-surface aria-expanded:ring-4 aria-expanded:ring-primary/15"
             : "aria-expanded:border-primary aria-expanded:ring-4 aria-expanded:ring-primary/15",
-          Icon && "pl-11"
+          Icon && "pl-11",
+          triggerClassName
         )}
       >
         {Icon && <Icon className={iconClass} aria-hidden />}

@@ -35,6 +35,31 @@ open this app. The backend reads `.env` when it starts: restart it after changin
 | `npm run build` | type-check (`tsc -b`) and build to `dist/` |
 | `npm run preview` | serve the production build (also proxies `/api`) |
 | `npm run typecheck` / `npm run lint` | checks |
+| `npm test` / `npm run test:watch` | the tests (Vitest, once / while editing) |
+
+### Tests
+
+Vitest with jsdom and Testing Library (`vitest.config.ts`, `src/test/setup.ts`); a test sits in a `__tests__` folder next to what it
+tests. No server and no database: the backend's own tests (`backend/`, `npm test`) cover the API against a real MongoDB.
+
+- **Unit** (`src/utils/__tests__`): the pure helpers, where the rules live. `studentImport.test.ts` reads values as people write them
+  (days, genders, mobiles, states, blood groups...), matches classes ("V", "5th Std", "5-A", "KG 1"), recognises columns (the school's
+  export headings and own fields first), adds the columns a file lacks, prepares a row (every problem in its own cell, the school's own
+  fields by kind, the needs that never stop a row), finds repeats in a file, names the server's problems by column, and makes the CSV.
+  `exportLayout.test.ts`: the Export page's list (On / Off in place, Mandatory, ↑ ↓, drag, own fields, headings, the default layout).
+- **Component** (`components/students/import/__tests__`): `PreviewGrid` fed by the real `prepareRow` (red boxes and their message,
+  Status labels that move the focus, Enter / Escape, suggestions, the heading's dropdown, the "+"), and the panels (the "+" panel, the
+  same-change offer, the tabs). `components/students/export/__tests__`: the fields list (collapsible or not, what Mandatory says for a
+  field that is off, the note under the name fields). `components/students/form/__tests__`: the parents card (one father and one mother, the relations greyed out, the one added next).
+- **Page** (`pages/school/__tests__`): whole pages with the real store and router, every request answered by a pretend API (`src/test/fakeApi.ts`,
+  `fetch` stubbed; the school's fixtures are in `src/test/fixtures.ts`). `StudentImport`: a file opened as just the table, fixes in
+  place, Need a fix, a new field made from the "+" (one PUT) and sent with the rows, a change made while uploading kept. `Students`: the
+  empty page (the card offers only Add your first student and Check your classes and sections; the header is the same four buttons as with students, Export included). `ManageFields`: the page (list open, only the
+  settings read, Save sends only what changed, Back goes where the person came from and asks before throwing changes away, a refused
+  save, the default). `StudentAdmit`: Manage fields from the form (it asks before clearing what was typed; the form follows what was
+  saved). `StudentExport`: Save, Export, headings, the default. `VITE_API_BASE_URL` is a whole address in tests.
+
+The browser journeys (real Chrome against a throwaway backend, `docs/students.md` > Tests) are run by hand and are not in the repository.
 
 ### Environment
 
@@ -519,8 +544,9 @@ Showing 1 to 12 of 20 students                                        Rows per p
 ```
 
 - **The header** is only the title (with a **?** that says what the page shows), a line naming the year, and the buttons: **Guide**,
-  **Export** (once there are students: a link to the Export page, the school's fields and Excel, carrying the filters as
-  `?q=&class=&section=`), **Bulk upload** and **Add student**. No banner.
+  **Export** (always, with or without students: a link to the Export page, the school's fields and Excel, carrying the filters as
+  `?q=&class=&section=`; with nobody admitted it is where a new school chooses its fields, and its file button is dimmed), **Bulk
+  upload** and **Add student**. No banner.
 - **The guide** (`StudentsGuide.tsx`) is open for a school with no students yet and out of the way after that; the X closes it, **Guide**
   brings it back (remembered on this device). The controls and the cards have a tooltip where a first-time user may wonder.
 - **The tiles** come from `GET /students/capacity`: students this year, classes that have students, seats left in the sections that
@@ -548,29 +574,43 @@ Showing 1 to 12 of 20 students                                        Rows per p
   previous / next (`1 ... 4 5 6 ... 20` when there are many). A page number asks the server for that page.
 - **Empty states** (`StudentsNotice.tsx`) say what to do next: a school with no current academic year is sent to the dashboard (and has
   no Admit button: the server would refuse); a school with no classes is sent to Classes & Sections; a school with classes but no student
-  gets *Admit your first student*; a search that finds nobody offers **Clear**.
+  gets one plain card (*No students yet*, then only **Add your first student** and **Check your classes and sections**: no paragraphs,
+  no other buttons; the header is the same four buttons as with students, so the sample Excel is in Bulk upload and the fields are on
+  Export); a search that finds nobody offers **Clear**.
 
 ## Admitting a student (`pages/school/StudentAdmit.tsx`)
 
-Laid out like a new-patient page of a clinic app (the Infinity Medisetu one):
+Laid out like a new-patient page of a clinic app (the Infinity Medisetu one), and filled in **in steps** like the school's onboarding
+(`components/ui/Steps.tsx`: numbered circles, a tick on each step done, a line between them; below a laptop width "Step 2 of 4" and a bar):
 
 ```
 Add student  Academic year 2026-2027
 (<-) Students > Add student
-+-- Student ------------------------------------+   +-- (o) New student ------------+
-|  First name   Last name   Gender   Date ...    |   |  Fill the form to see a live  |
-+-- Class and section --------------------------+   |  preview here                 |
-+-- Parents and guardians ----------------------+   +-- Form completion        33% -+
-+-- Address ------------------------------------+   |  (v) Name  ( ) Gender  ...    |
-+-- More details (folded) ----------------------+   +-- Quick tips -----------------+
-[ Clear all ]                              [ Admit student ]     <- pinned to the bottom of the screen
+(1) Academic ----- (2) Personal info ----- (3) Parents ----- (4) More details
++-- Class and section --------------------------+   +-- (o) New student ------------+
+|  Class chips, section cards, roll number       |   |  Fill the form to see a live  |
++-- Admission (when asked) ---------------------+   |  preview here                 |
++-- Previous school ----------------------------+   +-- Form completion        33% -+
+                                                    |  (v) Name  ( ) Gender  ...    |
+                                                    +-- Quick tips -----------------+
+[ Clear all ]                 [ Back ] [ Next step ]     <- pinned to the bottom of the screen; Admit student on the last step
 ```
+
+- **The steps** (`utils/admitSteps.ts`): **Academic** (Class and section, the Admission card with the date when the school asks it, the
+  Previous school), **Personal info** (the Student card, Address, IDs and records), **Parents** (Parents and guardians) and **More
+  details** (More details, the school's own fields): the last one only when the school asks anything of it, so a school that asks nothing
+  of health, fees or the bus has three steps and *Admit student* is on Parents. `stepKeyOfPath` says which step a box belongs to (by the
+  path its message is shown under); `problemPathsOf` and `firstStepWithProblems` use it. **Next step** (also Enter in a box) checks only
+  the boxes of its own step: `form.reveal(paths)` shows their messages and puts the focus on the first; when they are right the step is
+  marked done and the next opens. Nothing is sent before the last step. **Admit student** checks everything (`form.check()`) and, when a
+  box of an earlier step is wrong, opens that step and focuses the box (`focusFirst`); a refusal of the server opens the step of its
+  first box the same way. The values live in `useStudentForm`, so going back (Back, or a step on the stepper that was visited) loses
+  nothing. Clear all goes back to the first step. A new step starts at the top of the page. The student's **Edit** page is still one page.
 
 - **The header** (`StudentFormHeader.tsx`) is plain, like a new-patient page: the title with the academic year beside it (or "A brother
   or sister of Asha Verma"), then the round Back arrow and *Students > Add student*. No banner. The same header heads a student's page
   (*Students > Asha Verma*), its edit form (*Students > Asha Verma > Edit*) and the bulk upload.
-- **Left: the form**, one card per block: **Student**, **Class and section**, **Parents and guardians**, **Address**, **More details**
-  (folded). The boxes sit in rows of three (`form/formGrid.ts`: as many columns as the card's width allows, one on a phone): *First
+- **Left: the form**, one card per block, a few blocks in each step (above). The boxes sit in rows of three (`form/formGrid.ts`: as many columns as the card's width allows, one on a phone): *First
   name, Last name, Gender* (a dropdown), then *Date of birth, Admission date, Age* (worked out, green when it is 2 to 25); the parent's
   *Mobile number* and *Relation* (a dropdown) side by side; *House and street, Area, City*, then *State, PIN code*.
 - **Right: the sidebar** (`form/AdmitSidebar.tsx`), read-only, drawn from what has been typed:
@@ -606,8 +646,29 @@ Add student  Academic year 2026-2027
     **Use as is** (picked: their saved details are not touched) or **Update details** (their boxes open, filled; the changes are saved for
     every child of theirs). The new child is **linked** to the same parent record; or
   - **new to your school**: the name, another number, email and occupation open.
-  The relation (Father, Mother, Guardian, Other) is a chip row; one parent is the **Primary contact** (badge; **Make primary** on the
+  The relation (Father, Mother, Guardian, Other) is a dropdown; one parent is the **Primary contact** (badge; **Make primary** on the
   others); **Add another guardian** adds up to four, and a second parent's number may be unknown (*No mobile number? Enter the details*).
+  **A child has one father and one mother**: the relation a guardian already has (Father, Mother) is greyed out for the others
+  (`takenRelations`), the guardian added next starts as the father or the mother, whichever is missing, then as a Guardian
+  (`freeRelation`), and a second one that gets through is named in its Relation box (`onlyOne`, `checkStudentForm`; an admission only, a
+  saved student's page is not blocked by an older record). The server says the same (`guardians.N.relation`), also for a bulk-upload row
+  (a Guardian written as a second Father is a problem in the *Guardian's relation* cell).
+- **Manage fields** (header link, `components/students/export/ManageFieldsLink.tsx`): goes to the page of the school's fields
+  (`pages/school/ManageFields.tsx`, `/school/students/fields`: the Export page's list, the same component and the same save, without the
+  Excel's preview, so a school with no student can use it). It is a page, not a dialog (the user asked for that): what was typed on Add
+  student would be cleared by leaving, so with something typed the link asks first (*Leave this form?*); Back on the page returns to the
+  form, which starts again and asks what was saved. A school with no student reaches the same list on **Export** (always in the
+  Students header), so the empty Students page has no link of its own.
+- **The details every school keeps** (the user's list: Student Name, Gender, Date of birth, Age, Category, Class and Section, both
+  parents' names and numbers, the address, the previous school) are always on in the Excel and on Add student, and cannot be switched
+  off: `locked` in `EXPORT_COLUMNS` (the switch is disabled, title *Always in the Excel*) and `FIXED_RULES` / `ALWAYS_ASKED_RULES` in
+  `constants/studentFields.ts`, the same as the server's. Every row of the list has **two names**: its heading in the Excel and, under
+  it, *Add student: …* (`FORM_LABELS`, `addStudentLabel` in `utils/exportLayout.ts`; *Student Name* is *First name + Last name* on the
+  form). **The address is always needed; the previous school follows the class**: needed for Class 1 to 12, optional for Nursery, LKG
+  and UKG (`utils/classNumber.ts`, `effectiveRules` in `utils/fieldRules.ts`; `useStudentForm({ classNameOf })` on Add student and
+  Edit, and the Previous school card says which). **The bulk upload is flexible instead** (the user's rule: an old register seldom has
+  them): `prepareRow` holds a row to `LENIENT_FIELD_RULES` only, no address or previous school column is added to a file
+  (`columnsToAdd`), and a detail that is given is still checked. The sample Excel colours only the five basics green.
 - **The address** has a state dropdown (the app's `Select`) and the PIN code keeps digits only. **More details** (folded) is two compact rows: blood
   group and category as dropdowns (*Not known* / *Not given* clear them), and the previous school (name, last class, TC number, TC
   date) as one row of boxes; the columns follow the width (`auto-fill`), so a narrow card makes more rows, not cut-off boxes. All of it
@@ -649,43 +710,52 @@ download, fill and upload), but any sheet opens as an editable table first, beca
 ( 1 Upload file )------------( 2 Preview & fix )------------( 3 Done )
 1  [ drop your file here, or browse ]            | Start from the sample file  [ Download sample template ]
    How it works / Note                           | Already have a students sheet? Upload it as it is.
-2  sunrise-list.xlsx . 12 rows . 7 ready . 5 need a fix                                   [ Choose another file ]
-   Missing in your file: Date of birth (red)          [ Date of birth v ] [ dd-mm-yyyy ] [ + Add column ]
-   Your school also wants: State . 12 rows  Aadhaar number . 12 rows   (amber, once)     Add one for every row
-   One class of the file is not in your school: "Class 9" . 1 row  [ Pick a class v ] [ Change it ]
-   One section would go over its seats: Class 5 - B ...  [ ] Admit them all anyway
-   [ All rows 12 | Need a fix 5 | Ready 7 ]                                [ Rows to fix (CSV) ] [ + Add column ]
-   +-----+-------------------+-------------+------------------+---------+-----
-   | ROW | STATUS            | Adm No      | Student Name     | Class   | ...      (file titles)
-   |     |                   | (v Admis.. v)| (v Student na.. v)| (v Class v)      (what each was read as: a plain list)
-   | 4 🗑| Ready             | 2019/45     | Aarav K. Sharma  | V       |          (every cell editable)
-   | 7 🗑| [Student name]    |             | [Riya] red border | 5th     |
-   +-----+-------------------+-------------+------------------+---------+-----
-                                                       5 rows need a fix and are not uploaded.  [ Upload 7 students ]
+2  sunrise-list.xlsx . 14 rows . 7 ready . 7 need a fix                                   [ Choose another file ]
+   One section would go over its seats: Class 5 - B ...  [ ] Admit them all anyway          (only when it would)
+   [ All rows 14 | Need a fix 7 | Ready 7 ]                                                [ Rows to fix (CSV) ]
+   (1 more row has "Class 9" in Class. Change it to "Class 8" too?  [ Change it ] [ No ])  (after a fix, when others match)
+   +-----+-----------------+-------------+--------------------+---------------------+---------------------+-------------------+
+   | ROW | STATUS          | Adm No      | Student Name       | Class               | Sec                 | [ + Add a column ]|
+   |     |                 | (Admis.. v) | (Student name.. v) | (Class v)           | (Section v)         |  (detail, own     |
+   | 4 🗑| Ready           | 2019/45     | Aarav K. Sharma    | V                   | A                   |   field, or a new |
+   | 9 🗑| [Class]         |             | Meera Joshi        | [Class 9] red       |                     |   field)          |
+   |     |                 |             |                    | Your school has no  |                     |                   |
+   |     |                 |             |                    | "Class 9": type one |                     |                   |
+   | 17🗑| [Section]       |             | Sara Khan          | 6                   | [ ] red: Class 6 has|                   |
+   |     |                 |             |                    |                     | sections A: type one|                   |
+   +-----+-----------------+-------------+--------------------+---------------------+---------------------+-------------------+
+                                                       7 rows need a fix and are not uploaded.  [ Upload 7 students ]
 3  8 students admitted to 2026-2027 . [ Fix the 3 rows ] [ Download them ] [ Upload another file ] [ Go to students ]
 ```
 
 - **Step 1** checks the file's type and size on screen (`.xls` gets "save it as .xlsx"), then `POST /students/import/read` (the server
   reads it; it is not kept). The read is dispatched with `track: false`, so the `FormData` never lands in the store. The sample
   template is `GET /students/import/template`, saved under the server's file name (`downloadSheet` in `studentsApi.ts`).
-- **Step 2** (`PreviewGrid`, `PreviewPanels`) keeps the file in the page's state and changes it there: a cell (`onBlur` / Enter; Escape
-  puts it back), a column's detail (`assignColumn`: one column per detail), a new column (`addColumn`, for a missing detail or from
-  Add column), a class name in every row (`replaceClass`), a row left out. `utils/studentImport.ts` does the rest: `autoMap` (titles to
-  details by `IMPORT_FIELDS[].synonyms`), `missingForImport`, `unmatchedClasses` / `matchClass`, and `prepareRow`, which cleans each
-  value (`normaliseDay`, `normaliseGender`, `normaliseMobile`, `normaliseState`...), builds the admission body and checks it with
-  `checkStudentForm`; a problem carries its label and the `fields` whose cells turn red (`fieldsOf`: `guardians.1.mobile` is the
-  Mother's mobile column). `crossCheck` finds the same student, admission number or roll number twice (rows already admitted from the
-  file included). A row is prepared again only when it changes (a cache per row object, renewed when a column's detail changes), and
-  the table shows 50 rows a page. Nothing is sent while the table is changed.
+- **Step 2** is just the table (`PreviewGrid`; `PreviewPanels` has the tabs, the "+" panel and the same-change offer). The page keeps
+  the file in its state and changes it there: a cell (`onBlur` / Enter; Escape puts it back), a column's detail (`placeColumn`: a
+  detail of the list through `assignColumn`, or one of the school's own fields in `ownColumns`; one column each), a new column
+  (`addColumn`, from the "+", or `addMissing` when a Status label points at a detail with no column), the same change for other rows
+  (`SameValueOffer`), a row left out. Each heading is the shared HeroUI `Select` made small with `triggerClassName` (never a native
+  `<select>`). When a file opens, `columnsToAdd` appends empty columns for what every student needs and the file lacks (the name, gender,
+  date of birth, class, a parent's name and mobile, the section of a class that has sections: never the address or the previous school), and
+  `ownColumnsOf` finds the school's own fields. `utils/studentImport.ts` does the rest: `autoMap` (titles to details by
+  `IMPORT_FIELDS[].synonyms`, the school's export headings first), `matchClass`, and `prepareRow(row, mapping, structure, ownColumns)`,
+  which cleans each value (`normaliseDay`, `normaliseGender`, `normaliseMobile`, `normaliseState`...; an own field by its kind), builds
+  the admission body and checks it with `checkStudentForm` and `LENIENT_FIELD_RULES` (the school's needs never stop a row); a problem
+  carries its label and the `fields` whose boxes turn red with the message under them (`fieldsOf`: `guardians.1.mobile` is the
+  Mother's mobile column; `sectionId` is the Section column; `custom.c_...` is the own field's column). `crossCheck` finds the same
+  student, admission number or roll number twice (rows already admitted from the file included). A row is prepared again only when it
+  changes (a cache per row object, renewed when a column's detail changes), and the table shows 50 rows a page. **Need a fix** keeps
+  the rows it opened with (`fixing`), so a row being fixed does not vanish. Nothing is sent while the table is changed, except a new
+  field of the school's own made from the "+" (`CustomFieldDialog`, then one `PUT /students/settings` with the field and its export
+  column).
 - **Step 3**: **Upload** sends the ready rows, 100 a request; then `refreshAfterImport()` marks the list, the seats and the cached student
   pages stale once. Admitted rows leave the table; refused ones stay with the server's reason until they are changed (a `SECTION_FULL`
   one is ready again when Admit them all anyway is ticked). The rows to fix are a CSV made in the browser (`problemsCsv`: the file's
   columns plus *Problem*). Closing the tab while uploading asks first; **Back** asks while rows are in the table.
-- The school's needs (`GET /students/settings`, read once) only add warnings: `prepareRow(row, mapping, structure, rules)` checks a row
-  with `LENIENT_FIELD_RULES` (what stops it) and again with the school's rules (what it lacks: *Not in the file, but your school needs
-  it: ...*; the server's copy of that warning is left out). `autoMap(headers, exportColumns)` tries the school's export headings first,
-  so its own exported file maps itself. `typedTableFields(rules)` gives the typed table the usual columns plus every detail the school
-  needs.
+- The school's settings (`GET /students/settings`, read once) give the export headings and own fields a file is read with, and the
+  typed table's columns (`typedTableFields(rules)`: the usual ones plus every detail the school needs, then its own fields). Its needs
+  are not checked here (the server's *Not in the file, but your school needs it* warning is left out of the screen).
 
 ## Export: the school's fields and its Excel (`pages/school/StudentExport.tsx`, `/school/students/export`)
 
@@ -744,17 +814,25 @@ app's toasts show at the top centre, clear of the bars pinned to the bottom of t
 ## Where things live
 
 ```
-pages/school/Students.tsx             the list: plain header, guide, tiles, filter row, table or cards, pages, empty states
+pages/school/Students.tsx             the list: plain header, guide, tiles, filter row, table or cards, pages, empty states (a school with no
+                                      students yet: Add your first student, Check your classes and sections; the header is the usual one)
 pages/school/StudentImport.tsx        the bulk upload: upload, the editable preview, the upload in parts of 100 rows, the result
 pages/school/StudentExport.tsx        the school's fields and Excel on one page: On / Mandatory / place / heading, preview, Save, Export
-components/students/export/           ExportFieldsCard (the fields, an accordion), CustomFieldDialog (a field of its own), ExportPreviewCard
+pages/school/ManageFields.tsx         the school's fields on a page of their own (no Excel preview): Save, Back, Back to the default
+components/students/export/           ExportFieldsCard (the fields, an accordion; always open on Manage fields), ManageFieldsLink (the way to
+                                      that page from Add student), CustomFieldDialog (a field of
+                                      its own), ExportPreviewCard
+hooks/useFieldsEditor.ts              the school's fields: what is saved, the draft, the headings' problems and the one save (Export page and dialog)
+hooks/useSampleDownload.ts            the sample Excel of the bulk upload (the first step of Bulk upload)
 utils/exportLayout.ts                 column letters, heading checks, moving, the default layout, what an upload would lack
 utils/fieldRules.ts                   asks / mayLeave: how a box follows the school's rules
 constants/studentFields.ts            the details a school decides about, the export's columns, the defaults (mirror of the server's)
-components/students/import/           ImportStepper, UploadStep, PreviewGrid (the editable table), PreviewPanels (missing columns,
-                                      Add column, class names, tabs), ImportPanels (file bar, seats, progress, done), ImportRowsTable
+components/students/import/           ImportStepper, UploadStep, PreviewGrid (the editable table, its "+" column), PreviewPanels (tabs,
+                                      the "+" panel, the same-change offer), ImportPanels (file bar, seats, progress, done), ImportRowsTable
 utils/studentImport.ts                matching columns and classes, cleaning values, one row as an admission and its red cells, the CSV
-pages/school/StudentAdmit.tsx         the admission form and its questions (full section, possible duplicate)
+pages/school/StudentAdmit.tsx         the admission form in steps and its questions (full section, possible duplicate)
+utils/admitSteps.ts                   the steps of Add student, which box belongs to which step, the first step with a message
+components/ui/Steps.tsx               the stepper (numbered circles, ticks; "Step 2 of 4" on a phone), the same look as the onboarding's
 pages/school/StudentDetail.tsx        one student: the cards, or the edit form
 components/students/
   StudentsGuide.tsx, StudentsNotice.tsx                      the first-time guide, the "why it is empty" card
@@ -763,6 +841,7 @@ components/students/
   StudentPager.tsx, StudentAvatar.tsx numbered pages and rows per page; the initials badge
   StudentFormHeader.tsx               the plain header of every student page: title (+ a line beside it), the back arrow and breadcrumb, buttons
   form/AdmitSidebar.tsx               the admission page's right column: live preview, form completion, quick tips
+  form/AdmissionCard.tsx, AdmissionDateField.tsx   the admission date (in the Academic step when the school asks it; on the edit page it stays in the Student card)
   form/FormCard.tsx                   one block of the form (coloured mark, title, ?)
   form/StudentFields.tsx, PlacementFields.tsx, GuardiansCard.tsx, GuardianFields.tsx, AddressFields.tsx, RecordsFields.tsx (IDs,
   previous school), MoreFields.tsx, CustomFields.tsx (the school's own fields), ChoiceSelect.tsx (a list box whose first row
@@ -807,9 +886,10 @@ Counted in real Chrome, action by action:
 | Save a name and a parent's occupation | 2 writes (`PATCH /students/guardians/:id`, `PATCH /students/:id`), no read: the page takes the answers |
 | Move to another section | 1 `PATCH /students/:id/enrolment`, no read |
 | Press Bulk upload | none (the layout and the seats are known) |
-| Download sample template | 1 `GET /students/import/template` |
+| Download sample template (Bulk upload, step 1) | 1 `GET /students/import/template`, only when pressed (`hooks/useSampleDownload.ts`) |
 | Upload a file | 1 `POST /students/import/read` (a wrong type or size: none) |
-| Change cells, column details, add a column, change a class name, leave a row out | none |
+| Change cells, column details, add a column, the same change for other rows, leave a row out | none |
+| Make a new field of your own from the "+" | 1 `PUT /students/settings` (the field and its export column) |
 | Rows to fix (CSV) | none (the CSV is made in the browser) |
 | Upload 10 students | 1 `POST /students/import` per 100 rows (only the ready rows), then the seats are read again once (the page shows them) |
 | Go to students (after an import) | 1 `GET /students?...` |
@@ -834,22 +914,28 @@ the same parent; a full section asked about and admitted on yes; the duplicate w
 the server under its box; the server's words equal to the form's; search, class, section, the class arrows and page numbers as
 single requests; no sort control and an old `sort=` ignored; the filter row on one line with a wide search and two equal dropdowns, and nothing in it moving when a class is picked (Clear keeps its place); List / Grid asking for nothing and remembered after a reload; 20 students over two pages with "Showing 13 to 20 of 20";
 opening a student as one read; the edit page (plain header, the student as saved beside the form, a pinned bar, Undo changes and Back asking before they throw typed changes away, no request for any of it); Edit with Escape, Enter and two writes; a move as one write; a phone width where the table, the grid and
-the filter row never scroll sideways; a clean console), 14 for the bulk upload as an editable preview (three steps; a school's own sheet
-with a title row, whole names and no State column opening as a table in one request, each column's detail recognised in its heading;
-the missing State added as a column for every row; "Class 9" changed to Class 8 in every row at once; a name and a mobile corrected in
-their cells, Enter and Escape; a column set to Not uploaded and back; a row left out; no request for any edit; one upload request; the
-two students over the seats of 5-B returned with the reason and admitted on "admit them all anyway"; the repeat of an admitted row
-still marked; own admission numbers, siblings, the corrected values and "B +ve" on the server; the export; a phone width; a clean
-console), 5 for a school without an academic year, 8 for Classes & Sections (dialogs,
+the filter row never scroll sideways; a clean console), 15 for the bulk upload as just the table (three steps; a school's own sheet
+with a title row, whole names and no State column opening as a table in one request, each column's detail recognised in its heading
+(HeroUI, no native dropdown), no panels above it; the red boxes saying under them why (no "Class 9" in the school; Class 6 has
+sections, typed in the Section box; a bad date); State added for every row from the "+"; a new own field "House" made from the "+"
+(one PUT), its column checked against its list; "Need a fix" keeping the rows while they are fixed, a Status label taking the person
+to its box, "Class 9" to Class 8 and the same change offered for the other row; a name and a mobile corrected in their cells, Enter
+and Escape; a column set to Not uploaded and back; a row left out; no other request while editing; one upload request; the two
+students over the seats of 5-B returned with the reason and admitted on "admit them all anyway"; the repeat of an admitted row still
+marked; own admission numbers, siblings, the corrected values, the State, the House and "B +ve" on the server; the export; a phone
+width; a clean console), 5 for a school without an academic year, 8 for Classes & Sections (dialogs,
 workspace, delete guards with real students) and 8 for onboarding and the dashboard.
 
-And 16 for the school's fields and Excel on one page: a new school asking only its default list (Aadhaar and the previous school;
-no Samagra, religion, More details or admission date; the mother's boxes open at once); Admit with only the basics showing what the
-school needs under each box and sending nothing; a wrong Aadhaar refused, a right one typed with spaces taken and the full admission
-as one POST; no Fields button on the list; Export from the filtered list in two reads, 24 on and 23 off, Student Name locked, Gender
-"Always"; Mandatory switched off (the mother's occupation following the father's), four fields off and Religion on at the end, with
-no request and Back asking; Save as one PUT, the server keeping the settings and the columns; Add student following at once (no
-Previous school card, Aadhaar optional, Religion asked); a heading renamed, Class moved to A with ‹, Age off and Date of Birth on with
-the "upload it back" note following; a field dragged by its grip; a heading used twice refused before saving, Escape; Export saving
-first, then the file's headings and order equal to the preview's; that file uploaded back with its own headings recognised and a
-warning for the missing Aadhaar; Back to the default saved; a phone width; a clean console.
+And 18 for the school's fields and Excel on one page: a new school asking only its default list (Aadhaar, the address and the previous
+school; no Samagra, religion, More details or admission date); Admit with only the basics showing what the school needs under each box
+and sending nothing; a wrong Aadhaar refused, a right one typed with spaces taken and the full admission as one POST; no Fields button
+on the list; Export from the filtered list in two reads, 25 on and 22 off, the details every school keeps locked on; Mandatory switched
+off (the mother's occupation following the father's), fields off and Religion on at the end, with no request and Back asking; Save as one
+PUT, the server keeping the settings and the columns; Add student following at once (the school's own House asked, the previous school
+asking only its name, Aadhaar optional, Religion asked); a heading renamed, Class moved to A with ‹, the "upload it back" note following;
+a field dragged by its grip; a heading used twice refused before saving, Escape; Export saving first, then the file's headings and order
+equal to the preview's; that file uploaded back with its own headings recognised; Back to the default saved; a phone width; a clean console.
+
+And 6 for the empty Students page and the sample Excel (the usual header and the plain card; the sample from Bulk upload, the file downloaded, its sheets and headings read, one student
+filled in like a person would with the address and the previous school, uploaded and admitted) and 10 for the Manage fields page (the two
+names of every field, one father and one mother).

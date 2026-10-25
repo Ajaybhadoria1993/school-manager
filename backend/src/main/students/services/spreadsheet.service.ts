@@ -14,8 +14,6 @@ import {
   RELIGIONS,
   STUDENT_SHEET_COLUMNS,
   type ExportColumnKey,
-  type FieldRules,
-  type FormFieldKey,
   type SheetColumnKey,
   type SheetColumnKind,
 } from "../constants";
@@ -62,44 +60,6 @@ const lettersOf = (column: number): string => {
 /** The column letter of a column of the students sheet. */
 const letterOf = (key: SheetColumnKey) => lettersOf(STUDENT_SHEET_COLUMNS.findIndex((c) => c.key === key) + 1);
 
-/** The school's own need behind a column of the sample file (the column is green when the school needs it). */
-const RULE_OF_COLUMN: Partial<Record<SheetColumnKey, FormFieldKey>> = {
-  admissionDate: "admissionDate",
-  category: "category",
-  bloodGroup: "bloodGroup",
-  motherName: "secondParent",
-  fatherOccupation: "guardianOccupation",
-  motherOccupation: "guardianOccupation",
-  address: "addressLine1",
-  area: "addressArea",
-  city: "addressCity",
-  state: "addressState",
-  pincode: "addressPincode",
-  previousSchool: "previousSchoolName",
-  lastClass: "previousSchoolLastClass",
-  tcNumber: "previousSchoolTcNumber",
-  tcDate: "previousSchoolTcDate",
-  aadhaarNumber: "aadhaarNumber",
-  samagraId: "samagraId",
-  apaarId: "apaarId",
-  pen: "pen",
-  srNumber: "srNumber",
-  religion: "religion",
-  nationality: "nationality",
-  emergencyMobile: "emergencyMobile",
-  disability: "disability",
-  medicalNotes: "medicalNotes",
-  feeConcession: "feeConcession",
-  transportRoute: "transportRoute",
-  transportStop: "transportStop",
-};
-const kindOf = (column: (typeof STUDENT_SHEET_COLUMNS)[number], rules: FieldRules): SheetColumnKind => {
-  const rule = RULE_OF_COLUMN[column.key];
-  if (!rule) return column.kind;
-  if (rules[rule] === "required") return "required";
-  return column.kind === "parent" ? "parent" : "optional";
-};
-
 /** Columns whose numbers must keep their digits (a mobile number, a PIN code, an ID): stored as text, never as a number. */
 const TEXT_EXPORT_COLUMNS = new Set<ExportColumnKey>([
   "admissionNumber",
@@ -119,11 +79,15 @@ async function writeBuffer(workbook: ExcelJS.Workbook): Promise<Buffer> {
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-/** The header row of the sample file: bold, coloured by kind (green needed, blue parents, yellow optional), each with its note. */
-function writeHeader(sheet: ExcelJS.Worksheet, rowNumber: number, rules: FieldRules) {
+/**
+ * The header row of the sample file: bold, coloured by kind (green needed, blue parents, yellow optional), each with its note. Only the
+ * five basics are green: a school brings in the students it already has, and an old register seldom holds the rest (the address, the
+ * previous school, the IDs...), so what the school made mandatory on Add student does not make a column green here.
+ */
+function writeHeader(sheet: ExcelJS.Worksheet, rowNumber: number) {
   const row = sheet.getRow(rowNumber);
   STUDENT_SHEET_COLUMNS.forEach((column, i) => {
-    const kind = kindOf(column, rules);
+    const kind = column.kind;
     const cell = row.getCell(i + 1);
     cell.value = kind === "required" ? `${column.header} *` : column.header;
     cell.font = { bold: true };
@@ -138,18 +102,16 @@ function writeHeader(sheet: ExcelJS.Worksheet, rowNumber: number, rules: FieldRu
 export class SpreadsheetService {
   /**
    * The sample file a school fills in to bring its students in at once. The Students sheet has an instruction line, the coloured
-   * column titles with a note on each (green: what this school needs, from its settings), dropdowns (gender, class, state, blood
+   * column titles with a note on each (green: the five basics every student needs), dropdowns (gender, class, state, blood
    * group, category, religion, disability, yes / no) and text cells for numbers that must keep their digits (mobile numbers, PIN codes,
    * IDs, dates as DD-MM-YYYY). The Classes sheet lists this school's classes with this year's sections and the seats left.
    */
   static async template(tenantId: string): Promise<SheetFile> {
-    const [tenant, structure, capacity, settings] = await Promise.all([
+    const [tenant, structure, capacity] = await Promise.all([
       Tenant.findById(tenantId).select("name").lean(),
       StructureService.get(tenantId),
       CapacityService.summary(tenantId),
-      StudentSettingsService.get(tenantId),
     ]);
-    const rules = settings.fields;
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "EduShiksha";
     workbook.created = new Date();
@@ -165,7 +127,7 @@ export class SpreadsheetService {
     instruction.font = { bold: true, color: { argb: "FFFF0000" } };
     instruction.alignment = { vertical: "middle", wrapText: true };
     sheet.getRow(1).height = 32;
-    writeHeader(sheet, 2, rules);
+    writeHeader(sheet, 2);
     sheet.views = [{ state: "frozen", ySplit: 2 }];
 
     // Numbers that are really text (a mobile number, a PIN code, an ID, a day typed as 14-05-2016) are kept as typed.
@@ -247,21 +209,22 @@ export class SpreadsheetService {
     listSheet.getColumn(1).width = 40;
 
     // ---- How to fill ----------------------------------------------------------------------------------------------------
-    const needed = STUDENT_SHEET_COLUMNS.filter((c) => kindOf(c, rules) === "required").map((c) => c.header);
+    const needed = STUDENT_SHEET_COLUMNS.filter((c) => c.kind === "required").map((c) => c.header);
     const help = workbook.addWorksheet("How to fill");
     help.getColumn(1).width = 120;
     [
       "How to fill the Students sheet",
       "",
       "1. One student per row, starting from row 3. Do not change or move row 2 (the column titles).",
-      `2. Green columns are what your school needs: ${needed.join(", ")}.`,
+      `2. Green columns are the only ones every student needs: ${needed.join(", ")}.`,
       "3. Blue columns: at least one parent (Father, Mother or Guardian) with a name and a 10-digit mobile number. The first of them with a mobile number becomes the primary contact.",
       "4. A parent who already has a child in your school is found by the mobile number and linked to the new child: brothers and sisters share one parent record.",
       "5. Dates as DD-MM-YYYY, for example 14-05-2016. The student must be 2 to 25 years old on the admission date (empty Admission Date = today).",
       "6. Class exactly as in the Classes sheet. Section is needed when the class has sections this year; leave it empty when the class has none.",
-      "7. Admission No. is optional: fill it to keep the number your school already gave the student, or leave it empty for the next number (ADM-2026-0001).",
-      `8. Up to ${MAX_IMPORT_ROWS} students per file. Upload it with Bulk upload on the Students page: you see every row checked before anything is saved.`,
-      "9. You can also upload your school's own Excel or CSV file: its columns are recognised by their titles, and you can change any of them on the next screen.",
+      "7. Everything else is optional here: the address, the previous school, the IDs... Fill what your old register has and leave the rest empty. Add student on the Students page asks for more, for a new admission.",
+      "8. Admission No. is optional: fill it to keep the number your school already gave the student, or leave it empty for the next number (ADM-2026-0001).",
+      `9. Up to ${MAX_IMPORT_ROWS} students per file. Upload it with Bulk upload on the Students page: you see every row checked before anything is saved.`,
+      "10. You can also upload your school's own Excel or CSV file: its columns are recognised by their titles, and you can change any of them on the next screen.",
     ].forEach((line, i) => {
       const cell = help.getCell(`A${i + 1}`);
       cell.value = line;

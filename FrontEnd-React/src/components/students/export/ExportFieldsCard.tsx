@@ -4,6 +4,7 @@ import { CUSTOM_FIELD_TYPES, MAX_CUSTOM_FIELDS, MAX_EXPORT_HEADING, type CustomF
 import { cn } from "../../../utils/helpers";
 import {
   addCustom,
+  addStudentLabel,
   columnLetters,
   dragRow,
   editCustom,
@@ -31,12 +32,15 @@ function Toggle({
   checked,
   onChange,
   label,
+  title = label,
   disabled,
   tone = "primary",
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
   label: string;
+  /** What the pointer says; the label by default. */
+  title?: string;
   disabled?: boolean;
   tone?: "primary" | "success";
 }) {
@@ -46,7 +50,7 @@ function Toggle({
       role="switch"
       aria-checked={checked}
       aria-label={label}
-      title={label}
+      title={title}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
@@ -64,10 +68,30 @@ const LINKED: Record<string, string> = {
   secondParent: "Mandatory: the father and the mother are both needed (a name is enough for the one without a mobile number)",
 };
 
+/** A field the software always needs (the name, the birthday, the class, the first parent): Add student asks it whatever the Excel has. */
+function AlwaysAsked({ muted, label = "Always", title }: { muted?: boolean; label?: string; title?: string }) {
+  return (
+    <span
+      className={cn("inline-flex items-center gap-1 text-xs font-bold", muted ? "text-foreground-muted/60" : "text-foreground-muted")}
+      title={title ?? (muted ? "Not in the Excel, but Add student always needs it" : "Always needed: the software depends on it")}
+    >
+      <Lock className="size-3" aria-hidden />
+      {label}
+    </span>
+  );
+}
+
 /** The Mandatory column of a field: a switch when the school decides (and the field is on), else what it always is. */
 function MandatoryCell({ draft, rowKey, on, onRequired }: { draft: FieldsDraft; rowKey: string; on: boolean; onRequired: (required: boolean) => void }) {
   const { heading, need } = infoOf(rowKey, draft.custom);
-  if (!on) return <span className="text-xs text-foreground-muted/60">—</span>;
+  if (need.kind === "fixed") return <AlwaysAsked label={need.label} title={need.title} />;
+  if (!on) {
+    // Off is about the Excel's column. What Add student asks anyway (the name, the birthday, the roll number, the parents' boxes) is
+    // still said, so the list never says "not asked" about a box the form shows.
+    if (need.kind === "always") return <AlwaysAsked muted />;
+    if (need.kind === "optional") return <span className="text-xs font-semibold text-foreground-muted/60" title="Not in the Excel, but Add student always asks it (it can be left empty)">Optional</span>;
+    return <span className="text-xs text-foreground-muted/60">—</span>;
+  }
   const decides = (need.kind === "rule" && !isTick(need.rule)) || (need.kind === "custom" && need.field.type !== "yesNo");
   if (decides) {
     const required = need.kind === "rule" ? draft.rules[need.rule] === "required" : need.kind === "custom" && need.field.mode === "required";
@@ -78,14 +102,7 @@ function MandatoryCell({ draft, rowKey, on, onRequired }: { draft: FieldsDraft; 
       </span>
     );
   }
-  if (need.kind === "always") {
-    return (
-      <span className="inline-flex items-center gap-1 text-xs font-bold text-foreground-muted" title="Always needed: the software depends on it">
-        <Lock className="size-3" aria-hidden />
-        Always
-      </span>
-    );
-  }
+  if (need.kind === "always") return <AlwaysAsked />;
   if (need.kind === "auto") {
     return (
       <span className="text-xs font-bold text-foreground-muted" title="Made by the software">
@@ -119,15 +136,19 @@ export function ExportFieldsCard({
   draft,
   problems,
   onChange,
-  open,
+  open: wanted,
   onOpenChange,
+  collapsible = true,
 }: {
   draft: FieldsDraft;
   problems: Record<string, string>;
   onChange: (draft: FieldsDraft) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** False in the dialog on Add student: the list is always open and has no arrow. */
+  collapsible?: boolean;
 }) {
+  const open = wanted || !collapsible;
   const [armed, setArmed] = useState<string | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
@@ -168,7 +189,11 @@ export function ExportFieldsCard({
     const problem = r.on ? problems[r.key] : undefined;
     const inputId = `export-heading-${r.key}`;
     const renamed = tidyHeading(r.heading) !== info.heading;
-    const sub = own ? `Your own · ${typeLabel(own)}${own.type === "choice" ? ` (${own.options.length})` : ""}` : renamed ? `${info.heading} · ${info.group}` : info.group;
+    // Under the heading (the Excel's name): what Add student calls the field ("not asked" when it is off and the school decides).
+    const formName = addStudentLabel(r.key, r.on, draft.custom);
+    const kind = own ? `${typeLabel(own)}${own.type === "choice" ? ` (${own.options.length})` : ""}` : "";
+    const sub = `Add student: ${formName}${kind ? ` · ${kind}` : ""}`;
+    const subTitle = [sub, own ? "Your own field" : info.group, renamed ? `Usual heading: ${info.heading}` : ""].filter(Boolean).join(" · ");
     return (
       <li
         key={r.key}
@@ -280,11 +305,22 @@ export function ExportFieldsCard({
               {problem}
             </span>
           ) : (
-            editing?.key !== r.key && <span className={cn("block truncate text-[11px]", own ? "font-semibold text-primary-deep" : "text-foreground-muted")}>{sub}</span>
+            editing?.key !== r.key && (
+              <span data-testid="form-name" title={subTitle} className={cn("block truncate text-[11px]", own ? "font-semibold text-primary-deep" : "text-foreground-muted")}>
+                {sub}
+              </span>
+            )
           )}
         </span>
-        <span className="flex justify-center" title={info.locked ? "In every file" : undefined}>
-          <Toggle checked={r.on} onChange={(on) => onChange(switchRow(draft, r.key, on))} label={`${info.heading} on`} disabled={info.locked} tone="success" />
+        <span className="flex justify-center">
+          <Toggle
+            checked={r.on}
+            onChange={(on) => onChange(switchRow(draft, r.key, on))}
+            label={`${info.heading} on`}
+            title={info.locked ? "Always in the Excel" : info.need.kind === "always" || info.need.kind === "optional" ? `${info.heading} on: a column of the Excel (Add student asks it either way)` : undefined}
+            disabled={info.locked}
+            tone="success"
+          />
         </span>
         <span className="col-start-3 sm:col-start-auto">
           <MandatoryCell draft={draft} rowKey={r.key} on={r.on} onRequired={(required) => onChange(setMandatory(draft, r.key, required))} />
@@ -305,7 +341,7 @@ export function ExportFieldsCard({
     <div aria-hidden className={cn(GRID, "hidden px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-foreground-muted sm:grid", className)}>
       <span className="size-4" />
       <span className="min-w-6" />
-      <span>Heading in the Excel</span>
+      <span>Name in the Excel · on Add student</span>
       <span className="text-center">On</span>
       <span>Mandatory</span>
       <span className="text-right">Place</span>
@@ -315,14 +351,14 @@ export function ExportFieldsCard({
   const mandatoryCount = draft.rows.filter((r) => {
     if (!r.on) return false;
     const need = infoOf(r.key, draft.custom).need;
-    return (need.kind === "rule" && draft.rules[need.rule] === "required") || (need.kind === "custom" && need.field.mode === "required") || need.kind === "always";
+    return (need.kind === "rule" && draft.rules[need.rule] === "required") || (need.kind === "custom" && need.field.mode === "required") || need.kind === "always" || need.kind === "fixed";
   }).length;
 
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center gap-3 px-4 py-3 sm:px-5">
         {/* The title opens and closes the fields too (a bigger target than the arrow); the arrow is the control a keyboard uses. */}
-        <div aria-hidden onClick={() => onOpenChange(!open)} className="flex min-w-0 flex-1 cursor-pointer select-none items-center gap-3">
+        <div aria-hidden onClick={() => collapsible && onOpenChange(!open)} className={cn("flex min-w-0 flex-1 select-none items-center gap-3", collapsible && "cursor-pointer")}>
           <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
             <ListChecks className="size-4.5" />
           </span>
@@ -352,20 +388,22 @@ export function ExportFieldsCard({
           <span className="hidden sm:inline">Add your own field</span>
           <span className="sm:hidden">Add field</span>
         </Button>
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls="export-fields"
-          aria-label={open ? "Hide the fields" : "Show the fields"}
-          title={open ? "Hide the fields" : "Show the fields to change them"}
-          onClick={() => onOpenChange(!open)}
-          className={cn(
-            "flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
-            open ? "border-primary/30 bg-primary-soft text-primary-deep" : "border-border bg-surface text-foreground-muted hover:border-primary/30 hover:text-primary-deep"
-          )}
-        >
-          <ChevronDown className={cn("size-5 transition-transform duration-300", open && "rotate-180")} aria-hidden />
-        </button>
+        {collapsible && (
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls="export-fields"
+            aria-label={open ? "Hide the fields" : "Show the fields"}
+            title={open ? "Hide the fields" : "Show the fields to change them"}
+            onClick={() => onOpenChange(!open)}
+            className={cn(
+              "flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
+              open ? "border-primary/30 bg-primary-soft text-primary-deep" : "border-border bg-surface text-foreground-muted hover:border-primary/30 hover:text-primary-deep"
+            )}
+          >
+            <ChevronDown className={cn("size-5 transition-transform duration-300", open && "rotate-180")} aria-hidden />
+          </button>
+        )}
       </div>
 
       {/* Opens and closes smoothly (the rows' height animates); while closed it is out of the way of the keyboard and screen readers. */}
