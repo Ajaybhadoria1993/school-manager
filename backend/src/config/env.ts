@@ -63,9 +63,13 @@ export const env = {
     pass: process.env.SMTP_PASS ?? "",
     from: process.env.SMTP_FROM ?? "",
   },
+  // Brevo's HTTP API, for hosts that block outgoing SMTP ports (Render's free instances do). When set, it is used
+  // instead of SMTP; the sender is SMTP_FROM, which must be a sender verified in Brevo.
+  brevoApiKey: process.env.BREVO_API_KEY ?? "",
 };
 
 export const isSmtpConfigured = Boolean(env.smtp.host && env.smtp.user && env.smtp.pass);
+export const isEmailConfigured = Boolean(env.brevoApiKey) || isSmtpConfigured;
 
 // Refuse to boot in production with the placeholder secrets: a public default
 // would let anyone forge a valid session token.

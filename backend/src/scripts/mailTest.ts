@@ -1,9 +1,9 @@
 /**
- * Sends one test email through the configured SMTP account, to check Gmail works.
+ * Sends one test email through Brevo (when BREVO_API_KEY is set) or the configured SMTP account, to check email works.
  *   npm run mail:test -- someone@example.com
  * Prints only success or the SMTP error: never the password.
  */
-import { env, isSmtpConfigured } from "../config/env";
+import { env, isEmailConfigured } from "../config/env";
 import { sendEmail, verifySmtp } from "../utils/email";
 import { escapeHtml, renderEmailLayout } from "../templates/layout";
 
@@ -14,10 +14,10 @@ async function main() {
     process.exit(1);
   }
 
-  if (!isSmtpConfigured) {
+  if (!isEmailConfigured) {
     console.error(
       [
-        "SMTP is not configured. In backend/.env set:",
+        "Email is not configured. In backend/.env set BREVO_API_KEY (plus SMTP_FROM, a sender verified in Brevo), or:",
         "  SMTP_HOST=smtp.gmail.com",
         "  SMTP_PORT=465",
         "  SMTP_USER=<your gmail address>",
@@ -29,9 +29,13 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Connecting to ${env.smtp.host}:${env.smtp.port} as ${env.smtp.user} ...`);
-  await verifySmtp();
-  console.log("SMTP login OK. Sending test email ...");
+  if (env.brevoApiKey) {
+    console.log("Sending a test email through Brevo ...");
+  } else {
+    console.log(`Connecting to ${env.smtp.host}:${env.smtp.port} as ${env.smtp.user} ...`);
+    await verifySmtp();
+    console.log("SMTP login OK. Sending test email ...");
+  }
 
   await sendEmail({
     to,
