@@ -1,4 +1,4 @@
-import { env, isSmtpConfigured } from "../../../config/env";
+import { env, isEmailConfigured } from "../../../config/env";
 import { ApiError } from "../../../utils/ApiError";
 import { generateToken, hashToken } from "../../../utils/authUtils";
 import { sendEmail } from "../../../utils/email";
@@ -106,7 +106,7 @@ export class InviteService {
     return {
       inviteExpiresAt: expiresAt.toISOString(),
       emailSent,
-      ...(!isSmtpConfigured && !env.isProduction ? { devInviteLink: url } : {}),
+      ...(!isEmailConfigured && !env.isProduction ? { devInviteLink: url } : {}),
     };
   }
 }

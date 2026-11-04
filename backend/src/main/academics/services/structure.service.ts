@@ -26,7 +26,7 @@ export interface Structure {
     departments: number;
     classes: number;
     sections: number;
-    /** The sum of the limits that were set; a section without a limit adds nothing. */
+    /** The seats of all the classes, added up; a class whose seats are not set yet adds nothing. */
     seats: number;
   };
 }
@@ -83,7 +83,7 @@ export class StructureService {
         departments: departments.length,
         classes: classes.length,
         sections: sections.length,
-        seats: sections.reduce((sum, s) => sum + (s.capacity ?? 0), 0),
+        seats: classes.reduce((sum, c) => sum + (c.capacity ?? 0), 0),
       },
     };
   }

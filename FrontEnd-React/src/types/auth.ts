@@ -13,7 +13,9 @@ export type UserRole =
 export interface AuthUser {
   id: string;
   name: string;
-  email: string;
+  /** null for a person who signs in with a username only (a teacher may have no email). */
+  email: string | null;
+  username: string | null;
   role: UserRole;
   tenantId: string | null;
   emailVerifiedAt: string | null;

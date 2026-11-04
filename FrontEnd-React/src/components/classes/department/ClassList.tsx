@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { PAGE_SIZES } from "../../../hooks/useClassFilters";
 import { TONES } from "../../../constants/tones";
-import { classMark, plural, toneOf } from "../../../utils/academics";
+import { classMark, plural, seatsLabel, toneOf } from "../../../utils/academics";
 import { cn } from "../../../utils/helpers";
 import type { AcademicStructure, ClassItem, ClassPage } from "../../../types";
 import { Button } from "../../ui/Button";
@@ -9,13 +9,12 @@ import { Select } from "../../ui/Select";
 import { Skeleton } from "../../ui/Skeleton";
 
 /**
- * One class in the list: its mark in its department's colour, its name, and a line about it (how many sections and seats). Pressing
+ * One class in the list: its mark in its department's colour, its name, and a line about it (how many sections, and the class's seats). Pressing
  * it opens it on the right; the one that is open takes the colour of its department along its left edge. (Every class of this list is in
  * the same department, so the line does not name it.)
  */
 function Row({ item, structure, selected, onSelect }: { item: ClassItem; structure: AcademicStructure; selected: boolean; onSelect: () => void }) {
   const t = TONES[toneOf(structure, item.departmentId)];
-  const seats = item.sections.reduce((sum, s) => sum + (s.capacity ?? 0), 0);
   return (
     <li>
       <button
@@ -38,7 +37,7 @@ function Row({ item, structure, selected, onSelect }: { item: ClassItem; structu
           <span className="block truncate text-sm font-bold text-foreground">{item.name}</span>
           <span className="block truncate text-xs text-foreground-muted">
             {item.sections.length === 0 ? "No sections" : plural(item.sections.length, "section")}
-            {seats > 0 && <> · {seats} seats</>}
+            {item.capacity === null ? <span className="font-semibold text-warning"> · Seats not set</span> : <> · {seatsLabel(item)}</>}
           </span>
         </span>
         <ChevronRight className={cn("size-4 shrink-0 text-foreground-muted/60 transition-transform group-hover:translate-x-0.5", selected && cn("translate-x-0.5", t.text))} aria-hidden />
@@ -48,8 +47,8 @@ function Row({ item, structure, selected, onSelect }: { item: ClassItem; structu
 }
 
 /**
- * The page of classes the server sent, and the controls to move through them: "Showing 1 to 10 of 16", the arrows, and how many
- * to show on a page. The list itself does no filtering: it draws what it is given.
+ * The page of classes the server sent, and, when there is more than a page of them, the controls to move through them: "Showing 1 to
+ * 10 of 16", the arrows, and how many to show on a page. The list itself does no filtering: it draws what it is given.
  */
 export function ClassList({
   page,
@@ -83,6 +82,9 @@ export function ClassList({
 
   const from = page && page.total > 0 ? (page.page - 1) * page.limit + 1 : 0;
   const to = page ? Math.min(page.total, from + page.items.length - 1) : 0;
+  // A short list (one page at the default page size) needs no paging controls: "Showing 1 to 4 of 4" says nothing the list does not.
+  // They stay for a longer list, and for someone who picked another page size (so it can be changed back).
+  const paged = (page?.totalPages ?? 1) > 1 || (page?.total ?? 0) > PAGE_SIZES[0] || limit !== PAGE_SIZES[0];
 
   return (
     <div>
@@ -96,31 +98,33 @@ export function ClassList({
         </ul>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3 text-xs text-foreground-muted">
-        <span aria-live="polite">{page && page.total > 0 ? `Showing ${from} to ${to} of ${page.total}` : "Showing 0 of 0"}</span>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5">
-            <span id="rows-per-page">Rows</span>
-            <div className="w-[5.5rem]">
-              <Select aria-label="Rows per page" value={String(limit)} options={PAGE_SIZES.map(String)} onChange={(next) => onLimit(Number(next))} />
+      {paged && (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3 text-xs text-foreground-muted">
+          <span aria-live="polite">{page && page.total > 0 ? `Showing ${from} to ${to} of ${page.total}` : "Showing 0 of 0"}</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <span id="rows-per-page">Rows</span>
+              <div className="w-[5.5rem]">
+                <Select aria-label="Rows per page" value={String(limit)} options={PAGE_SIZES.map(String)} onChange={(next) => onLimit(Number(next))} />
+              </div>
             </div>
+            <Button variant="outline" size="sm" className="px-2" aria-label="Previous page" disabled={!page || page.page <= 1} onClick={() => page && onPage(page.page - 1)}>
+              <ChevronLeft className="size-4" aria-hidden />
+            </Button>
+            <span className="min-w-8 text-center font-semibold text-foreground">{page?.page ?? 1}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="px-2"
+              aria-label="Next page"
+              disabled={!page || page.page >= page.totalPages}
+              onClick={() => page && onPage(page.page + 1)}
+            >
+              <ChevronRight className="size-4" aria-hidden />
+            </Button>
           </div>
-          <Button variant="outline" size="sm" className="px-2" aria-label="Previous page" disabled={!page || page.page <= 1} onClick={() => page && onPage(page.page - 1)}>
-            <ChevronLeft className="size-4" aria-hidden />
-          </Button>
-          <span className="min-w-8 text-center font-semibold text-foreground">{page?.page ?? 1}</span>
-          <Button
-            variant="outline"
-            size="sm"
-            className="px-2"
-            aria-label="Next page"
-            disabled={!page || page.page >= page.totalPages}
-            onClick={() => page && onPage(page.page + 1)}
-          >
-            <ChevronRight className="size-4" aria-hidden />
-          </Button>
         </div>
-      </div>
+      )}
     </div>
   );
 }

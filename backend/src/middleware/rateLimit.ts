@@ -17,10 +17,10 @@ const tooMany = (message: string) => ({ success: false, message, code: "RATE_LIM
 
 const ipOf = (req: Request) => ipKeyGenerator(req.ip ?? "unknown");
 
-/** The email a login attempt is for, normalised like the validator does (trim + lowercase). */
-function attemptedEmail(req: Request): string {
-  const email: unknown = req.body?.email;
-  return typeof email === "string" ? email.trim().toLowerCase() : "";
+/** The email or username a login attempt is for, normalised like the validator does (trim + lowercase). */
+function attemptedIdentifier(req: Request): string {
+  const identifier: unknown = req.body?.identifier ?? req.body?.email;
+  return typeof identifier === "string" ? identifier.trim().toLowerCase() : "";
 }
 
 // Generous default so normal dashboard usage (many small GETs) never trips it.
@@ -30,14 +30,14 @@ export const apiLimiter = limiter({
   message: tooMany("Too many requests, please try again shortly."),
 });
 
-// Blunts password guessing against one account. Keyed by IP + attempted email so one slow user on a
-// shared IP (a school office behind one router) doesn't lock everyone else out. The email is
+// Blunts password guessing against one account. Keyed by IP + attempted email or username so one slow user on a
+// shared IP (a school office behind one router) doesn't lock everyone else out. The identifier is
 // normalised first: "a@x.com", " a@x.com" and "A@X.com " are the same account. Only failures count.
 export const loginLimiter = limiter({
   windowMs: 15 * MINUTE,
   limit: env.loginRateLimitMax,
   skipSuccessfulRequests: true,
-  keyGenerator: (req) => `${ipOf(req)}:${attemptedEmail(req)}`,
+  keyGenerator: (req) => `${ipOf(req)}:${attemptedIdentifier(req)}`,
   message: tooMany("Too many login attempts. Please wait a few minutes and try again."),
 });
 

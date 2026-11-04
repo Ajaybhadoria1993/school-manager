@@ -9,12 +9,23 @@ import { Guardian } from "../models/Guardian";
 import { Student } from "../models/Student";
 import type {
   AdmitStudentInput,
+  ApprovePromotionInput,
+  ClassOverviewQuery,
+  DeactivateStudentsInput,
   ExportStudentsQuery,
   ImportStudentsInput,
+  MatchImportInput,
   ListStudentsQuery,
+  ListInactiveQuery,
   LookupGuardianInput,
   MoveStudentInput,
+  PromotionQuery,
+  ReactivateStudentsInput,
+  RejectPromotionInput,
+  StartPromotionInput,
+  TransferOutInput,
   UpdateGuardianInput,
+  UpdatePromotionInput,
   UpdateStudentInput,
   UpdateStudentSettingsInput,
 } from "../schemas/students.schemas";
@@ -24,13 +35,19 @@ import { StudentSettingsService } from "../services/settings.service";
 const EXPORT_PREVIEW_ROWS = 5;
 import { AdmissionService } from "../services/admission.service";
 import { CapacityService } from "../services/capacity.service";
+import { ClassOverviewService } from "../services/classOverview.service";
 import { classNameOf, currentClassNameOf } from "../services/classNames";
+import type { ChangeUsernameInput, LoginAccountInput, ResetPasswordInput } from "../../staff/schemas/staff.schemas";
 import { GuardianService } from "../services/guardian.service";
+import { ParentLoginService } from "../services/parentLogin.service";
 import { ImportService } from "../services/import.service";
+import { ImportMatchService } from "../services/importMatch.service";
 import { GUARDIAN_NOT_FOUND, STUDENT_NOT_FOUND } from "../services/shared";
 import { readStudentSheet } from "../services/sheetReader";
 import { SpreadsheetService } from "../services/spreadsheet.service";
 import { StudentService } from "../services/student.service";
+import { PromotionService } from "../services/promotion.service";
+import { StudentStatusService, type StatusActor } from "../services/status.service";
 
 /** The caller's own school, taken from the signed-in user, never from the request. */
 function tenantOf(req: Request): string {
@@ -46,7 +63,8 @@ const body = <T>(req: Request) => req.validatedBody as T;
  * tells another school anything. Runs after the id is validated and before the body is.
  */
 export const studentExists = asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
-  if (!(await Student.exists({ _id: idOf(req), tenantId: tenantOf(req) }))) throw STUDENT_NOT_FOUND();
+  // An inactive student can be read but not changed (or moved) until they are active again.
+  if (!(await Student.exists({ _id: idOf(req), tenantId: tenantOf(req), status: "active" }))) throw STUDENT_NOT_FOUND();
   next();
 });
 
@@ -63,6 +81,11 @@ export const capacity = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, await CapacityService.summary(tenantOf(req)));
 });
 
+/** The classes at a glance, filtered by the department, the class or part of a class name (the School Class page). */
+export const classOverview = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await ClassOverviewService.get(tenantOf(req), req.validatedQuery as ClassOverviewQuery));
+});
+
 export const getStudent = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, await StudentService.get(tenantOf(req), idOf(req)));
 });
@@ -77,7 +100,60 @@ export const updateStudent = asyncHandler(async (req: Request, res: Response) =>
 });
 
 export const moveStudent = asyncHandler(async (req: Request, res: Response) => {
-  return sendOk(res, await StudentService.move(tenantOf(req), idOf(req), body<MoveStudentInput>(req)), "Class updated");
+  return sendOk(res, await StudentService.move(tenantOf(req), idOf(req), body<MoveStudentInput>(req), { userId: req.user!.userId, role: req.user!.role }), "Class updated");
+});
+
+/** Who is calling, for the record of who changed a student's status (the name is read from their account). */
+const actorOf = (req: Request): StatusActor => ({ userId: req.user!.userId, role: req.user!.role });
+
+export const deactivateStudents = asyncHandler(async (req: Request, res: Response) => {
+  const { ids, reason } = body<DeactivateStudentsInput>(req);
+  const result = await StudentStatusService.deactivate(tenantOf(req), actorOf(req), ids, reason);
+  return sendOk(res, result, result.deactivated === 1 ? "1 student made inactive" : `${result.deactivated} students made inactive`);
+});
+
+export const transferOutStudent = asyncHandler(async (req: Request, res: Response) => {
+  const student = await StudentStatusService.transferOut(tenantOf(req), actorOf(req), idOf(req), body<TransferOutInput>(req));
+  return sendOk(res, student, `${student.name} is transferred to another school`);
+});
+
+/** The open promotion list for the year that waits, or null. */
+export const getPromotion = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await PromotionService.get(tenantOf(req), (req.validatedQuery as PromotionQuery).toAcademicYearId));
+});
+
+export const startPromotion = asyncHandler(async (req: Request, res: Response) => {
+  return sendCreated(res, await PromotionService.start(tenantOf(req), actorOf(req), body<StartPromotionInput>(req).toAcademicYearId), "Promotion list made");
+});
+
+export const updatePromotion = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await PromotionService.update(tenantOf(req), idOf(req), body<UpdatePromotionInput>(req)), "Promotion list updated");
+});
+
+export const submitPromotion = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await PromotionService.submit(tenantOf(req), actorOf(req), idOf(req)), "Sent to the school admin for approval");
+});
+
+export const rejectPromotion = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await PromotionService.reject(tenantOf(req), actorOf(req), idOf(req), body<RejectPromotionInput>(req).note), "Sent back");
+});
+
+export const approvePromotion = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await PromotionService.approve(tenantOf(req), actorOf(req), idOf(req), body<ApprovePromotionInput>(req).allowOverCapacity), "Approved: the students have a place in the next year");
+});
+
+export const cancelPromotion = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await PromotionService.cancel(tenantOf(req), idOf(req)), "Promotion list cancelled");
+});
+
+export const listInactive = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await StudentStatusService.list(tenantOf(req), req.validatedQuery as ListInactiveQuery));
+});
+
+export const reactivateStudents = asyncHandler(async (req: Request, res: Response) => {
+  const { ids, placement } = body<ReactivateStudentsInput>(req);
+  const result = await StudentStatusService.reactivate(tenantOf(req), actorOf(req), ids, placement);
+  return sendOk(res, result, result.reactivated === 1 ? "1 student is active again" : `${result.reactivated} students are active again`);
 });
 
 export const lookupGuardian = asyncHandler(async (req: Request, res: Response) => {
@@ -108,6 +184,12 @@ export const readImportFile = asyncHandler(async (req: Request, res: Response) =
 export const importStudents = asyncHandler(async (req: Request, res: Response) => {
   const result = await ImportService.run(tenantOf(req), body<ImportStudentsInput>(req));
   return sendOk(res, result, result.dryRun ? `${result.ok} of ${result.results.length} rows can be admitted` : `${result.ok} admitted`);
+});
+
+/** Which rows of a file are students the school already has (the preview of a bulk upload). Nothing is saved. */
+export const matchImportRows = asyncHandler(async (req: Request, res: Response) => {
+  const result = await ImportMatchService.run(tenantOf(req), body<MatchImportInput>(req));
+  return sendOk(res, result, `${result.matches.length} of the rows meet a student already in your school`);
 });
 
 /**
@@ -147,4 +229,17 @@ export const exportPreview = asyncHandler(async (req: Request, res: Response) =>
 
 export const updateGuardian = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, await GuardianService.update(tenantOf(req), idOf(req), body<UpdateGuardianInput>(req)), "Guardian updated");
+});
+
+// A parent's login (the guardian's): make it, change its username, give it a new password.
+export const createGuardianLogin = asyncHandler(async (req: Request, res: Response) => {
+  return sendCreated(res, await ParentLoginService.create(tenantOf(req), idOf(req), body<LoginAccountInput>(req)), "Login made");
+});
+
+export const changeGuardianUsername = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await ParentLoginService.changeUsername(tenantOf(req), idOf(req), body<ChangeUsernameInput>(req).username), "Username changed");
+});
+
+export const resetGuardianPassword = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await ParentLoginService.resetPassword(tenantOf(req), idOf(req), body<ResetPasswordInput>(req).password), "New password saved");
 });

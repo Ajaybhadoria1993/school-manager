@@ -17,6 +17,9 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 
 const inFlight = new Set<Promise<void>>();
 
+/** The people whose password only their school sets (a new one from the teacher's or the student's page), never by themselves. */
+const SCHOOL_SET_PASSWORD: ReadonlySet<string> = new Set(["teacher", "parent"]);
+
 export class PasswordService {
   /**
    * Starts a reset without making the caller wait for it. The work (a lookup, token, email) is only
@@ -37,7 +40,10 @@ export class PasswordService {
 
   static async requestReset(email: string): Promise<void> {
     const user = await User.findOne({ email, isActive: true });
-    if (!user) return;
+    // A person who signs in with a username and has no email has no link to be sent to: their school resets the password.
+    if (!user || !user.email) return;
+    // A teacher's or a parent's password is the one the school gives (2026-11-04, the user): only the school changes it.
+    if (SCHOOL_SET_PASSWORD.has(user.role)) return;
 
     const recent = await AuthToken.exists({
       type: "password_reset",
@@ -76,7 +82,7 @@ export class PasswordService {
     if (!claimed || !claimed.userId) throw RESET_INVALID();
 
     const user = await User.findOne({ _id: claimed.userId, isActive: true });
-    if (!user) throw RESET_INVALID();
+    if (!user || SCHOOL_SET_PASSWORD.has(user.role)) throw RESET_INVALID();
 
     user.passwordHash = await hashPassword(newPassword);
     user.passwordChangedAt = new Date();

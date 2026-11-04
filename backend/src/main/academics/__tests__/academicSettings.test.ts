@@ -22,7 +22,7 @@ beforeEach(async () => {
 describe("the school's switch: a section's seats and room are required", () => {
   async function schoolWithAClass() {
     const s = await createSchool("Sunrise Public School");
-    const klass = (await post(s.token, "/classes", { name: "Class 5", sectionCount: 0 })).body.data;
+    const klass = (await post(s.token, "/classes", { name: "Class 5", capacity: 2000, sectionCount: 0 })).body.data;
     return { ...s, klass };
   }
 
@@ -82,7 +82,7 @@ describe("the school's switch: a section's seats and room are required", () => {
   it("completes a section that never had its seats or room the first time it is changed (bulk-made sections, older sections)", async () => {
     const { token, tenantId } = await schoolWithAClass();
     // Sections made together with their class, or before the rule, have neither.
-    const made = (await post(token, "/classes", { name: "Class 6", sectionCount: 2 })).body.data;
+    const made = (await post(token, "/classes", { name: "Class 6", capacity: 2000, sectionCount: 2 })).body.data;
     expect(made.sections.map((s: { capacity: number | null }) => s.capacity)).toEqual([null, null]);
 
     const renameOnly = await patch(token, `/sections/${made.sections[0].id}`, { name: "Red" });

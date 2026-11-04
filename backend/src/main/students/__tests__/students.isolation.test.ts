@@ -19,7 +19,7 @@ beforeEach(async () => {
 /** The school's year, Class 5 with section A, and one student admitted into it. */
 async function schoolWithStudent(s: SchoolSession, mobile = "9876543210") {
   await request(app).post(`${academics}/academic-years/initial`).set(as(s.token)).send(YEAR);
-  const klass = (await request(app).post(`${academics}/classes`).set(as(s.token)).send({ name: "Class 5", sectionCount: 0 })).body.data;
+  const klass = (await request(app).post(`${academics}/classes`).set(as(s.token)).send({ name: "Class 5", capacity: 2000, sectionCount: 0 })).body.data;
   const section = (await request(app).post(`${academics}/classes/${klass.id}/sections`).set(as(s.token)).send({ name: "A", capacity: 40, room: "5A" })).body.data;
   const student = (
     await request(app)
@@ -64,6 +64,7 @@ itKeepsSchoolsApart("students", {
   lists: [
     { name: "the student list", path: api, showsRecords: (body) => body.data.total > 0 },
     { name: "the seats", path: `${api}/capacity`, showsRecords: (body) => body.data.totals.students > 0 },
+    { name: "the classes at a glance", path: `${api}/class-overview`, showsRecords: (body) => body.data.summary.students > 0 },
   ],
 
   probes: [
@@ -73,6 +74,10 @@ itKeepsSchoolsApart("students", {
     { name: "changing its student with a wrong body", method: "patch", path: (c) => `${api}/${c.studentId}`, body: () => ({ firstName: "" }) },
     { name: "moving its student", method: "patch", path: (c) => `${api}/${c.studentId}/enrolment`, body: (c) => ({ sectionId: c.sectionId }) },
     { name: "changing its guardian", method: "patch", path: (c) => `${api}/guardians/${c.guardianId}`, body: () => ({ name: "Hacked" }) },
+    // The parent's login (2026-11-04): making one, renaming it, a new password.
+    { name: "making a login for its parent", method: "post", path: (c) => `${api}/guardians/${c.guardianId}/login`, body: () => ({ username: "hacker_1", password: "Sch00l@Hacked1" }) },
+    { name: "changing its parent's username", method: "patch", path: (c) => `${api}/guardians/${c.guardianId}/login`, body: () => ({ username: "hacker_2" }) },
+    { name: "giving its parent's login a new password", method: "post", path: (c) => `${api}/guardians/${c.guardianId}/reset-password`, body: () => ({ password: "Sch00l@Hacked1" }) },
   ],
 });
 // Ids of school A's class, section and guardian sent in school B's request BODY are checked below (school B needs its own year and

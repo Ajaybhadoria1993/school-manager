@@ -19,7 +19,8 @@ export function FormCard({
   icon: LucideIcon;
   tone: Tone;
   title: string;
-  description: string;
+  /** A line under the title; left out where the title says it all. */
+  description?: string;
   tip?: ReactNode;
   /** At the right of the title (a button such as "Add another guardian"). */
   action?: ReactNode;
@@ -39,7 +40,7 @@ export function FormCard({
             {title}
             {tip && <InfoTip label={`About ${title.toLowerCase()}`}>{tip}</InfoTip>}
           </h2>
-          <p className="text-xs text-foreground-muted sm:text-sm">{description}</p>
+          {description && <p className="text-xs text-foreground-muted sm:text-sm">{description}</p>}
         </div>
         {action}
       </div>

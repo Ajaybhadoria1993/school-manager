@@ -83,6 +83,18 @@ export interface IStudent {
   /** One to four; exactly one is primary. */
   guardians: IGuardianLink[];
   status: StudentStatus;
+  /**
+   * Set while the student is inactive (`status: "inactive"`), null otherwise: when, by whom, why (optional) and the roll number they had
+   * (it is freed while they are away, and given back when they are active again and nobody took it).
+   */
+  inactive: {
+    at: Date;
+    by: { userId: Types.ObjectId; name: string; role: string };
+    reason: string | null;
+    rollNumber: number | null;
+    /** Set when the student left for another school: the transfer certificate details. */
+    transfer: { schoolName: string; tcNumber: string | null; tcDate: string | null; remarks: string | null } | null;
+  } | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -145,6 +157,34 @@ const studentSchema = new Schema<IStudent>(
     custom: { type: Schema.Types.Mixed, default: () => ({}) },
     guardians: { type: [guardianLinkSchema], required: true },
     status: { type: String, enum: STUDENT_STATUSES, required: true, default: "active" },
+    inactive: {
+      type: new Schema(
+        {
+          at: { type: Date, required: true },
+          by: {
+            userId: { type: Schema.Types.ObjectId, required: true },
+            name: { type: String, required: true },
+            role: { type: String, required: true },
+          },
+          reason: { type: String, default: null, maxlength: 200 },
+          rollNumber: { type: Number, default: null },
+          transfer: {
+            type: new Schema(
+              {
+                schoolName: { type: String, required: true },
+                tcNumber: { type: String, default: null },
+                tcDate: { type: String, default: null },
+                remarks: { type: String, default: null },
+              },
+              { _id: false }
+            ),
+            default: null,
+          },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
   },
   { timestamps: true }
 );

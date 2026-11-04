@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
-import type { FieldRules, FormFieldKey } from "../constants/studentFields";
+import { effectivePlacements, isUsualPlacements, isUsualSteps, type AdmitStepKey, type CustomFieldDef, type FieldRules, type FormFieldKey } from "../constants/studentFields";
 import { useGetStudentSettingsQuery, useUpdateStudentSettingsMutation } from "../redux/api/studentsApi";
 import type { ExportColumn } from "../types";
 import { getApiError } from "../utils/apiErrors";
-import { defaultDraft, draftOf, isDefaultLayout, layoutOf, layoutProblems, sameDraft, tidyHeading, type FieldsDraft } from "../utils/exportLayout";
+import { placeIn } from "../utils/placement";
+import { defaultColumnsDraft, defaultDraft, draftOf, isDefaultLayout, layoutOf, layoutProblems, sameDraft, tidyHeading, type FieldsDraft } from "../utils/exportLayout";
 
 const sameLayout = (a: ExportColumn[], b: ExportColumn[]) => JSON.stringify(a.map((c) => [c.key, tidyHeading(c.heading)])) === JSON.stringify(b.map((c) => [c.key, tidyHeading(c.heading)]));
 const changedRules = (a: FieldRules, b: FieldRules) => (Object.keys(a) as FormFieldKey[]).filter((k) => a[k] !== b[k]);
@@ -12,10 +13,11 @@ const changedRules = (a: FieldRules, b: FieldRules) => (Object.keys(a) as FormFi
 export type SaveResult = "saved" | "headings" | "failed";
 
 /**
- * The school's fields as one list for Add student and the Excel (`GET` / `PUT /students/settings`): what is saved, the changes made to
- * it and not saved yet (the draft), what is wrong with a heading, and the one save that sends only what changed. Used by the Export page
- * and by the dialog that opens on Add student and on the empty Students page, so the list works the same everywhere. The settings are
- * read once (the screens share the copy); a save writes the answer into it, so the forms that read it follow at once.
+ * The school's fields (`GET` / `PUT /students/settings`): what Add student asks (and the step of each detail) and the Excel's columns,
+ * two lists the school arranges on their own, with one Mandatory. What is saved, the changes made to it and not saved yet (the draft),
+ * what is wrong with a heading, and the one save that sends only what changed. Used by Manage fields, the Export page and Add student
+ * (to add a field of its own on the spot). The settings are read once (the screens share the copy); a save writes the answer into it, so
+ * the forms that read it follow at once.
  */
 export function useFieldsEditor() {
   const settingsRes = useGetStudentSettingsQuery();
@@ -37,6 +39,8 @@ export function useFieldsEditor() {
   }, [layout, serverProblems]);
   const dirty = !!draft && !!base && !sameDraft(draft, base);
   const isDefault = !!draft && sameDraft(draft, defaultDraft(draft.custom));
+  // The Excel alone is a new school's (the form may not be): what the Export page's "Back to the default" is about.
+  const isDefaultColumns = !!draft && sameLayout(layout, layoutOf(defaultColumnsDraft(draft)));
 
   const change = useCallback((next: FieldsDraft) => {
     setEdited(next);
@@ -51,7 +55,13 @@ export function useFieldsEditor() {
     setError(null);
   }, []);
 
-  /** Saves what changed (a default layout is saved as "no layout of our own"). */
+  /** What the server said, as one line: its message and the first thing wrong. */
+  const sayError = (apiError: ReturnType<typeof getApiError>) => {
+    const first = (apiError?.details as { message?: string }[] | undefined)?.[0]?.message;
+    return first ? `${apiError?.message ?? "Could not save"}: ${first}` : (apiError?.message ?? "Could not save. Please try again.");
+  };
+
+  /** Saves what changed (a default layout is saved as "no layout of our own", and so are the usual places of the details on Add student). */
   const saveDraft = useCallback(async (): Promise<SaveResult> => {
     if (!draft || !settings) return "failed";
     if (Object.keys(problems).length > 0) {
@@ -61,12 +71,18 @@ export function useFieldsEditor() {
     const rules = changedRules(draft.rules, settings.fields);
     const customChanged = JSON.stringify(draft.custom) !== JSON.stringify(settings.customFields);
     const layoutChanged = !sameLayout(layout, settings.exportColumns) || settings.exportIsDefault !== isDefaultLayout(layout);
+    // What the server keeps by itself (a new own field at the end of More details, a deleted one gone, a deleted step's details in More
+    // details) is not a change of places.
+    const placementsChanged = JSON.stringify(draft.placements) !== JSON.stringify(effectivePlacements(settings.placements, draft.custom, draft.steps));
+    const stepsChanged = JSON.stringify(draft.steps) !== JSON.stringify(settings.steps);
     setError(null);
     try {
       await save({
         ...(rules.length > 0 ? { fields: Object.fromEntries(rules.map((k) => [k, draft.rules[k]])) } : {}),
         ...(customChanged ? { customFields: draft.custom } : {}),
         ...(layoutChanged ? { exportColumns: isDefaultLayout(layout) ? null : layout.map((c) => ({ key: c.key, heading: tidyHeading(c.heading) })) } : {}),
+        ...(stepsChanged ? { steps: isUsualSteps(draft.steps) ? null : draft.steps } : {}),
+        ...(placementsChanged ? { placements: isUsualPlacements(draft.placements, draft.custom) ? null : draft.placements } : {}),
       }).unwrap();
       // The list stays as it is (a field switched off stays where it was); it now equals what is saved, so nothing is "not saved".
       return "saved";
@@ -78,13 +94,38 @@ export function useFieldsEditor() {
         if (place && d.message && layout[Number(place[1])]) byKey[layout[Number(place[1])].key] = d.message;
       }
       setServerProblems(byKey);
-      const first = (apiError?.details as { message?: string }[] | undefined)?.[0]?.message;
-      setError(first ? `${apiError?.message ?? "Could not save"}: ${first}` : (apiError?.message ?? "Could not save. Please try again."));
+      setError(sayError(apiError));
       return Object.keys(byKey).length > 0 ? "headings" : "failed";
     }
   }, [draft, settings, problems, layout, save]);
 
-  return { settings, draft, layout, problems, dirty, isDefault, saving, error, setError, change, discard, saveDraft };
+  /**
+   * A field of the school's own added on the spot (Add student's last step): only it is sent, the field and its column at the end of the
+   * Excel, and its place when it is not More details (the usual one for an own field). Whatever else the list holds is left as the
+   * school saved it.
+   */
+  const addField = useCallback(
+    async (field: CustomFieldDef, step: AdmitStepKey = "more"): Promise<SaveResult> => {
+      if (!settings) return "failed";
+      setError(null);
+      const custom = [...settings.customFields, field];
+      const places = step === "more" ? null : placeIn(effectivePlacements(settings.placements, custom, settings.steps), field.key, step);
+      try {
+        await save({
+          customFields: custom,
+          exportColumns: [...settings.exportColumns.map((c) => ({ key: c.key, heading: tidyHeading(c.heading) })), { key: field.key, heading: field.label }],
+          ...(places ? { placements: isUsualPlacements(places, custom) ? null : places } : {}),
+        }).unwrap();
+        return "saved";
+      } catch (err) {
+        setError(sayError(getApiError(err)));
+        return "failed";
+      }
+    },
+    [settings, save]
+  );
+
+  return { settings, draft, layout, problems, dirty, isDefault, isDefaultColumns, saving, error, setError, change, discard, saveDraft, addField };
 }
 
 export type FieldsEditor = ReturnType<typeof useFieldsEditor>;

@@ -15,6 +15,8 @@ export interface ClassItem {
   /** Teaching order, lowest first. The API already sends classes in this order. */
   order: number;
   departmentId: string | null;
+  /** The seats of the whole class, with or without sections; null until the school says (a class made in bulk, or before seats existed). */
+  capacity: number | null;
   sections: SectionItem[];
 }
 
@@ -47,6 +49,19 @@ export interface AcademicYearInput {
   endDate: string;
 }
 
+/** The next session: the same, and whether the sections of the running year are copied into it (they are by default). */
+export interface NextAcademicYearInput extends AcademicYearInput {
+  copySections: boolean;
+  /** Also copy what each class studies and its timetable (as drafts). */
+  copyTimetable: boolean;
+}
+
+/** What the server says when the next year is made: the year, and how many sections, class lists and timetables it copied. */
+export type NextAcademicYear = AcademicYear & { sectionsCopied: number; allotmentsCopied: number; timetablesCopied: number };
+
+/** What the server says when a year is switched on: the year, and how many students left (inactive) with the promotion list. */
+export type ActivatedAcademicYear = AcademicYear & { leftSchool: number };
+
 /** The school's switches for its academic data. */
 export interface AcademicSettings {
   /** A section must have its seats and its room (on until the school makes them optional). */
@@ -66,7 +81,7 @@ export interface AcademicStructure {
     departments: number;
     classes: number;
     sections: number;
-    /** The sum of the limits that were set. */
+    /** The seats of all the classes added up; a class whose seats are not set adds nothing. */
     seats: number;
   };
 }
@@ -74,6 +89,8 @@ export interface AcademicStructure {
 export interface ClassInput {
   name: string;
   departmentId: string | null;
+  /** The seats of the whole class. */
+  capacity: number;
 }
 
 export interface NewClassInput extends ClassInput {
@@ -113,7 +130,7 @@ export interface ClassListQuery {
   search?: string;
   /** A department's id, or "none" for the classes that are in no department. Absent = every department. */
   departmentId?: string;
-  /** The fewest and the most seats a class has in all its sections. */
+  /** The fewest and the most seats a class has. */
   seatsMin?: number;
   seatsMax?: number;
   sort?: "order" | "name" | "seats";
@@ -137,6 +154,8 @@ export interface AddClassesInput {
   classIds: string[];
   /** Classes it does not have yet, to create in the department. */
   names: string[];
+  /** The seats each of those new classes has (asked for only when `names` is not empty). */
+  capacity?: number;
   /** Sections each new class starts with (0 = none). */
   sectionCount: number;
 }

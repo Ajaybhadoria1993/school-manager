@@ -1,4 +1,4 @@
-import { DEFAULT_FIELD_RULES } from "../constants/studentFields";
+import { DEFAULT_FIELD_RULES, USUAL_STEPS, effectivePlacements } from "../constants/studentFields";
 import type { AcademicStructure, StudentCapacity, StudentSettings } from "../types";
 import { defaultLayout } from "../utils/exportLayout";
 
@@ -8,8 +8,8 @@ export const STRUCTURE: AcademicStructure = {
   settings: { sectionDetailsRequired: false },
   departments: [],
   classes: [
-    { id: "c1", name: "Class 1", order: 1, departmentId: null, sections: [] },
-    { id: "c6", name: "Class 6", order: 6, departmentId: null, sections: [{ id: "c6-A", classId: "c6", name: "A", capacity: 30, room: null }] },
+    { id: "c1", name: "Class 1", order: 1, departmentId: null, capacity: null, sections: [] },
+    { id: "c6", name: "Class 6", order: 6, departmentId: null, capacity: null, sections: [{ id: "c6-A", classId: "c6", name: "A", capacity: 30, room: null }] },
   ],
   totals: { departments: 0, classes: 2, sections: 1, seats: 30 },
 };
@@ -23,4 +23,14 @@ export const CAPACITY: StudentCapacity = {
 };
 
 /** A new school's settings: the default needs and the default Excel layout. */
-export const SETTINGS: StudentSettings = { fields: DEFAULT_FIELD_RULES, customFields: [], exportColumns: defaultLayout(), exportIsDefault: true, updatedAt: null };
+export const SETTINGS: StudentSettings = {
+  fields: DEFAULT_FIELD_RULES,
+  customFields: [],
+  exportColumns: defaultLayout(),
+  exportIsDefault: true,
+  placements: effectivePlacements(null, []),
+  placementsAreDefault: true,
+  steps: [...USUAL_STEPS],
+  stepsAreDefault: true,
+  updatedAt: null,
+};

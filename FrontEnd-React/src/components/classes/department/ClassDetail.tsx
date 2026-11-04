@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CircleCheck, Plus, Save, Trash2 } from "lucide-react";
+import { CircleCheck, Plus, Rows3, Save, Trash2 } from "lucide-react";
 import { TONES } from "../../../constants/tones";
 import {
   useDeleteClassMutation,
@@ -10,23 +10,39 @@ import {
   useUpdateSectionMutation,
   refreshClass,
 } from "../../../redux/api/academicsApi";
-import { useClassDraft } from "../../../hooks/useClassDraft";
+import { useClassDraft, type ClassChanges, type ClassProblems } from "../../../hooks/useClassDraft";
 import { useAppDispatch } from "../../../redux/hooks";
 import { getApiError } from "../../../utils/apiErrors";
-import { classMark, departmentIcon, nextSectionName, plural, toneOf } from "../../../utils/academics";
+import { classMark, departmentIcon, nextSectionName, plural, sectionSeats, toneOf } from "../../../utils/academics";
 import { cn } from "../../../utils/helpers";
 import type { AcademicStructure, SectionInput, SectionItem } from "../../../types";
 import { Button } from "../../ui/Button";
 import { ChipPicker, type Chip } from "../../ui/ChipPicker";
-import { InfoTip, WithTip } from "../../ui/Hint";
+import { InfoTip } from "../../ui/Hint";
 import { Skeleton } from "../../ui/Skeleton";
 import { Switch } from "../../ui/Switch";
 import { useToast } from "../../ui/toast-context";
 import { ConfirmModal } from "../ConfirmModal";
 import { AddSectionModal } from "./AddSectionModal";
 import { ClassNameField } from "./ClassNameField";
+import { ClassSeatsField } from "./ClassSeatsField";
 import { FIELD_TITLE } from "./fieldStyles";
 import { SectionCard } from "./SectionCard";
+
+/**
+ * The one line under the class's name, only when it has something to say: that the seats are not set (a warning), or how much of the
+ * class's seats its sections hold. A class without sections has nothing to add to the box above. It reads what is saved, not what is
+ * being typed.
+ */
+function seatsSummary(c: { capacity: number | null; sections: unknown[] }, inSections: number): { text: string; warn: boolean } | null {
+  if (c.capacity === null) return { text: "Seats not set. Enter them and press Save.", warn: true };
+  if (c.sections.length === 0) return null;
+  const left = c.capacity - inSections;
+  return {
+    text: left > 0 ? `${inSections} of ${plural(c.capacity, "seat")} are in sections, ${left} free.` : `All ${plural(c.capacity, "seat")} are in sections.`,
+    warn: false,
+  };
+}
 
 /**
  * The class picked in the list: its name and each of its sections as a card. Nothing is sent to the server while you type: the one
@@ -150,21 +166,36 @@ export function ClassDetail({
 
   const t = TONES[toneOf(structure, classItem.departmentId)];
   const { sections } = classItem;
-  const seats = sections.reduce((sum, s) => sum + (s.capacity ?? 0), 0);
+  const inSections = sectionSeats(classItem);
+  const summary = seatsSummary(classItem, inSections);
   const next = nextSectionName(sections.map((s) => s.name));
+  const addSectionButton = (
+    <Button type="button" variant="outline" onClick={() => setAddingSection(true)} aria-label={`Add section ${next} to ${classItem.name}`}>
+      <Plus className="size-4" aria-hidden />
+      Section {next}
+    </Button>
+  );
   // Inside a department the class is already where it belongs, so there is nothing to choose. Only a class that is in no department
   // (the "Other classes" screen) is offered the school's departments, because giving it one is what that screen is for.
   const unplaced = !classItem.departmentId && structure.departments.length > 0;
   const departmentChips: Chip[] = structure.departments.map((d) => ({ value: d.id, label: d.name, icon: departmentIcon(d.name), tone: toneOf(structure, d.id) }));
 
-  /** The class name's part of Save: what is wrong (a name already used) is returned to show under its box. */
-  async function rename(name: string): Promise<string | void> {
-    if (!name) return "Enter the class name.";
+  /**
+   * The class's part of Save, the name and the seats in one request: what the server refused is returned to show under the box it is
+   * about (a name already used, seats below what the sections hold).
+   */
+  async function saveClass(changes: ClassChanges): Promise<ClassProblems | void> {
     try {
       // `refresh: false`: the one Save asks for the new state once, after all of its changes were sent.
-      await updateClass({ id: classId, name, refresh: false }).unwrap();
+      await updateClass({ id: classId, ...changes, refresh: false }).unwrap();
     } catch (err) {
-      return getApiError(err)?.message ?? "Could not rename the class.";
+      const refused = getApiError(err);
+      const message = refused?.message ?? "Could not save the class.";
+      const aboutSeats =
+        refused?.code === "CLASS_SEATS_BELOW_SECTIONS" ||
+        (Array.isArray(refused?.details) && (refused.details as { path?: string }[]).some((d) => d.path === "capacity"));
+      if (aboutSeats || (changes.name === undefined && changes.capacity !== undefined)) return { capacity: message };
+      return { name: message };
     }
   }
 
@@ -204,7 +235,7 @@ export function ClassDetail({
   /** The one Save: the class name first, then each changed section; what failed is shown where it belongs. */
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    void draft.save({ renameClass: rename, saveSection }).then((saved) => {
+    void draft.save({ saveClass, saveSection }).then((saved) => {
       // One refresh for the whole Save (the layout, the list's rows and this class), not one for each request it sent.
       if (saved) dispatch(refreshClass());
     });
@@ -213,7 +244,7 @@ export function ClassDetail({
   return (
     <>
     <form onSubmit={submit} noValidate className="fade-in">
-      <div className={cn("space-y-3 bg-gradient-to-r to-transparent px-5 py-5", t.wash)}>
+      <div className={cn("bg-gradient-to-r to-transparent px-5 py-5", t.wash)}>
         <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
           <span aria-hidden className={cn("flex size-14 shrink-0 items-center justify-center rounded-2xl text-xl font-extrabold tracking-tight", t.gradient)}>
             {classMark(classItem.name)}
@@ -225,6 +256,15 @@ export function ClassDetail({
             dirty={draft.classNameDirty}
             onChange={draft.changeClassName}
             onRevert={draft.revertClassName}
+          />
+          <ClassSeatsField
+            name={classItem.name}
+            value={draft.classSeats}
+            problem={draft.classSeatsProblem}
+            dirty={draft.classSeatsDirty}
+            unset={classItem.capacity === null}
+            onChange={draft.changeClassSeats}
+            onRevert={draft.revertClassSeats}
           />
           {/* The class's actions, together and at the right: Save (dimmed until something changes) and, set apart, Delete. */}
           <div className="ml-auto flex items-center gap-2">
@@ -246,7 +286,10 @@ export function ClassDetail({
           </div>
         </div>
 
-        <p aria-live="polite" className="min-h-5 text-xs font-semibold">
+        {summary && <p className={cn("mt-3 text-xs", summary.warn ? "font-semibold text-warning" : "text-foreground-muted")}>{summary.text}</p>}
+
+        {/* Always there for a screen reader, and no height at all until it has something to say (Saved, or what went wrong). */}
+        <p aria-live="polite" className={cn("text-xs font-semibold", (draft.summaryProblem || draft.justSaved) && "mt-3")}>
           {draft.summaryProblem ? (
             <span role="alert" className="font-medium text-danger">
               {draft.summaryProblem}
@@ -260,10 +303,9 @@ export function ClassDetail({
         </p>
 
         {unplaced && (
-          <div>
+          <div className="mt-3">
             <p className={FIELD_TITLE}>Put {classItem.name} in a department</p>
             <ChipPicker label={`Department of ${classItem.name}`} value={pendingDepartment ?? ""} options={departmentChips} onChange={moveTo} />
-            <p className="mt-1.5 text-xs text-foreground-muted">It is in no department yet. Pick one and it moves there.</p>
           </div>
         )}
       </div>
@@ -272,11 +314,11 @@ export function ClassDetail({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold tracking-tight text-foreground">Sections</h2>
+            {/* Sections belong to one session; next year's may differ. */}
             <p className="text-xs text-foreground-muted">
-              {sections.length === 0 ? "Not split into sections" : plural(sections.length, "section")}
-              {seats > 0 && <> · {seats} seats</>}
-              {/* Sections belong to one session; next year's may differ. */}
-              {structure.academicYear && <> · for {structure.academicYear.name}</>}
+              {sections.length > 0 && plural(sections.length, "section")}
+              {sections.length > 0 && structure.academicYear && " · "}
+              {structure.academicYear && `for ${structure.academicYear.name}`}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
@@ -285,26 +327,25 @@ export function ClassDetail({
                 Seats and room required
               </Switch>
               <InfoTip label="What does this switch do?">
-                On: every section must have its seats and its room, and the server refuses one without them. Off: both are optional. It
-                applies to every class in your school.
+                On: every section needs its seats and its room. Off: both are optional. It applies to every class in your school.
               </InfoTip>
             </div>
-            {next && (
-              <WithTip tip={`Adds section ${next} to ${classItem.name}.`}>
-                <Button type="button" variant="outline" onClick={() => setAddingSection(true)} aria-label={`Add section ${next} to ${classItem.name}`}>
-                  <Plus className="size-4" aria-hidden />
-                  Section {next}
-                </Button>
-              </WithTip>
-            )}
+            {/* With no sections the same button is in the middle of the empty box below, where the eye is: not twice. */}
+            {next && sections.length > 0 && addSectionButton}
           </div>
         </div>
 
         {sections.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border bg-background px-4 py-6 text-center text-sm text-foreground-muted">
-            {classItem.name} has no sections, so the whole class sits together. If it is split into groups, add them with the Section{" "}
-            {next || "A"} button, one after another.
-          </p>
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border bg-background px-4 py-8 text-center">
+            <span aria-hidden className="flex size-11 items-center justify-center rounded-2xl bg-primary-soft text-primary">
+              <Rows3 className="size-5" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-foreground">No sections yet</p>
+              <p className="mt-0.5 text-sm text-foreground-muted">Add sections (A, B, C) only if this class is split into groups.</p>
+            </div>
+            {next && addSectionButton}
+          </div>
         ) : (
           // Two cards side by side when the space beside the list is wide enough, one under the other when it is not.
           <div className="@container">
@@ -333,7 +374,15 @@ export function ClassDetail({
 
     {/* Outside the form: a dialog's events reach the form around it even though it is drawn elsewhere, and its submit must not be this form's Save. */}
     {addingSection && (
-      <AddSectionModal classId={classId} className={classItem.name} suggestedName={next} required={required} onClose={() => setAddingSection(false)} />
+      <AddSectionModal
+        classId={classId}
+        className={classItem.name}
+        suggestedName={next}
+        required={required}
+        classSeats={classItem.capacity}
+        heldBySections={inSections}
+        onClose={() => setAddingSection(false)}
+      />
     )}
     {questions}
     </>

@@ -16,8 +16,8 @@ function sessionMeta(req: Request, platform?: Platform): SessionMeta {
 }
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
-  const { email, password, device } = req.validatedBody as LoginInput;
-  const session = await AuthService.login(email, password, sessionMeta(req, device));
+  const { identifier, password, device } = req.validatedBody as LoginInput;
+  const session = await AuthService.login(identifier, password, sessionMeta(req, device));
   return sendOk(res, session);
 });
 

@@ -6,18 +6,24 @@ import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
 
 const SORTS: { value: ClassSort; label: string }[] = [
-  { value: "order", label: "Order" },
-  { value: "name", label: "Name" },
-  { value: "seats", label: "Seats" },
+  { value: "order", label: "Sort: Order" },
+  { value: "name", label: "Sort: Name" },
+  { value: "seats", label: "Sort: Seats" },
 ];
 
-const LABEL = "mb-1 text-[11px] font-bold uppercase tracking-wider text-foreground-muted";
+/** What each direction means for each sort, in words a person would use ("Lowest first" means nothing for names). */
+const DIRECTION: Record<ClassSort, { asc: string; desc: string }> = {
+  order: { asc: "Lowest first", desc: "Highest first" },
+  name: { asc: "A to Z", desc: "Z to A" },
+  seats: { asc: "Fewest seats first", desc: "Most seats first" },
+};
 
 /**
- * The bar across the top of a department's class list: search by class name, and the sort. (The department is the one the
- * screen is about, so there is no department to pick.) Nothing is filtered here: a change goes to the address and the server
- * answers with the matching page. The search box waits until you stop typing, so one burst of typing is one request. While you are
- * typing in it it shows your text; otherwise it shows what the address says (so Clear, a link and the back button empty or fill it).
+ * The one slim row above a department's class list: search by class name, how to sort, and which way. No card and no titles
+ * above the boxes (their placeholders and labels say what they are). (The department is the one the screen is about, so there is no
+ * department to pick.) Nothing is filtered here: a change goes to the address and the server answers with the matching page. The
+ * search box waits until you stop typing, so one burst of typing is one request. While you are typing in it it shows your text;
+ * otherwise it shows what the address says (so Clear, a link and the back button empty or fill it).
  */
 export function ClassFilters({
   filters,
@@ -47,10 +53,13 @@ export function ClassFilters({
     timer.current = window.setTimeout(() => onChange({ q }), 300);
   }
 
+  const words = DIRECTION[filters.sort];
+  const now = filters.dir === "asc" ? words.asc : words.desc;
+  const other = filters.dir === "asc" ? words.desc : words.asc;
+
   return (
-    <div className="flex flex-wrap items-end gap-x-3 gap-y-3" role="search" aria-label="Search the classes">
-      <div className="min-w-[14rem] flex-[3]">
-        <p className={LABEL}>Class name</p>
+    <div className="flex flex-wrap items-center gap-2" role="search" aria-label="Search the classes">
+      <div className="min-w-[14rem] flex-1">
         <Input
           aria-label="Search classes by name"
           icon={Search}
@@ -66,21 +75,19 @@ export function ClassFilters({
         />
       </div>
 
-      <div className="min-w-[11rem] flex-1">
-        <div className="mb-1 flex items-center justify-between gap-1">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-foreground-muted">Sort by</p>
-          <button
-            type="button"
-            className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-primary-deep underline-offset-2 hover:underline"
-            aria-label={filters.dir === "asc" ? "Sorted lowest first: press for highest first" : "Sorted highest first: press for lowest first"}
-            onClick={() => onChange({ dir: filters.dir === "asc" ? "desc" : "asc" })}
-          >
-            {filters.dir === "asc" ? <ArrowUp className="size-3" aria-hidden /> : <ArrowDown className="size-3" aria-hidden />}
-            {filters.dir === "asc" ? "Lowest first" : "Highest first"}
-          </button>
-        </div>
+      <div className="w-40 shrink-0">
         <Select aria-label="Sort the classes by" value={filters.sort} options={SORTS} onChange={(sort) => onChange({ sort: sort as ClassSort })} />
       </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        aria-label={`Sorted ${now.toLowerCase()}: press for ${other.toLowerCase()}`}
+        onClick={() => onChange({ dir: filters.dir === "asc" ? "desc" : "asc" })}
+      >
+        {filters.dir === "asc" ? <ArrowUp className="size-4" aria-hidden /> : <ArrowDown className="size-4" aria-hidden />}
+        {now}
+      </Button>
 
       {active > 0 && (
         <Button variant="ghost" className="text-primary-deep" onClick={onClear}>

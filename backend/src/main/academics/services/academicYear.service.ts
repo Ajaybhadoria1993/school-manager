@@ -2,9 +2,10 @@ import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { Tenant } from "../../tenants/models/Tenant";
 import { nameKeyOf } from "../../tenants/services/tenantFactory";
+import { copyTimetableToYear } from "../../timetable/services/yearCopy";
 import { AcademicYear, type AcademicYearStatus, type IAcademicYear } from "../models/AcademicYear";
 import { Section } from "../models/Section";
-import type { AcademicYearInput } from "../schemas/academicYear.schemas";
+import type { AcademicYearInput, NextAcademicYearInput } from "../schemas/academicYear.schemas";
 import { isDuplicateKey } from "./shared";
 
 /** An academic year as it leaves the API. The days are calendar days, "2026-04-01", the way the school typed them. */
@@ -33,6 +34,8 @@ type YearLike = Pick<IAcademicYear, "_id" | "name" | "startDate" | "endDate" | "
 /** "2026-04-01": the calendar day of a date stored as midnight UTC. */
 export const calendarDayOf = (date: Date): string => date.toISOString().slice(0, 10);
 
+const NEXT_EXISTS = () => ApiError.conflict("Your school already has a next academic year waiting. Switch it on, or finish it first.", "NEXT_YEAR_EXISTS");
+
 export const toAcademicYearDto = (y: YearLike): AcademicYearDto => ({
   id: y._id.toString(),
   name: y.name,
@@ -47,7 +50,70 @@ const EXISTS = () =>
     { path: "academicYear.name", message: "Your school already has an academic year with that name" },
   ]);
 
+/** "31 Mar 2027", for a message. */
+const readable = (day: Date) => new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(day);
+
 export class AcademicYearService {
+  /** Every year of the school, the newest first (by the day it starts). */
+  static async list(tenantId: string): Promise<AcademicYearDto[]> {
+    const years = await AcademicYear.find({ tenantId: new Types.ObjectId(tenantId) }).sort({ startDate: -1, _id: -1 }).lean();
+    return years.map(toAcademicYearDto);
+  }
+
+  /**
+   * The school's next session, waiting (`pending`) until the school switches it on: its own name and days, which must start after the
+   * running year ends. By default the sections of the running year are copied into it (name, seats, room) as a starting point, because
+   * students are promoted into sections of the next year; nothing else changes and the running year is not touched. One next year at a
+   * time (the database refuses a second one too).
+   */
+  static async createNext(tenantId: string, input: NextAcademicYearInput): Promise<AcademicYearDto & { sectionsCopied: number; timetablesCopied: number; allotmentsCopied: number }> {
+    const school = new Types.ObjectId(tenantId);
+    const running = await AcademicYear.findOne({ tenantId: school, status: "active" }).lean();
+    if (!running) throw ApiError.conflict("Your school has no running academic year yet.", "NO_ACTIVE_YEAR");
+    if (await AcademicYear.exists({ tenantId: school, status: "pending" })) throw NEXT_EXISTS();
+    if (input.startDate.getTime() <= running.endDate.getTime()) {
+      const message = `The next year must start after the running year ends (${readable(running.endDate)})`;
+      throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "startDate", message }]);
+    }
+    let year: IAcademicYear;
+    try {
+      year = await AcademicYear.create({
+        tenantId: school,
+        name: input.name,
+        nameKey: nameKeyOf(input.name),
+        startDate: input.startDate,
+        endDate: input.endDate,
+        status: "pending",
+        source: "school",
+      });
+    } catch (err) {
+      if (isDuplicateKey(err)) {
+        // The name is taken, or someone made the next year at the same moment: the first is the likelier, the second says the same thing.
+        throw (await AcademicYear.exists({ tenantId: school, nameKey: nameKeyOf(input.name) })) ? EXISTS() : NEXT_EXISTS();
+      }
+      throw err;
+    }
+    let sectionsCopied = 0;
+    const sectionMap = new Map<string, string>();
+    if (input.copySections) {
+      const sections = await Section.find({ tenantId: school, academicYearId: running._id }).lean();
+      if (sections.length > 0) {
+        const made = await Section.insertMany(
+          sections.map((s) => ({ tenantId: school, classId: s.classId, academicYearId: year._id, name: s.name, nameKey: s.nameKey, capacity: s.capacity ?? null, room: s.room ?? null }))
+        );
+        sectionsCopied = sections.length;
+        // Each old section and its copy (same class, same name), for what is copied after them.
+        for (const old of sections) {
+          const copy = made.find((m) => m.classId.equals(old.classId) && m.nameKey === old.nameKey);
+          if (copy) sectionMap.set(old._id.toString(), copy._id.toString());
+        }
+      }
+    }
+    // What each class studies and its timetable, as a starting point for the next year (drafts; nothing of the running year changes).
+    const copied = input.copyTimetable ? await copyTimetableToYear(tenantId, running._id, year._id, sectionMap) : { allotments: 0, timetables: 0 };
+    return { ...toAcademicYearDto(year), sectionsCopied, timetablesCopied: copied.timetables, allotmentsCopied: copied.allotments };
+  }
+
   /** The year the school named in its sign-up form (whatever its state), or null. */
   static async onboardingYear(tenantId: string | Types.ObjectId): Promise<IAcademicYear | null> {
     return AcademicYear.findOne({ tenantId: new Types.ObjectId(tenantId), source: "onboarding" }).lean();

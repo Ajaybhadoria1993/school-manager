@@ -30,6 +30,8 @@ const LOCKED_KEYS = [
   "studentName", "gender", "dateOfBirth", "age", "category", "className", "sectionName", "fatherName", "fatherMobile", "motherName", "motherMobile",
   "address", "city", "state", "pincode", "previousSchool",
 ];
+/** What is said when 12 digits start right but the last (check) digit does not fit the others. */
+const CHECK_DIGIT = "This Aadhaar number is not valid: its last digit (the check digit) does not match the other digits";
 /** Valid Aadhaar numbers (their last digit is the Verhoeff check digit). */
 const AADHAAR = ["234567890124", "345678901238", "456789012341"];
 
@@ -37,7 +39,7 @@ const AADHAAR = ["234567890124", "345678901238", "456789012341"];
 async function school(name = "Sunrise Public School", fields: "classic" | "default" = "default") {
   const s = await createSchool(name, "school_admin", fields);
   await request(app).post(`${academics}/academic-years/initial`).set(auth(s.token)).send(YEAR);
-  const class5 = (await request(app).post(`${academics}/classes`).set(auth(s.token)).send({ name: "Class 5", sectionCount: 0 })).body.data;
+  const class5 = (await request(app).post(`${academics}/classes`).set(auth(s.token)).send({ name: "Class 5", capacity: 2000, sectionCount: 0 })).body.data;
   return { ...s, class5: class5.id as string };
 }
 
@@ -218,7 +220,7 @@ describe("the details every school has (they cannot be turned off): the Excel's 
     "studentName", "gender", "dateOfBirth", "age", "category", "className", "sectionName", "fatherName", "fatherMobile", "motherName", "motherMobile",
     "address", "city", "state", "pincode", "previousSchool",
   ];
-  const nursery = async (token: string) => (await request(app).post(`${academics}/classes`).set(auth(token)).send({ name: "Nursery", sectionCount: 0 })).body.data.id as string;
+  const nursery = async (token: string) => (await request(app).post(`${academics}/classes`).set(auth(token)).send({ name: "Nursery", capacity: 2000, sectionCount: 0 })).body.data.id as string;
 
   it("a new school's Excel has the birthday next to the gender, and every fixed column is in every layout", async () => {
     const s = await school("Sunrise Public School", "classic");
@@ -351,9 +353,16 @@ describe("the student's records", () => {
     expect(res.body.data).toMatchObject({ ...records, aadhaarNumber: "234567890124", emergencyMobile: "9811122233" });
 
     const cases: [Record<string, unknown>, string, string][] = [
-      [{ aadhaarNumber: "234567890120" }, "aadhaarNumber", "Enter a valid 12-digit Aadhaar number"],
-      [{ aadhaarNumber: "12345" }, "aadhaarNumber", "Enter a valid 12-digit Aadhaar number"],
-      [{ aadhaarNumber: "123456789012" }, "aadhaarNumber", "Enter a valid 12-digit Aadhaar number"],
+      // Each way an Aadhaar number can be wrong says which: the number of digits, the first digit, or the check digit.
+      [{ aadhaarNumber: "234567890120" }, "aadhaarNumber", CHECK_DIGIT],
+      [{ aadhaarNumber: "12345" }, "aadhaarNumber", "The Aadhaar number has 12 digits"],
+      [{ aadhaarNumber: "23456789012" }, "aadhaarNumber", "The Aadhaar number has 12 digits"],
+      [{ aadhaarNumber: "2345678901234" }, "aadhaarNumber", "The Aadhaar number has 12 digits"],
+      [{ aadhaarNumber: "abcdefghijkl" }, "aadhaarNumber", "The Aadhaar number has 12 digits"],
+      [{ aadhaarNumber: "123456789012" }, "aadhaarNumber", "An Aadhaar number does not start with 0 or 1"],
+      [{ aadhaarNumber: "023456789012" }, "aadhaarNumber", "An Aadhaar number does not start with 0 or 1"],
+      // 12 digits that look right, a random number from a dummy file: the check digit does not fit.
+      [{ aadhaarNumber: "596001338908" }, "aadhaarNumber", CHECK_DIGIT],
       [{ samagraId: "1234" }, "samagraId", "Samagra ID is 8 or 9 digits"],
       [{ apaarId: "12345" }, "apaarId", "APAAR ID is 12 digits"],
       [{ pen: "123" }, "pen", "PEN is 11 digits"],
@@ -428,6 +437,37 @@ describe("the export in the school's own layout", () => {
 
     // Back to the default layout.
     expect((await put(s.token, "/settings", { exportColumns: null })).body.data.exportIsDefault).toBe(true);
+  });
+
+  it("exports one sample row while the school has no student yet, so the file can be tried (a filter that matches nobody stays empty)", async () => {
+    const s = await school();
+    const preview = await get(s.token, "/export/preview");
+    expect(preview.status).toBe(200);
+    // Nobody is admitted: `total` stays 0, the one row is flagged as a sample.
+    expect(preview.body.data).toMatchObject({ total: 0, sample: true });
+    expect(preview.body.data.rows).toHaveLength(1);
+    expect(preview.body.data.rows[0]).toMatchObject({ studentName: "Sample Student", className: "Class 5", fatherName: "Sample Father" });
+    expect(Object.keys(preview.body.data.rows[0])).toEqual(expect.arrayContaining(EXPORT_COLUMNS.map((c) => c.key)));
+
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load((await download(s.token, "/export")).body as unknown as ArrayBuffer);
+    const sheet = workbook.getWorksheet("Students")!;
+    expect(sheet.rowCount).toBe(2);
+    const headings = (sheet.getRow(1).values as unknown[]).slice(1);
+    const row = Object.fromEntries(headings.map((h, i) => [h as string, (sheet.getRow(2).values as unknown[])[i + 1]]));
+    expect(row).toMatchObject({ "Student Name": "Sample Student" });
+
+    // A search that matches nobody is a real answer: no sample row.
+    const none = await get(s.token, "/export/preview?q=nobody");
+    expect(none.body.data).toMatchObject({ total: 0, rows: [] });
+    expect(none.body.data.sample).toBeFalsy();
+
+    // Once a student is admitted the real students come, never the sample.
+    await post(s.token, "", complete(s.class5));
+    const real = await get(s.token, "/export/preview");
+    expect(real.body.data.total).toBe(1);
+    expect(real.body.data.sample).toBeFalsy();
+    expect(real.body.data.rows[0].studentName).toBe("Asha Verma");
   });
 
   it("lets a school add fields of its own: asked, checked by kind, kept, changed, exported, and deleted", async () => {

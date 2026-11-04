@@ -39,19 +39,41 @@ function Parent({ student }: { student: StudentRow }) {
   );
 }
 
+/** The tick boxes of the table: which students are chosen, and how a tick (one row, or the whole page) changes that. */
+export interface TableSelection {
+  selected: ReadonlySet<string>;
+  onToggle: (id: string) => void;
+  onToggleAll: (on: boolean) => void;
+}
+
 /**
  * The students of this page as a table (the page the server sent; nothing is sorted or filtered here). A row opens the student: the
  * name is the real link (for the keyboard and a new tab), and a click anywhere else on the row follows it. On a phone the table keeps
  * one column, the student, and shows the class and the parent under the name, so the page never scrolls sideways.
  */
-export function StudentTable({ students, loading }: { students: StudentRow[]; loading?: boolean }) {
+export function StudentTable({ students, loading, selection }: { students: StudentRow[]; loading?: boolean; selection?: TableSelection }) {
   const navigate = useNavigate();
+  const chosen = selection ? students.filter((s) => selection.selected.has(s.id)).length : 0;
 
   return (
     <div className={cn("overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-card transition-opacity", loading && "opacity-70")}>
       <table className="w-full border-collapse text-sm" aria-label="Students" aria-busy={loading || undefined}>
         <thead className="border-b border-border bg-background">
           <tr>
+            {selection && (
+              <th scope="col" className="w-10 pl-4">
+                <input
+                  type="checkbox"
+                  aria-label="Select all students on this page"
+                  checked={chosen > 0 && chosen === students.length}
+                  ref={(el) => {
+                    if (el) el.indeterminate = chosen > 0 && chosen < students.length;
+                  }}
+                  onChange={(e) => selection.onToggleAll(e.target.checked)}
+                  className="size-4 cursor-pointer accent-primary"
+                />
+              </th>
+            )}
             <th scope="col" className={TH}>
               Student
             </th>
@@ -75,10 +97,21 @@ export function StudentTable({ students, loading }: { students: StudentRow[]; lo
               key={student.id}
               onClick={(e) => {
                 // The name is a link: let it do its own work instead of going twice.
-                if (!(e.target as HTMLElement).closest("a")) navigate(`/school/students/${student.id}`);
+                if (!(e.target as HTMLElement).closest("a, input")) navigate(`/school/students/${student.id}`);
               }}
-              className="group cursor-pointer border-t border-surface-muted transition-colors first:border-t-0 hover:bg-background"
+              className={cn("group cursor-pointer border-t border-surface-muted transition-colors first:border-t-0 hover:bg-background", selection?.selected.has(student.id) && "bg-primary-soft/40")}
             >
+              {selection && (
+                <td className="w-10 pl-4 align-middle">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${student.name}`}
+                    checked={selection.selected.has(student.id)}
+                    onChange={() => selection.onToggle(student.id)}
+                    className="size-4 cursor-pointer accent-primary"
+                  />
+                </td>
+              )}
               <td className="px-4 py-3 align-middle">
                 <div className="flex items-center gap-3">
                   <StudentAvatar name={student.name} seed={student.admissionNumber} size="sm" className="transition-transform duration-200 group-hover:scale-105" />

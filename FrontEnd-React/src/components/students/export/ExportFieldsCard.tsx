@@ -1,16 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, GripVertical, ListChecks, Lock, PencilLine, Plus, Settings2 } from "lucide-react";
-import { CUSTOM_FIELD_TYPES, MAX_CUSTOM_FIELDS, MAX_EXPORT_HEADING, type CustomFieldDef } from "../../../constants/studentFields";
+import { ChevronDown, ChevronUp, GripVertical, Lock, PencilLine, Table2 } from "lucide-react";
+import { CUSTOM_FIELD_TYPES, MAX_EXPORT_HEADING, type CustomFieldDef } from "../../../constants/studentFields";
 import { cn } from "../../../utils/helpers";
 import {
-  addCustom,
-  addStudentLabel,
+  columnIsMandatory,
   columnLetters,
   dragRow,
-  editCustom,
   infoOf,
   isTick,
-  removeCustom,
   renameRow,
   setMandatory,
   stepRow,
@@ -19,14 +16,12 @@ import {
   type FieldRow,
   type FieldsDraft,
 } from "../../../utils/exportLayout";
-import { Button } from "../../ui/Button";
 import { Card } from "../../ui/Card";
 import { Input } from "../../ui/Input";
-import { CustomFieldDialog } from "./CustomFieldDialog";
 
 /**
  * A bare on / off switch (the row says what it is about), a real switch for a screen reader. `tone` tells the two switches of a row
- * apart: green for On, blue for Mandatory.
+ * apart: green for "in the Excel", blue for Mandatory.
  */
 function Toggle({
   checked,
@@ -68,36 +63,43 @@ const LINKED: Record<string, string> = {
   secondParent: "Mandatory: the father and the mother are both needed (a name is enough for the one without a mobile number)",
 };
 
-/** A field the software always needs (the name, the birthday, the class, the first parent): Add student asks it whatever the Excel has. */
-function AlwaysAsked({ muted, label = "Always", title }: { muted?: boolean; label?: string; title?: string }) {
+/** A column the software always needs (the name, the birthday, the class, the first parent): Add student asks it whatever the Excel has. */
+function AlwaysAsked({ label = "Always", title }: { label?: string; title?: string }) {
   return (
-    <span
-      className={cn("inline-flex items-center gap-1 text-xs font-bold", muted ? "text-foreground-muted/60" : "text-foreground-muted")}
-      title={title ?? (muted ? "Not in the Excel, but Add student always needs it" : "Always needed: the software depends on it")}
-    >
+    <span className="inline-flex items-center gap-1 text-xs font-bold text-foreground-muted" title={title ?? "Always needed: the software depends on it"}>
       <Lock className="size-3" aria-hidden />
       {label}
     </span>
   );
 }
 
-/** The Mandatory column of a field: a switch when the school decides (and the field is on), else what it always is. */
-function MandatoryCell({ draft, rowKey, on, onRequired }: { draft: FieldsDraft; rowKey: string; on: boolean; onRequired: (required: boolean) => void }) {
+/**
+ * The Mandatory column of a column of the Excel. It is the same setting as on Add student's form: a switch where the school decides
+ * and the form asks the detail (mandatory is then in the Excel and on the form alike), else what it always is.
+ */
+function MandatoryCell({ draft, rowKey, onRequired }: { draft: FieldsDraft; rowKey: string; onRequired: (required: boolean) => void }) {
   const { heading, need } = infoOf(rowKey, draft.custom);
   if (need.kind === "fixed") return <AlwaysAsked label={need.label} title={need.title} />;
-  if (!on) {
-    // Off is about the Excel's column. What Add student asks anyway (the name, the birthday, the roll number, the parents' boxes) is
-    // still said, so the list never says "not asked" about a box the form shows.
-    if (need.kind === "always") return <AlwaysAsked muted />;
-    if (need.kind === "optional") return <span className="text-xs font-semibold text-foreground-muted/60" title="Not in the Excel, but Add student always asks it (it can be left empty)">Optional</span>;
-    return <span className="text-xs text-foreground-muted/60">—</span>;
-  }
   const decides = (need.kind === "rule" && !isTick(need.rule)) || (need.kind === "custom" && need.field.type !== "yesNo");
   if (decides) {
-    const required = need.kind === "rule" ? draft.rules[need.rule] === "required" : need.kind === "custom" && need.field.mode === "required";
+    const mode = need.kind === "rule" ? draft.rules[need.rule] : need.kind === "custom" ? need.field.mode : "hidden";
+    // Add student does not ask it: there is nothing to make mandatory until the form asks it (Manage fields > Add student form).
+    if (mode === "hidden") {
+      return (
+        <span className="text-xs text-foreground-muted/60" title="Add student does not ask this detail">
+          —
+        </span>
+      );
+    }
+    const required = mode === "required";
     return (
       <span className="flex items-center gap-1.5" title={need.kind === "rule" ? LINKED[need.rule] : undefined}>
-        <Toggle checked={required} onChange={onRequired} label={`${heading} mandatory`} />
+        <Toggle
+          checked={required}
+          onChange={onRequired}
+          label={`${heading} mandatory`}
+          title={required ? "Mandatory on Add student and in the Excel. Press to make it optional in both." : "Press to make it mandatory on Add student and in the Excel."}
+        />
         <span className={cn("text-xs font-bold transition-colors", required ? "text-primary-deep" : "text-foreground-muted")}>{required ? "Mandatory" : "Optional"}</span>
       </span>
     );
@@ -118,19 +120,19 @@ function MandatoryCell({ draft, rowKey, on, onRequired }: { draft: FieldsDraft; 
 }
 
 /**
- * One grid for the header and the rows: grip, letter, field (its Excel heading), On, Mandatory, place. On a phone the Mandatory and the
- * arrows go under the field.
+ * One grid for the header and the rows: grip, letter, column (its heading in the file), In the Excel, Mandatory, place. On a phone the
+ * Mandatory and the arrows go under the column.
  */
-const GRID = "grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1 sm:grid-cols-[auto_auto_minmax(0,1fr)_2.75rem_6.75rem_3.75rem]";
+const GRID = "grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1 sm:grid-cols-[auto_auto_minmax(0,1fr)_3.25rem_6.75rem_3.75rem]";
 const STEP = "flex size-7 cursor-pointer items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-surface-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-25";
 const typeLabel = (field: CustomFieldDef) => CUSTOM_FIELD_TYPES.find((t) => t.type === field.type)?.label ?? "";
 
 /**
- * The school's fields, one list for the Add student form and the Excel, as an accordion: closed it is one line (how many are on,
- * mandatory, of the school's own; the preview below shows the file), open it is the list, in the order of the file (A, B, C for the
- * ones that are on), two lists side by side on a wide screen. A row shows the field's heading in the Excel (press it to type your own),
- * On (off: Add student stops asking it and it leaves the file; the row stays where it is, dimmed), Mandatory, and its place (↑ ↓, or
- * drag the row: the hand shows it can be held). The school adds fields of its own here and changes them with the gear.
+ * The Excel's columns, as an accordion: closed it is one line (how many columns, how many mandatory; the preview below shows the file),
+ * open it is the list, in the order of the file (A, B, C for the ones that are in it), two lists side by side on a wide screen. A row
+ * shows the column's heading in the file (press it to type your own), whether it is in the file (out: the row stays where it is,
+ * dimmed), Mandatory (the same setting as on Add student: one place changes both) and its place (↑ ↓, or drag the row). What Add student
+ * asks is arranged on its own, in Manage fields; a mandatory detail is in both.
  */
 export function ExportFieldsCard({
   draft,
@@ -145,7 +147,7 @@ export function ExportFieldsCard({
   onChange: (draft: FieldsDraft) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** False in the dialog on Add student: the list is always open and has no arrow. */
+  /** False where the list is always open and has no arrow. */
   collapsible?: boolean;
 }) {
   const open = wanted || !collapsible;
@@ -154,7 +156,6 @@ export function ExportFieldsCard({
   const [over, setOver] = useState<number | null>(null);
   const [moved, setMoved] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ key: string; before: string } | null>(null);
-  const [dialog, setDialog] = useState<{ field: CustomFieldDef | null } | null>(null);
   const editBox = useRef<HTMLInputElement>(null);
 
   // A field that just moved shows where it went, for a moment.
@@ -189,11 +190,10 @@ export function ExportFieldsCard({
     const problem = r.on ? problems[r.key] : undefined;
     const inputId = `export-heading-${r.key}`;
     const renamed = tidyHeading(r.heading) !== info.heading;
-    // Under the heading (the Excel's name): what Add student calls the field ("not asked" when it is off and the school decides).
-    const formName = addStudentLabel(r.key, r.on, draft.custom);
-    const kind = own ? `${typeLabel(own)}${own.type === "choice" ? ` (${own.options.length})` : ""}` : "";
-    const sub = `Add student: ${formName}${kind ? ` · ${kind}` : ""}`;
-    const subTitle = [sub, own ? "Your own field" : info.group, renamed ? `Usual heading: ${info.heading}` : ""].filter(Boolean).join(" · ");
+    const mandatory = columnIsMandatory(draft, r.key);
+    // Under the heading: where the detail belongs (the group of the list, or the kind of an own field).
+    const sub = own ? `Your own field · ${typeLabel(own)}${own.type === "choice" ? ` (${own.options.length})` : ""}` : info.group;
+    const subTitle = [sub, renamed ? `Usual heading: ${info.heading}` : ""].filter(Boolean).join(" · ");
     return (
       <li
         key={r.key}
@@ -275,30 +275,17 @@ export function ExportFieldsCard({
               />
             </>
           ) : (
-            <span className="flex min-w-0 items-center gap-1">
-              <button
-                type="button"
-                disabled={!r.on}
-                onClick={() => setEditing({ key: r.key, before: r.heading })}
-                aria-label={`Rename ${info.heading} in the Excel`}
-                title="Press to type your own heading for the Excel"
-                className="group flex min-w-0 cursor-text items-center gap-1 rounded text-left text-sm font-semibold text-foreground hover:text-primary-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-default disabled:hover:text-foreground"
-              >
-                <span className="truncate">{r.heading || <span className="italic text-danger">No heading</span>}</span>
-                {r.on && <PencilLine className="size-3 shrink-0 text-foreground-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" aria-hidden />}
-              </button>
-              {own && (
-                <button
-                  type="button"
-                  aria-label={`Change ${own.label}`}
-                  title="Change or delete this field of your own"
-                  onClick={() => setDialog({ field: own })}
-                  className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-foreground-muted hover:bg-primary-soft hover:text-primary-deep"
-                >
-                  <Settings2 className="size-3.5" aria-hidden />
-                </button>
-              )}
-            </span>
+            <button
+              type="button"
+              disabled={!r.on}
+              onClick={() => setEditing({ key: r.key, before: r.heading })}
+              aria-label={`Rename ${info.heading} in the Excel`}
+              title="Press to type your own heading for the Excel"
+              className="group flex min-w-0 max-w-full cursor-text items-center gap-1 rounded text-left text-sm font-semibold text-foreground hover:text-primary-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-default disabled:hover:text-foreground"
+            >
+              <span className="truncate">{r.heading || <span className="italic text-danger">No heading</span>}</span>
+              {r.on && <PencilLine className="size-3 shrink-0 text-foreground-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" aria-hidden />}
+            </button>
           )}
           {problem ? (
             <span id={`${inputId}-error`} role="alert" className="block truncate text-[11px] font-medium text-danger">
@@ -306,7 +293,7 @@ export function ExportFieldsCard({
             </span>
           ) : (
             editing?.key !== r.key && (
-              <span data-testid="form-name" title={subTitle} className={cn("block truncate text-[11px]", own ? "font-semibold text-primary-deep" : "text-foreground-muted")}>
+              <span data-testid="column-group" title={subTitle} className={cn("block truncate text-[11px]", own ? "font-semibold text-primary-deep" : "text-foreground-muted")}>
                 {sub}
               </span>
             )
@@ -316,14 +303,22 @@ export function ExportFieldsCard({
           <Toggle
             checked={r.on}
             onChange={(on) => onChange(switchRow(draft, r.key, on))}
-            label={`${info.heading} on`}
-            title={info.locked ? "Always in the Excel" : info.need.kind === "always" || info.need.kind === "optional" ? `${info.heading} on: a column of the Excel (Add student asks it either way)` : undefined}
-            disabled={info.locked}
+            label={`${info.heading} in the Excel`}
+            title={
+              info.locked
+                ? "Always in the Excel"
+                : mandatory
+                  ? "Mandatory: it is always in the Excel. Make it optional first."
+                  : r.on
+                    ? "Take this column out of the Excel (Add student is not changed)"
+                    : "Put this column in the Excel (Add student is not changed)"
+            }
+            disabled={mandatory}
             tone="success"
           />
         </span>
         <span className="col-start-3 sm:col-start-auto">
-          <MandatoryCell draft={draft} rowKey={r.key} on={r.on} onRequired={(required) => onChange(setMandatory(draft, r.key, required))} />
+          <MandatoryCell draft={draft} rowKey={r.key} onRequired={(required) => onChange(setMandatory(draft, r.key, required))} />
         </span>
         <span className="col-start-4 flex justify-end sm:col-start-auto">
           <button type="button" aria-label={`Move ${info.heading} up`} title="One column earlier in the Excel" disabled={!r.on || i <= firstOn} onClick={() => step(r.key, -1)} className={STEP}>
@@ -341,60 +336,42 @@ export function ExportFieldsCard({
     <div aria-hidden className={cn(GRID, "hidden px-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-foreground-muted sm:grid", className)}>
       <span className="size-4" />
       <span className="min-w-6" />
-      <span>Name in the Excel · on Add student</span>
-      <span className="text-center">On</span>
+      <span>Column in the Excel</span>
+      <span className="text-center">In Excel</span>
       <span>Mandatory</span>
       <span className="text-right">Place</span>
     </div>
   );
 
-  const mandatoryCount = draft.rows.filter((r) => {
-    if (!r.on) return false;
-    const need = infoOf(r.key, draft.custom).need;
-    return (need.kind === "rule" && draft.rules[need.rule] === "required") || (need.kind === "custom" && need.field.mode === "required") || need.kind === "always" || need.kind === "fixed";
-  }).length;
+  const mandatoryCount = draft.rows.filter((r) => r.on && columnIsMandatory(draft, r.key)).length;
 
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden" role="region" aria-label="Excel columns">
       <div className="flex items-center gap-3 px-4 py-3 sm:px-5">
-        {/* The title opens and closes the fields too (a bigger target than the arrow); the arrow is the control a keyboard uses. */}
+        {/* The title opens and closes the columns too (a bigger target than the arrow); the arrow is the control a keyboard uses. */}
         <div aria-hidden onClick={() => collapsible && onOpenChange(!open)} className={cn("flex min-w-0 flex-1 select-none items-center gap-3", collapsible && "cursor-pointer")}>
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
-            <ListChecks className="size-4.5" />
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-success-soft text-success">
+            <Table2 className="size-4.5" />
           </span>
           <span className="min-w-0">
             <span className="flex flex-wrap items-center gap-2 text-base font-bold text-foreground">
-              Fields
+              Excel columns
               <span className="rounded-full bg-primary-soft px-2 py-0.5 text-xs font-bold text-primary-deep">
-                {onCount} on · {draft.rows.length - onCount} off
+                {onCount} in the Excel · {draft.rows.length - onCount} out
               </span>
             </span>
             <span className="block truncate text-xs text-foreground-muted">
-              {mandatoryCount} mandatory{draft.custom.length > 0 ? ` · ${draft.custom.length} of your own` : ""}
+              The file you download and upload · {mandatoryCount} mandatory{draft.custom.length > 0 ? ` · ${draft.custom.length} of your own` : ""}
             </span>
           </span>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="shrink-0"
-          disabled={draft.custom.length >= MAX_CUSTOM_FIELDS}
-          onClick={() => {
-            onOpenChange(true);
-            setDialog({ field: null });
-          }}
-        >
-          <Plus className="size-4" aria-hidden />
-          <span className="hidden sm:inline">Add your own field</span>
-          <span className="sm:hidden">Add field</span>
-        </Button>
         {collapsible && (
           <button
             type="button"
             aria-expanded={open}
             aria-controls="export-fields"
-            aria-label={open ? "Hide the fields" : "Show the fields"}
-            title={open ? "Hide the fields" : "Show the fields to change them"}
+            aria-label={open ? "Hide the columns" : "Show the columns"}
+            title={open ? "Hide the columns" : "Show the columns to change them"}
             onClick={() => onOpenChange(!open)}
             className={cn(
               "flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
@@ -412,40 +389,19 @@ export function ExportFieldsCard({
           <div className="grid gap-x-6 gap-y-1.5 border-t border-border px-4 pb-4 pt-3 sm:px-5 sm:pb-5 xl:grid-cols-2">
             <div>
               {header()}
-              <ol aria-label="Fields" className="space-y-1.5">
+              <ol aria-label="Columns" className="space-y-1.5">
                 {draft.rows.slice(0, half).map((r, i) => row(r, i))}
               </ol>
             </div>
             <div>
               {header("sm:hidden xl:grid")}
-              <ol aria-label="More fields" className="space-y-1.5" start={half + 1}>
+              <ol aria-label="More columns" className="space-y-1.5" start={half + 1}>
                 {draft.rows.slice(half).map((r, i) => row(r, half + i))}
               </ol>
             </div>
           </div>
         </div>
       </div>
-
-      {dialog && (
-        <CustomFieldDialog
-          field={dialog.field}
-          others={draft.custom.filter((f) => f.key !== dialog.field?.key)}
-          onClose={() => setDialog(null)}
-          onSave={(field) => {
-            onChange(dialog.field ? editCustom(draft, field) : addCustom(draft, field));
-            setMoved(field.key);
-            setDialog(null);
-          }}
-          onDelete={
-            dialog.field
-              ? () => {
-                  onChange(removeCustom(draft, dialog.field!.key));
-                  setDialog(null);
-                }
-              : undefined
-          }
-        />
-      )}
     </Card>
   );
 }

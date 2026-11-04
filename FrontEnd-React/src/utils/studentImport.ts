@@ -1,8 +1,8 @@
 import { STATES } from "../constants/schoolOptions";
 import { BLOOD_GROUPS, CATEGORIES, GENDERS } from "../constants/students";
-import { DISABILITIES, LENIENT_FIELD_RULES, RELIGIONS, isCustomKey, type CustomFieldDef, type ExportColumnKey, type FieldRules, type FormFieldKey } from "../constants/studentFields";
-import type { AcademicStructure, ClassItem, ExportColumn, Gender, ImportRowInput, Relation } from "../types";
-import { checkStudentForm, emptyGuardian, emptyStudentForm, todayInIndia, toAdmission, type GuardianDraft, type StudentFormValues } from "./students";
+import { DISABILITIES, LENIENT_FIELD_RULES, RELIGIONS, isCustomKey, listFieldNamed, type CustomFieldDef, type ExportColumnKey, type FieldRules, type FormFieldKey } from "../constants/studentFields";
+import type { AcademicStructure, ClassItem, ExportColumn, Gender, ImportMatch, ImportMatchRow, ImportRowInput, Relation } from "../types";
+import { checkStudentForm, emptyGuardian, emptyStudentForm, placeLabel, todayInIndia, toAdmission, type GuardianDraft, type StudentFormValues } from "./students";
 
 // ---------------------------------------------------------------------------------------------------------------------------
 // What a file's columns can be. The same columns as the server's template (backend/src/main/students/constants.ts
@@ -311,6 +311,21 @@ export function columnChoices(fields: readonly ImportField[], own: readonly Cust
 }
 
 /**
+ * What a heading's list says when the word typed is the name of a field the school already has: a new field of that name would be
+ * refused (a field of the list, or one of the school's own, even a switched-off one), so the list shows this note instead of offering
+ * it. Nothing (null) when the name is free. Age gets its own words: it is worked out from the date of birth, so it is never uploaded.
+ */
+export function takenNameNote(word: string, own: readonly CustomFieldDef[]): string | null {
+  const name = word.trim().replace(/\s+/g, " ");
+  if (!name) return null;
+  if (name.toLowerCase() === "age") {
+    return "Age is worked out from the Date of birth, so it is not uploaded. To keep the file's ages, add them under another name, for example “Age in file”.";
+  }
+  const taken = listFieldNamed(name) ?? own.find((f) => f.label.toLowerCase() === name.toLowerCase())?.label;
+  return taken ? `“${taken}” is already one of your fields. Choose it from the list, or add yours under another name.` : null;
+}
+
+/**
  * Which columns of the file are the school's own fields: a title that is the field's name or its heading in the school's export (a
  * file it exported comes back as it is). A column already read as a detail of the list is left as it is.
  */
@@ -337,6 +352,18 @@ function isoDay(year: number, month: number, day: number): string | null {
   const date = new Date(Date.UTC(year, month - 1, day));
   if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
   return date.toISOString().slice(0, 10);
+}
+
+/**
+ * A day typed in a table box, shaped as DD-MM-YYYY while it is typed ("15031998" -> "15-03-1998"). Only digits, and dashes where the
+ * mask puts them, are shaped; any other way of writing a day (14/05/2016, 1-5-2016, 14 May 2016) is left for `normaliseDay`.
+ */
+export function maskDayInput(raw: string): string {
+  if (!/^[\d-]*$/.test(raw)) return raw;
+  for (let i = 0; i < raw.length; i++) if (raw[i] === "-" && i !== 2 && i !== 5) return raw;
+  const d = raw.replace(/-/g, "").slice(0, 8);
+  if (d.length <= 2) return d;
+  return d.length <= 4 ? `${d.slice(0, 2)}-${d.slice(2)}` : `${d.slice(0, 2)}-${d.slice(2, 4)}-${d.slice(4)}`;
 }
 
 /**
@@ -687,7 +714,7 @@ export function prepareRow(
   const parent = (source: GuardianSource, name: string, mobile: string, relation: Relation, occupation: string) => {
     if (!name && !mobile) return;
     sources.push(source);
-    guardians.push({ ...emptyGuardian(false, relation), name, mobile: normaliseMobile(mobile), occupation, manual: true });
+    guardians.push({ ...emptyGuardian(false, relation), name, mobile: normaliseMobile(mobile), occupation });
   };
   parent("father", get("fatherName"), get("fatherMobile"), "Father", get("fatherOccupation"));
   parent("mother", get("motherName"), get("motherMobile"), "Mother", get("motherOccupation"));
@@ -792,14 +819,16 @@ export function prepareRow(
 }
 
 /**
- * Problems only the whole file shows: the same student twice (name, birthday and primary mobile), the same admission number twice, and
- * a roll number used twice in a section. The later row gets the problem (the server would refuse it anyway).
+ * Problems only the whole file shows: the same student twice (name, birthday and primary mobile), the same admission number twice, the
+ * same Aadhaar number twice and a roll number used twice in a section. The later row gets the problem (the server would refuse it
+ * anyway). The same student twice is said once, as the same student, not again as a repeated number.
  */
 export function crossCheck(rows: readonly PreparedRow[]): Map<number, RowProblem[]> {
   const found = new Map<number, RowProblem[]>();
   const add = (row: number, problem: RowProblem) => found.set(row, [...(found.get(row) ?? []), problem]);
   const students = new Map<string, number>();
   const numbers = new Map<string, number>();
+  const aadhaars = new Map<string, number>();
   const rolls = new Map<string, number>();
   for (const r of rows) {
     const s = r.input.student;
@@ -814,6 +843,12 @@ export function crossCheck(rows: readonly PreparedRow[]): Map<number, RowProblem
       if (before !== undefined && earlier === undefined) add(r.row, { label: "Admission no.", message: `Admission number ${number} is also on row ${before}`, fields: ["admissionNumber"] });
       else if (before === undefined) numbers.set(number, r.row);
     }
+    const aadhaar = s.aadhaarNumber?.replace(/[\s-]/g, "");
+    if (aadhaar && /^\d{12}$/.test(aadhaar)) {
+      const before = aadhaars.get(aadhaar);
+      if (before !== undefined && earlier === undefined) add(r.row, { label: "Aadhaar no.", message: `Aadhaar number ${aadhaar} is also on row ${before}`, fields: ["aadhaarNumber"] });
+      else if (before === undefined) aadhaars.set(aadhaar, r.row);
+    }
     if (s.rollNumber) {
       const seat = `${r.classId}|${r.sectionId ?? ""}|${s.rollNumber}`;
       const before = rolls.get(seat);
@@ -822,6 +857,93 @@ export function crossCheck(rows: readonly PreparedRow[]): Map<number, RowProblem
     }
   }
   return found;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// The file against the students the school already has: asked once when the file opens, answered by the server.
+// ---------------------------------------------------------------------------------------------------------------------------
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const isRealDay = (value: string) => DAY.test(value) && new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value;
+
+/**
+ * What is asked about the rows of a file, for ONE request: only what tells one child from another (the name, the birthday, the primary
+ * parent's mobile, the school's own admission number, the Aadhaar number), and only for a row that has a name and a real birthday (any
+ * other row needs a fix first, and nobody can be matched on it). What a row does not have is left out.
+ */
+export function matchInputOf(rows: readonly PreparedRow[]): ImportMatchRow[] {
+  const asked: ImportMatchRow[] = [];
+  for (const r of rows) {
+    const s = r.input.student;
+    const firstName = tidy(s.firstName);
+    const lastName = tidy(s.lastName);
+    if (!firstName || !lastName || !isRealDay(s.dateOfBirth)) continue;
+    const mobile = s.guardians.find((g) => g.isPrimary)?.mobile;
+    const aadhaar = s.aadhaarNumber?.replace(/[\s-]/g, "");
+    asked.push({
+      row: r.row,
+      firstName,
+      lastName,
+      dateOfBirth: s.dateOfBirth,
+      ...(mobile ? { mobile } : {}),
+      ...(r.input.admissionNumber ? { admissionNumber: r.input.admissionNumber } : {}),
+      ...(aadhaar ? { aadhaarNumber: aadhaar } : {}),
+    });
+  }
+  return asked;
+}
+
+const whereIs = (student: ImportMatch["student"]) => placeLabel(student.className ? { className: student.className, sectionName: student.sectionName } : null);
+
+/** A row whose student is already in the school: what the table says (a short title, and who they are and where). */
+export function alreadyOf(match: ImportMatch): { label: string; detail: string } {
+  const { student } = match;
+  const who = `${student.name} · ${student.admissionNumber} · ${whereIs(student)}`;
+  return student.inactive
+    ? { label: "Already in your school, inactive", detail: `${who}. Make them active again instead of admitting them twice` }
+    : { label: "Already in your school", detail: who };
+}
+
+/** The admission number or the Aadhaar number of ANOTHER child is a problem of that box; null for any other kind of match. */
+export function matchProblemOf(match: ImportMatch): RowProblem | null {
+  const { student } = match;
+  const gone = student.inactive ? ", who is inactive" : "";
+  if (match.kind === "number") {
+    return { label: "Admission no.", message: `Admission number ${student.admissionNumber} is already ${student.name}'s (${whereIs(student)})${gone}`, fields: ["admissionNumber"] };
+  }
+  if (match.kind === "aadhaar") {
+    return { label: "Aadhaar no.", message: `This Aadhaar number is already ${student.name}'s (${student.admissionNumber}, ${whereIs(student)})${gone}`, fields: ["aadhaarNumber"] };
+  }
+  return null;
+}
+
+/** The same name and birthday, another parent's mobile: a note on the row, which is still uploaded unless the person changes it. */
+export function matchNoteOf(match: ImportMatch): string | null {
+  if (match.kind !== "maybe") return null;
+  const { student } = match;
+  return `Maybe the same student as ${student.name} (${student.admissionNumber}, ${whereIs(student)}): the same name and date of birth, but not the same parent's mobile number. Uploaded as a new student unless you change this row.`;
+}
+
+/**
+ * Inside the file: a row with the same name and birthday as an earlier one but another parent's mobile is a maybe ("Maybe the same
+ * student as row 4"). The same student with the same mobile is a problem (`crossCheck`), and twins (another name) are not looked at.
+ */
+export function lookAlikes(rows: readonly PreparedRow[]): Map<number, string> {
+  const notes = new Map<number, string>();
+  const first = new Map<string, { row: number; mobiles: Set<string> }>();
+  for (const r of rows) {
+    const s = r.input.student;
+    if (!tidy(s.firstName) || !tidy(s.lastName) || !isRealDay(s.dateOfBirth)) continue;
+    const who = `${tidy(s.firstName).toLowerCase()} ${tidy(s.lastName).toLowerCase()}|${s.dateOfBirth}`;
+    const mobile = s.guardians.find((g) => g.isPrimary)?.mobile ?? "";
+    const seen = first.get(who);
+    if (!seen) first.set(who, { row: r.row, mobiles: new Set([mobile]) });
+    else {
+      if (!seen.mobiles.has(mobile)) notes.set(r.row, `Maybe the same student as row ${seen.row}: the same name and date of birth, but not the same parent's mobile number`);
+      seen.mobiles.add(mobile);
+    }
+  }
+  return notes;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------

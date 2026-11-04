@@ -34,6 +34,19 @@ export function suggestYearName(start: string, end: string): string {
   return from === to ? from : `${from}-${to}`;
 }
 
+/**
+ * The next session, suggested from the running one: it starts the day after the running year ends and ends the day before the same
+ * date a year later, named the way schools usually name it ("2027-2028"). The school can change every word of it.
+ */
+export function nextYearAfter(running: { startDate: string; endDate: string }): { name: string; startDate: string; endDate: string } {
+  const after = new Date(`${running.endDate}T00:00:00.000Z`);
+  after.setUTCDate(after.getUTCDate() + 1);
+  const startDate = dayOf(after);
+  const end = new Date(Date.UTC(after.getUTCFullYear() + 1, after.getUTCMonth(), after.getUTCDate() - 1));
+  const endDate = dayOf(end);
+  return { name: suggestYearName(startDate, endDate), startDate, endDate };
+}
+
 /** The checks the server makes too, for a message before anything is sent. Returns { field: message }. */
 export function checkAcademicYear(name: string, start: string, end: string): Record<"name" | "startDate" | "endDate", string | undefined> {
   const startDay = start ? new Date(`${start}T00:00:00.000Z`) : null;

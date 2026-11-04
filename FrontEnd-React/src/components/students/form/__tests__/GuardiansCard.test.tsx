@@ -1,20 +1,37 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DEFAULT_FIELD_RULES } from "../../../../constants/studentFields";
 import { useStudentForm } from "../../../../hooks/useStudentForm";
+import type { GuardianMatch } from "../../../../types";
 import { emptyStudentForm } from "../../../../utils/students";
 import { GuardiansCard } from "../GuardiansCard";
 
-/** The admission form's parents card with a real form behind it (no server: the mobile lookup is not wired). */
-function Card() {
+/** A parent the school already has, as the lookup of a mobile number answers. */
+const SURESH: GuardianMatch = {
+  id: "g-suresh",
+  name: "Suresh Verma",
+  mobile: "9876543210",
+  alternateMobile: "9811122233",
+  email: "suresh@example.com",
+  occupation: "Farmer",
+  children: [],
+};
+
+/** The admission form's parents card with a real form behind it (the mobile lookup is wired only when a `lookup` is given). */
+function Card({ lookup }: { lookup?: (mobile: string) => Promise<GuardianMatch | null> }) {
   const form = useStudentForm(emptyStudentForm({ ...DEFAULT_FIELD_RULES, secondParent: "optional" }), {
     mode: "admit",
     classHasSections: () => false,
     rules: { ...DEFAULT_FIELD_RULES, secondParent: "optional" },
+    lookup,
   });
   return <GuardiansCard form={form} mode="admit" />;
 }
+
+/** One box of the first card, by its part of the path ("name", "mobile"...). */
+const box = (field: string) => document.getElementById(`student-guardians-0-${field}`);
+const input = (field: string) => box(field) as HTMLInputElement;
 
 /** The Relation dropdown of each card (HeroUI gives its button the box's id). */
 const relationButtons = () => [...document.querySelectorAll<HTMLButtonElement>('button[id^="student-guardians-"][id$="-relation"]')];
@@ -22,6 +39,91 @@ const relationButtons = () => [...document.querySelectorAll<HTMLButtonElement>('
 const relations = () => relationButtons().map((b) => b.textContent?.trim());
 
 describe("the parents card of Add student", () => {
+  it("has every box from the start, in this order: Full name, Relation, Mobile number, Another number, Occupation, Email", () => {
+    render(<Card />);
+    const boxes = ["name", "relation", "mobile", "alternateMobile", "occupation", "email"].map((field) => box(field));
+    boxes.forEach((b, i) => expect(b, `box ${i}`).not.toBeNull());
+    for (let i = 1; i < boxes.length; i++) expect(boxes[i - 1]!.compareDocumentPosition(boxes[i]!) & Node.DOCUMENT_POSITION_FOLLOWING, `box ${i} comes after box ${i - 1}`).toBeTruthy();
+    // Nothing waits for the mobile number any more.
+    expect(screen.queryByText(/open once/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /No mobile number/ })).not.toBeInTheDocument();
+  });
+
+  it("the name, the other number and the email can be typed before any mobile number", async () => {
+    render(<Card />);
+    const user = userEvent.setup();
+    await user.type(input("name"), "Ravi Verma");
+    await user.type(input("alternateMobile"), "9811122233");
+    await user.type(input("occupation"), "Teacher");
+    await user.type(input("email"), "ravi@example.com");
+    expect(input("name")).toHaveValue("Ravi Verma");
+    expect(input("alternateMobile")).toHaveValue("9811122233");
+    expect(input("occupation")).toHaveValue("Teacher");
+    expect(input("email")).toHaveValue("ravi@example.com");
+    expect(input("mobile")).toHaveValue("");
+  });
+
+  it("every parent added has all the boxes too", async () => {
+    render(<Card />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Add another guardian" }));
+    expect(document.getElementById("student-guardians-1-name")).not.toBeNull();
+    expect(document.getElementById("student-guardians-1-email")).not.toBeNull();
+  });
+
+  it("a number that finds a parent the school has shows them in place of the boxes; changing the number brings back what was typed", async () => {
+    render(<Card lookup={async () => SURESH} />);
+    const user = userEvent.setup();
+    await user.type(input("name"), "Ravi Verma");
+    await user.type(input("email"), "ravi@example.com");
+    await user.type(input("mobile"), "9876543210");
+    expect(await screen.findByText("Suresh Verma is already in your school")).toBeInTheDocument();
+    // Kept as they are: their saved details need no boxes.
+    expect(box("name")).toBeNull();
+    expect(box("email")).toBeNull();
+    // The number was a slip: one digit less, and the parent found is forgotten and the boxes hold what was typed again.
+    await user.type(input("mobile"), "{Backspace}");
+    expect(screen.queryByText("Suresh Verma is already in your school")).not.toBeInTheDocument();
+    expect(input("name")).toHaveValue("Ravi Verma");
+    expect(input("email")).toHaveValue("ravi@example.com");
+  });
+
+  it("the number changed and typed back finds the parent again (not 'new to your school')", async () => {
+    const lookup = vi.fn(async () => SURESH);
+    render(<Card lookup={lookup} />);
+    const user = userEvent.setup();
+    await user.type(input("mobile"), "9876543210");
+    await screen.findByText("Suresh Verma is already in your school");
+    await user.type(input("mobile"), "{Backspace}");
+    expect(screen.queryByText(/New to your school/)).not.toBeInTheDocument();
+    await user.type(input("mobile"), "0");
+    expect(await screen.findByText("Suresh Verma is already in your school")).toBeInTheDocument();
+    expect(screen.queryByText(/New to your school/)).not.toBeInTheDocument();
+    expect(lookup).toHaveBeenCalledTimes(2);
+  });
+
+  it("Update details opens the parent's saved details in the boxes", async () => {
+    render(<Card lookup={async () => SURESH} />);
+    const user = userEvent.setup();
+    await user.type(input("name"), "Ravi Verma");
+    await user.type(input("mobile"), "9876543210");
+    await screen.findByText("Suresh Verma is already in your school");
+    await user.click(screen.getByRole("radio", { name: "Update details" }));
+    expect(input("name")).toHaveValue("Suresh Verma");
+    expect(input("alternateMobile")).toHaveValue("9811122233");
+    expect(input("email")).toHaveValue("suresh@example.com");
+    expect(input("occupation")).toHaveValue("Farmer");
+  });
+
+  it("a number that finds nobody says the parent is new, and the boxes stay as typed", async () => {
+    render(<Card lookup={async () => null} />);
+    const user = userEvent.setup();
+    await user.type(input("name"), "Ravi Verma");
+    await user.type(input("mobile"), "9876543210");
+    expect(await screen.findByText(/New to your school/)).toBeInTheDocument();
+    expect(input("name")).toHaveValue("Ravi Verma");
+  });
+
   it("starts with a father; Add another guardian gives the mother, then a Guardian: never a second father or mother", async () => {
     render(<Card />);
     const user = userEvent.setup();

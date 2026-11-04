@@ -128,6 +128,21 @@ body {
   font-family: var(--font-sans), system-ui, Arial, Helvetica, sans-serif;
 }
 
+/* Everything that can be clicked shows the hand, like a link (Tailwind 4 gives buttons the plain arrow; the user asked on 2026-11-04).
+   In the base layer, so a `cursor-*` class still wins. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]),
+  [role="option"]:not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  summary,
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
 /* The landing page's in-page links glide instead of jumping (the data attribute on <html> keeps route changes instant). */
 @media (prefers-reduced-motion: no-preference) {
   html {

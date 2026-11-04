@@ -15,6 +15,9 @@ export function isEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
 }
 
+/** A login name: 3 to 30 letters, digits, dots or underscores, starting with a letter (the server's rule; capitals are lower-cased there). */
+export const isUsername = (value: string) => /^[a-z][a-z0-9._]{2,29}$/.test(value.trim().toLowerCase());
+
 export const isIndianMobile = (value: string) => /^[6-9]\d{9}$/.test(value.trim());
 export const isPinCode = (value: string) => /^\d{6}$/.test(value.trim());
 /** The 10 digits after +91: a mobile, or a landline's STD code and number. */

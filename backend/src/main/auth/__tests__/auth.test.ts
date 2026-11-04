@@ -115,7 +115,7 @@ describe("login", () => {
     expect(wrongPassword.status).toBe(401);
     expect(unknownEmail.status).toBe(401);
     expect(unknownEmail.body).toEqual(wrongPassword.body);
-    expect(wrongPassword.body.message).toBe("Invalid email or password");
+    expect(wrongPassword.body.message).toBe("Invalid email/username or password");
   });
 
   it("blocks a disabled account, but only after the password is right", async () => {
@@ -312,7 +312,8 @@ describe("forgot and reset password", () => {
   });
 
   it("sends no link to a disabled account", async () => {
-    await createTeacher({ isActive: false });
+    // A principal: a teacher gets no link in any case (their school sets their password, 2026-11-04).
+    await createTeacher({ isActive: false, role: "principal" });
     expect((await forgot("teacher@example.com")).status).toBe(200);
     expect(sent).toHaveLength(0);
     expect(await AuthToken.countDocuments()).toBe(0);
@@ -380,7 +381,8 @@ describe("forgot and reset password", () => {
       approvalStatus: "approved",
       isActive: false,
     });
-    await createTeacher({ tenantId: tenant._id });
+    // A principal of the school (a teacher's password is set by the school only, so a teacher gets no link at all).
+    await createTeacher({ tenantId: tenant._id, role: "principal" });
     await forgot("teacher@example.com");
     const res = await reset(resetTokenFromMail(), "New@Pass123");
     expect(res.status).toBe(403);

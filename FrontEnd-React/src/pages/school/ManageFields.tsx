@@ -5,12 +5,13 @@ import { useFieldsEditor } from "../../hooks/useFieldsEditor";
 import { defaultDraft } from "../../utils/exportLayout";
 import { cn } from "../../utils/helpers";
 import { ExportFieldsCard } from "../../components/students/export/ExportFieldsCard";
+import { FieldsGuide } from "../../components/students/export/FieldsGuide";
+import { FormFieldsCard } from "../../components/students/export/FormFieldsCard";
 import { AskDialog } from "../../components/students/form/AskDialog";
 import { FormActionBar } from "../../components/students/form/FormActionBar";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { ModalError } from "../../components/ui/AppModal";
 import { Button } from "../../components/ui/Button";
-import { Card } from "../../components/ui/Card";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/toast-context";
 
@@ -19,10 +20,12 @@ export type FieldsFrom = "admit" | "students";
 
 /**
  * Manage school > Students > Manage fields (`/school/students/fields`): the school's fields on a page of their own, for a school that
- * has no student yet (so no Export button) and for anyone in the middle of Add student: which details Add student asks, which are
- * mandatory, and the Excel's columns. It is the Export page's list (the same component and the same save), without the Excel's
- * preview, so only the settings are read. One Save (a bar pinned to the bottom) sends what changed; Back asks first when something is
- * not saved. Add student and the Excel follow the saved list from the next student.
+ * has no student yet (so no Export button) and for anyone in the middle of Add student. Two cards, each the school's to arrange on its
+ * own: **Add student form** (the four steps with the boxes the form has; Asked, Mandatory, the step of each detail, the school's own
+ * fields, a preview) and **Excel columns** (the Export page's list: in the file or not, heading, place). Mandatory is one setting
+ * for both, so a mandatory detail is on the form and in the file. Only the settings are read (no Excel preview). The explanation is
+ * behind the (i) beside the title. One Save (a bar pinned to the bottom) sends what changed; Back asks first when something is not
+ * saved. Add student and the Excel follow the saved settings from the next student.
  */
 export default function ManageFieldsPage() {
   const navigate = useNavigate();
@@ -31,6 +34,7 @@ export default function ManageFieldsPage() {
   const { draft, problems, dirty, isDefault, saving, error, change, saveDraft } = useFieldsEditor();
   // Leaving with changes not saved asks first; `to` is where to go after (nothing: back to where the person came from).
   const [asking, setAsking] = useState<{ to?: string } | "default" | null>(null);
+  const [fieldsOpen, setFieldsOpen] = useState(true);
 
   const from = (location.state as { from?: FieldsFrom } | null)?.from;
   const cameFromHistory = location.key !== "default";
@@ -52,40 +56,16 @@ export default function ManageFieldsPage() {
           crumbs={crumbs}
           current="Manage fields"
           onBack={() => leave()}
+          info={<FieldsGuide />}
         />
-
-        <Card className="space-y-2 p-4 text-sm text-foreground-muted sm:px-5">
-          <p>One list for Add student and the Excel.</p>
-          <p>
-            <strong className="text-foreground">Every school keeps these</strong>, always on, in Add student and in the Excel: Student Name, Gender, Date of Birth, Age, Category,
-            Class and Section, both parents' names and mobile numbers, the Address (always needed) and the Previous School (needed from Class 1; Nursery, LKG and UKG
-            may leave it empty). Section is asked when the class has sections, and can be changed later on the student's page.
-          </p>
-          <p>
-            <strong className="text-foreground">Bulk upload is flexible</strong>: an old register seldom holds all of this, so a file is accepted without the rest. Only the name,
-            gender, date of birth, class and a parent's mobile number are needed there. Add student is the strict one.
-          </p>
-          <ul className="list-disc space-y-1 pl-5">
-            <li>
-              <strong className="text-foreground">On</strong>: Add student asks it, and it is a column of the Excel.
-            </li>
-            <li>
-              <strong className="text-foreground">Mandatory</strong>: a student is not saved without it. <strong className="text-foreground">Optional</strong>: it may be left empty.
-            </li>
-            <li>
-              <strong className="text-foreground">Always</strong>: Add student always asks it, whatever you choose here (the first name, the last name, the date of birth...).
-              Turning it On only makes it a column of the Excel.
-            </li>
-            <li>
-              <strong className="text-foreground">Student Name</strong> is only the full name in one column of the Excel, made from the first and the last name.
-            </li>
-          </ul>
-        </Card>
 
         <ModalError message={error} />
 
         {draft ? (
-          <ExportFieldsCard draft={draft} problems={problems} onChange={change} open onOpenChange={() => {}} collapsible={false} />
+          <>
+            <FormFieldsCard draft={draft} onChange={change} />
+            <ExportFieldsCard draft={draft} problems={problems} onChange={change} open={fieldsOpen} onOpenChange={setFieldsOpen} />
+          </>
         ) : (
           <div aria-busy="true" className="space-y-2">
             <Skeleton className="h-14 rounded-2xl" />
@@ -131,7 +111,10 @@ export default function ManageFieldsPage() {
       )}
       {asking === "default" && draft && (
         <AskDialog title="Back to the default?" icon={RotateCcw} confirmLabel="Use the default" onClose={() => setAsking(null)} onConfirm={() => change(defaultDraft(draft.custom))}>
-          <p>The fields, their headings and their order go back to how a new school starts; your own fields stay, switched off. Nothing is saved until you press Save.</p>
+          <p>
+            The fields, their headings and their order go back to how a new school starts, and every detail goes back to its usual step; your own fields stay, switched off. Nothing is
+            saved until you press Save.
+          </p>
         </AskDialog>
       )}
     </>

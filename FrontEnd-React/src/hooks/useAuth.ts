@@ -24,10 +24,10 @@ export function useAuth() {
     [dispatch],
   );
 
-  /** Signs in and returns the session so the caller can route (see utils/postLoginPath). */
+  /** Signs in with an email or a username, and returns the session so the caller can route (see utils/postLoginPath). */
   const login = useCallback(
-    async (email: string, password: string, rememberMe = true) => {
-      const res = await dispatch(authApi.endpoints.login.initiate({ email, password })).unwrap();
+    async (identifier: string, password: string, rememberMe = true) => {
+      const res = await dispatch(authApi.endpoints.login.initiate({ identifier, password })).unwrap();
       applySession(res.data, rememberMe);
       return res.data;
     },

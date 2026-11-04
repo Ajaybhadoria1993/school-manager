@@ -37,7 +37,7 @@ export async function notifySuperAdminsOfSubmission(
     reviewUrl,
     resubmitted,
   });
-  for (const sa of superAdmins) send(sa.email, mail, `Review link for ${tenant.name}: ${reviewUrl}`);
+  for (const sa of superAdmins) if (sa.email) send(sa.email, mail, `Review link for ${tenant.name}: ${reviewUrl}`);
 }
 
 export function notifySchoolApproved(tenant: ITenant, admin: { name: string; email: string }): void {

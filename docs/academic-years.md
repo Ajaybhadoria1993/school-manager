@@ -14,7 +14,7 @@ student promotion) are meant to build on it. Written for developers working on t
    ("2026-2027: 1 Apr 2026 to 31 Mar 2027 (becomes active when you approve)").
 3. **Approval.** The super admin approves as before; that switches the year on. A pending or rejected school never has an active
    year. A school that is sent back and resubmits edits the same year record.
-4. **Dashboard.** The banner shows *Current Academic Year: 2026-2027 · 1 Apr 2026 to 31 Mar 2027*, read from the server, with a
+4. **Dashboard.** The status line under the greeting shows *Current Academic Year: 2026-2027 · 1 Apr 2026 to 31 Mar 2027*, read from the server, with a
    placeholder while it loads and a *Retry* when it cannot be loaded.
 5. **Classes & Sections.** Departments and classes are the school's lasting layout. Sections belong to the current session, so
    the *Sections* tile and a class's *Sections* heading name the year.
@@ -137,9 +137,13 @@ Rules to follow, all already supported by what is built:
 6. The class screens show only the current year's sections today; a "view another year" screen needs an `academicYearId` filter on the
    same endpoints, not a new model.
 
-## Later phases (not built)
+## Later phases
 
-Planned in this order; none of it runs automatically.
+Steps 1, 4, 5, 6 and 9 below are **built** (the next session with its sections copied, the promotion list, the school admin's approval, the new
+enrolments and the switch that closes the running year): see "Promotion to the next academic year" in [students.md](students.md), the
+screens Academic years and Promotion, and the endpoints `GET/POST /academics/academic-years`, `POST /academics/academic-years/:id/activate`.
+Step 2 (a year-end review shown from the school's own end date), 3 (results and eligibility) and 8 (teacher assignments) are not built;
+nothing runs automatically.
 
 1. **Next session.** The school creates its next year (`source: "school"`, `pending`) with its own dates. Activating it closes the
    current one in the same guarded step (the partial unique index keeps it to one active year). Sections for the new year are created

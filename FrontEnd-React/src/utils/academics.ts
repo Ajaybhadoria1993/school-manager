@@ -1,5 +1,5 @@
 import { Baby, Backpack, BookOpen, FlaskConical, GraduationCap, Layers, type LucideIcon } from "lucide-react";
-import { DEPARTMENT_SUGGESTIONS, levelToClass, sectionLetters } from "../constants/academics";
+import { DEPARTMENT_SUGGESTIONS, MAX_CLASS_CAPACITY, levelToClass, sectionLetters } from "../constants/academics";
 import { CLASS_LEVELS } from "../constants/schoolOptions";
 import type { Tone } from "../constants/tones";
 import type { AcademicStructure, ClassItem, DepartmentItem } from "../types";
@@ -10,6 +10,26 @@ export const keyOf = (name: string) => name.trim().toLowerCase().replace(/\s+/g,
 /** "1 section", "2 sections", "2 classes". */
 export const plural = (count: number, word: string) =>
   `${count} ${count === 1 ? word : /(s|x|ch|sh)$/.test(word) ? `${word}es` : `${word}s`}`;
+
+/**
+ * What is wrong with the seats typed for a class, in the words the server uses, or null when they are fine. A class always has seats
+ * once it is made, so an empty box is wrong too (the server refuses it as well).
+ */
+export function classSeatsProblem(text: string): string | null {
+  const typed = text.trim();
+  if (typed === "") return "Enter the seats of the class.";
+  const seats = Number(typed);
+  return /^\d+$/.test(typed) && seats >= 1 && seats <= MAX_CLASS_CAPACITY ? null : `Seats must be a whole number from 1 to ${MAX_CLASS_CAPACITY}.`;
+}
+
+/** The seats of a class as people say it ("120 seats"); null when the school has not said yet. */
+export const seatsLabel = (c: Pick<ClassItem, "capacity">): string | null => (c.capacity == null ? null : plural(c.capacity, "seat"));
+
+/** The seats the sections of a class hold between them (a section with no seats holds none). */
+export const sectionSeats = (c: Pick<ClassItem, "sections">): number => c.sections.reduce((sum, s) => sum + (s.capacity ?? 0), 0);
+
+/** The sections cannot hold more than the class has; a class with no seats set holds them to nothing. */
+export const sectionsOverClass = (classSeats: number | null, held: number): boolean => classSeats !== null && held > classSeats;
 
 /** "Class 5 - A". */
 export const sectionTitle = (className: string, sectionName: string) => `${className} - ${sectionName}`;

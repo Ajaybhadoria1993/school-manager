@@ -4,3 +4,7 @@ export * from "./tenant";
 export * from "./onboarding";
 export * from "./academics";
 export * from "./students";
+export * from "./staff";
+export * from "./timetable";
+export * from "./parent";
+export * from "./classroom";

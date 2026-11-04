@@ -15,7 +15,7 @@ itKeepsSchoolsApart("academics", {
   seed: async (a) => {
     const department = (await request(app).post(`${api}/departments`).set(as(a.token)).send({ name: "Primary" })).body.data;
     const klass = (
-      await request(app).post(`${api}/classes`).set(as(a.token)).send({ name: "Class 1", departmentId: department.id })
+      await request(app).post(`${api}/classes`).set(as(a.token)).send({ name: "Class 1", departmentId: department.id, capacity: 40 })
     ).body.data;
     return { departmentId: department.id as string, classId: klass.id as string, sectionId: klass.sections[0].id as string };
   },
@@ -42,7 +42,7 @@ itKeepsSchoolsApart("academics", {
       name: "adding classes to its department",
       method: "post",
       path: (c) => `${api}/departments/${c.departmentId}/classes`,
-      body: () => ({ names: ["Hacked class"] }),
+      body: () => ({ names: ["Hacked class"], capacity: 40 }),
     },
     {
       // The class check comes first, so nothing is created for a stranger's class either.
@@ -53,6 +53,7 @@ itKeepsSchoolsApart("academics", {
     },
     { name: "reading its class", method: "get", path: (c) => `${api}/classes/${c.classId}` },
     { name: "renaming its class", method: "patch", path: (c) => `${api}/classes/${c.classId}`, body: () => ({ name: "Hacked" }) },
+    { name: "changing its class's seats", method: "patch", path: (c) => `${api}/classes/${c.classId}`, body: () => ({ capacity: 1 }) },
     { name: "deleting its class", method: "delete", path: (c) => `${api}/classes/${c.classId}` },
     { name: "adding a section to its class", method: "post", path: (c) => `${api}/classes/${c.classId}/sections`, body: () => ({ name: "Z" }) },
     { name: "changing its section", method: "patch", path: (c) => `${api}/sections/${c.sectionId}`, body: () => ({ capacity: 5 }) },
@@ -61,7 +62,7 @@ itKeepsSchoolsApart("academics", {
       name: "putting a new class of its own into its department",
       method: "post",
       path: () => `${api}/classes`,
-      body: (c) => ({ name: "Class 9", departmentId: c.departmentId }),
+      body: (c) => ({ name: "Class 9", departmentId: c.departmentId, capacity: 40 }),
       status: 400,
     },
   ],

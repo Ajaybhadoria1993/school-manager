@@ -1,9 +1,17 @@
 import {
   Building2,
+  CalendarClock,
+  CalendarDays,
+  CalendarRange,
   FolderTree,
   GraduationCap,
   LayoutDashboard,
   LayoutGrid,
+  MailCheck,
+  Rocket,
+  School,
+  UserRoundCheck,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 import type { UserRole } from "../../types";
@@ -41,6 +49,38 @@ export const NAV_ITEMS: NavItem[] = [
     group: "Overview",
   },
   {
+    // Every class with its sections and students, and each class's own page. For the people who run the school (SchoolManagerRoute).
+    label: "School Class",
+    href: "/school-class",
+    icon: School,
+    roles: ["school_admin", "principal"],
+    group: "Overview",
+  },
+  {
+    // Every teacher, found by search and filters; a teacher's page gives their classes, class teacher post and login. (SchoolManagerRoute.)
+    label: "Teacher",
+    href: "/teachers",
+    icon: UsersRound,
+    roles: ["school_admin", "principal"],
+    group: "Overview",
+  },
+  {
+    // The school's holidays and events (2026-11-04): the school adds them, everyone of the school (teachers, parents) sees them.
+    label: "Calendar",
+    href: "/calendar",
+    icon: CalendarDays,
+    roles: ["school_admin", "principal", "accountant", "teacher", "parent"],
+    group: "Overview",
+  },
+  {
+    // Leave sent by parents (2026-11-04): a class teacher answers their classes', the people who run the school every one.
+    label: "Leave requests",
+    href: "/leaves",
+    icon: MailCheck,
+    roles: ["school_admin", "principal", "teacher"],
+    group: "Overview",
+  },
+  {
     label: "Schools",
     href: "/super-admin/schools",
     icon: Building2,
@@ -56,10 +96,41 @@ export const NAV_ITEMS: NavItem[] = [
     group: "Manage school",
   },
   {
+    label: "Academic years",
+    href: "/school/academic-years",
+    icon: CalendarRange,
+    roles: ["school_admin", "principal"],
+    group: "Manage school",
+  },
+  {
+    // Who goes to which class when the year ends; the school admin approves the list.
+    label: "Promotion",
+    href: "/school/promotion",
+    icon: Rocket,
+    roles: ["school_admin", "principal"],
+    group: "Manage school",
+  },
+  {
+    // Timings, subjects, teachers and each class's weekly timetable, as a few steps (TIMETABLE_WRITERS in constants/timetable.ts).
+    label: "Timetable",
+    href: "/school/timetable",
+    icon: CalendarClock,
+    roles: ["school_admin", "principal"],
+    group: "Manage school",
+  },
+  {
     label: "Students",
     href: "/school/students",
     icon: GraduationCap,
     // The people who admit students (STUDENT_WRITERS in constants/students.ts; the accountant reads through the API only for now).
+    roles: ["school_admin", "principal"],
+    group: "Manage school",
+  },
+  {
+    // The people who teach: added in steps with their own login, left, brought back (STAFF_WRITERS in constants/teachers.ts).
+    label: "Manage Teacher",
+    href: "/school/teachers",
+    icon: UserRoundCheck,
     roles: ["school_admin", "principal"],
     group: "Manage school",
   },

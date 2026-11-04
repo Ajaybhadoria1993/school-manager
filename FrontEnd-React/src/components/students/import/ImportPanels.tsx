@@ -7,13 +7,17 @@ import { Card } from "../../ui/Card";
 
 const sizeText = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
 
-/** The file's name, size, sheet and rows, how many rows are ready and need a fix, and the button to pick another file. */
+/**
+ * The file's name, size, sheet and rows, how many rows are ready, need a fix and are students the school already has, and the button
+ * to pick another file.
+ */
 export function FileBar({
   file,
   sheetName,
   rows,
   ready,
   toFix,
+  already = 0,
   onChangeFile,
   disabled,
 }: {
@@ -22,6 +26,8 @@ export function FileBar({
   rows: number;
   ready: number;
   toFix: number;
+  /** Rows whose student is in the school already: not uploaded again, and no fix needed. */
+  already?: number;
   onChangeFile: () => void;
   disabled?: boolean;
 }) {
@@ -41,6 +47,12 @@ export function FileBar({
               <>
                 {" "}
                 · <span className="font-semibold text-danger">{toFix} need a fix</span>
+              </>
+            )}
+            {already > 0 && (
+              <>
+                {" "}
+                · <span className="font-semibold text-primary-deep">{already} already in your school</span>
               </>
             )}
           </p>
@@ -109,10 +121,14 @@ export function StoppedNote({ message }: { message: string }) {
   );
 }
 
-/** The last step: how many were admitted, the rows still to fix (fix them here, or as a file), and where to go next. */
+/**
+ * The last step: how many were admitted, the rows of students the school already had (not admitted again, nothing to fix), the rows
+ * still to fix (fix them here, or as a file), and where to go next.
+ */
 export function DoneCard({
   admitted,
   notAdmitted,
+  already = 0,
   linked,
   year,
   onFix,
@@ -120,7 +136,10 @@ export function DoneCard({
   onAnother,
 }: {
   admitted: number;
+  /** Rows that still need a fix. */
   notAdmitted: number;
+  /** Rows whose student was in the school already. */
+  already?: number;
   linked: number;
   year: string;
   onFix: () => void;
@@ -143,13 +162,18 @@ export function DoneCard({
             {linked} of them {linked === 1 ? "was" : "were"} linked to a parent already in your school.
           </p>
         )}
+        {already > 0 && (
+          <p>
+            {already} row{already === 1 ? " was" : "s were"} already in your school: {already === 1 ? "it was" : "they were"} not admitted again.
+          </p>
+        )}
         {notAdmitted > 0 ? (
           <p>
             {notAdmitted} row{notAdmitted === 1 ? " still needs" : "s still need"} a fix. Fix {notAdmitted === 1 ? "it" : "them"} in the table and upload again, or
             download {notAdmitted === 1 ? "it" : "them"} with the problem written beside each row.
           </p>
         ) : (
-          <p>Every row of the file was admitted.</p>
+          <p>{already > 0 ? "Every other row of the file was admitted." : "Every row of the file was admitted."}</p>
         )}
       </div>
       <div className="relative mt-5 flex flex-wrap items-center justify-center gap-2.5">

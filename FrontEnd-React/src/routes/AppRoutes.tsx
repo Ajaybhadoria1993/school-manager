@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { createBrowserRouter, type RouteObject } from "react-router";
+import { Navigate, createBrowserRouter, type RouteObject } from "react-router";
 import { PageSpinner } from "../components/shared/PageSpinner";
 import { RootLayout } from "./RootLayout";
 
@@ -36,15 +36,50 @@ const routes: RouteObject[] = [
         ...lazyRoute(() => import("../Layouts/MainLayout")),
         children: [
           { path: "dashboard", ...lazyRoute(() => import("../pages/dashboard/Dashboard")) },
+          // A signed-in parent's child (their home lists the children; the API answers only for their own).
+          { path: "my-children/:id", ...lazyRoute(() => import("../pages/parent/ChildPage")) },
+          // The school's holidays and events: everyone of the school sees them; the people who run it change them (the API checks).
+          { path: "calendar", ...lazyRoute(() => import("../pages/calendar/CalendarPage")) },
+          // Leave sent by parents: a class teacher's classes', or every one for the people who run the school (the API decides).
+          { path: "leaves", ...lazyRoute(() => import("../pages/leaves/LeavesPage")) },
+          // A class's work: attendance (class teacher, the school), diary and tests (docs/parent-teacher-flow.md); the API checks who.
+          { path: "class-work/:classId", ...lazyRoute(() => import("../pages/classwork/ClassWorkPage")) },
           { path: "modules/:slug", ...lazyRoute(() => import("../pages/modules/ModulePreview")) },
           { path: "school", ...lazyRoute(() => import("../pages/school/School")) },
           // Manage school: the pages that set the school up. Only the people who run it (the API checks too).
           {
             ...lazyRoute(() => import("./SchoolManagerRoute")),
             children: [
+              // School Class: every class with its sections and students, and one class's own page (its students by section).
+              { path: "school-class", ...lazyRoute(() => import("../pages/school/SchoolClass")) },
+              { path: "school-class/:classId", ...lazyRoute(() => import("../pages/school/SchoolClassDetail")) },
+              // Teacher (the menu entry on top): every teacher, and each one's page and change form under the same address.
+              { path: "teachers", ...lazyRoute(() => import("../pages/teachers/TeacherDirectory")) },
+              { path: "school-class/:classId/timetable", ...lazyRoute(() => import("../pages/school/SchoolClassTimetable")) },
+              { path: "teachers/new", ...lazyRoute(() => import("../pages/school/TeacherAdd")) },
+              { path: "teachers/:id", ...lazyRoute(() => import("../pages/school/TeacherDetail")) },
+              { path: "teachers/:id/edit", ...lazyRoute(() => import("../pages/school/TeacherEdit")) },
               { path: "school/classes", ...lazyRoute(() => import("../pages/school/Classes")) },
+              // The school's years (the next one is made and switched on here) and the promotion of its students into the next year.
+              { path: "school/academic-years", ...lazyRoute(() => import("../pages/school/AcademicYears")) },
+              { path: "school/promotion", ...lazyRoute(() => import("../pages/school/Promotion")) },
               // A department's own screen; "none" instead of an id is the classes that are in no department.
               { path: "school/classes/departments/:departmentId", ...lazyRoute(() => import("../pages/school/DepartmentManage")) },
+              // Timetable: one page with two tabs (School timings, Class timetables); the school's subjects and teachers are their own pages.
+              // The old one-page-per-step addresses lead to the right tab (fixed paths before the ids).
+              { path: "school/timetable", ...lazyRoute(() => import("../pages/school/Timetable")) },
+              { path: "school/timetable/timings", ...lazyRoute(() => import("../pages/school/TimetableRedirect")) },
+              { path: "school/timetable/subjects", ...lazyRoute(() => import("../pages/school/TimetableSubjects")) },
+              // Teachers used to be a page of the Timetable: the old address leads to the Teachers page.
+              { path: "school/timetable/teachers", element: <Navigate to="/school/teachers" replace /> },
+              { path: "school/timetable/class-subjects", ...lazyRoute(() => import("../pages/school/TimetableRedirect")) },
+              { path: "school/timetable/class/:classId/:sectionId", ...lazyRoute(() => import("../pages/school/TimetableRedirect")) },
+              { path: "school/timetable/teacher/:teacherId", ...lazyRoute(() => import("../pages/school/TimetableTeacherWeek")) },
+              // Teachers: the list, the Add teacher steps, one teacher's page and the change form (fixed paths before ":id").
+              { path: "school/teachers", ...lazyRoute(() => import("../pages/school/Teachers")) },
+              { path: "school/teachers/new", ...lazyRoute(() => import("../pages/school/TeacherAdd")) },
+              { path: "school/teachers/:id", ...lazyRoute(() => import("../pages/school/TeacherDetail")) },
+              { path: "school/teachers/:id/edit", ...lazyRoute(() => import("../pages/school/TeacherEdit")) },
               // Students: the list, the admission form, the bulk upload, the export (the school's fields and Excel layout), one student's page (fixed paths before ":id").
               { path: "school/students", ...lazyRoute(() => import("../pages/school/Students")) },
               { path: "school/students/new", ...lazyRoute(() => import("../pages/school/StudentAdmit")) },
@@ -52,7 +87,8 @@ const routes: RouteObject[] = [
               { path: "school/students/export", ...lazyRoute(() => import("../pages/school/StudentExport")) },
               // The school's fields on a page of their own: reachable with no student yet (the Export button needs students).
               { path: "school/students/fields", ...lazyRoute(() => import("../pages/school/ManageFields")) },
-              { path: "school/students/:id", ...lazyRoute(() => import("../pages/school/StudentDetail")) },
+              { path: "school/students/inactive", ...lazyRoute(() => import("../pages/school/InactiveStudents")) },
+              { path: "school/students/:id",...lazyRoute(() => import("../pages/school/StudentDetail")) },
             ],
           },
           {

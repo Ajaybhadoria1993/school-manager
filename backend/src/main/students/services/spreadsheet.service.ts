@@ -75,6 +75,60 @@ const TEXT_EXPORT_COLUMNS = new Set<ExportColumnKey>([
   "emergencyMobile",
 ]);
 
+/**
+ * What an export holds while the school has no student yet: one made-up row, so the file (and its preview) can be tried before anyone is
+ * admitted. Every column of the export has a value; a field of the school's own is left empty.
+ */
+const SAMPLE_ROW: Record<ExportColumnKey, string | number> = {
+  admissionNumber: "ADM-SAMPLE-0001",
+  studentName: "Sample Student",
+  firstName: "Sample",
+  lastName: "Student",
+  gender: "Female",
+  dateOfBirth: "14-05-2016",
+  age: 10,
+  category: "General",
+  className: "Class 5",
+  sectionName: "A",
+  rollNumber: 1,
+  admissionDate: "01-04-2026",
+  fatherName: "Sample Father",
+  fatherMobile: "9876543210",
+  fatherOccupation: "Farmer",
+  motherName: "Sample Mother",
+  motherMobile: "9876543211",
+  motherOccupation: "Teacher",
+  guardianName: "",
+  guardianMobile: "",
+  guardianRelation: "",
+  parentEmail: "parent@example.com",
+  address: "12 MG Road",
+  area: "Near the bus stand",
+  city: "Bhopal",
+  state: "Madhya Pradesh",
+  pincode: "462001",
+  bloodGroup: "B+",
+  aadhaarNumber: "",
+  samagraId: "",
+  apaarId: "",
+  pen: "",
+  srNumber: "",
+  religion: "",
+  nationality: "Indian",
+  emergencyMobile: "",
+  disability: "",
+  medicalNotes: "",
+  rteSeat: "No",
+  bpl: "No",
+  feeConcession: "",
+  transportRoute: "",
+  transportStop: "",
+  previousSchool: "Little Flower School",
+  lastClass: "Class 4",
+  tcNumber: "TC/12",
+  tcDate: "31-03-2026",
+};
+
 async function writeBuffer(workbook: ExcelJS.Workbook): Promise<Buffer> {
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
@@ -240,7 +294,7 @@ export class SpreadsheetService {
    * name order: every column's value, so the layout can pick and order them. The parents go in the Father / Mother / Guardian columns
    * by their relation. `limit` keeps only the first ones (the preview); `total` is how many there are in all.
    */
-  static async rows(tenantId: string, query: ExportStudentsQuery, limit?: number): Promise<{ total: number; rows: ExportRow[] }> {
+  static async rows(tenantId: string, query: ExportStudentsQuery, limit?: number): Promise<{ total: number; rows: ExportRow[]; sample?: true }> {
     const school = new Types.ObjectId(tenantId);
     const year = await AcademicYear.findOne({ tenantId: school, status: "active" }).select("_id name").lean();
     if (!year) throw NO_ACTIVE_YEAR();
@@ -355,6 +409,10 @@ export class SpreadsheetService {
         a.section.localeCompare(b.section, undefined, { numeric: true }) ||
         a.nameKey.localeCompare(b.nameKey)
     );
+    // A school with no student at all (not a search or class that matches nobody) gets one sample row, so the export can be tried.
+    if (all.length === 0 && !query.q && !query.classId && !query.sectionId) {
+      return { total: 0, rows: [{ ...SAMPLE_ROW } as ExportRow], sample: true };
+    }
     const picked = limit === undefined ? all : all.slice(0, limit);
     return { total: all.length, rows: picked.map((r) => r.values) };
   }

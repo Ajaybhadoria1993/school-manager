@@ -1,0 +1,340 @@
+import { Types } from "mongoose";
+import { ApiError } from "../../../utils/ApiError";
+import { Section } from "../../academics/models/Section";
+import { Teacher } from "../../staff/models/Teacher";
+import { nameKeyOf } from "../../tenants/services/tenantFactory";
+import { analyse, type AllotmentInfo } from "../../timetable/services/checker";
+import { clashError } from "../../timetable/services/grid.service";
+import { loadRules } from "../../timetable/services/schedule.service";
+import { weekPeriods } from "../../timetable/services/scheduleRules";
+import { resolveUnit, type Unit } from "../../timetable/services/unit";
+import { busyFrom, loadWorld, unitDays, unitKey, type World } from "../../timetable/services/world";
+import { Allotment } from "../models/Allotment";
+import { Subject } from "../models/Subject";
+import type { AllotmentRowInput, AssignTeacherInput, SaveAllotmentsInput } from "../schemas/subjects.schemas";
+
+export interface AllotmentRowDto {
+  subjectId: string;
+  subjectName: string;
+  subjectCode: string | null;
+  category: "academic" | "activity";
+  subjectActive: boolean;
+  periodsPerWeek: number;
+  blockSize: number;
+  teacherId: string | null;
+  teacherName: string | null;
+  group: string | null;
+}
+
+export interface AllotmentView {
+  unit: { classId: string; className: string; sectionId: string | null; sectionName: string | null; label: string; academicYear: { id: string; name: string } };
+  rows: AllotmentRowDto[];
+  /** The class's other sections (of the same year), which the same list can be given to. */
+  siblings: { id: string; name: string }[];
+  totals: {
+    /** The periods a week the list has to place (the subjects of a choice share their periods, so a choice counts once). */
+    periods: number;
+    /** The periods a week the class's timing has; null when no timing covers the class yet. */
+    available: number | null;
+  };
+}
+
+interface Problem {
+  path: string;
+  message: string;
+}
+
+/** The periods a week a list needs: every subject everyone studies, and each choice once (its subjects are taught side by side). */
+export function periodsToPlace(rows: readonly Pick<AllotmentRowInput, "periodsPerWeek" | "group">[]): number {
+  let total = 0;
+  const groups = new Map<string, number>();
+  for (const row of rows) {
+    if (row.group) groups.set(row.group.toLowerCase(), Math.max(groups.get(row.group.toLowerCase()) ?? 0, row.periodsPerWeek));
+    else total += row.periodsPerWeek;
+  }
+  for (const periods of groups.values()) total += periods;
+  return total;
+}
+
+const groupKeyOf = (group: string | null) => (group ? nameKeyOf(group) : null);
+
+export class AllotmentService {
+  /** What the unit studies, and what is left to say about it. */
+  static async get(tenantId: string, classId: string, sectionId: string | null): Promise<AllotmentView> {
+    const unit = await resolveUnit(tenantId, classId, sectionId);
+    return AllotmentService.view(tenantId, unit);
+  }
+
+  /**
+   * Replaces what a unit studies. The same list can be given to the class's other sections in the same request (`alsoSections`; the
+   * teachers only with `withTeachers`). Everything is checked before anything is written; the rows are then written one section at a
+   * time (no transactions: a failure half way leaves the sections done so far as the person saved them, and asking again finishes).
+   */
+  static async save(tenantId: string, input: SaveAllotmentsInput): Promise<AllotmentView> {
+    const unit = await resolveUnit(tenantId, input.classId, input.sectionId);
+    const others: Unit[] = [];
+    for (const sectionId of input.alsoSections) {
+      if (sectionId === input.sectionId) continue;
+      others.push(await resolveUnit(tenantId, input.classId, sectionId));
+    }
+    if (unit.sectionId === null && others.length > 0) {
+      throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "alsoSections", message: "A class without sections has no other section" }]);
+    }
+
+    const problems = await AllotmentService.rowProblems(tenantId, input.rows);
+    if (problems.length > 0) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", problems);
+
+    const available = await AllotmentService.availablePeriods(tenantId, input.classId);
+    const needed = periodsToPlace(input.rows);
+    if (available !== null && needed > available) {
+      throw ApiError.badRequest(
+        `${unit.label} has ${needed} periods a week to place but its timing has only ${available}.`,
+        "PERIODS_DO_NOT_FIT",
+        [{ path: "rows", message: `${needed} periods a week to place but the timing has only ${available}` }]
+      );
+    }
+
+    await AllotmentService.assertTimetablesStillFit(tenantId, [{ unit, withTeachers: true }, ...others.map((o) => ({ unit: o, withTeachers: input.withTeachers }))], input.rows);
+
+    await AllotmentService.write(tenantId, unit, input.rows, true);
+    for (const other of others) await AllotmentService.write(tenantId, other, input.rows, input.withTeachers);
+    return AllotmentService.view(tenantId, unit);
+  }
+
+  /**
+   * The teacher of one subject of a unit, everything else of the unit left as it is: the same checks as saving the whole list (the
+   * teacher is the school's and teaching, the periods fit the timing, a teacher already busy at a period the subject is taught is
+   * refused). A subject the unit does not study yet is added at the end with `periodsPerWeek`.
+   */
+  static async assignTeacher(tenantId: string, input: AssignTeacherInput): Promise<AllotmentView> {
+    const unit = await resolveUnit(tenantId, input.classId, input.sectionId);
+    const school = new Types.ObjectId(tenantId);
+    const stored = await Allotment.find({
+      tenantId: school,
+      academicYearId: unit.yearId,
+      classId: new Types.ObjectId(unit.classId),
+      sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null,
+    })
+      .sort({ position: 1, _id: 1 })
+      .lean();
+    const rows: AllotmentRowInput[] = stored.map((r) => ({
+      subjectId: r.subjectId.toString(),
+      periodsPerWeek: r.periodsPerWeek,
+      blockSize: r.blockSize,
+      teacherId: r.teacherId ? r.teacherId.toString() : null,
+      group: r.group ?? null,
+    }));
+    let at = rows.findIndex((r) => r.subjectId === input.subjectId);
+    if (at >= 0) {
+      rows[at] = { ...rows[at], teacherId: input.teacherId, ...(input.periodsPerWeek ? { periodsPerWeek: input.periodsPerWeek } : {}) };
+    } else {
+      const subject = await Subject.findOne({ _id: input.subjectId, tenantId: school }).select("name").lean();
+      if (!subject) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "subjectId", message: "Choose a subject from your school's list" }]);
+      if (!input.periodsPerWeek) {
+        throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "periodsPerWeek", message: `Enter the periods a week: ${unit.label} does not study ${subject.name} yet` }]);
+      }
+      rows.push({ subjectId: input.subjectId, periodsPerWeek: input.periodsPerWeek, blockSize: 1, teacherId: input.teacherId, group: null });
+      at = rows.length - 1;
+    }
+    try {
+      return await AllotmentService.save(tenantId, { classId: input.classId, sectionId: input.sectionId, rows, alsoSections: [], withTeachers: false });
+    } catch (err) {
+      // The whole list's words point at a row (`rows.2.teacherId`); this request has one box of each.
+      if (err instanceof ApiError && Array.isArray(err.details)) {
+        const prefix = `rows.${at}.`;
+        err.details = (err.details as Problem[]).map((d) => (typeof d.path === "string" && d.path.startsWith(prefix) ? { ...d, path: d.path.slice(prefix.length) } : d));
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * The units' timetables are already made on what they studied: a subject cannot be taken off while it has lessons, and a new teacher
+   * must be free (and come) at every period the subject is taught, or the change is refused and the timetable is left as it was.
+   */
+  private static async assertTimetablesStillFit(tenantId: string, targets: { unit: Unit; withTeachers: boolean }[], rows: AllotmentRowInput[]): Promise<void> {
+    const worlds = new Map<string, World>();
+    for (const { unit, withTeachers } of targets) {
+      let world = worlds.get(unit.yearId.toString());
+      if (!world) worlds.set(unit.yearId.toString(), (world = await loadWorld(tenantId, unit.yearId)));
+      const key = unitKey(unit.classId, unit.sectionId);
+      const stored = world.timetables.get(key);
+      if (!stored || stored.cells.length === 0) continue;
+
+      const before = world.allotments.get(key) ?? new Map<string, AllotmentInfo>();
+      const placed = new Map<string, number>();
+      for (const cell of stored.cells) for (const lesson of cell.lessons) placed.set(lesson.subjectId, (placed.get(lesson.subjectId) ?? 0) + 1);
+      const kept = new Set(rows.map((r) => r.subjectId));
+      for (const [subjectId, count] of placed) {
+        if (kept.has(subjectId)) continue;
+        const name = world.subjects.get(subjectId)?.name ?? "A subject";
+        throw ApiError.conflict(
+          `${name} is in the timetable of ${unit.label} (${count} period${count === 1 ? "" : "s"}). Take it out of the timetable first.`,
+          "SUBJECT_IN_TIMETABLE"
+        );
+      }
+
+      const after = new Map<string, AllotmentInfo>(
+        rows.map((row) => [
+          row.subjectId,
+          {
+            subjectId: row.subjectId,
+            subjectName: world!.subjects.get(row.subjectId)?.name ?? "A subject",
+            periodsPerWeek: row.periodsPerWeek,
+            blockSize: row.blockSize,
+            teacherId: withTeachers ? row.teacherId : (before.get(row.subjectId)?.teacherId ?? null),
+            group: row.group,
+          },
+        ])
+      );
+      const days = unitDays(world, unit.classId);
+      const busy = busyFrom(world, key);
+      const errorsOf = (allotments: Map<string, AllotmentInfo>) =>
+        analyse({ days, cells: stored.cells, allotments, teachers: world!.teachers, busy }).issues.filter((i) => i.level === "error");
+      const known = new Set(errorsOf(before).map((e) => `${e.code}:${e.day}:${e.period}`));
+      const added = errorsOf(after).filter((e) => !known.has(`${e.code}:${e.day}:${e.period}`));
+      if (added.length > 0) throw clashError(added);
+    }
+  }
+
+  /** The unit's rows with the subject and teacher named, and the totals. */
+  private static async view(tenantId: string, unit: Unit): Promise<AllotmentView> {
+    const school = new Types.ObjectId(tenantId);
+    const unitFilter = { tenantId: school, academicYearId: unit.yearId, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null };
+    const rows = await Allotment.find(unitFilter).sort({ position: 1, _id: 1 }).lean();
+    const [subjects, teachers, siblings, available] = await Promise.all([
+      Subject.find({ tenantId: school, _id: { $in: rows.map((r) => r.subjectId) } }).lean(),
+      Teacher.find({ tenantId: school, _id: { $in: rows.map((r) => r.teacherId).filter((t): t is Types.ObjectId => !!t) } }).select("name").lean(),
+      unit.sectionId
+        ? Section.find({ tenantId: school, classId: new Types.ObjectId(unit.classId), academicYearId: unit.yearId, _id: { $ne: new Types.ObjectId(unit.sectionId) } }).select("name").lean()
+        : Promise.resolve([]),
+      AllotmentService.availablePeriods(tenantId, unit.classId),
+    ]);
+    const subjectById = new Map(subjects.map((s) => [s._id.toString(), s]));
+    const teacherById = new Map(teachers.map((t) => [t._id.toString(), t]));
+    const dtos: AllotmentRowDto[] = rows.flatMap((r) => {
+      const subject = subjectById.get(r.subjectId.toString());
+      if (!subject) return [];
+      return [
+        {
+          subjectId: r.subjectId.toString(),
+          subjectName: subject.name,
+          subjectCode: subject.code ?? null,
+          category: subject.category,
+          subjectActive: subject.isActive,
+          periodsPerWeek: r.periodsPerWeek,
+          blockSize: r.blockSize,
+          teacherId: r.teacherId ? r.teacherId.toString() : null,
+          teacherName: r.teacherId ? (teacherById.get(r.teacherId.toString())?.name ?? null) : null,
+          group: r.group ?? null,
+        },
+      ];
+    });
+    return {
+      unit: { classId: unit.classId, className: unit.className, sectionId: unit.sectionId, sectionName: unit.sectionName, label: unit.label, academicYear: { id: unit.yearId.toString(), name: unit.yearName } },
+      rows: dtos,
+      siblings: siblings
+        .map((s) => ({ id: s._id.toString(), name: s.name }))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })),
+      totals: { periods: periodsToPlace(dtos), available },
+    };
+  }
+
+  /** The periods a week a class's timing gives it (null when no timing covers it). */
+  static async availablePeriods(tenantId: string, classId: string): Promise<number | null> {
+    const week = weekPeriods(await loadRules(tenantId), classId);
+    return week.length === 0 ? null : week.reduce((sum, d) => sum + d.periods, 0);
+  }
+
+  /** What is wrong with the rows, by the box: the subject and the teacher are the school's, the blocks fit, a choice is a real choice. */
+  private static async rowProblems(tenantId: string, rows: AllotmentRowInput[]): Promise<Problem[]> {
+    const school = new Types.ObjectId(tenantId);
+    const problems: Problem[] = [];
+    const [subjects, teachers] = await Promise.all([
+      Subject.find({ tenantId: school, _id: { $in: rows.map((r) => new Types.ObjectId(r.subjectId)) } }).select("name isActive").lean(),
+      Teacher.find({ tenantId: school, _id: { $in: rows.flatMap((r) => (r.teacherId ? [new Types.ObjectId(r.teacherId)] : [])) } }).select("name isActive").lean(),
+    ]);
+    const subjectById = new Map(subjects.map((s) => [s._id.toString(), s]));
+    const teacherById = new Map(teachers.map((t) => [t._id.toString(), t]));
+
+    const seen = new Set<string>();
+    rows.forEach((row, i) => {
+      const subject = subjectById.get(row.subjectId);
+      if (!subject) problems.push({ path: `rows.${i}.subjectId`, message: "Choose a subject from your school's list" });
+      else if (seen.has(row.subjectId)) problems.push({ path: `rows.${i}.subjectId`, message: `${subject.name} is in the list twice` });
+      else if (!subject.isActive) problems.push({ path: `rows.${i}.subjectId`, message: `${subject.name} is archived. Bring it back first` });
+      seen.add(row.subjectId);
+
+      if (row.teacherId) {
+        const teacher = teacherById.get(row.teacherId);
+        if (!teacher) problems.push({ path: `rows.${i}.teacherId`, message: "Choose a teacher from your school's list" });
+        else if (!teacher.isActive) problems.push({ path: `rows.${i}.teacherId`, message: `${teacher.name} is no longer teaching here` });
+      }
+      if (row.blockSize > 1 && row.periodsPerWeek % row.blockSize !== 0) {
+        problems.push({ path: `rows.${i}.periodsPerWeek`, message: `${row.periodsPerWeek} periods cannot be given in blocks of ${row.blockSize}: use a multiple of ${row.blockSize}` });
+      }
+    });
+
+    // A choice: two or more subjects taught in the same periods, so they share the periods a week and the block, and never one teacher.
+    const groups = new Map<string, number[]>();
+    rows.forEach((row, i) => {
+      const key = groupKeyOf(row.group);
+      if (key) groups.set(key, [...(groups.get(key) ?? []), i]);
+    });
+    for (const members of groups.values()) {
+      if (members.length < 2) {
+        problems.push({ path: `rows.${members[0]}.group`, message: "A choice needs at least two subjects" });
+        continue;
+      }
+      const first = rows[members[0]];
+      for (const i of members.slice(1)) {
+        if (rows[i].periodsPerWeek !== first.periodsPerWeek) problems.push({ path: `rows.${i}.periodsPerWeek`, message: "The subjects of one choice need the same periods a week" });
+        if (rows[i].blockSize !== first.blockSize) problems.push({ path: `rows.${i}.blockSize`, message: "The subjects of one choice need the same block" });
+      }
+      const taken = new Map<string, number>();
+      for (const i of members) {
+        const teacher = rows[i].teacherId;
+        if (!teacher) continue;
+        if (taken.has(teacher)) {
+          const name = teacherById.get(teacher)?.name ?? "A teacher";
+          problems.push({ path: `rows.${i}.teacherId`, message: `${name} cannot teach two subjects of one choice at the same time` });
+        }
+        taken.set(teacher, i);
+      }
+    }
+    return problems;
+  }
+
+  /**
+   * Makes the unit's rows what `rows` says: subjects no longer listed go, the others are added or updated, in the order given. When
+   * the teachers are not to be given (`withTeachers` false, for the other sections), a subject the unit already had keeps its teacher
+   * and a new one has none.
+   */
+  private static async write(tenantId: string, unit: Unit, rows: AllotmentRowInput[], withTeachers: boolean): Promise<void> {
+    const school = new Types.ObjectId(tenantId);
+    const base = { tenantId: school, academicYearId: unit.yearId, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null };
+    const existing = withTeachers ? [] : await Allotment.find(base).select("subjectId teacherId").lean();
+    const keptTeacher = new Map(existing.map((e) => [e.subjectId.toString(), e.teacherId ?? null]));
+
+    await Allotment.deleteMany({ ...base, subjectId: { $nin: rows.map((r) => new Types.ObjectId(r.subjectId)) } });
+    if (rows.length === 0) return;
+    await Allotment.bulkWrite(
+      rows.map((row, position) => ({
+        updateOne: {
+          filter: { ...base, subjectId: new Types.ObjectId(row.subjectId) },
+          update: {
+            $set: {
+              periodsPerWeek: row.periodsPerWeek,
+              blockSize: row.blockSize,
+              teacherId: withTeachers ? (row.teacherId ? new Types.ObjectId(row.teacherId) : null) : (keptTeacher.get(row.subjectId) ?? null),
+              group: row.group,
+              groupKey: groupKeyOf(row.group),
+              position,
+            },
+          },
+          upsert: true,
+        },
+      }))
+    );
+  }
+}

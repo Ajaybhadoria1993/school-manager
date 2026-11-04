@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { Check, CircleCheck, FolderTree, Hash, Info, Wand2 } from "lucide-react";
+import { Check, CircleCheck, FolderTree, Hash, Info, Users, Wand2 } from "lucide-react";
 import { MAX_ROLL_NUMBER } from "../../../constants/students";
 import { fieldId, type StudentForm } from "../../../hooks/useStudentForm";
 import { plural } from "../../../utils/academics";
@@ -185,11 +185,17 @@ export function PlacementFields({
           {/* The live summary sits on the label's line, out of the flow, so it never changes the card's height. */}
           <Field id={fieldId("classId")} label="Class" error={form.errorOf("classId")} className="relative">
             {summary}
-            <div id={fieldId("classId")} tabIndex={-1} role="radiogroup" aria-label="Class" className="flex flex-wrap gap-x-6 gap-y-3 outline-none">
+            <div
+              id={fieldId("classId")}
+              tabIndex={-1}
+              role="radiogroup"
+              aria-label="Class"
+              className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background/60 outline-none"
+            >
               {classGroups(structure).map((group) => (
-                <div key={group.key} className="min-w-0">
-                  {group.title && <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-foreground-muted">{group.title}</p>}
-                  <div className="flex flex-wrap gap-1.5">
+                <div key={group.key} className="grid min-w-0 items-center gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-[8.5rem_minmax(0,1fr)]">
+                  {group.title && <p className="text-[11px] font-bold uppercase tracking-wider text-foreground-muted sm:col-start-1">{group.title}</p>}
+                  <div className={cn("flex flex-wrap gap-2", !group.title && "sm:col-span-2")}>
                     {group.classes.map((c) => {
                       const short = shortName(c.name);
                       const on = c.id === values.classId;
@@ -198,11 +204,11 @@ export function PlacementFields({
                           <input type="radio" name={`${name}-class`} value={c.id} checked={on} onChange={() => pickClass(c.id)} aria-label={c.name} className="peer sr-only" />
                           <span
                             className={cn(
-                              "inline-flex h-9 cursor-pointer select-none items-center justify-center gap-1 rounded-lg border text-sm font-semibold transition-all duration-150",
-                              short ? "min-w-10 px-2.5" : "px-3",
+                              "inline-flex h-10 cursor-pointer select-none items-center justify-center gap-1 rounded-lg border text-sm font-semibold transition-all duration-150",
+                              short ? "min-w-11 px-3" : "px-4",
                               "peer-focus-visible:ring-4 peer-focus-visible:ring-primary/20",
                               on
-                                ? "border-transparent bg-primary-soft text-primary-deep shadow-card ring-2 ring-inset ring-primary/40"
+                                ? "border-primary bg-primary text-primary-foreground shadow-card"
                                 : "border-border bg-surface text-foreground hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-card"
                             )}
                           >
@@ -225,8 +231,8 @@ export function PlacementFields({
             </div>
           </Field>
 
-          {/* The section and the roll number share one row whose height never changes. */}
-          <div className="grid gap-x-5 gap-y-4 sm:grid-cols-[minmax(0,1fr)_14rem]">
+          {/* The section (one row whose height never changes), then the roll number under it. */}
+          <div className="space-y-5">
             <Field
               id={fieldId("sectionId")}
               label={klass ? `Section of ${klass.name}` : "Section"}
@@ -243,12 +249,15 @@ export function PlacementFields({
                 {!klass ? (
                   <p className={emptyBox}>Pick a class to see its sections.</p>
                 ) : klass.sections.length === 0 ? (
-                  <div className="flex h-[5.5rem] w-56 flex-col justify-center rounded-xl border-2 border-primary/40 bg-primary-soft/50 px-4">
-                    <p className="flex items-center justify-between text-sm font-bold text-foreground">
-                      No section
-                      <CircleCheck className="size-4 text-primary" aria-hidden />
-                    </p>
-                    <p className="mt-0.5 text-xs text-foreground-muted">Joins the whole class</p>
+                  <div className="flex h-[5.5rem] w-full items-center gap-3 rounded-xl border border-primary/40 bg-primary-soft/50 px-4">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary-deep">
+                      <Users className="size-5" aria-hidden />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-foreground">No section</p>
+                      <p className="mt-0.5 text-xs text-foreground-muted">{klass.name} has no sections this year: the student joins the whole class.</p>
+                    </div>
+                    <CircleCheck className="size-5 shrink-0 text-primary" aria-hidden />
                   </div>
                 ) : (
                   <ScrollRow key={klass.id} label={`Section of ${klass.name}`}>
@@ -295,11 +304,12 @@ export function PlacementFields({
             </Field>
 
             <Field id={fieldId("rollNumber")} label="Roll number" optional error={form.errorOf("rollNumber")} hint={`1 to ${MAX_ROLL_NUMBER}, once in a section.`}>
-              <div className="relative">
-                <Input {...form.bind("rollNumber", "digits")} icon={Hash} inputMode="numeric" maxLength={3} placeholder="For example 12" className="pr-9" />
-                {rollOk && <CircleCheck className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-success" aria-hidden />}
-              </div>
-              <div className="mt-2 flex h-7 items-center gap-2">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <div className="relative w-full sm:w-56">
+                  <Input {...form.bind("rollNumber", "digits")} icon={Hash} inputMode="numeric" maxLength={3} placeholder="For example 12" className="pr-9" />
+                  {rollOk && <CircleCheck className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-success" aria-hidden />}
+                </div>
+                <div className="flex h-10 items-center gap-2">
                 <span className="rounded-md bg-surface-muted px-2 py-1 text-xs font-semibold text-foreground-muted">
                   Next free: <span className="text-foreground">{nextFree ?? "-"}</span>
                 </span>
@@ -316,6 +326,7 @@ export function PlacementFields({
                   <Wand2 className="size-3.5" aria-hidden />
                   Auto-assign
                 </button>
+                </div>
               </div>
             </Field>
           </div>

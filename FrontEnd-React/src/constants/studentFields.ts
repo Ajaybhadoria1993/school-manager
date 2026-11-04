@@ -121,6 +121,14 @@ export const EXPORT_COLUMNS = [
   { key: "tcDate", heading: "TC Date", group: "Previous school" },
 ] as const satisfies readonly { key: string; heading: string; group: string; locked?: boolean }[];
 
+/** The names of the fields on the list (the export's headings and the form's labels): a field of the school's own cannot take one (the server says the same). */
+const LIST_NAMES = new Map<string, string>([
+  ...EXPORT_COLUMNS.map((c) => [c.heading.toLowerCase(), c.heading] as [string, string]),
+  ...STUDENT_FORM_FIELDS.map((f) => [f.label.toLowerCase(), f.label] as [string, string]),
+]);
+/** The field of the list called `name` (as the list writes it), whatever the case or the spaces; nothing when no field has that name. */
+export const listFieldNamed = (name: string): string | undefined => LIST_NAMES.get(name.trim().replace(/\s+/g, " ").toLowerCase());
+
 export type ExportColumnKey = (typeof EXPORT_COLUMNS)[number]["key"];
 export const exportColumnOf = (key: ExportColumnKey) => EXPORT_COLUMNS.find((c) => c.key === key)!;
 export const isLockedColumn = (key: ExportColumnKey) => "locked" in exportColumnOf(key) && !!(exportColumnOf(key) as { locked?: boolean }).locked;
@@ -154,6 +162,95 @@ export const MAX_CUSTOM_TEXT = 200;
 export const isCustomKey = (key: string) => /^c_[a-z0-9]{4,16}$/.test(key);
 /** A new field's key: `c_` and 10 letters and digits (no dots: the server's sanitiser drops dotted keys). */
 export const newCustomKey = () => `c_${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 7)}`.toLowerCase();
+
+/**
+ * The steps of Add student and the details a school may put in any of them (the server's ADMIT_STEPS / MOVABLE_FIELDS). The name, the
+ * gender, the birthday, the category, the class, the parents, the address and the previous school stay in their own step; the details
+ * here, and the school's own fields, can go to any step, in any order. The first three steps are always there; More details and the
+ * steps a school adds (`StepDef`) follow them, in the order the school chose. `step` is where a new school has each detail (the ones it
+ * does not ask are spread over the four steps, so the steps are about as long as each other); the order of this list is the order a new
+ * school has them in within a step.
+ */
+export const ADMIT_STEPS = ["personal", "academic", "parents", "more"] as const;
+/** A step's key: one of the four, or a step of the school's own (`s_` and a few letters and digits). */
+export type AdmitStepKey = string;
+export const STEP_NAMES: Record<(typeof ADMIT_STEPS)[number], string> = { personal: "Personal info", academic: "Academic", parents: "Parents", more: "More details" };
+export const MAX_CUSTOM_STEPS = 4;
+export const MAX_STEP_NAME = 30;
+export const isCustomStepKey = (key: string) => /^s_[a-z0-9]{4,16}$/.test(key);
+/** A new step's key: `s_` and 10 letters and digits (no dots: the server's sanitiser drops dotted keys). */
+export const newStepKey = () => `s_${Date.now().toString(36).slice(-5)}${Math.random().toString(36).slice(2, 7)}`.toLowerCase();
+/** A step after Parents: More details (key "more") or one the school added. */
+export interface StepDef {
+  key: string;
+  name: string;
+}
+/** The steps a school that added none has: More details alone. */
+export const USUAL_STEPS: readonly StepDef[] = [{ key: "more", name: STEP_NAMES.more }];
+/** The steps are the usual ones. */
+export const isUsualSteps = (steps: readonly StepDef[]) => steps.length === 1 && steps[0].key === "more";
+/** The steps after Parents as given, with More details (under its own name) put first when it was left out. */
+export function effectiveSteps(saved: readonly StepDef[] | null | undefined): StepDef[] {
+  const seen = new Set<string>();
+  const list: StepDef[] = [];
+  for (const s of saved ?? []) {
+    if (seen.has(s.key)) continue;
+    if (s.key === "more") list.push({ key: "more", name: STEP_NAMES.more });
+    else if (isCustomStepKey(s.key)) list.push({ key: s.key, name: s.name });
+    else continue;
+    seen.add(s.key);
+  }
+  return seen.has("more") ? list : [...USUAL_STEPS, ...list];
+}
+
+export const MOVABLE_FIELDS = [
+  { key: "bloodGroup", step: "personal" },
+  { key: "srNumber", step: "academic" },
+  { key: "pen", step: "academic" },
+  { key: "aadhaarNumber", step: "academic" },
+  { key: "emergencyMobile", step: "parents" },
+  { key: "rteSeat", step: "parents" },
+  { key: "bpl", step: "parents" },
+  { key: "religion", step: "more" },
+  { key: "samagraId", step: "more" },
+  { key: "apaarId", step: "more" },
+  { key: "nationality", step: "more" },
+  { key: "disability", step: "more" },
+  { key: "medicalNotes", step: "more" },
+  { key: "feeConcession", step: "more" },
+  { key: "transportRoute", step: "more" },
+  { key: "transportStop", step: "more" },
+] as const satisfies readonly { key: FormFieldKey; step: AdmitStepKey }[];
+export type MovableKey = (typeof MOVABLE_FIELDS)[number]["key"];
+const MOVABLE_KEYS: ReadonlySet<string> = new Set(MOVABLE_FIELDS.map((f) => f.key));
+export const isMovableKey = (key: string): key is MovableKey => MOVABLE_KEYS.has(key);
+/** Where one detail is asked: a detail of the list or one of the school's own (its `c_` key), and its step. The list's order is the order within a step. */
+export interface Placement {
+  key: string;
+  step: AdmitStepKey;
+}
+
+/**
+ * The places of every movable detail and every own field: the ones given (an unknown key and a repeat are dropped, a step that is no
+ * longer there becomes More details), then the rest at the end of their usual step.
+ */
+export function effectivePlacements(saved: readonly Placement[] | null | undefined, custom: readonly { key: string }[], steps: readonly { key: string }[] = USUAL_STEPS): Placement[] {
+  const known = new Set<string>([...MOVABLE_KEYS, ...custom.map((f) => f.key)]);
+  const stepKeys = new Set<string>([...ADMIT_STEPS, ...steps.map((s) => s.key)]);
+  const seen = new Set<string>();
+  const kept: Placement[] = [];
+  for (const p of saved ?? []) {
+    if (!known.has(p.key) || seen.has(p.key)) continue;
+    seen.add(p.key);
+    kept.push({ key: p.key, step: stepKeys.has(p.step) ? p.step : "more" });
+  }
+  const usual: Placement[] = [...MOVABLE_FIELDS.map((f) => ({ key: f.key as string, step: f.step as string })), ...custom.map((f) => ({ key: f.key, step: "more" }))];
+  return [...kept, ...usual.filter((p) => !seen.has(p.key))];
+}
+
+/** Every detail is in its usual step, in its usual order. */
+export const isUsualPlacements = (placements: readonly Placement[], custom: readonly { key: string }[]) =>
+  JSON.stringify(placements) === JSON.stringify(effectivePlacements(null, custom));
 
 /**
  * Details no school can change (the server's FIXED_RULES): the address is always needed, and so is the previous school's name for a

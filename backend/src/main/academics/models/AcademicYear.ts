@@ -70,6 +70,12 @@ academicYearSchema.index(
   { tenantId: 1, source: 1 },
   { unique: true, partialFilterExpression: { source: "onboarding" }, name: "one_onboarding_year_per_school" }
 );
+// Only one year waits at a time (the next session): a second one is refused by the database as well as by the service. (A school with
+// a sign-up year still waiting for approval has no running year, so it cannot make a next one: the two never meet.)
+academicYearSchema.index(
+  { tenantId: 1, status: 1, source: 1 },
+  { unique: true, partialFilterExpression: { status: "pending" }, name: "one_pending_year_per_school_and_source" }
+);
 academicYearSchema.index({ tenantId: 1, startDate: -1 });
 
 export const AcademicYear = model<IAcademicYear>("AcademicYear", academicYearSchema);

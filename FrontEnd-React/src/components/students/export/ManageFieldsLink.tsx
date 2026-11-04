@@ -15,7 +15,7 @@ const OUTLINE =
  */
 export function ManageFieldsLink({ from, guard, className }: { from: FieldsFrom; guard?: () => boolean; className?: string }) {
   return (
-    <WithTip tip="Choose which details Add student asks and which are mandatory. The same list makes the Excel's columns.">
+    <WithTip tip="Choose what Add student asks, step by step, and the columns of the Excel. A mandatory detail is in both.">
       <Link
         to="/school/students/fields"
         state={{ from }}

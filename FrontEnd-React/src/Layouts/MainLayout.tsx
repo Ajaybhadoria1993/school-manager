@@ -43,7 +43,8 @@ export default function MainLayout() {
             title={active?.label ?? "Dashboard"}
           />
         </div>
-        <main className="mx-auto w-full max-w-[1400px] flex-1 p-4 lg:p-8 print:p-0">
+        {/* Full width, like Infinity Medisetu: no empty bands at the left and right of a wide screen. */}
+        <main className="w-full flex-1 p-4 lg:p-8 print:p-0">
           {/* A new key on every page, so each page eases in instead of snapping. */}
           <div key={pathname} className="rise-in">
             <Outlet />

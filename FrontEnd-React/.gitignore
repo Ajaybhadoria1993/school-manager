@@ -4,10 +4,11 @@ node_modules
 # production
 dist
 
-# env files (the example is committed)
+# env files (the example, and the production API URL, which is public, are committed)
 .env
 .env.*
 !.env.example
+!.env.production
 
 # logs and OS files
 *.log

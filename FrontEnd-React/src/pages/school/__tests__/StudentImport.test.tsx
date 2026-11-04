@@ -37,6 +37,8 @@ const fakeApi = (extra: Record<string, Handler> = {}) =>
     "GET /students/capacity": () => CAPACITY,
     "GET /students/settings": () => SETTINGS,
     "POST /students/import/read": () => SHEET,
+    // Nobody in the file is a student the school already has, unless a test says so.
+    "POST /students/import/match": () => ({ matches: [] }),
     ...extra,
   });
 
@@ -113,10 +115,18 @@ describe("Bulk upload: Preview & fix is just the table", () => {
     const calls = fakeApi();
     const user = openPage();
     await openFile(user);
-    expect(calls.map((c) => `${c.method} ${c.path}`).sort()).toEqual(["GET /academics/structure", "GET /students/capacity", "GET /students/settings", "POST /students/import/read"]);
+    // One read of the file, and ONE question about the whole file: which of its students the school already has.
+    await waitFor(() => expect(calls.filter((c) => c.path === "/students/import/match")).toHaveLength(1));
+    expect(calls.map((c) => `${c.method} ${c.path}`).sort()).toEqual([
+      "GET /academics/structure",
+      "GET /students/capacity",
+      "GET /students/settings",
+      "POST /students/import/match",
+      "POST /students/import/read",
+    ]);
 
     // Class 6 has sections and the file has no Section column: one is added, empty, at the right.
-    expect(screen.getByRole("button", { name: /What the column "Section" is$/ })).toHaveTextContent("Section");
+    expect(screen.getByRole("combobox", { name: /What the column "Section" is$/ })).toHaveValue("Section");
     expect(box("Section", 3)).toHaveAttribute("aria-invalid", "true");
     expect(said("Section", 3)).toBe("Class 6 has sections A: type one");
     expect(box("Class", 3)).not.toHaveAttribute("aria-invalid");
@@ -143,7 +153,7 @@ describe("Bulk upload: Preview & fix is just the table", () => {
     const user = openPage();
     await openFile(user);
     for (const absent of ["Address", "City", "State", "PIN code", "Previous school"]) {
-      expect(screen.queryByRole("button", { name: new RegExp(`What the column "${absent}" is$`) }), absent).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: new RegExp(`What the column "${absent}" is$`) }), absent).not.toBeInTheDocument();
     }
     // Both rows are ready as they are.
     expect(screen.getByRole("button", { name: /^Upload \d+ students?$/ })).toHaveTextContent("Upload 2 students");
@@ -208,7 +218,7 @@ describe("Bulk upload: Preview & fix is just the table", () => {
     await user.type(within(dialog).getByLabelText(/Choices/), "Red{Enter}Blue");
     await user.click(within(dialog).getByRole("button", { name: "Add the field" }));
 
-    expect(await screen.findByRole("button", { name: /What the column "House" is$/ })).toHaveTextContent("House (your own)");
+    expect(await screen.findByRole("combobox", { name: /What the column "House" is$/ })).toHaveValue("House (your own)");
     const put = calls.filter((c) => c.method === "PUT");
     expect(put).toHaveLength(1);
     const sent = put[0].body as { customFields: { key: string; label: string; options: string[] }[]; exportColumns: { key: string; heading: string }[] };
@@ -226,6 +236,131 @@ describe("Bulk upload: Preview & fix is just the table", () => {
     const imported = calls.find((c) => c.method === "POST" && c.path === "/students/import")!.body as { rows: { row: number; student: { custom?: object; classId: string } }[] };
     expect(imported.rows).toHaveLength(1);
     expect(imported.rows[0]).toMatchObject({ row: 2, student: { classId: "c1", custom: { [key]: "Red" } } });
+  });
+
+  it("makes a new field from a column's own heading (named as the file calls it), and that same column becomes it", async () => {
+    const withRoute: ImportSheet = {
+      ...SHEET,
+      headers: [...SHEET.headers, "Locker No"],
+      rows: SHEET.rows.map((r) => ({ ...r, cells: [...r.cells, "L-12"] })),
+    };
+    const calls = fakeApi({
+      "POST /students/import/read": () => withRoute,
+      "PUT /students/settings": (body) => ({ ...SETTINGS, ...(body as object), exportIsDefault: false }),
+      "POST /students/import": () => ({
+        dryRun: false,
+        ok: 1,
+        failed: 0,
+        results: [{ row: 2, ok: true, errors: [], warnings: [], student: { id: "s1", name: "Asha Verma", admissionNumber: "ADM-2026-0001" } }],
+      }),
+    });
+    const user = openPage();
+    await openFile(user);
+    const headings = () => screen.getAllByRole("combobox", { name: /What the column/ }).length;
+    const before = headings();
+    const route = screen.getByRole("combobox", { name: /What the column "Locker No" is$/ });
+    expect(route).toHaveValue("Not uploaded");
+
+    // Nothing in the list is a locker number: the last row makes it, with the heading's own name ready in the dialog.
+    await user.click(route);
+    await user.click(await screen.findByRole("option", { name: "Add a new field…" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText(/Name of the field/)).toHaveValue("Locker No");
+    await user.click(within(dialog).getByRole("button", { name: "Add the field" }));
+
+    // The column itself is the field now (no column was added), with the file's own answers in it.
+    await waitFor(() => expect(screen.getByRole("combobox", { name: /What the column "Locker No" is$/ })).toHaveValue("Locker No (your own)"));
+    expect(headings()).toBe(before);
+    expect(box("Locker No", 2)).toHaveValue("L-12");
+    const put = calls.filter((c) => c.method === "PUT");
+    expect(put).toHaveLength(1);
+    const sent = put[0].body as { customFields: { key: string; label: string; type: string }[]; exportColumns: { key: string; heading: string }[] };
+    expect(sent.customFields).toEqual([expect.objectContaining({ label: "Locker No", type: "text", mode: "optional" })]);
+    const key = sent.customFields[0].key;
+    expect(sent.exportColumns).toEqual([...defaultLayout(), { key, heading: "Locker No" }]);
+
+    await user.click(uploadButton());
+    await user.click(await screen.findByRole("button", { name: "Upload and admit" }));
+    expect(await screen.findByRole("heading", { name: "1 student admitted to 2026-2027" })).toBeInTheDocument();
+    const imported = calls.find((c) => c.method === "POST" && c.path === "/students/import")!.body as { rows: { student: { custom?: object } }[] };
+    expect(imported.rows[0].student.custom).toEqual({ [key]: "L-12" });
+  });
+
+  it("Age cannot be added from a heading (it is worked out from the date of birth): the list says so, and another name makes the field for the file's ages", async () => {
+    const withAge: ImportSheet = { ...SHEET, headers: [...SHEET.headers, "Age"], rows: SHEET.rows.map((r, i) => ({ ...r, cells: [...r.cells, String(6 + i)] })) };
+    const calls = fakeApi({
+      "POST /students/import/read": () => withAge,
+      "PUT /students/settings": (body) => ({ ...SETTINGS, ...(body as object), exportIsDefault: false }),
+      "POST /students/import": () => ({
+        dryRun: false,
+        ok: 1,
+        failed: 0,
+        results: [{ row: 2, ok: true, errors: [], warnings: [], student: { id: "s1", name: "Asha Verma", admissionNumber: "ADM-2026-0001" } }],
+      }),
+    });
+    const user = openPage();
+    await openFile(user);
+    const age = screen.getByRole("combobox", { name: /What the column "Age" is$/ });
+    expect(age).toHaveValue("Not uploaded");
+
+    await user.click(age);
+    await user.keyboard("Age");
+    expect(await screen.findByRole("option", { name: /^Age is worked out from the Date of birth, so it is not uploaded/ })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("option", { name: /as a new field/ })).not.toBeInTheDocument();
+
+    await user.keyboard(" in file");
+    await user.click(await screen.findByRole("option", { name: "Add “Age in file” as a new field" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText(/Name of the field/)).toHaveValue("Age in file");
+    await user.click(within(dialog).getByRole("radio", { name: "Number" }));
+    await user.click(within(dialog).getByRole("button", { name: "Add the field" }));
+
+    await waitFor(() => expect(screen.getByRole("combobox", { name: /What the column "Age" is$/ })).toHaveValue("Age in file (your own)"));
+    const put = calls.filter((c) => c.method === "PUT");
+    expect(put).toHaveLength(1);
+    const sent = put[0].body as { customFields: { key: string; label: string; type: string }[] };
+    expect(sent.customFields).toEqual([expect.objectContaining({ label: "Age in file", type: "number" })]);
+    const key = sent.customFields[0].key;
+
+    await user.click(uploadButton());
+    await user.click(await screen.findByRole("button", { name: "Upload and admit" }));
+    expect(await screen.findByRole("heading", { name: "1 student admitted to 2026-2027" })).toBeInTheDocument();
+    const imported = calls.find((c) => c.method === "POST" && c.path === "/students/import")!.body as { rows: { student: { custom?: object } }[] };
+    // A number field's answer goes as a number.
+    expect(imported.rows[0].student.custom).toEqual({ [key]: 6 });
+  });
+
+  it("the window to add a field says why a taken name is refused: Age is worked out, not switched on", async () => {
+    fakeApi();
+    const user = openPage();
+    await openFile(user);
+    await user.click(screen.getByRole("button", { name: "Add a column" }));
+    await user.click(screen.getByRole("button", { name: "Not in the list? Create a new field of your own" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText(/Name of the field/), "Age");
+    await user.click(within(dialog).getByRole("button", { name: "Add the field" }));
+    expect(within(dialog).getByText("Age is worked out from the Date of birth: give your field another name")).toBeInTheDocument();
+    await user.clear(within(dialog).getByLabelText(/Name of the field/));
+    await user.type(within(dialog).getByLabelText(/Name of the field/), "Religion");
+    await user.click(within(dialog).getByRole("button", { name: "Add the field" }));
+    expect(within(dialog).getByText("There is already a field called Religion: switch it on in the list")).toBeInTheDocument();
+  });
+
+  it("a word typed in a heading becomes the new field's name, and Cancel in the dialog leaves the column as it was", async () => {
+    const withRoute: ImportSheet = { ...SHEET, headers: [...SHEET.headers, "Locker No"], rows: SHEET.rows.map((r) => ({ ...r, cells: [...r.cells, "L-12"] })) };
+    const calls = fakeApi({ "POST /students/import/read": () => withRoute, "PUT /students/settings": () => SETTINGS });
+    const user = openPage();
+    await openFile(user);
+    const route = screen.getByRole("combobox", { name: /What the column "Locker No" is$/ });
+    await user.click(route);
+    await user.keyboard("Bag colour");
+    await user.click(await screen.findByRole("option", { name: "Add “Bag colour” as a new field" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText(/Name of the field/)).toHaveValue("Bag colour");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: /What the column "Locker No" is$/ })).toHaveValue("Not uploaded");
+    expect(calls.filter((c) => c.method === "PUT")).toHaveLength(0);
   });
 
   it("keeps a change made in the table while the rows are being admitted", async () => {
@@ -250,5 +385,222 @@ describe("Bulk upload: Preview & fix is just the table", () => {
     await user.click(screen.getByRole("button", { name: "Fix the 3 rows" }));
     expect(box("Section", 3)).toHaveValue("A");
     expect(screen.queryByLabelText("Student Name, row 2", { selector: "input" })).not.toBeInTheDocument();
+  });
+});
+
+// ---- Students the school already has ----------------------------------------------------------------------------------------
+
+/** Four students, three of them with a number of the school's own register: what a school brings in. */
+const ROSTER: ImportSheet = {
+  fileName: "roster.csv",
+  sheetName: "",
+  headerRow: 1,
+  headers: ["Adm No", "Student Name", "Class", "Gender", "DOB", "Father Name", "Mobile No", "Address", "City", "State", "PIN", "Previous School"],
+  rows: [
+    { row: 2, cells: ["2019/45", "Asha Verma", "Class 1", "F", "14-05-2016", "Ravi Verma", "9876543210", ...HOME] },
+    { row: 3, cells: ["", "Bina Rao", "Class 1", "F", "02-02-2016", "Anil Rao", "9111111111", ...HOME] },
+    { row: 4, cells: ["2019/47", "Kabir Roy", "Class 1", "M", "03-03-2016", "Sunil Roy", "9222222222", ...HOME] },
+    { row: 5, cells: ["", "Dev Nair", "Class 1", "M", "04-04-2016", "Anil Nair", "9333333333", ...HOME] },
+  ],
+};
+/** A student the school has, as the server describes them. */
+const saved = (name: string, over: Record<string, unknown> = {}) => ({
+  id: `s-${name}`,
+  name,
+  admissionNumber: "ADM-2026-0001",
+  dateOfBirth: "2016-05-14",
+  className: "Class 1",
+  sectionName: null,
+  inactive: false,
+  ...over,
+});
+const tab = (name: RegExp) => screen.findByRole("tab", { name });
+const importCalls = (calls: { method: string; path: string; body: unknown }[]) => calls.filter((c) => c.method === "POST" && c.path === "/students/import");
+const uploaded = (call: { body: unknown }) => (call.body as { rows: { row: number }[] }).rows.map((r) => r.row);
+const okRow = (row: number, name: string) => ({ row, ok: true, errors: [], warnings: [], student: { id: `n${row}`, name, admissionNumber: `ADM-2026-00${row}` } });
+
+describe("Bulk upload: students the school already has", () => {
+  it("asks the server ONCE for the whole file, with only what tells one child from another", async () => {
+    const calls = fakeApi({ "POST /students/import/read": () => ROSTER });
+    const user = openPage();
+    await openFile(user);
+    await waitFor(() => expect(calls.filter((c) => c.path === "/students/import/match")).toHaveLength(1));
+    const asked = calls.find((c) => c.path === "/students/import/match")!.body as { rows: Record<string, unknown>[] };
+    expect(asked.rows).toHaveLength(4);
+    expect(asked.rows[0]).toEqual({ row: 2, firstName: "Asha", lastName: "Verma", dateOfBirth: "2016-05-14", mobile: "9876543210", admissionNumber: "2019/45" });
+    // No number in the register for Bina: none is sent. Nothing else of the row (the address, the class) leaves the screen.
+    expect(asked.rows[1]).toEqual({ row: 3, firstName: "Bina", lastName: "Rao", dateOfBirth: "2016-02-02", mobile: "9111111111" });
+  });
+
+  it("another file chosen after the first is asked about too, with its own answer (the first file's answer is forgotten)", async () => {
+    let file: ImportSheet = ROSTER;
+    const calls = fakeApi({
+      "POST /students/import/read": () => file,
+      "POST /students/import/match": (body) => {
+        const rows = (body as { rows: { row: number }[] }).rows;
+        // Only the first file has a student the school already has.
+        return { matches: file === ROSTER ? [{ row: rows[0].row, kind: "same", student: saved("Asha Verma") }] : [] };
+      },
+    });
+    const user = openPage();
+    await openFile(user);
+    await tab(/^Already in school\s*1$/);
+
+    file = { ...ROSTER, fileName: "second.csv", rows: ROSTER.rows.slice(1) };
+    await user.click(screen.getAllByRole("button", { name: "Choose another file" })[0]);
+    await openFile(user);
+    await waitFor(() => expect(calls.filter((c) => c.path === "/students/import/match")).toHaveLength(2));
+    await waitFor(() => expect(uploadButton()).toBeEnabled());
+    expect(uploadButton()).toHaveTextContent("Upload 3 students");
+    expect(screen.queryByRole("tab", { name: /^Already in school/ })).not.toBeInTheDocument();
+  });
+
+  it("a student the school already has is shown as such, not uploaded, and costs the person nothing to fix; another child's number is a fix, and a maybe is a note", async () => {
+    const calls = fakeApi({
+      "POST /students/import/read": () => ROSTER,
+      "POST /students/import/match": () => ({
+        matches: [
+          { row: 2, kind: "same", student: saved("Asha Verma") },
+          { row: 3, kind: "maybe", student: saved("Bina Rao", { admissionNumber: "ADM-2026-0002", dateOfBirth: "2016-02-02" }) },
+          { row: 4, kind: "number", student: saved("Meera Joshi", { admissionNumber: "2019/47" }) },
+        ],
+      }),
+      "POST /students/import": () => ({ dryRun: false, ok: 2, failed: 0, results: [okRow(3, "Bina Rao"), okRow(5, "Dev Nair")] }),
+    });
+    const user = openPage();
+    await openFile(user);
+
+    await tab(/^Already in school\s*1$/);
+    expect(screen.getByRole("tab", { name: /^Need a fix\s*1$/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /^Ready\s*2$/ })).toBeInTheDocument();
+    expect(screen.getByText(/4 rows/)).toHaveTextContent("4 rows · 2 ready · 1 need a fix · 1 already in your school");
+    expect(uploadButton()).toHaveTextContent("Upload 2 students");
+
+    // Row 2: who they are and where; no red anywhere in it.
+    expect(screen.getByText("Already in your school")).toBeInTheDocument();
+    expect(screen.getByText("Asha Verma · ADM-2026-0001 · Class 1")).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Row 2 needs a fix" })).not.toBeInTheDocument();
+    // Row 3: ready, with the note.
+    expect(screen.getByText(/^Maybe the same student as Bina Rao \(ADM-2026-0002, Class 1\)/)).toBeInTheDocument();
+    // Row 4: the number is another child's.
+    const fix = within(screen.getByRole("list", { name: "Row 4 needs a fix" })).getByRole("button", { name: /^Admission no\./ });
+    expect(fix).toHaveAccessibleName("Admission no.: Admission number 2019/47 is already Meera Joshi's (Class 1)");
+
+    await user.click(uploadButton());
+    // The window says what will not be uploaded, and why.
+    expect(await screen.findByText("The 1 row that need a fix are not uploaded; they stay in the table.")).toBeInTheDocument();
+    expect(screen.getByText("The 1 row already in your school is not uploaded again.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Upload and admit" }));
+    // Only the ready rows were sent; the student the school has is not.
+    expect(await screen.findByRole("heading", { name: "2 students admitted to 2026-2027" })).toBeInTheDocument();
+    expect(importCalls(calls)).toHaveLength(1);
+    expect(uploaded(importCalls(calls)[0])).toEqual([3, 5]);
+    expect(screen.getByText("1 row was already in your school: it was not admitted again.")).toBeInTheDocument();
+    // The one row still to fix is counted without the student already there.
+    expect(screen.getByRole("button", { name: "Fix the 1 row" })).toBeInTheDocument();
+  });
+
+  it("the same file again: every student is already there, nothing is left to upload, and it says so", async () => {
+    const calls = fakeApi({
+      "POST /students/import/read": () => ROSTER,
+      "POST /students/import/match": () => ({ matches: ROSTER.rows.map((r) => ({ row: r.row, kind: "same", student: saved(r.cells[1], { admissionNumber: r.cells[0] || "ADM-2026-0009" }) })) }),
+    });
+    const user = openPage();
+    await openFile(user);
+    await tab(/^Already in school\s*4$/);
+    expect(screen.getByText("Every student of this file is already in your school. There is nothing new to upload.")).toBeInTheDocument();
+    expect(uploadButton()).toHaveTextContent("Upload 0 students");
+    expect(uploadButton()).toBeDisabled();
+    expect(screen.getByRole("tab", { name: /^Need a fix\s*0$/ })).toBeInTheDocument();
+    expect(importCalls(calls)).toHaveLength(0);
+  });
+
+  it("a row that is already in the school needs no fix, whatever else is wrong with it", async () => {
+    fakeApi({
+      // Row 4 of the sample file is in "Class 9", which the school does not have.
+      "POST /students/import/match": () => ({ matches: [{ row: 4, kind: "same", student: saved("Meera Joshi") }] }),
+    });
+    const user = openPage();
+    await openFile(user);
+    await tab(/^Already in school\s*1$/);
+    expect(screen.getByRole("tab", { name: /^Need a fix\s*2$/ })).toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Row 4 needs a fix" })).not.toBeInTheDocument();
+    expect(box("Class", 4)).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("a change to the name, the birthday, the mobile or the number takes the answer back (the server decides at the upload); another change keeps it, and nothing more is asked", async () => {
+    const calls = fakeApi({
+      "POST /students/import/read": () => ROSTER,
+      "POST /students/import/match": () => ({ matches: [{ row: 2, kind: "same", student: saved("Asha Verma") }] }),
+    });
+    const user = openPage();
+    await openFile(user);
+    await tab(/^Already in school\s*1$/);
+    const asked = () => calls.filter((c) => c.path === "/students/import/match").length;
+    expect(asked()).toBe(1);
+
+    // The city is not who the child is.
+    await user.clear(box("City", 2));
+    await user.type(box("City", 2), "Indore");
+    await user.tab();
+    expect(screen.getByRole("tab", { name: /^Already in school\s*1$/ })).toBeInTheDocument();
+
+    // A name is.
+    await user.clear(box("Student Name", 2));
+    await user.type(box("Student Name", 2), "Asha Verma Rao");
+    await user.tab();
+    await waitFor(() => expect(screen.queryByRole("tab", { name: /^Already in school/ })).not.toBeInTheDocument());
+    // Row 2 is a student of the file like the others now: all four are ready.
+    expect(uploadButton()).toHaveTextContent("Upload 4 students");
+    expect(asked()).toBe(1);
+  });
+
+  it("when the file cannot be checked the table works as before and says so; the server still refuses a student already there, and the row moves to Already in school", async () => {
+    const calls = fakeApi({
+      "POST /students/import/match": () => new Response(JSON.stringify({ success: false, message: "Try again in a minute." }), { status: 500, headers: { "Content-Type": "application/json" } }),
+      "POST /students/import": () => ({
+        dryRun: false,
+        ok: 0,
+        failed: 1,
+        results: [
+          {
+            row: 2,
+            ok: false,
+            code: "DUPLICATE_STUDENT",
+            errors: [{ path: "", message: "Asha Verma, born on 14-05-2016, is already in your school with the same primary guardian's mobile number: ADM-2026-0001 (Class 1)." }],
+            warnings: [],
+          },
+        ],
+      }),
+    });
+    const user = openPage();
+    await openFile(user);
+    expect(await screen.findByText(/could not be checked against the students already in your school/)).toBeInTheDocument();
+    expect(uploadButton()).toHaveTextContent("Upload 1 student");
+
+    await user.click(uploadButton());
+    await user.click(await screen.findByRole("button", { name: "Upload and admit" }));
+    expect(await screen.findByRole("heading", { name: "No student was admitted" })).toBeInTheDocument();
+    expect(importCalls(calls)).toHaveLength(1);
+    expect(screen.getByText("1 row was already in your school: it was not admitted again.")).toBeInTheDocument();
+    // The three other rows still need a fix; the refused one is not one of them.
+    expect(screen.getByRole("button", { name: "Fix the 3 rows" })).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: /^Already in school\s*1$/ }));
+    expect(screen.getAllByText(/Asha Verma, born on 14-05-2016, is already in your school/).length).toBeGreaterThan(0);
+  });
+
+  it("the same name and birthday twice in the file, with another parent's mobile, is a note on the later row; the row is still ready", async () => {
+    const twice: ImportSheet = {
+      ...ROSTER,
+      rows: [
+        { row: 2, cells: ["", "Asha Verma", "Class 1", "F", "14-05-2016", "Ravi Verma", "9876543210", ...HOME] },
+        { row: 3, cells: ["", "Asha Verma", "Class 1", "F", "14-05-2016", "Mohan Verma", "9811122233", ...HOME] },
+      ],
+    };
+    fakeApi({ "POST /students/import/read": () => twice });
+    const user = openPage();
+    await openFile(user);
+    expect(await screen.findByText("Maybe the same student as row 2: the same name and date of birth, but not the same parent's mobile number")).toBeInTheDocument();
+    expect(uploadButton()).toHaveTextContent("Upload 2 students");
   });
 });

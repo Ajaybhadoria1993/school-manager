@@ -137,7 +137,8 @@ function SelectField({
         )}
       >
         {Icon && <Icon className={iconClass} aria-hidden />}
-        <HeroSelect.Value className="min-w-0 overflow-hidden">
+        {/* One line always (a narrow box shows "Girls (Fem…" rather than growing a second line). */}
+        <HeroSelect.Value className="min-w-0 truncate">
           {({ defaultChildren, isPlaceholder, state }) =>
             multiple && !isPlaceholder && state.selectedItems.length > 0 ? (
               <Chips labels={state.selectedItems.map((item) => item.textValue)} />

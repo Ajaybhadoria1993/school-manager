@@ -34,7 +34,14 @@ const school: typeof createSchool = async (name, role) => {
 const colleague = addColleague;
 
 const get = (token: string, path: string) => request(app).get(`${api}${path}`).set(auth(token));
-const post = (token: string, path: string, body: object = {}) => request(app).post(`${api}${path}`).set(auth(token)).send(body);
+/**
+ * A class is made with its seats (the server asks for them): these tests are about other things, so a class they make is given room
+ * enough for any sections they add, unless the test names its own seats. The seats rules are tested in classSeats.test.ts.
+ */
+const MANY_SEATS = 2000;
+const makesClasses = (path: string) => path === "/classes" || /^\/departments\/[^/]+\/classes$/.test(path);
+const post = (token: string, path: string, body: object = {}) =>
+  request(app).post(`${api}${path}`).set(auth(token)).send(makesClasses(path) ? { capacity: MANY_SEATS, ...body } : body);
 const patch = (token: string, path: string, body: object) => request(app).patch(`${api}${path}`).set(auth(token)).send(body);
 const del = (token: string, path: string) => request(app).delete(`${api}${path}`).set(auth(token));
 
@@ -418,25 +425,28 @@ describe("listing classes: filter, sort and pages, all in the database", () => {
     expect((await list(token, { departmentId: "not-an-id" })).status).toBe(400);
   });
 
-  it("filters by seats (all of a class's sections added up); a class with no seats set is left out", async () => {
+  /** A class's own seats are what the seat filter and sort look at (the rules of the seats themselves are in classSeats.test.ts). */
+  const withSeats = async (token: string, name: string, capacity: number) =>
+    (await post(token, "/classes", { name, sectionCount: 0, capacity })).body.data.id as string;
+
+  it("filters by the class's own seats; the numbers must make sense", async () => {
     const { token } = await school("Sunrise Public School");
-    await makeClass(token, "Class 1", [30, 30]); // 60
-    await makeClass(token, "Class 2", [40]); // 40
-    await makeClass(token, "Class 3", [null]); // a section, but no limit
-    await makeClass(token, "Class 4"); // no sections
+    await withSeats(token, "Class 1", 60);
+    await withSeats(token, "Class 2", 40);
+    await makeClass(token, "Class 3", [30]); // 2000 seats, made by this file's helper
 
     expect(namesOf(await list(token, { seatsMax: 50 }))).toEqual(["Class 2"]);
-    expect(namesOf(await list(token, { seatsMin: 50 }))).toEqual(["Class 1"]);
+    expect(namesOf(await list(token, { seatsMin: 50, seatsMax: 100 }))).toEqual(["Class 1"]);
     expect(namesOf(await list(token, { seatsMin: 40, seatsMax: 60 }))).toEqual(["Class 1", "Class 2"]);
-    expect(namesOf(await list(token, { seatsMin: "", seatsMax: "" }))).toHaveLength(4);
+    expect(namesOf(await list(token, { seatsMin: "", seatsMax: "" }))).toHaveLength(3);
     expect((await list(token, { seatsMin: 70, seatsMax: 60 })).status).toBe(400);
   });
 
   it("sorts by name (Class 2 before Class 10) or by seats, either way", async () => {
     const { token } = await school("Sunrise Public School");
-    await makeClass(token, "Class 10", [20]);
-    await makeClass(token, "Class 2", [50]);
-    await makeClass(token, "Alpha", [35]);
+    await withSeats(token, "Class 10", 20);
+    await withSeats(token, "Class 2", 50);
+    await withSeats(token, "Alpha", 35);
 
     expect(namesOf(await list(token, { sort: "name" }))).toEqual(["Alpha", "Class 2", "Class 10"]);
     expect(namesOf(await list(token, { sort: "name", dir: "desc" }))).toEqual(["Class 10", "Class 2", "Alpha"]);
@@ -687,12 +697,13 @@ describe("sections", () => {
     expect(await Section.countDocuments({ tenantId })).toBe(1);
   });
 
-  it("add up in the totals", async () => {
+  it("are counted in the totals, while the seats of the totals are the classes' own", async () => {
     const { token, klass } = await oneClass();
+    await patch(token, `/classes/${klass.id}`, { capacity: 100 });
     await post(token, `/classes/${klass.id}/sections`, { name: "A", capacity: 40 });
     await post(token, `/classes/${klass.id}/sections`, { name: "B", capacity: 35 });
     await post(token, `/classes/${klass.id}/sections`, { name: "C" });
-    expect((await structure(token)).totals).toEqual({ departments: 0, classes: 1, sections: 3, seats: 75 });
+    expect((await structure(token)).totals).toEqual({ departments: 0, classes: 1, sections: 3, seats: 100 });
   });
 
   it("report a missing class or section as 404", async () => {

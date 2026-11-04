@@ -9,7 +9,15 @@ import {
   type CustomFieldDef,
   type ExportColumnKey,
   type FieldRules,
+  type Placement,
   type SchoolNeeds,
+  type StepDef,
+  ADMIT_STEPS,
+  effectivePlacements,
+  effectiveSteps,
+  isUsualPlacements,
+  isUsualSteps,
+  mandatoryColumnKeys,
   normaliseRules,
 } from "../constants";
 import { StudentSettings, type IExportColumn } from "../models/StudentSettings";
@@ -25,6 +33,14 @@ export interface StudentSettingsDto {
   exportColumns: IExportColumn[];
   /** The export is still the default layout (nothing saved yet). */
   exportIsDefault: boolean;
+  /** The step of Add student each movable detail and each own field is asked in, in order (every one of them is listed). */
+  placements: Placement[];
+  /** Every detail is still in its usual step (nothing moved). */
+  placementsAreDefault: boolean;
+  /** The steps after Parents, in order: More details and the school's own. */
+  steps: StepDef[];
+  /** Only More details (the school added no step). */
+  stepsAreDefault: boolean;
   updatedAt: string | null;
 }
 
@@ -41,15 +57,33 @@ const knownColumn = (key: string, custom: CustomFieldDef[]) => BUILT_IN.has(key)
  * headings and its other columns stay as they are.
  */
 export function withFixedColumns(columns: IExportColumn[]): IExportColumn[] {
+  return withCatalogColumns(columns, (column) => "locked" in column && !!column.locked);
+}
+
+/** Puts back, where they are missing, the columns of the list `wanted` says (each after the nearest column before it in the catalog that the layout has, else first). */
+function withCatalogColumns(columns: IExportColumn[], wanted: (column: (typeof EXPORT_COLUMNS)[number]) => boolean): IExportColumn[] {
   const next = [...columns];
   EXPORT_COLUMNS.forEach((column, index) => {
-    if (!("locked" in column && column.locked) || next.some((c) => c.key === column.key)) return;
+    if (!wanted(column) || next.some((c) => c.key === column.key)) return;
     let after = -1;
     for (let before = index - 1; before >= 0 && after < 0; before--) after = next.findIndex((c) => c.key === EXPORT_COLUMNS[before].key);
     next.splice(after + 1, 0, { key: column.key, heading: column.heading });
   });
   return next;
 }
+
+/**
+ * The form and the Excel are the school's to arrange on their own, but a detail the school makes mandatory is in both: its columns are
+ * put back in the layout when it lacks them (a detail made mandatory after the layout was saved), and an own field's at the end.
+ */
+export function withMandatoryColumns(columns: IExportColumn[], rules: FieldRules, custom: CustomFieldDef[]): IExportColumn[] {
+  const need = new Set(mandatoryColumnKeys(rules, custom));
+  const next = withCatalogColumns(columns, (column) => need.has(column.key));
+  for (const field of custom) if (need.has(field.key) && !next.some((c) => c.key === field.key)) next.push({ key: field.key, heading: field.label });
+  return next;
+}
+
+const sameColumns = (a: IExportColumn[], b: IExportColumn[]) => JSON.stringify(a.map((c) => [c.key, c.heading])) === JSON.stringify(b.map((c) => [c.key, c.heading]));
 
 export class StudentSettingsService {
   /** The school's settings, with the defaults for everything it has not decided and what no school can change put right. One read. */
@@ -61,11 +95,21 @@ export class StudentSettingsService {
     const customFields = (doc?.customFields ?? []).map((f) => ({ key: f.key, label: f.label, type: f.type, options: [...(f.options ?? [])], mode: f.mode }));
     // A field the school deleted leaves the export with it.
     const columns = doc?.exportColumns?.filter((c) => knownColumn(c.key, customFields));
+    // Likewise its place on Add student; every detail is listed (the ones never placed at the end of their usual step).
+    const steps = effectiveSteps(doc?.steps);
+    const placements = effectivePlacements(doc?.placements, customFields, steps);
+    const saved = columns && columns.length > 0 ? withFixedColumns(columns.map((c) => ({ key: c.key, heading: c.heading }))) : null;
+    // The columns of every mandatory detail are in the export, whatever the saved layout says.
+    const exportColumns = withMandatoryColumns(saved ?? DEFAULT_EXPORT, fields, customFields);
     return {
       fields,
       customFields,
-      exportColumns: columns && columns.length > 0 ? withFixedColumns(columns.map((c) => ({ key: c.key, heading: c.heading }))) : DEFAULT_EXPORT,
-      exportIsDefault: !columns || columns.length === 0,
+      exportColumns,
+      exportIsDefault: !saved && sameColumns(exportColumns, DEFAULT_EXPORT),
+      placements,
+      placementsAreDefault: isUsualPlacements(placements, customFields),
+      steps,
+      stepsAreDefault: isUsualSteps(steps),
       updatedAt: doc?.updatedAt ? doc.updatedAt.toISOString() : null,
     };
   }
@@ -107,12 +151,44 @@ export class StudentSettingsService {
         CUSTOM_KEY.test(c.key) && !custom.some((f) => f.key === c.key) ? [{ path: `exportColumns.${i}.key`, message: "Choose a column from the list" }] : []
       );
       if (unknown.length > 0) throw ApiError.badRequest("Validation failed", "VALIDATION_ERROR", unknown);
+      // A mandatory detail is in the Excel as well as on the form: the school makes it optional first to take its column out.
+      const rules = { ...current.fields, ...(input.fields ?? {}) } as FieldRules;
+      const lacking = mandatoryColumnKeys(rules, custom).filter((key) => !input.exportColumns!.some((c) => c.key === key));
+      if (lacking.length > 0) {
+        const nameOf = (key: string) => EXPORT_COLUMNS.find((c) => c.key === key)?.heading ?? custom.find((f) => f.key === key)?.label ?? key;
+        throw ApiError.badRequest(
+          "Validation failed",
+          "VALIDATION_ERROR",
+          lacking.map((key) => ({ path: "exportColumns", message: `${nameOf(key)} is mandatory, so it is in every export: make it optional first` }))
+        );
+      }
       set.exportColumns = input.exportColumns;
     } else if (input.exportColumns === null) {
       set.exportColumns = null;
     } else if (input.customFields && !current.exportIsDefault) {
       // A deleted field leaves the saved layout too (not only the screens' copy of it).
       set.exportColumns = current.exportColumns.filter((c) => knownColumn(c.key, custom));
+    }
+    // The steps after Parents: More details and the school's own, as sent (or as saved). A step taken out sends its details to More details.
+    const steps = input.steps !== undefined ? effectiveSteps(input.steps) : current.steps;
+    if (input.steps !== undefined) set.steps = input.steps === null || isUsualSteps(steps) ? null : steps;
+    const stepKeys = new Set<string>([...ADMIT_STEPS, ...steps.map((s) => s.key)]);
+
+    if (input.placements) {
+      const unknown = input.placements.flatMap((p, i) => [
+        ...(CUSTOM_KEY.test(p.key) && !custom.some((f) => f.key === p.key) ? [{ path: `placements.${i}.key`, message: "Your school has no such field of its own" }] : []),
+        ...(!stepKeys.has(p.step) ? [{ path: `placements.${i}.step`, message: "Your school has no such step" }] : []),
+      ]);
+      if (unknown.length > 0) throw ApiError.badRequest("Validation failed", "VALIDATION_ERROR", unknown);
+      // Every detail ends up listed; the usual places sent back are not kept as places of the school's own.
+      const places = effectivePlacements(input.placements, custom, steps);
+      set.placements = isUsualPlacements(places, custom) ? null : places;
+    } else if (input.placements === null) {
+      set.placements = null;
+    } else if ((input.customFields || input.steps !== undefined) && !current.placementsAreDefault) {
+      // A deleted field leaves its place (and a new one comes last in its step); a deleted step's details go to More details.
+      const places = effectivePlacements(current.placements, custom, steps);
+      set.placements = isUsualPlacements(places, custom) ? null : places;
     }
     await StudentSettings.updateOne({ tenantId: school }, { $set: set, $setOnInsert: { tenantId: school } }, { upsert: true, runValidators: true });
     return StudentSettingsService.get(tenantId);

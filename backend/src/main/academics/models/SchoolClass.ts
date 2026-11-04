@@ -15,6 +15,12 @@ export interface ISchoolClass {
   nameKey: string;
   /** Teaching order, lowest first. Kept 1..n by the class service when a standard class is added in its place; ties are fine. */
   order: number;
+  /**
+   * The seats of the whole class, with or without sections. A new class always gets them (ClassService.create); null is a class made
+   * before seats existed or in bulk (quick setup, the classes made when a school is approved), whose seats the school has not said yet.
+   * The seats of its sections together fit inside it (SectionService, ClassService.update).
+   */
+  capacity?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,6 +31,7 @@ const schoolClassSchema = new Schema<ISchoolClass>(
     name: { type: String, required: true, trim: true, maxlength: 40 },
     nameKey: { type: String, required: true },
     order: { type: Number, required: true, default: 0 },
+    capacity: { type: Number, default: null },
   },
   { timestamps: true }
 );

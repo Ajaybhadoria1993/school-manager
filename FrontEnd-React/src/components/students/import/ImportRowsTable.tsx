@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Info, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Info, Loader2, UserCheck } from "lucide-react";
 import { IMPORT_ROWS_PER_PAGE } from "../../../constants/students";
 import { cn } from "../../../utils/helpers";
 import type { RowProblem } from "../../../utils/studentImport";
@@ -14,18 +14,21 @@ export interface ViewRow {
   admissionNumber: string | null;
   classLabel: string;
   parentLabel: string;
-  status: "checking" | "ready" | "problem" | "admitted" | "failed";
+  status: "checking" | "ready" | "problem" | "admitted" | "failed" | "already";
   problems: RowProblem[];
   warnings: string[];
+  /** `already`: the student is in the school already (who, and where). */
+  already?: { label: string; detail: string };
   /** Admitted: the student's page. */
   studentId?: string;
 }
 
-type Filter = "all" | "good" | "bad";
+type Filter = "all" | "good" | "bad" | "already";
 
 const TH = "px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-foreground-muted";
 const isGood = (r: ViewRow) => r.status === "ready" || r.status === "admitted";
 const isBad = (r: ViewRow) => r.status === "problem" || r.status === "failed";
+const isAlready = (r: ViewRow) => r.status === "already";
 
 function Status({ row }: { row: ViewRow }) {
   if (row.status === "checking") {
@@ -34,6 +37,17 @@ function Status({ row }: { row: ViewRow }) {
         <Loader2 className="size-3.5 animate-spin" aria-hidden />
         Checking
       </span>
+    );
+  }
+  if (row.status === "already" && row.already) {
+    return (
+      <div className="space-y-1">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-soft px-2.5 py-0.5 text-xs font-bold text-primary-deep ring-1 ring-inset ring-primary/30">
+          <UserCheck className="size-3.5" aria-hidden />
+          {row.already.label}
+        </span>
+        <p className="text-xs text-foreground-muted">{row.already.detail}</p>
+      </div>
     );
   }
   return (
@@ -73,8 +87,8 @@ function Status({ row }: { row: ViewRow }) {
 export function ImportRowsTable({ rows, goodLabel, badLabel }: { rows: ViewRow[]; goodLabel: string; badLabel: string }) {
   const [filter, setFilter] = useState<Filter>(rows.some(isBad) ? "bad" : "all");
   const [page, setPage] = useState(1);
-  const counts = { all: rows.length, good: rows.filter(isGood).length, bad: rows.filter(isBad).length };
-  const shown = rows.filter((r) => (filter === "all" ? true : filter === "good" ? isGood(r) : isBad(r)));
+  const counts = { all: rows.length, good: rows.filter(isGood).length, bad: rows.filter(isBad).length, already: rows.filter(isAlready).length };
+  const shown = rows.filter((r) => (filter === "all" ? true : filter === "good" ? isGood(r) : filter === "already" ? isAlready(r) : isBad(r)));
   const pages = Math.max(1, Math.ceil(shown.length / IMPORT_ROWS_PER_PAGE));
   const current = Math.min(page, pages);
   const slice = shown.slice((current - 1) * IMPORT_ROWS_PER_PAGE, current * IMPORT_ROWS_PER_PAGE);
@@ -82,6 +96,7 @@ export function ImportRowsTable({ rows, goodLabel, badLabel }: { rows: ViewRow[]
     { key: "all", label: "All rows" },
     { key: "good", label: goodLabel },
     { key: "bad", label: badLabel },
+    ...(counts.already > 0 ? [{ key: "already" as const, label: "Already in school" }] : []),
   ];
 
   return (

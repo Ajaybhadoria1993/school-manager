@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { MAX_SECTION_CAPACITY } from "../constants/academics";
 import type { ClassItem, SectionInput, SectionItem } from "../types";
+import { classSeatsProblem, sectionsOverClass } from "../utils/academics";
 
 const tidy = (text: string) => text.trim().replace(/\s+/g, " ");
 
@@ -22,13 +23,27 @@ export interface SectionProblems {
   form?: string;
 }
 
+/** What the server refused about the class, box by box. */
+export interface ClassProblems {
+  name?: string;
+  capacity?: string;
+}
+
+/** What the class's part of Save sends: only the boxes that changed. */
+export interface ClassChanges {
+  name?: string;
+  capacity?: number;
+}
+
 /** The two things the draft saves; each returns what is wrong, or nothing when it worked. */
 export interface DraftSaver {
-  renameClass: (name: string) => Promise<string | void>;
+  saveClass: (changes: ClassChanges) => Promise<ClassProblems | void>;
   saveSection: (section: SectionItem, changes: Partial<SectionInput>) => Promise<string | void>;
 }
 
 const CLASS_NAME = "class";
+const CLASS_SEATS = "classSeats";
+const seatsOfClass = (c: ClassItem | undefined) => (c?.capacity != null ? String(c.capacity) : "");
 const ALL = "_all";
 const keyOf = (section: SectionItem, field: SectionField | "form") => `${section.id}:${field}`;
 const seatsOf = (s: SectionItem) => (s.capacity != null ? String(s.capacity) : "");
@@ -61,6 +76,7 @@ export function useClassDraft(classItem: ClassItem | undefined, requireDetails: 
   /** What the server has for a box; undefined for a box of a section that is gone. */
   function savedFor(key: string): string | undefined {
     if (key === CLASS_NAME) return classItem?.name ?? "";
+    if (key === CLASS_SEATS) return seatsOfClass(classItem);
     const [id, field] = key.split(":");
     const section = sections.find((s) => s.id === id);
     if (!section) return undefined;
@@ -91,6 +107,8 @@ export function useClassDraft(classItem: ClassItem | undefined, requireDetails: 
   const valueOf = (key: string, saved: string) => edits[key] ?? saved;
   const className = valueOf(CLASS_NAME, classItem?.name ?? "");
   const classNameDirty = isDirty(CLASS_NAME);
+  const classSeats = valueOf(CLASS_SEATS, seatsOfClass(classItem));
+  const classSeatsDirty = isDirty(CLASS_SEATS);
 
   const sectionValues = (s: SectionItem): SectionValues => ({
     name: valueOf(keyOf(s, "name"), s.name),
@@ -101,8 +119,8 @@ export function useClassDraft(classItem: ClassItem | undefined, requireDetails: 
     (["name", "seats", "room"] as const).filter((field) => isDirty(keyOf(s, field)));
   const sectionDirty = (s: SectionItem) => changedFields(s).length > 0;
 
-  /** How many things are unsaved: the class name, and each section with a changed box. */
-  const dirtyCount = (classNameDirty ? 1 : 0) + sections.filter(sectionDirty).length;
+  /** How many things are unsaved: the class (its name or its seats), and each section with a changed box. */
+  const dirtyCount = (classNameDirty || classSeatsDirty ? 1 : 0) + sections.filter(sectionDirty).length;
 
   const sectionProblems = (s: SectionItem): SectionProblems => ({
     name: problems[keyOf(s, "name")],
@@ -118,7 +136,7 @@ export function useClassDraft(classItem: ClassItem | undefined, requireDetails: 
       delete next[key];
       delete next[ALL];
       // A new try at a section's boxes clears what the server said about the card.
-      if (key !== CLASS_NAME) delete next[`${key.split(":")[0]}:form`];
+      if (key !== CLASS_NAME && key !== CLASS_SEATS) delete next[`${key.split(":")[0]}:form`];
       return next;
     });
     setSettled((current) => {
@@ -131,6 +149,7 @@ export function useClassDraft(classItem: ClassItem | undefined, requireDetails: 
   }
 
   const changeClassName = (text: string) => touch(CLASS_NAME, text);
+  const changeClassSeats = (text: string) => touch(CLASS_SEATS, text);
   const changeSection = (s: SectionItem, field: SectionField, text: string) => touch(keyOf(s, field), text);
 
   const forget = (match: (key: string) => boolean) => {
@@ -140,6 +159,7 @@ export function useClassDraft(classItem: ClassItem | undefined, requireDetails: 
     setProblems((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !match(key) && key !== ALL)));
   };
   const revertClassName = () => forget((key) => key === CLASS_NAME);
+  const revertClassSeats = () => forget((key) => key === CLASS_SEATS);
   const revertSection = (s: SectionItem) => forget((key) => key.startsWith(`${s.id}:`));
 
   /** Sends what changed. Resolves to true when at least one change was saved (so the caller refreshes what was touched, once). */
@@ -149,6 +169,11 @@ export function useClassDraft(classItem: ClassItem | undefined, requireDetails: 
     // What is wrong can be told before anything is sent.
     const wrong: Record<string, string> = {};
     if (classNameDirty && !tidy(className)) wrong[CLASS_NAME] = "Enter the class name.";
+    if (classSeatsDirty) {
+      const problem = classSeatsProblem(classSeats);
+      if (problem) wrong[CLASS_SEATS] = problem;
+    }
+    let held = 0;
     for (const s of sections) {
       const v = sectionValues(s);
       const changed = changedFields(s);
@@ -162,6 +187,13 @@ export function useClassDraft(classItem: ClassItem | undefined, requireDetails: 
       if (changed.includes("seats") && seats !== null && (!Number.isInteger(seats) || seats < 1 || seats > MAX_SECTION_CAPACITY)) {
         wrong[keyOf(s, "seats")] = `Seats must be a whole number from 1 to ${MAX_SECTION_CAPACITY}, or empty.`;
       }
+      held += seats !== null && Number.isInteger(seats) && seats > 0 ? seats : 0;
+    }
+    // The sections split the class's seats, so they cannot hold more than the class will have once everything is saved.
+    const seatsAfter = classSeatsDirty ? Number(classSeats.trim()) : (classItem.capacity ?? null);
+    const touchesSeats = classSeatsDirty || sections.some((s) => changedFields(s).includes("seats"));
+    if (touchesSeats && !wrong[CLASS_SEATS] && !Object.keys(wrong).some((key) => key.endsWith(":seats")) && sectionsOverClass(seatsAfter, held)) {
+      wrong[CLASS_SEATS] = `The sections would hold ${held} seats, more than the class's ${seatsAfter}. Raise the class's seats or lower the sections'.`;
     }
     if (Object.keys(wrong).length > 0) {
       setProblems(wrong);
@@ -173,24 +205,46 @@ export function useClassDraft(classItem: ClassItem | undefined, requireDetails: 
     const failed: Record<string, string> = {};
     const done: Record<string, string> = {};
 
-    if (classNameDirty) {
-      const problem = await saver.renameClass(tidy(className));
-      if (problem) failed[CLASS_NAME] = problem;
-      else done[CLASS_NAME] = tidy(className);
+    // One request for the class: its name and its seats together, only what changed.
+    async function sendClass() {
+      if (!classNameDirty && !classSeatsDirty) return;
+      const changes: ClassChanges = {};
+      if (classNameDirty) changes.name = tidy(className);
+      if (classSeatsDirty) changes.capacity = Number(classSeats.trim());
+      const refused = await saver.saveClass(changes);
+      if (refused && (refused.name || refused.capacity)) {
+        if (refused.name) failed[CLASS_NAME] = refused.name;
+        if (refused.capacity) failed[CLASS_SEATS] = refused.capacity;
+        return;
+      }
+      if (classNameDirty) done[CLASS_NAME] = tidy(className);
+      if (classSeatsDirty) done[CLASS_SEATS] = classSeats.trim();
     }
     // One request per changed section, in the order they are shown, each with only its changed boxes (so saving the seats can
     // never put back an old room saved a moment ago).
-    for (const s of sections) {
-      const changed = changedFields(s);
-      if (changed.length === 0) continue;
-      const v = sectionValues(s);
-      const changes: Partial<SectionInput> = {};
-      if (changed.includes("name")) changes.name = tidy(v.name);
-      if (changed.includes("seats")) changes.capacity = v.seats.trim() === "" ? null : Number(v.seats.trim());
-      if (changed.includes("room")) changes.room = v.room.trim() || null;
-      const problem = await saver.saveSection(s, changes);
-      if (problem) failed[keyOf(s, "form")] = problem;
-      else changed.forEach((field) => (done[keyOf(s, field)] = normalize(keyOf(s, field), v[field])));
+    async function sendSections() {
+      for (const s of sections) {
+        const changed = changedFields(s);
+        if (changed.length === 0) continue;
+        const v = sectionValues(s);
+        const changes: Partial<SectionInput> = {};
+        if (changed.includes("name")) changes.name = tidy(v.name);
+        if (changed.includes("seats")) changes.capacity = v.seats.trim() === "" ? null : Number(v.seats.trim());
+        if (changed.includes("room")) changes.room = v.room.trim() || null;
+        const problem = await saver.saveSection(s, changes);
+        if (problem) failed[keyOf(s, "form")] = problem;
+        else changed.forEach((field) => (done[keyOf(s, field)] = normalize(keyOf(s, field), v[field])));
+      }
+    }
+    // The sections fit inside the class: when the class gets fewer seats its sections are made smaller first, otherwise the class is
+    // made bigger first, so the server never sees the sections holding more than the class has.
+    const lowering = classSeatsDirty && classItem.capacity != null && Number(classSeats.trim()) < classItem.capacity;
+    if (lowering) {
+      await sendSections();
+      await sendClass();
+    } else {
+      await sendClass();
+      await sendSections();
     }
 
     setSaving(false);
@@ -208,6 +262,9 @@ export function useClassDraft(classItem: ClassItem | undefined, requireDetails: 
     className,
     classNameDirty,
     classNameProblem: problems[CLASS_NAME],
+    classSeats,
+    classSeatsDirty,
+    classSeatsProblem: problems[CLASS_SEATS],
     sectionValues,
     sectionDirty,
     sectionProblems,
@@ -217,8 +274,10 @@ export function useClassDraft(classItem: ClassItem | undefined, requireDetails: 
     saving,
     justSaved,
     changeClassName,
+    changeClassSeats,
     changeSection,
     revertClassName,
+    revertClassSeats,
     revertSection,
     save,
   };

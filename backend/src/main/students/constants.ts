@@ -6,6 +6,26 @@ import { classNumber } from "./classNumber";
  * editing this one line when Staff exists. The routes and the screens both follow it.
  */
 export const STUDENT_WRITERS = ["school_admin", "principal"] as const satisfies readonly UserRole[];
+/**
+ * Who may approve (or send back) the list of students to promote to the next year. Narrower than the writers on purpose: the principal
+ * (or anyone who admits) prepares and sends the list, the school admin decides. One list, so a role is added or taken away here.
+ */
+export const STUDENT_APPROVERS = ["school_admin"] as const satisfies readonly UserRole[];
+
+/** Where a promotion list is: being made, waiting for the admin, approved (the next year's places are made), or done when the year is on. */
+export const PROMOTION_STATUSES = ["draft", "submitted", "approved", "applied", "cancelled"] as const;
+export type PromotionStatus = (typeof PROMOTION_STATUSES)[number];
+/** What happens to a student at the year's end: goes to a class of the next year (the next one, or another), stays in the same class, or leaves. */
+export const PROMOTION_OUTCOMES = ["promote", "retain", "leave"] as const;
+export type PromotionOutcome = (typeof PROMOTION_OUTCOMES)[number];
+/** The most students one promotion list holds (a school is far smaller; the list is one record). */
+export const MAX_PROMOTION_ENTRIES = 5000;
+/** The most changes one request makes to a promotion list. */
+export const MAX_PROMOTION_CHANGES = 1000;
+
+/** The most students one request makes inactive or active again, and the longest a reason may be. */
+export const MAX_STATUS_BATCH = 200;
+export const MAX_STATUS_REASON = 200;
 /** Who may look at students. Teachers join when teacher allocation exists (they will see only their own sections). */
 export const STUDENT_READERS = ["school_admin", "principal", "accountant"] as const satisfies readonly UserRole[];
 
@@ -19,12 +39,16 @@ export const CATEGORIES = ["General", "OBC", "SC", "ST", "EWS", "Prefer not to s
 export const RELATIONS = ["Father", "Mother", "Guardian", "Other"] as const;
 export type Relation = (typeof RELATIONS)[number];
 
-/** A student's state. Only `active` exists today; a "left" state (transfer certificate, dropped out) comes with that workflow. */
-export const STUDENT_STATUSES = ["active"] as const;
+/**
+ * A student's state: `active` (in the school this year) or `inactive` (left, transferred or admitted by mistake: out of every list, seat count
+ * and export, but the record is kept whole and comes back with one click). Students are never deleted. A "left with a transfer
+ * certificate" workflow may add states later.
+ */
+export const STUDENT_STATUSES = ["active", "inactive"] as const;
 export type StudentStatus = (typeof STUDENT_STATUSES)[number];
 
 /** An enrolment's state: `active` while the student studies in that class that year. Promotion and leaving add more later. */
-export const ENROLMENT_STATUSES = ["active"] as const;
+export const ENROLMENT_STATUSES = ["active", "inactive"] as const;
 export type EnrolmentStatus = (typeof ENROLMENT_STATUSES)[number];
 
 export const MIN_GUARDIANS = 1;
@@ -259,6 +283,53 @@ export const EXPORT_COLUMNS = [
 export type ExportColumnKey = (typeof EXPORT_COLUMNS)[number]["key"];
 export const LOCKED_EXPORT_COLUMNS = EXPORT_COLUMNS.filter((c) => "locked" in c && c.locked).map((c) => c.key) as ExportColumnKey[];
 
+/**
+ * The detail of the admission form (a key of STUDENT_FORM_FIELDS) each column of the export comes from. The form and the Excel are
+ * the school's to arrange on their own, but a detail the school makes mandatory is in both: its columns are in every export (see
+ * `mandatoryColumnKeys`). One detail can have two columns (the father's and the mother's occupation).
+ */
+export const RULE_OF_COLUMN: Partial<Record<ExportColumnKey, FormFieldKey>> = {
+  admissionDate: "admissionDate",
+  category: "category",
+  bloodGroup: "bloodGroup",
+  motherName: "secondParent",
+  fatherOccupation: "guardianOccupation",
+  motherOccupation: "guardianOccupation",
+  address: "addressLine1",
+  area: "addressArea",
+  city: "addressCity",
+  state: "addressState",
+  pincode: "addressPincode",
+  aadhaarNumber: "aadhaarNumber",
+  samagraId: "samagraId",
+  apaarId: "apaarId",
+  pen: "pen",
+  srNumber: "srNumber",
+  previousSchool: "previousSchoolName",
+  lastClass: "previousSchoolLastClass",
+  tcNumber: "previousSchoolTcNumber",
+  tcDate: "previousSchoolTcDate",
+  religion: "religion",
+  nationality: "nationality",
+  emergencyMobile: "emergencyMobile",
+  disability: "disability",
+  medicalNotes: "medicalNotes",
+  rteSeat: "rteSeat",
+  bpl: "bpl",
+  feeConcession: "feeConcession",
+  transportRoute: "transportRoute",
+  transportStop: "transportStop",
+};
+
+/** The columns every export of this school has because it made their detail mandatory (the school's own fields included). */
+export function mandatoryColumnKeys(rules: FieldRules, custom: readonly CustomFieldDef[]): string[] {
+  const fromDetails = EXPORT_COLUMNS.filter((c) => {
+    const rule = RULE_OF_COLUMN[c.key];
+    return !!rule && rules[rule] === "required";
+  }).map((c) => c.key as string);
+  return [...fromDetails, ...custom.filter((f) => f.mode === "required").map((f) => f.key)];
+}
+
 /** A new school's export: the details schools ask for most, in this order (the school changes it once and it is kept). */
 export const DEFAULT_EXPORT_LAYOUT: ExportColumnKey[] = [
   "admissionNumber",
@@ -310,6 +381,99 @@ export interface CustomFieldDef {
   options: string[];
   mode: FieldMode;
 }
+/**
+ * The steps of Add student, and which details a school may place in any of them. The name, gender, birthday, category, the class,
+ * the parents, the address and the previous school are asked in their own step whatever the school says (the software and the
+ * form's cards depend on them); the details below, and the school's own fields, can be put in any step, in any order. The first three
+ * steps are always there; "More details" and the steps a school adds (`StepDef`) come after them, in the order the school chose.
+ * `step` is where a new school has each detail, and the order of this list is the order a new school has them in within a step. The
+ * places are chosen so that the four steps of Manage fields are about as tall as each other for a new school: the blood group and the
+ * Aadhaar number are the only two it asks (the others are spread over the four steps), so they are in different steps (1 / 3 / 3 / 9).
+ */
+export const ADMIT_STEPS = ["personal", "academic", "parents", "more"] as const;
+export type AdmitStep = (typeof ADMIT_STEPS)[number];
+export const MOVABLE_FIELDS = [
+  { key: "bloodGroup", step: "personal" },
+  { key: "srNumber", step: "academic" },
+  { key: "pen", step: "academic" },
+  { key: "aadhaarNumber", step: "academic" },
+  { key: "emergencyMobile", step: "parents" },
+  { key: "rteSeat", step: "parents" },
+  { key: "bpl", step: "parents" },
+  { key: "religion", step: "more" },
+  { key: "samagraId", step: "more" },
+  { key: "apaarId", step: "more" },
+  { key: "nationality", step: "more" },
+  { key: "disability", step: "more" },
+  { key: "medicalNotes", step: "more" },
+  { key: "feeConcession", step: "more" },
+  { key: "transportRoute", step: "more" },
+  { key: "transportStop", step: "more" },
+] as const satisfies readonly { key: FormFieldKey; step: AdmitStep }[];
+export const MOVABLE_KEYS: ReadonlySet<string> = new Set(MOVABLE_FIELDS.map((f) => f.key));
+
+/** The names of the steps every school has. */
+export const STEP_NAMES: Record<AdmitStep, string> = { personal: "Personal info", academic: "Academic", parents: "Parents", more: "More details" };
+/** A step of the school's own: `s_` and a few letters and digits (no dots: express-mongo-sanitize drops dotted body keys). */
+export const STEP_KEY = /^s_[a-z0-9]{4,16}$/;
+export const MAX_CUSTOM_STEPS = 4;
+export const MAX_STEP_NAME = 30;
+/** A step after Parents: More details (key "more") or one the school added. */
+export interface StepDef {
+  key: string;
+  name: string;
+}
+/** A step a detail may be placed in: one of the four, or one of the school's own. */
+export const isStepKey = (key: unknown): key is string => typeof key === "string" && ((ADMIT_STEPS as readonly string[]).includes(key) || STEP_KEY.test(key));
+
+/**
+ * The steps after Parents, as Add student has them: the school's own, in the order it saved them, with More details (always there, under
+ * its own name) put first when the school left it out. A school that has saved nothing has More details alone.
+ */
+export function effectiveSteps(saved: readonly StepDef[] | null | undefined): StepDef[] {
+  const seen = new Set<string>();
+  const list: StepDef[] = [];
+  for (const s of saved ?? []) {
+    if (seen.has(s.key)) continue;
+    if (s.key === "more") list.push({ key: "more", name: STEP_NAMES.more });
+    else if (STEP_KEY.test(s.key)) list.push({ key: s.key, name: s.name });
+    else continue;
+    seen.add(s.key);
+  }
+  return seen.has("more") ? list : [{ key: "more", name: STEP_NAMES.more }, ...list];
+}
+/** The steps are the usual ones (More details alone). */
+export const isUsualSteps = (steps: readonly StepDef[]) => steps.length === 1 && steps[0].key === "more";
+
+/** Where one detail is asked: its key (a detail of the list or one of the school's own) and its step. The list's order is the order in a step. */
+export interface Placement {
+  key: string;
+  step: string;
+}
+
+/**
+ * The places of every movable detail and every field of the school's own, as Add student uses them: the ones saved (a key that no
+ * longer exists is dropped; a step that no longer exists becomes More details), then each one not saved at the end of its usual step (a
+ * school's own field: More details). A school that has saved nothing has the usual places.
+ */
+export function effectivePlacements(saved: readonly Placement[] | null | undefined, custom: readonly { key: string }[], steps: readonly { key: string }[] = [{ key: "more" }]): Placement[] {
+  const known = new Set<string>([...MOVABLE_KEYS, ...custom.map((f) => f.key)]);
+  const stepKeys = new Set<string>([...ADMIT_STEPS, ...steps.map((s) => s.key)]);
+  const seen = new Set<string>();
+  const kept: Placement[] = [];
+  for (const p of saved ?? []) {
+    if (!known.has(p.key) || seen.has(p.key)) continue;
+    seen.add(p.key);
+    kept.push({ key: p.key, step: stepKeys.has(p.step) ? p.step : "more" });
+  }
+  const usual: Placement[] = [...MOVABLE_FIELDS.map((f) => ({ key: f.key as string, step: f.step as string })), ...custom.map((f) => ({ key: f.key, step: "more" }))];
+  return [...kept, ...usual.filter((p) => !seen.has(p.key))];
+}
+
+/** The places are the usual ones (a school that has not moved anything). */
+export const isUsualPlacements = (placements: readonly Placement[], custom: readonly { key: string }[]) =>
+  JSON.stringify(placements) === JSON.stringify(effectivePlacements(null, custom));
+
 /** Everything a school needs of an admission: its decisions on the list, and its own fields. */
 export interface SchoolNeeds {
   rules: FieldRules;

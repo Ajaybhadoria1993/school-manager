@@ -9,7 +9,7 @@ const STRUCTURE: AcademicStructure = {
   academicYear: { id: "y1", name: "2026-2027" },
   settings: { sectionDetailsRequired: false },
   departments: [],
-  classes: [{ id: "c1", name: "Class 1", order: 1, departmentId: null, sections: [] }],
+  classes: [{ id: "c1", name: "Class 1", order: 1, departmentId: null, capacity: null, sections: [] }],
   totals: { departments: 0, classes: 1, sections: 0, seats: 0 },
 };
 const HOUSE = { key: "c_house1", label: "House", type: "choice" as const, options: ["Red", "Blue"], mode: "optional" as const };
@@ -83,6 +83,24 @@ describe("the same change for the other rows", () => {
     render(<SameValueOffer heading="Sec" from="" to="A" rows={1} onApply={vi.fn()} onDismiss={vi.fn()} />);
     expect(screen.getByText(/1 more row has/)).toHaveTextContent('1 more row has an empty box in Sec. Change it to "A" too?');
     expect(screen.getByRole("button", { name: "Change it" })).toBeInTheDocument();
+  });
+});
+
+describe("the tab of the rows that are students the school already has", () => {
+  it("is there only when some rows are already in the school, counts them, and shows them on a click", async () => {
+    const onFilter = vi.fn();
+    const noop = vi.fn();
+    const { rerender } = render(<PreviewToolbar filter="all" onFilter={onFilter} counts={{ all: 14, bad: 2, good: 7, already: 5 }} onDownloadProblems={noop} />);
+    expect(screen.getByRole("tab", { name: "Already in school 5" })).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: "Already in school 5" }));
+    expect(onFilter).toHaveBeenCalledWith("already");
+
+    // None, or a caller that does not know about them: the three tabs as before.
+    rerender(<PreviewToolbar filter="all" onFilter={onFilter} counts={{ all: 14, bad: 2, good: 12, already: 0 }} onDownloadProblems={noop} />);
+    expect(screen.queryByRole("tab", { name: /Already in school/ })).not.toBeInTheDocument();
+    rerender(<PreviewToolbar filter="all" onFilter={onFilter} counts={{ all: 14, bad: 2, good: 12 }} onDownloadProblems={noop} />);
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
   });
 });
 

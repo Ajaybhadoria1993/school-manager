@@ -101,7 +101,7 @@ function UserMenu() {
               {user.name}
             </p>
             <p className="truncate text-xs text-foreground-muted">
-              {user.email}
+              {user.email ?? user.username}
             </p>
           </div>
           <div className="my-1 h-px bg-border" />

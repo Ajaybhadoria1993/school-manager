@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { Mail } from "lucide-react";
+import { User } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { getApiError } from "../../utils/apiErrors";
 import { PageSpinner } from "../../components/shared/PageSpinner";
 import { postLoginPath } from "../../utils/postLoginPath";
-import { isEmail } from "../../utils/validators";
+import { isEmail, isUsername } from "../../utils/validators";
 import { AuthShell } from "../../components/auth/AuthShell";
 import { PasswordInput } from "../../components/auth/PasswordInput";
 import { Button } from "../../components/ui/Button";
@@ -23,7 +23,7 @@ export default function Login() {
   const [searchParams] = useSearchParams();
   const reason = searchParams.get("reason");
 
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,13 +37,15 @@ export default function Login() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!isEmail(email)) {
-      setError("Enter a valid email address.");
+    // An email has the @ and a username never can: the server tells them apart the same way.
+    const who = identifier.trim().toLowerCase();
+    if (!isEmail(who) && !isUsername(who)) {
+      setError("Enter a valid email address or username.");
       return;
     }
     setSubmitting(true);
     try {
-      const session = await login(email.trim(), password, rememberMe);
+      const session = await login(who, password, rememberMe);
       navigate(postLoginPath(session.user, session.tenant), { replace: true });
     } catch (err) {
       setError(getApiError(err)?.message ?? "Unable to sign in right now.");
@@ -58,7 +60,7 @@ export default function Login() {
   return (
     <AuthShell
       title="Sign in to your account"
-      subtitle="Enter your email and password."
+      subtitle="Enter your email or username and password."
       footer={
         <span>
           New school?{" "}
@@ -76,17 +78,19 @@ export default function Login() {
 
       <form onSubmit={onSubmit} className="space-y-4" noValidate>
         <div>
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="identifier">Email or username</Label>
           <Input
-            icon={Mail}
-            id="email"
-            type="email"
+            icon={User}
+            id="identifier"
+            type="text"
             autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
             required
             autoFocus
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@school.in"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+            placeholder="you@school.in or username"
           />
         </div>
         <div>
@@ -124,7 +128,7 @@ export default function Login() {
           </p>
         )}
 
-        <Button type="submit" size="lg" className="w-full" loading={submitting} disabled={!email || !password}>
+        <Button type="submit" size="lg" className="w-full" loading={submitting} disabled={!identifier || !password}>
           {submitting ? "Signing in" : "Sign in"}
         </Button>
       </form>

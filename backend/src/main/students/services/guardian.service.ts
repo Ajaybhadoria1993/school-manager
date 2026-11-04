@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { isDuplicateKey } from "../../academics/services/shared";
+import { TeacherLogin } from "../../staff/services/teacherLogin.service";
 import { Guardian, type IGuardian } from "../models/Guardian";
 import { Student } from "../models/Student";
 import type { UpdateGuardianInput } from "../schemas/students.schemas";
@@ -26,12 +27,13 @@ export class GuardianService {
 
   /** A guardian as the lookup and the edit answer: their details and every child of theirs at the school. */
   static async withChildren(school: Types.ObjectId, guardian: IGuardian): Promise<GuardianMatchDto> {
-    const [academicYearId, children] = await Promise.all([
+    const [academicYearId, children, logins] = await Promise.all([
       AcademicYearService.activeYearId(school),
-      Student.find({ tenantId: school, "guardians.guardianId": guardian._id })
+      Student.find({ tenantId: school, status: "active", "guardians.guardianId": guardian._id })
         .select("firstName lastName admissionNumber guardians")
         .sort({ admissionNumber: 1 })
         .lean(),
+      TeacherLogin.byIds(guardian.userId ? [guardian.userId] : []),
     ]);
     const places = await placesOf(school, academicYearId, children.map((c) => c._id));
     return {
@@ -41,6 +43,7 @@ export class GuardianService {
       alternateMobile: guardian.alternateMobile ?? null,
       email: guardian.email ?? null,
       occupation: guardian.occupation ?? null,
+      login: guardian.userId ? (logins.get(guardian.userId.toString()) ?? null) : null,
       children: children.map((child) => {
         const place = places.get(child._id.toString());
         return {
@@ -81,6 +84,10 @@ export class GuardianService {
     try {
       const updated = await Guardian.findOneAndUpdate({ _id: id, tenantId: school }, { $set: set }, { new: true }).lean();
       if (!updated) throw GUARDIAN_NOT_FOUND();
+      // The parent's login says the parent's name and number too.
+      if (updated.userId && (set.name !== undefined || set.mobile !== undefined)) {
+        await TeacherLogin.sync(updated.userId, { ...(set.name !== undefined ? { name: updated.name } : {}), ...(set.mobile !== undefined ? { phone: updated.mobile } : {}) });
+      }
       return GuardianService.withChildren(school, updated);
     } catch (err) {
       if (isDuplicateKey(err)) throw MOBILE_TAKEN();

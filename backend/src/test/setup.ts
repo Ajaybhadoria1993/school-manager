@@ -13,6 +13,10 @@ import { AdmissionCounter } from "../main/students/models/AdmissionCounter";
 import { Enrolment } from "../main/students/models/Enrolment";
 import { Guardian } from "../main/students/models/Guardian";
 import { Student } from "../main/students/models/Student";
+import { Teacher } from "../main/staff/models/Teacher";
+import { BellSchedule } from "../main/timetable/models/BellSchedule";
+import { Allotment } from "../main/subjects/models/Allotment";
+import { Subject } from "../main/subjects/models/Subject";
 
 beforeAll(async () => {
   // Safety net: this setup wipes and drops the database, so it must only ever be a local test database.
@@ -34,6 +38,10 @@ beforeAll(async () => {
     Guardian.syncIndexes(),
     Enrolment.syncIndexes(),
     AdmissionCounter.syncIndexes(),
+    Subject.syncIndexes(),
+    Allotment.syncIndexes(),
+    Teacher.syncIndexes(),
+    BellSchedule.syncIndexes(),
   ]);
 });
 

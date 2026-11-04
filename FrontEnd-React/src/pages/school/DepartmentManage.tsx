@@ -1,16 +1,16 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { Armchair, ArrowLeft, FolderTree, Layers, MousePointerClick, Plus, Rows3, X } from "lucide-react";
+import { ArrowLeft, MousePointerClick, Plus, X } from "lucide-react";
 import { TONES } from "../../constants/tones";
 import { useClassFilters } from "../../hooks/useClassFilters";
 import { useDeleteDepartmentMutation, useGetClassesQuery, useGetStructureQuery } from "../../redux/api/academicsApi";
 import { getApiError } from "../../utils/apiErrors";
-import { NO_DEPARTMENT, departmentIcon, plural, toneOf } from "../../utils/academics";
+import { NO_DEPARTMENT, plural, toneOf } from "../../utils/academics";
 import { cn } from "../../utils/helpers";
 import { AddClassBar } from "../../components/classes/department/AddClassBar";
 import { ClassDetail } from "../../components/classes/department/ClassDetail";
 import { ClassFilters } from "../../components/classes/department/ClassFilters";
-import { DepartmentHero } from "../../components/classes/department/DepartmentHero";
+import { DepartmentHeader } from "../../components/classes/department/DepartmentHeader";
 import { ClassList } from "../../components/classes/department/ClassList";
 import { DepartmentSettings } from "../../components/classes/department/DepartmentSettings";
 import { ConfirmModal } from "../../components/classes/ConfirmModal";
@@ -24,8 +24,8 @@ const pathTo = (d: { id: string } | undefined) => (d ? `/school/classes/departme
 /**
  * Manage school > Classes & Sections > one department (`/school/classes/departments/:departmentId`), or, with `none` in the
  * address, the classes that are in no department. It is for changing what exists; a new department is made on the list page.
- * Top to bottom: a heading in the department's own colour with its name (a small pencil beside it renames or deletes it), what is in
- * it (classes, sections, seats) and the neighbouring departments; one bar
+ * Top to bottom: a plain header (as on the Students page) with the department's name (a small pencil beside it renames or deletes it),
+ * what is in it (classes, sections, seats) and the neighbouring departments; one bar
  * with the search and the sort; then the classes of this department on the left, a page at a time (the server does the searching,
  * sorting and paging, see `GET /academics/classes`), and the class that is picked on the right, with its name, its department and
  * its sections, all editable and none of it needing Save. A class is added with the small button above the list. The search and
@@ -102,35 +102,26 @@ export default function DepartmentManagePage() {
   const title = department?.name ?? "Other classes";
   const previous = loose ? undefined : structure.departments[index - 1];
   const next = loose ? undefined : structure.departments[index + 1];
-  // The same colour and icon as this department's heading on the list page, and what is in it.
+  // The same colour as this department's heading on the list page (the class list's header keeps it), and what is in it.
   const t = TONES[toneOf(structure, department?.id ?? null)];
-  const HeadingIcon = department ? departmentIcon(department.name) : Layers;
   const inHere = structure.classes.filter((c) => (loose ? !c.departmentId : c.departmentId === department?.id));
   const sectionCount = inHere.reduce((sum, c) => sum + c.sections.length, 0);
-  const seatCount = inHere.reduce((sum, c) => sum + c.sections.reduce((seats, s) => seats + (s.capacity ?? 0), 0), 0);
-  const facts = [
-    { icon: FolderTree, text: plural(inHere.length, "class") },
-    { icon: Rows3, text: plural(sectionCount, "section") },
-    ...(seatCount > 0 ? [{ icon: Armchair, text: `${seatCount} seats` }] : []),
-  ];
+  const seatCount = inHere.reduce((sum, c) => sum + (c.capacity ?? 0), 0);
+  const facts = [plural(inHere.length, "class"), plural(sectionCount, "section"), ...(seatCount > 0 ? [plural(seatCount, "seat")] : [])];
 
   return (
     <div className="space-y-5">
-      <DepartmentHero
+      <DepartmentHeader
         title={title}
-        icon={HeadingIcon}
-        tone={toneOf(structure, department?.id ?? null)}
         facts={facts}
         backTo="/school/classes"
         backLabel="Classes & Sections"
         previous={previous && { name: previous.name, to: pathTo(previous)! }}
         next={next && { name: next.name, to: pathTo(next)! }}
-        action={department && <DepartmentSettings key={department.id} department={department} structure={structure} onDark onDelete={() => setDeleting(true)} />}
+        action={department && <DepartmentSettings key={department.id} department={department} structure={structure} onDelete={() => setDeleting(true)} />}
       />
 
-      <Card className="p-4">
-        <ClassFilters filters={filters} active={active} onChange={change} onClear={clear} />
-      </Card>
+      <ClassFilters filters={filters} active={active} onChange={change} onClear={clear} />
 
       <div className="grid items-start gap-5 lg:grid-cols-[23rem_minmax(0,1fr)]">
         <Card className="overflow-hidden">
@@ -183,10 +174,7 @@ export default function DepartmentManagePage() {
                 <span className="flex size-12 items-center justify-center rounded-2xl bg-primary-soft text-primary">
                   <MousePointerClick className="size-6" aria-hidden />
                 </span>
-                <p className="text-sm font-semibold text-foreground">Pick a class to see and change it</p>
-                <p className="max-w-xs text-sm text-foreground-muted">
-                  Its name, its department and every section with its seats and room open here.
-                </p>
+                <p className="text-sm font-semibold text-foreground">Pick a class from the list</p>
               </div>
             )}
           </Card>
@@ -205,7 +193,6 @@ export default function DepartmentManagePage() {
           }}
         >
           <p>
-            Only the heading is deleted.{" "}
             {department.classCount > 0
               ? `Its ${plural(department.classCount, "class")} stay${department.classCount === 1 ? "s" : ""} in your school, in no department.`
               : "It has no classes."}

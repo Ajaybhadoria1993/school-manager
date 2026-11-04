@@ -15,6 +15,8 @@ export interface ClassDto {
   name: string;
   order: number;
   departmentId: string | null;
+  /** The seats of the whole class; null until the school says (a class made in bulk or before seats existed). */
+  capacity: number | null;
   sections: SectionDto[];
 }
 
@@ -37,13 +39,14 @@ const byName = (a: { name: string }, b: { name: string }) =>
   a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
 
 export const toClassDto = (
-  c: Pick<ISchoolClass, "_id" | "name" | "order" | "departmentId">,
+  c: Pick<ISchoolClass, "_id" | "name" | "order" | "departmentId" | "capacity">,
   sections: Pick<ISection, "_id" | "classId" | "name" | "capacity" | "room">[]
 ): ClassDto => ({
   id: c._id.toString(),
   name: c.name,
   order: c.order,
   departmentId: c.departmentId ? c.departmentId.toString() : null,
+  capacity: c.capacity ?? null,
   sections: sections.map(toSectionDto).sort(byName),
 });
 

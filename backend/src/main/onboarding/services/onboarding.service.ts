@@ -33,14 +33,15 @@ interface Caller {
 const LOCKED = () =>
   ApiError.forbidden("This application is with the platform team and cannot be edited right now.", "ONBOARDING_LOCKED");
 
-async function load(caller: Caller): Promise<{ tenant: ITenant; admin: IUser; year: IAcademicYear | null }> {
+async function load(caller: Caller): Promise<{ tenant: ITenant; admin: IUser & { email: string }; year: IAcademicYear | null }> {
   const [tenant, admin, year] = await Promise.all([
     Tenant.findById(caller.tenantId),
     User.findById(caller.userId),
     AcademicYearService.onboardingYear(caller.tenantId),
   ]);
-  if (!tenant || !admin) throw ApiError.notFound("School not found", "NOT_FOUND");
-  return { tenant, admin, year };
+  // The administrator signed up with an email (the invitation or the sign-up link): one without it is not one.
+  if (!tenant || !admin?.email) throw ApiError.notFound("School not found", "NOT_FOUND");
+  return { tenant, admin: admin as IUser & { email: string }, year };
 }
 
 function toState(tenant: ITenant, admin: IUser, year: IAcademicYear | null): OnboardingState {

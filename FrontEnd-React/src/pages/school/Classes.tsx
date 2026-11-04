@@ -1,15 +1,11 @@
 import { useMemo, useState } from "react";
 import { Armchair, FolderPlus, FolderTree, HelpCircle, Layers, Plus, Rows3, Wand2 } from "lucide-react";
 import { useSchoolProfile } from "../../hooks/useSchoolProfile";
-import { useDeleteDepartmentMutation, useGetStructureQuery } from "../../redux/api/academicsApi";
+import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { getApiError } from "../../utils/apiErrors";
 import { groupClasses, plural } from "../../utils/academics";
-import type { DepartmentItem } from "../../types";
 import { ClassCard } from "../../components/classes/ClassCard";
-import { ClassesHero, heroGlass, heroSolid } from "../../components/classes/ClassesHero";
 import { ClassModal } from "../../components/classes/ClassModal";
-import { ConfirmModal } from "../../components/classes/ConfirmModal";
-import { RenameDepartmentModal } from "../../components/classes/department/RenameDepartmentModal";
 import { DepartmentGroup } from "../../components/classes/DepartmentGroup";
 import { AddDepartmentModal } from "../../components/classes/AddDepartmentModal";
 import { GuideCard } from "../../components/classes/GuideCard";
@@ -18,17 +14,14 @@ import { QuickSetupPanel } from "../../components/classes/QuickSetupPanel";
 import { AppModal } from "../../components/ui/AppModal";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
-import { WithTip } from "../../components/ui/Hint";
+import { InfoTip, WithTip } from "../../components/ui/Hint";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { KpiCard } from "../../components/dashboard/school/KpiCard";
-import { useToast } from "../../components/ui/toast-context";
 
 /** What is open on top of the page. One at a time. */
 type Dialog =
   | { kind: "class" }
   | { kind: "add-department" }
-  | { kind: "rename-department"; department: DepartmentItem }
-  | { kind: "delete-department"; department: DepartmentItem }
   | { kind: "quick-setup" };
 
 const GUIDE_KEY = "edushiksha.classes.guide-closed";
@@ -52,11 +45,9 @@ function rememberGuideClosed(closed: boolean) {
 
 /** Manage school > Classes & Sections: the layout of the school, built before students and teachers are added. */
 export default function ClassesPage() {
-  const { push } = useToast();
   const { data: res, error, isFetching, refetch } = useGetStructureQuery();
   // The school's answers from sign-up only fill in the first-time setup panel (a school with no classes): not asked for otherwise.
   const profile = useSchoolProfile(!res || res.data.classes.length > 0);
-  const [deleteDepartment] = useDeleteDepartmentMutation();
 
   const [dialog, setDialog] = useState<Dialog | null>(null);
   // null = the page decides: the guide is open for someone with no classes yet and out of the way once there are classes.
@@ -75,31 +66,44 @@ export default function ClassesPage() {
 
   const hasClasses = (structure?.classes.length ?? 0) > 0;
   const hasAnything = hasClasses || (structure?.departments.length ?? 0) > 0;
+  const withoutSeats = structure?.classes.filter((c) => c.capacity === null).length ?? 0;
   const guideOpen = guideChoice ?? (!readGuideClosed() && !hasClasses);
 
   return (
     <div className="space-y-6">
-      <ClassesHero
-        title="Classes & Sections"
-        description="Your school's classes, in teaching order, by department. To change a department, or any class or section in it, press the Manage button of its heading."
-      >
-        <WithTip tip="Add one class, such as Class 5, together with its sections.">
-          <Button className={heroSolid} onClick={() => setDialog({ kind: "class" })}>
-            <Plus className="size-4" aria-hidden />
-            Add class
-          </Button>
-        </WithTip>
-        <WithTip tip="Add a department such as Primary or Middle and choose which classes go in it.">
-          <Button variant="ghost" className={heroGlass} onClick={() => setDialog({ kind: "add-department" })}>
-            <FolderPlus className="size-4" aria-hidden />
-            Create department
-          </Button>
-        </WithTip>
-        <Button variant="ghost" className={heroGlass} onClick={toggleGuide} aria-pressed={guideOpen}>
-          <HelpCircle className="size-4" aria-hidden />
-          Guide
-        </Button>
-      </ClassesHero>
+      <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <h1 className="text-2xl font-extrabold tracking-[-0.02em] text-foreground sm:text-3xl">Classes & Sections</h1>
+            <InfoTip label="What does this page show?">
+              Your school's classes, in teaching order, by department. To change a department, or any class or section in it, press the Manage button of its heading.
+            </InfoTip>
+          </div>
+          <p className="mt-0.5 text-sm text-foreground-muted">
+            {structure?.academicYear ? `View and manage the classes and sections of ${structure.academicYear.name}.` : "View and manage the classes and sections of your school."}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <WithTip tip="A short explanation of how departments, classes and sections fit together.">
+            <Button variant="outline" onClick={toggleGuide} aria-pressed={guideOpen}>
+              <HelpCircle className="size-4" aria-hidden />
+              Guide
+            </Button>
+          </WithTip>
+          <WithTip tip="Add a department such as Primary or Middle and choose which classes go in it.">
+            <Button variant="outline" onClick={() => setDialog({ kind: "add-department" })}>
+              <FolderPlus className="size-4" aria-hidden />
+              Create department
+            </Button>
+          </WithTip>
+          <WithTip tip="Add one class, such as Class 5, together with its sections.">
+            <Button onClick={() => setDialog({ kind: "class" })}>
+              <Plus className="size-4" aria-hidden />
+              Add class
+            </Button>
+          </WithTip>
+        </div>
+      </header>
 
       {guideOpen && <GuideCard onClose={toggleGuide} />}
 
@@ -152,7 +156,13 @@ export default function ClassesPage() {
                 index={3}
                 label="Seats"
                 value={structure.totals.seats}
-                hint={structure.totals.seats === 0 ? "Set when you add a section" : "Where a limit is set"}
+                hint={
+                  !hasClasses
+                    ? "Set when you add a class"
+                    : withoutSeats > 0
+                      ? `${plural(withoutSeats, "class")} without seats yet`
+                      : "Across all your classes"
+                }
                 icon={Armchair}
                 tone="warning"
               />
@@ -176,8 +186,6 @@ export default function ClassesPage() {
                   group={group}
                   titled={structure.departments.length > 0}
                   onAddDepartment={() => setDialog({ kind: "add-department" })}
-                  onRename={() => group.department && setDialog({ kind: "rename-department", department: group.department })}
-                  onDelete={() => group.department && setDialog({ kind: "delete-department", department: group.department })}
                 >
                   {group.classes.map((classItem, index) => (
                     <ClassCard key={classItem.id} classItem={classItem} tone={group.tone} index={index} />
@@ -211,29 +219,6 @@ export default function ClassesPage() {
           departments={structure.departments}
           onClose={close}
         />
-      )}
-
-      {structure && dialog?.kind === "rename-department" && (
-        <RenameDepartmentModal department={dialog.department} structure={structure} onClose={close} />
-      )}
-
-      {dialog?.kind === "delete-department" && (
-        <ConfirmModal
-          title={`Delete ${dialog.department.name}?`}
-          confirmLabel="Delete department"
-          onClose={close}
-          onConfirm={async () => {
-            await deleteDepartment(dialog.department.id).unwrap();
-            push("success", `${dialog.department.name} deleted`);
-          }}
-        >
-          <p>
-            Only the heading is deleted.{" "}
-            {dialog.department.classCount > 0
-              ? `Its ${plural(dialog.department.classCount, "class")} stay${dialog.department.classCount === 1 ? "s" : ""} in your school, under "Other classes".`
-              : "It has no classes."}
-          </p>
-        </ConfirmModal>
       )}
 
       {dialog?.kind === "quick-setup" && (

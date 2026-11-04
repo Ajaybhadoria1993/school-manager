@@ -1,27 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { Armchair, ArrowLeft, ArrowRight, CalendarX2, CopyCheck, Eraser, ListChecks, Trash2, UserPlus } from "lucide-react";
 import { useStudentForm } from "../../hooks/useStudentForm";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
-import { useAdmitStudentMutation, useGetCapacityQuery, useGetStudentSettingsQuery, useLookupGuardianMutation } from "../../redux/api/studentsApi";
-import type { CustomFieldDef, FieldRules } from "../../constants/studentFields";
+import { useAdmitStudentMutation, useCreateGuardianLoginMutation, useGetCapacityQuery, useGetStudentSettingsQuery, useLookupGuardianMutation } from "../../redux/api/studentsApi";
+import { useFreeUsername, useUsernameCheck } from "../../hooks/useUsernameCheck";
+import { generatePassword, MESSAGES, usernameFor } from "../../utils/teachers";
+import { ParentLoginCard, type ParentLoginChoice } from "../../components/students/form/ParentLoginCard";
+import type { Arrived } from "./StudentDetail";
+import { USUAL_STEPS, effectivePlacements, effectiveSteps, type CustomFieldDef, type FieldRules, type Placement, type StepDef } from "../../constants/studentFields";
+import { useFieldsEditor } from "../../hooks/useFieldsEditor";
 import { stepKeyOfPath, stepsFor, problemPathsOf, firstStepWithProblems, type AdmitStepKey } from "../../utils/admitSteps";
 import { getApiError } from "../../utils/apiErrors";
 import { emptyGuardian, emptyStudentForm, formatMobile, placeLabel, toAdmission, type StudentFormValues } from "../../utils/students";
-import { isIndianMobile } from "../../utils/validators";
+import { isIndianMobile, isPasswordValid, isUsername } from "../../utils/validators";
 import type { AcademicStructure, GuardianMatch, Relation, SectionItem, SectionLoad, StudentAddress, StudentCapacity } from "../../types";
-import { AddressFields } from "../../components/students/form/AddressFields";
-import { AdmissionCard } from "../../components/students/form/AdmissionCard";
+import { AdmitStepBody } from "../../components/students/form/AdmitStepBody";
 import { AdmitSidebar } from "../../components/students/form/AdmitSidebar";
 import { ManageFieldsLink } from "../../components/students/export/ManageFieldsLink";
-import { CustomFields } from "../../components/students/form/CustomFields";
+import { CustomFieldDialog } from "../../components/students/export/CustomFieldDialog";
 import { AskDialog } from "../../components/students/form/AskDialog";
 import { FormActionBar } from "../../components/students/form/FormActionBar";
-import { GuardiansCard } from "../../components/students/form/GuardiansCard";
-import { MoreFields } from "../../components/students/form/MoreFields";
-import { PlacementFields } from "../../components/students/form/PlacementFields";
-import { IdFields, PreviousSchoolFields } from "../../components/students/form/RecordsFields";
-import { StudentFields } from "../../components/students/form/StudentFields";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
 import { ModalError } from "../../components/ui/AppModal";
@@ -44,10 +43,17 @@ type Ask =
   | { kind: "fields" }
   | { kind: "full-pick"; section: SectionItem; load: SectionLoad; className: string }
   | { kind: "full"; message: string }
-  | { kind: "duplicate"; message: string; student: { id: string; name: string; admissionNumber: string; className: string | null; sectionName: string | null } };
+  | { kind: "duplicate"; message: string; student: { id: string; name: string; admissionNumber: string; className: string | null; sectionName: string | null; inactive?: boolean } };
 
-function initialValues(family: SiblingOf | undefined, rules: FieldRules): StudentFormValues {
-  const empty = emptyStudentForm(rules);
+/** The class (and section) a link chose (`?class=&section=`), when they are the school's: the section only if it is one of that class. */
+function placeFromLink(params: URLSearchParams, structure: AcademicStructure): { classId: string; sectionId: string } | null {
+  const klass = structure.classes.find((c) => c.id === params.get("class"));
+  if (!klass) return null;
+  return { classId: klass.id, sectionId: klass.sections.find((x) => x.id === params.get("section"))?.id ?? "" };
+}
+
+function initialValues(family: SiblingOf | undefined, rules: FieldRules, place: { classId: string; sectionId: string } | null): StudentFormValues {
+  const empty = { ...emptyStudentForm(rules), ...(place ?? {}) };
   if (!family) return empty;
   const guardians = family.guardians
     .filter((g) => isIndianMobile(g.mobile))
@@ -81,6 +87,7 @@ const plainLink =
  */
 export default function StudentAdmitPage() {
   const family = (useLocation().state as { siblingOf?: SiblingOf } | null)?.siblingOf;
+  const [params] = useSearchParams();
   const structureRes = useGetStructureQuery();
   const capacityRes = useGetCapacityQuery();
   // What this school needs: the form is made once it is known (a school that needs both parents starts with the father and the mother).
@@ -89,8 +96,11 @@ export default function StudentAdmitPage() {
   const capacity = capacityRes.data?.data;
   const rules = settingsRes.data?.data.fields;
   const custom = settingsRes.data?.data.customFields;
+  // The steps after Parents and where the school put each detail (a server that does not send them yet: the usual ones).
+  const steps = effectiveSteps(settingsRes.data?.data.steps ?? USUAL_STEPS);
+  const placements = custom ? (settingsRes.data?.data.placements ?? effectivePlacements(null, custom, steps)) : undefined;
 
-  if (!structure || !capacity || !rules || !custom) {
+  if (!structure || !capacity || !rules || !custom || !placements) {
     return (
       <div className="space-y-6" aria-busy="true">
         <Skeleton className="h-14 rounded-2xl" />
@@ -126,7 +136,7 @@ export default function StudentAdmitPage() {
     );
   }
 
-  return <AdmitForm structure={structure} capacity={capacity} rules={rules} custom={custom} family={family} year={capacity.academicYear.name} />;
+  return <AdmitForm structure={structure} capacity={capacity} rules={rules} custom={custom} placements={placements} steps={steps} family={family} place={placeFromLink(params, structure)} year={capacity.academicYear.name} />;
 }
 
 function AdmitForm({
@@ -134,14 +144,23 @@ function AdmitForm({
   capacity,
   rules,
   custom,
+  placements,
+  steps,
   family,
+  place,
   year,
 }: {
   structure: AcademicStructure;
   capacity: StudentCapacity;
   rules: FieldRules;
   custom: CustomFieldDef[];
+  /** The step each detail the school may move is asked in (Manage fields). */
+  placements: Placement[];
+  /** The steps after Parents, in order: More details and the school's own. */
+  steps: StepDef[];
   family: SiblingOf | undefined;
+  /** Chosen by the link the form was opened from (a class's page): the class and section start filled in. */
+  place: { classId: string; sectionId: string } | null;
   year: string;
 }) {
   const navigate = useNavigate();
@@ -151,19 +170,52 @@ function AdmitForm({
 
   const classHasSections = useCallback((id: string) => !!structure.classes.find((c) => c.id === id)?.sections.length, [structure]);
   const lookup = useCallback(async (mobile: string): Promise<GuardianMatch | null> => (await lookupGuardian({ mobile }).unwrap()).data.guardian, [lookupGuardian]);
-  const [initial] = useState(() => initialValues(family, rules));
+  const [initial] = useState(() => initialValues(family, rules, place));
   // The previous school is needed for Class 1 to 12 and not before it: the class chosen says which.
   const classNameOf = useCallback((id: string) => structure.classes.find((c) => c.id === id)?.name, [structure]);
   const form = useStudentForm(initial, { mode: "admit", classHasSections, lookup, rules, classNameOf, custom });
+
+  // "Add your own field" on the last step: the field is saved in the school's settings at once (one request) and asked right here,
+  // so what has been typed stays. It is the school's own: no other school sees it.
+  const fieldsEditor = useFieldsEditor();
+  // The step the button was pressed on: the new field is asked there.
+  const [addingField, setAddingField] = useState<string | null>(null);
+  const [addingBusy, setAddingBusy] = useState(false);
+  async function addField(field: CustomFieldDef) {
+    setAddingBusy(true);
+    const result = await fieldsEditor.addField(field, addingField ?? "more");
+    setAddingBusy(false);
+    if (result !== "saved") return;
+    setAddingField(null);
+    push("success", `${field.label} added: Add student asks it from now on`);
+  }
+
+  // The primary parent's login (Parent login under the parents): off until ticked; the username follows the parent's name until typed.
+  const [createLogin] = useCreateGuardianLoginMutation();
+  const [parentLogin, setParentLogin] = useState<ParentLoginChoice>(() => ({ on: false, username: "", password: generatePassword(), typed: false }));
+  const [loginTried, setLoginTried] = useState(false);
+  const primary = form.values.guardians.find((g) => g.isPrimary) ?? form.values.guardians[0];
+  const primaryName = primary?.match?.name ?? primary?.name ?? "";
+  const existingLogin = primary?.match?.login?.username ?? null;
+  useEffect(() => {
+    if (!parentLogin.typed) setParentLogin((p) => ({ ...p, username: usernameFor(p.username, primaryName) }));
+  }, [primaryName, parentLogin.typed]);
+  const usernameCheck = useUsernameCheck(parentLogin.username, parentLogin.on && !existingLogin);
+  // The username made from the name is swapped for a free one when somebody (any school) already has it.
+  useFreeUsername(usernameCheck, parentLogin.typed, (free) => setParentLogin((p) => ({ ...p, username: free })));
+  const loginProblems = {
+    username: loginTried && !isUsername(parentLogin.username) ? MESSAGES.username : undefined,
+    password: loginTried && !isPasswordValid(parentLogin.password) ? MESSAGES.password : undefined,
+  };
 
   // A section the person said "yes, even though it is full" to.
   const [overCapacityFor, setOverCapacityFor] = useState<string | null>(null);
   const [ask, setAsk] = useState<Ask | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // The steps: Academic, Personal info, Parents and (when the school asks anything of it) More details. The form's values live in
+  // The steps: Personal info, Academic, Parents and (when the school asks anything of it) More details. The form's values live in
   // `form`, so going back and forth loses nothing; a step is passed when Next is pressed with its boxes right.
-  const stepList = useMemo(() => stepsFor(form.rules ?? rules, custom), [form.rules, rules, custom]);
+  const stepList = useMemo(() => stepsFor(form.rules ?? rules, custom, placements, steps), [form.rules, rules, custom, placements, steps]);
   const [position, setPosition] = useState(0);
   const [furthest, setFurthest] = useState(0);
   const [passed, setPassed] = useState<AdmitStepKey[]>([]);
@@ -190,17 +242,17 @@ function AdmitForm({
   /** Opens the step of the first of these boxes that belongs to a step of this form, and puts the focus there. */
   function showStepOf(paths: string[]) {
     for (const path of paths) {
-      const index = stepList.findIndex((s) => s.key === stepKeyOfPath(path));
+      const index = stepList.findIndex((s) => s.key === stepKeyOfPath(path, placements));
       if (index < 0) continue;
       openStep(index);
-      setFocusPaths(paths.filter((p) => stepKeyOfPath(p) === stepList[index].key));
+      setFocusPaths(paths.filter((p) => stepKeyOfPath(p, placements) === stepList[index].key));
       return;
     }
   }
 
   /** Next step: this step's boxes are checked on their own; wrong ones show their message, otherwise the next step opens. */
   function goNext() {
-    const wrong = problemPathsOf(form.problems, stepKey);
+    const wrong = problemPathsOf(form.problems, stepKey, placements);
     if (wrong.length > 0) {
       form.reveal(wrong);
       return;
@@ -224,10 +276,30 @@ function AdmitForm({
 
   async function send(flags: { allowOverCapacity: boolean; confirmNotDuplicate: boolean }) {
     setFormError(null);
+    // The parent's login, when ticked: checked before anything is sent.
+    const wantLogin = parentLogin.on && !existingLogin;
+    if (wantLogin && (!isUsername(parentLogin.username) || !isPasswordValid(parentLogin.password) || usernameCheck.state === "taken")) {
+      setLoginTried(true);
+      setFormError("The parent's login needs a change: see the messages in red.");
+      showStepOf(["guardians"]);
+      return;
+    }
     try {
       const res = await admit(toAdmission(form.values, flags, custom.filter((f) => f.mode !== "hidden"))).unwrap();
       push("success", res.message ?? `${res.data.name} admitted`);
-      navigate(`/school/students/${res.data.id}`, { state: { admitted: true } });
+      const arrived: Arrived = { admitted: true };
+      // The student is in: the primary parent's login is made now (a refusal is said on the student's page, where it can be made again).
+      const parent = res.data.guardians?.find((g) => g.isPrimary) ?? res.data.guardians?.[0];
+      if (wantLogin && parent && !parent.login) {
+        const username = parentLogin.username.trim().toLowerCase();
+        try {
+          const made = await createLogin({ id: parent.id, username, password: parentLogin.password }).unwrap();
+          arrived.parentLogin = { name: parent.name, username: made.data.login.username, password: parentLogin.password };
+        } catch (loginErr) {
+          arrived.parentLoginError = getApiError(loginErr)?.message ?? "Could not make the login.";
+        }
+      }
+      navigate(`/school/students/${res.data.id}`, { state: arrived });
     } catch (err) {
       const error = getApiError(err);
       const first = (Array.isArray(error?.details) ? error.details[0] : undefined) as Record<string, unknown> | undefined;
@@ -264,8 +336,8 @@ function AdmitForm({
     if (!form.check()) {
       setFormError("Some boxes need a change: see the messages in red.");
       // Every box of every step is checked: the first step with a wrong one is opened (it may be an earlier one).
-      const first = firstStepWithProblems(form.problems, stepList);
-      if (first >= 0 && first !== at) showStepOf(problemPathsOf(form.problems, stepList[first].key));
+      const first = firstStepWithProblems(form.problems, stepList, placements);
+      if (first >= 0 && first !== at) showStepOf(problemPathsOf(form.problems, stepList[first].key, placements));
       return;
     }
     void send(flags());
@@ -310,32 +382,28 @@ function AdmitForm({
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
           {/* `key` gives each step a fresh start (its animation); the values are the form's, so nothing typed is lost by moving. */}
           <div key={stepKey} className="rise-in min-w-0 space-y-6">
-            {stepKey === "academic" && (
-              <>
-                <PlacementFields
-                  form={form}
-                  structure={structure}
-                  capacity={capacity}
-                  index={0}
-                  onPickFull={(section, load) => setAsk({ kind: "full-pick", section, load, className: structure.classes.find((c) => c.id === section.classId)?.name ?? "" })}
-                />
-                <AdmissionCard form={form} index={1} />
-                <PreviousSchoolFields form={form} index={2} />
-              </>
-            )}
-            {stepKey === "personal" && (
-              <>
-                <StudentFields form={form} mode="admit" index={0} admissionDate={false} />
-                <AddressFields form={form} index={1} />
-                <IdFields form={form} index={2} />
-              </>
-            )}
-            {stepKey === "parents" && <GuardiansCard form={form} mode="admit" index={0} />}
-            {stepKey === "more" && (
-              <>
-                <MoreFields form={form} startOpen index={0} />
-                <CustomFields form={form} index={1} />
-              </>
+            <AdmitStepBody
+              form={form}
+              stepKey={stepKey}
+              placements={placements}
+              steps={steps}
+              structure={structure}
+              capacity={capacity}
+              onPickFull={(section, load) => setAsk({ kind: "full-pick", section, load, className: structure.classes.find((c) => c.id === section.classId)?.name ?? "" })}
+              onAddField={(step) => {
+                fieldsEditor.setError(null);
+                setAddingField(step);
+              }}
+            />
+            {stepKeyOfPath("guardians", placements) === stepKey && (
+              <ParentLoginCard
+                parentName={primaryName}
+                existing={existingLogin}
+                value={parentLogin}
+                onChange={(patch) => setParentLogin((p) => ({ ...p, ...patch }))}
+                check={usernameCheck}
+                problems={loginProblems}
+              />
             )}
           </div>
           <AdmitSidebar values={form.values} problems={form.problems} rules={form.rules ?? rules} custom={custom} structure={structure} />
@@ -372,6 +440,16 @@ function AdmitForm({
       </form>
 
       {/* Outside the form: a dialog's buttons must not submit it. */}
+      {addingField !== null && (
+        <CustomFieldDialog
+          field={null}
+          others={custom}
+          busy={addingBusy}
+          error={fieldsEditor.error}
+          onClose={() => setAddingField(null)}
+          onSave={(field) => void addField(field)}
+        />
+      )}
       {ask?.kind === "clear" && (
         <AskDialog title="Clear the whole form?" icon={Eraser} confirmLabel="Clear all" onClose={() => setAsk(null)} onConfirm={clearAll}>
           <p>Everything you typed is removed and the boxes are empty again. Nothing has been saved yet, so nothing is deleted from your school.</p>
@@ -424,7 +502,7 @@ function AdmitForm({
       )}
       {ask?.kind === "duplicate" && (
         <AskDialog
-          title="This child may already be admitted"
+          title={ask.student.inactive ? "This child is already in your school, as an inactive student" : "This child may already be admitted"}
           icon={CopyCheck}
           confirmLabel="It is another child: admit"
           onClose={() => setAsk(null)}
@@ -437,6 +515,11 @@ function AdmitForm({
             has the same name, the same date of birth and the same primary parent ({formatMobile(form.values.guardians.find((g) => g.isPrimary)?.mobile)}), in{" "}
             {placeLabel(ask.student.className ? { className: ask.student.className, sectionName: ask.student.sectionName } : null)}.
           </p>
+          {ask.student.inactive && (
+            <p>
+              <span className="font-semibold text-foreground">Inactive</span> means they left the school: open their page and press Make active, with all their details as they were, instead of admitting them again.
+            </p>
+          )}
           <p>If it is the same child, cancel: nothing is saved. Twins or another child with the same name? Admit them.</p>
         </AskDialog>
       )}
