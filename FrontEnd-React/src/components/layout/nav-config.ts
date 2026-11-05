@@ -1,4 +1,5 @@
 import {
+  Backpack,
   Building2,
   CalendarClock,
   CalendarDays,
@@ -49,10 +50,19 @@ export const NAV_ITEMS: NavItem[] = [
     group: "Overview",
   },
   {
-    // Every class with its sections and students, and each class's own page. For the people who run the school (SchoolManagerRoute).
-    label: "School Class",
+    // Every class with its sections, students and seats, and each class's own page. For the people who run the school
+    // (SchoolManagerRoute). Since 2026-11-04 Classes and Students are two entries of the menu (they were two tabs of one School Class page).
+    label: "Classes",
     href: "/school-class",
     icon: School,
+    roles: ["school_admin", "principal"],
+    group: "Overview",
+  },
+  {
+    // Every student of the year, class by class, found by search and filters. A longer address than Classes', so it lights up on its own.
+    label: "Students",
+    href: "/school-class/students",
+    icon: Backpack,
     roles: ["school_admin", "principal"],
     group: "Overview",
   },
@@ -119,7 +129,8 @@ export const NAV_ITEMS: NavItem[] = [
     group: "Manage school",
   },
   {
-    label: "Students",
+    // Admit, edit, import, export, make inactive: "Manage Students" like "Manage Teacher", so it is not mistaken for the Students list above.
+    label: "Manage Students",
     href: "/school/students",
     icon: GraduationCap,
     // The people who admit students (STUDENT_WRITERS in constants/students.ts; the accountant reads through the API only for now).

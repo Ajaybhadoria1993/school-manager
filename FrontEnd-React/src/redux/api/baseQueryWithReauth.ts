@@ -32,7 +32,7 @@ const REFRESH_TIMEOUT_MS = 15_000;
 // take turns, and a tab that waited re-reads the cookie and adopts the token the other tab just got.
 // ---------------------------------------------------------------------------
 
-type RefreshOutcome = "ok" | "rejected" | "transient";
+export type RefreshOutcome = "ok" | "rejected" | "transient";
 
 let inFlightRefresh: Promise<RefreshOutcome> | null = null;
 
@@ -80,6 +80,14 @@ function refreshSession(failedAccessToken: string | undefined): Promise<RefreshO
     }
   })();
   return inFlightRefresh;
+}
+
+/**
+ * For what is not a request, the notification socket (realtime/notificationSocket.ts): the server refused the current access token, so
+ * swap the refresh token for a new pair now, sharing the refresh with any request doing the same.
+ */
+export function refreshRejectedToken(): Promise<RefreshOutcome> {
+  return refreshSession(getToken());
 }
 
 function endSession(api: BaseQueryApi, reason: SessionEndReason) {

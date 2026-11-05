@@ -8,3 +8,4 @@ export * from "./staff";
 export * from "./timetable";
 export * from "./parent";
 export * from "./classroom";
+export * from "./notifications";

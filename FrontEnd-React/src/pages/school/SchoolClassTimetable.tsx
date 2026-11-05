@@ -55,7 +55,7 @@ export default function SchoolClassTimetablePage() {
           title="This class is not in your school"
           actions={
             <Link to="/school-class" className={outlineLink}>
-              Back to School Class
+              Back to Classes
             </Link>
           }
         />
@@ -81,7 +81,7 @@ export default function SchoolClassTimetablePage() {
         title={label}
         current="Timetable & teachers"
         crumbs={[
-          { label: "School Class", to: "/school-class" },
+          { label: "Classes", to: "/school-class" },
           { label: overview.name, to: `/school-class/${classId}${section ? `?section=${section.id}` : ""}` },
         ]}
         actions={

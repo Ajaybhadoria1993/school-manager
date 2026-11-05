@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, Navigate, useLocation, useSearchParams } from "react-router";
 import { Building2, CalendarX2, FilterX, FolderTree, GraduationCap, LayoutGrid, Search, SearchX, UserPlus, UsersRound } from "lucide-react";
 import { STUDENT_PAGE_SIZES } from "../../constants/students";
-import { TONES } from "../../constants/tones";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetCapacityQuery, useGetClassOverviewQuery, useGetStudentsQuery } from "../../redux/api/studentsApi";
-import { departmentIcon, departmentTone, plural } from "../../utils/academics";
+import { departmentTone } from "../../utils/academics";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
 import { admitLink } from "../../utils/students";
 import type { ClassOverview, ClassOverviewPage, Gender, StudentSort } from "../../types";
 import { StatTile } from "../../components/dashboard/school/StatTile";
-import { ClassOverviewCard } from "../../components/schoolClass/ClassOverviewCard";
+import { DepartmentPanel } from "../../components/schoolClass/DepartmentPanel";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentPager } from "../../components/students/StudentPager";
 import { StudentTable, StudentTableSkeleton } from "../../components/students/StudentTable";
@@ -23,10 +22,9 @@ import { FilterBar, FilterSearch, FilterSelect } from "../../components/ui/Filte
 import { Input } from "../../components/ui/Input";
 import { Skeleton } from "../../components/ui/Skeleton";
 
-const VIEWS = [
-  { value: "classes", label: "Classes", icon: FolderTree },
-  { value: "students", label: "Students", icon: UsersRound },
-] as const;
+/** The two lists of this page, each on its own address and with its own menu entry: Classes (`/school-class`) and Students (`/school-class/students`). */
+type View = "classes" | "students";
+const STUDENTS_PATH = "/school-class/students";
 
 /** The orders the students can be listed in: the word in the address, what the person reads, and what the server is asked. */
 const SORTS: Record<string, { label: string; sort: StudentSort; dir: "asc" | "desc" }> = {
@@ -44,21 +42,35 @@ const plainLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_4px_10px_-2px_rgb(37_99_235/0.4)] transition-all duration-150 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 
 /**
- * School Class (`/school-class`), laid out like the Teacher page (2026-11-03): the plain header (title with the year, the breadcrumb,
- * Manage classes and Add student), four numbers of the school (departments, classes and sections from the class layout, students from
- * the seat counts: reads the app already has), two tabs, and each tab's own row of search and filters (no labels: each dropdown shows its
- * name until something is picked). **Classes**: a card for each class that matches (its students, sections and seats; a class opens its
- * own page, a section on a card opens that section's students); filters: department, class, part of a class name. **Students**: every
- * student that matches, class by class; filters: department, class, section, gender, a search and the order. Every filter is a request to
- * the server (the class cards from `/students/class-overview`, the students from `/students`): nothing is filtered in the browser. The tab,
- * the filters, the page and the page size are in the address. Add student opens the admission form with the chosen class and section in.
+ * School Class, laid out like the Teacher page (2026-11-03): the plain header (title with the year, the breadcrumb, Manage classes and
+ * Add student), four numbers of the school (departments, classes and sections from the class layout, students from the seat counts:
+ * reads the app already has), and a row of search and filters (no labels: each dropdown shows its name until something is picked).
+ *
+ * Two addresses, two menu entries (2026-11-04; they were two tabs of one page, now there are none): **Classes** (`/school-class`): a
+ * card for each class that matches (its students, sections and seats; a class opens its own page, a section on a card opens that
+ * section's students); filters: department, class, part of a class name. **Students** (`/school-class/students`): every student that
+ * matches, class by class; filters: department, class, section, gender, a search and the order. Each has ONE button in the primary colour (Manage
+ * classes on Classes, Add student on Students). Every filter is a request to the server
+ * (the class cards from `/students/class-overview`, the students from `/students`): nothing is filtered in the browser. The filters, the
+ * page and the page size are in the address. Add student opens the admission form with the chosen class and section in. The old address
+ * `/school-class?view=students&...` goes to the new one with its filters.
  */
 export default function SchoolClassPage() {
+  const { pathname } = useLocation();
+  const [params] = useSearchParams();
+  if (pathname !== STUDENTS_PATH && params.get("view") === "students") {
+    const rest = new URLSearchParams(params);
+    rest.delete("view");
+    return <Navigate to={{ pathname: STUDENTS_PATH, search: rest.toString() ? `?${rest.toString()}` : "" }} replace />;
+  }
+  return <SchoolClassView view={pathname === STUDENTS_PATH ? "students" : "classes"} />;
+}
+
+function SchoolClassView({ view }: { view: View }) {
   const [params, setParams] = useSearchParams();
   const structureRes = useGetStructureQuery();
   const structure = structureRes.data?.data;
 
-  const view = params.get("view") === "students" ? "students" : "classes";
   const departmentId = params.get("department") ?? "";
   const classId = params.get("class") ?? "";
   const klass = structure?.classes.find((c) => c.id === classId);
@@ -106,7 +118,7 @@ export default function SchoolClassPage() {
   function change(patch: Record<string, string>, keepPage = false) {
     const next = new URLSearchParams(params);
     for (const [key, value] of Object.entries(patch)) {
-      if (value === "" || (key === "view" && value === "classes") || (key === "sort" && value === "class") || (key === "limit" && Number(value) === STUDENT_PAGE_SIZES[0]) || (key === "page" && value === "1")) next.delete(key);
+      if (value === "" || (key === "sort" && value === "class") || (key === "limit" && Number(value) === STUDENT_PAGE_SIZES[0]) || (key === "page" && value === "1")) next.delete(key);
       else next.set(key, value);
     }
     if (!keepPage && !("page" in patch)) next.delete("page");
@@ -146,21 +158,23 @@ export default function SchoolClassPage() {
   return (
     <div className="space-y-6">
       <StudentFormHeader
-        title="School Class"
+        title={view === "students" ? "Students" : "Classes"}
         crumbs={[{ label: "Dashboard", to: "/dashboard" }]}
         info={year ? <Badge tone="primary">{year}</Badge> : undefined}
         actions={
+          // One button, in the primary colour: Manage classes on Classes, Add student on Students (it carries the chosen class and section).
           ready ? (
-            <>
-              <Link to="/school/classes" className={outlineLink}>
-                <FolderTree className="size-4" aria-hidden />
-                Manage classes
-              </Link>
+            view === "students" ? (
               <Link to={admitLink({ classId, sectionId })} className={plainLink}>
                 <UserPlus className="size-4" aria-hidden />
                 Add student
               </Link>
-            </>
+            ) : (
+              <Link to="/school/classes" className={plainLink}>
+                <FolderTree className="size-4" aria-hidden />
+                Manage classes
+              </Link>
+            )
           ) : undefined
         }
       />
@@ -210,26 +224,7 @@ export default function SchoolClassPage() {
             <StatTile label="Students" value={capacity?.totals.students ?? null} icon={GraduationCap} tone="success" />
           </section>
 
-          <div role="tablist" aria-label="What to show" className="inline-flex gap-1 rounded-xl bg-surface-muted p-1">
-            {VIEWS.map((v) => (
-              <button
-                key={v.value}
-                type="button"
-                role="tab"
-                aria-selected={view === v.value}
-                onClick={() => change({ view: v.value, q: "" }, true)}
-                className={cn(
-                  "inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg px-5 text-sm font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25",
-                  view === v.value ? "bg-primary text-primary-foreground shadow-[0_4px_10px_-2px_rgb(37_99_235/0.45)]" : "text-foreground-muted hover:bg-surface hover:text-foreground"
-                )}
-              >
-                <v.icon className="size-4" aria-hidden />
-                {v.label}
-              </button>
-            ))}
-          </div>
-
-          <div role="tabpanel" aria-label={view === "students" ? "Students" : "Classes"} className="space-y-4">
+          <div className="space-y-4">
             <FilterBar label={view === "students" ? "Find students" : "Find classes"}>
               <FilterSearch>
                 <Input
@@ -365,7 +360,7 @@ export default function SchoolClassPage() {
   );
 }
 
-/** The class cards of the "Classes" view, wing by wing (the order of the departments). */
+/** The classes of the "Classes" view, wing by wing (the order of the departments): a panel of rows for each wing. */
 function ClassCards({
   overview,
   loading,
@@ -405,9 +400,9 @@ function ClassCards({
   }
   if (!overview) {
     return (
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-busy="true">
-        {[0, 1, 2].map((i) => (
-          <Skeleton key={i} className="h-48 rounded-2xl" />
+      <div className="space-y-5" aria-busy="true">
+        {[0, 1].map((i) => (
+          <Skeleton key={i} className="h-56 rounded-2xl" />
         ))}
       </div>
     );
@@ -430,31 +425,16 @@ function ClassCards({
   }
 
   return (
-    <div className={cn("space-y-8 transition-opacity", loading && "opacity-70")}>
-      {groups.map((group) => {
-        const tone = departmentTone(Math.max(group.position, 0));
-        const Icon = group.name ? departmentIcon(group.name) : FolderTree;
-        return (
-          <section key={group.key} aria-label={group.name ?? "Classes"} className="space-y-3">
-            {group.name && (
-              <div className="flex items-center gap-2.5">
-                <span aria-hidden className={cn("flex size-8 items-center justify-center rounded-lg", group.position >= 0 ? TONES[tone].tile : TONES.navy.tile)}>
-                  <Icon className="size-4" />
-                </span>
-                <h2 className="text-base font-bold tracking-tight text-foreground">{group.name}</h2>
-                <p className="text-xs font-semibold text-foreground-muted">
-                  {plural(group.classes.length, "class")} · {plural(group.classes.reduce((sum, c) => sum + c.students, 0), "student")}
-                </p>
-              </div>
-            )}
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {group.classes.map((c, index) => (
-                <ClassOverviewCard key={c.id} overview={c} tone={group.position >= 0 ? tone : "navy"} index={index} />
-              ))}
-            </div>
-          </section>
-        );
-      })}
+    <div className={cn("space-y-5 transition-opacity", loading && "opacity-70")}>
+      {groups.map((group) => (
+        <DepartmentPanel
+          key={group.key}
+          name={group.name}
+          departmentId={group.key}
+          tone={group.position >= 0 ? departmentTone(group.position) : "navy"}
+          classes={group.classes}
+        />
+      ))}
     </div>
   );
 }

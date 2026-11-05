@@ -113,7 +113,7 @@ export default function SchoolClassDetailPage() {
           title="This class is not in your school"
           actions={
             <Link to="/school-class" className={outlineLink}>
-              Back to School Class
+              Back to Classes
             </Link>
           }
         >
@@ -155,7 +155,7 @@ export default function SchoolClassDetailPage() {
         ]
           .filter(Boolean)
           .join(" · ")}
-        crumbs={[{ label: "School Class", to: "/school-class" }]}
+        crumbs={[{ label: "Classes", to: "/school-class" }]}
         info={
           // The class teacher of the class (no sections) or of the picked section; with no section picked each section's card says its own.
           !hasSections || section ? (

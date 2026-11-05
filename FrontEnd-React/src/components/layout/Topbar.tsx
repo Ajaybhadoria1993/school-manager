@@ -1,62 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { Bell, CalendarDays, ChevronDown, LogOut, Menu } from "lucide-react";
+import { useState } from "react";
+import { CalendarDays, ChevronDown, LogOut, Menu } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
+import { useDismiss } from "../../hooks/useDismiss";
 import { cn, initials } from "../../utils/helpers";
 import { ROLE_LABELS } from "./nav-config";
-
-/** Closes a popover on an outside click or Escape. */
-function useDismiss(open: boolean, onClose: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, onClose]);
-  return ref;
-}
-
-function NotificationsBell() {
-  const [open, setOpen] = useState(false);
-  const ref = useDismiss(open, () => setOpen(false));
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        aria-label="Notifications"
-        aria-expanded={open}
-        className="bell-ring flex size-10 items-center justify-center rounded-full text-foreground-muted transition-colors hover:bg-surface-muted hover:text-foreground"
-      >
-        <Bell className="size-5" aria-hidden />
-      </button>
-      {open && (
-        <div className="pop-in absolute right-0 top-12 z-30 w-72 origin-top-right rounded-2xl border border-border bg-surface p-4 shadow-float">
-          <p className="text-sm font-bold text-foreground">Notifications</p>
-          <div className="mt-3 flex flex-col items-center gap-2 rounded-xl bg-surface-muted py-6 text-center">
-            <span className="flex size-10 items-center justify-center rounded-full bg-surface text-primary shadow-card">
-              <Bell className="size-5" aria-hidden />
-            </span>
-            <p className="text-sm font-semibold text-foreground">
-              You are all caught up
-            </p>
-            <p className="px-4 text-xs text-foreground-muted">
-              New notices and alerts will show up here.
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+import { NotificationsBell } from "./NotificationsBell";
 
 function UserMenu() {
   const { user, logout } = useAuth();

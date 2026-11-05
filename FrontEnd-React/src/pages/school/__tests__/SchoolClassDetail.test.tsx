@@ -51,7 +51,7 @@ describe("one class of School Class", () => {
     const { calls } = openPage();
     expect(await screen.findByRole("heading", { name: "Class 5", level: 1 })).toBeInTheDocument();
     expect(screen.getByText("22 students · 2 sections · 20 of 42 seats left · Primary")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "School Class" })).toHaveAttribute("href", "/school-class");
+    expect(screen.getByRole("link", { name: "Classes" })).toHaveAttribute("href", "/school-class");
     expect(screen.getByRole("link", { name: "Previous class: Class 1" })).toHaveAttribute("href", "/school-class/c1");
     expect(screen.getByRole("link", { name: "Next class: Class 6" })).toHaveAttribute("href", "/school-class/c6");
     expect(screen.getByRole("link", { name: "Add student" })).toHaveAttribute("href", "/school/students/new?class=c5");
@@ -127,6 +127,6 @@ describe("one class of School Class", () => {
   it("a class that is not in the school says so, with a way back", async () => {
     openPage("/school-class/nope");
     expect(await screen.findByRole("heading", { name: "This class is not in your school" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Back to School Class" })).toHaveAttribute("href", "/school-class");
+    expect(screen.getByRole("link", { name: "Back to Classes" })).toHaveAttribute("href", "/school-class");
   });
 });

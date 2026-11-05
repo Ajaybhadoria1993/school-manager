@@ -72,7 +72,7 @@ describe("a class's Timetable & teachers page", () => {
   it("has the plain header (title, breadcrumb back to the class, Edit timetable) and asks for this section's week once", async () => {
     const { calls } = openPage("/school-class/c5/timetable?section=c5-A");
     expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "School Class" })).toHaveAttribute("href", "/school-class");
+    expect(screen.getByRole("link", { name: "Classes" })).toHaveAttribute("href", "/school-class");
     expect(screen.getByRole("link", { name: "Class 5" })).toHaveAttribute("href", "/school-class/c5?section=c5-A");
     expect(screen.getByRole("link", { name: "Edit timetable" })).toHaveAttribute("href", "/school/timetable?tab=classes&class=c5&section=c5-A");
     await screen.findByRole("table", { name: "Weekly timetable of Class 5 - A" });

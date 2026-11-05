@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { PageSpinner } from "../components/shared/PageSpinner";
 import { useAuth } from "../hooks/useAuth";
+import { useLiveNotifications } from "../hooks/useLiveNotifications";
 import { postLoginPath } from "../utils/postLoginPath";
 import { Sidebar } from "../components/layout/Sidebar";
 import { Topbar } from "../components/layout/Topbar";
@@ -13,6 +14,8 @@ export default function MainLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // New notifications, live on the socket, for the bell in the top bar (docs/notifications.md).
+  useLiveNotifications();
 
   // A school admin whose school is still being set up or waiting for approval belongs on /onboarding.
   const needsOnboarding =

@@ -159,6 +159,19 @@ export function classMark(name: string): string {
   return (words.length > 1 ? words.map((w) => w[0]).join("") : clean.slice(0, 2)).slice(0, 2).toUpperCase();
 }
 
+/**
+ * Which classes a department holds, from its first to its last (the line under its name on the Classes page): "Classes 1 to 4",
+ * "Pre-Nursery to UKG". One class, or none, needs no range (null).
+ */
+export function classRange(names: readonly string[]): string | null {
+  if (names.length < 2) return null;
+  const first = names[0].trim();
+  const last = names[names.length - 1].trim();
+  const numberOf = (name: string) => /^class\s*(\d{1,2})$/i.exec(name)?.[1];
+  const [a, b] = [numberOf(first), numberOf(last)];
+  return a && b ? `Classes ${a} to ${b}` : `${first} to ${last}`;
+}
+
 /** The values of the two special rows of a department dropdown: "No department" and "Other..." (a name of your own). */
 export const NO_DEPARTMENT = "none";
 export const OTHER = "other";

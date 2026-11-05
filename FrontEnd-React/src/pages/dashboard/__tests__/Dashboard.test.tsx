@@ -78,11 +78,12 @@ describe("A teacher's home", () => {
     }
   });
 
-  it("asks only for the teacher's own record and the subject names, nothing of the school's setup", async () => {
-    const calls = openPage("teacher", { "GET /staff/teachers/me": () => OWN, "GET /subjects": () => ({ items: [MATHS] }) });
+  it("asks only for the teacher's own record, their classes and the subject names, nothing of the school's setup", async () => {
+    const calls = openPage("teacher", { "GET /staff/teachers/me": () => OWN, "GET /subjects": () => ({ items: [MATHS] }), "GET /classroom/my-classes": () => ({ items: [] }) });
     await screen.findByRole("region", { name: "About you" });
     await screen.findByText("Mathematics");
-    expect(paths(calls)).toEqual(["GET /staff/teachers/me", "GET /subjects"]);
+    // My classes (docs/parent-teacher-flow.md, 2026-11-04) is on the teacher's home too.
+    expect([...paths(calls)].sort()).toEqual(["GET /classroom/my-classes", "GET /staff/teachers/me", "GET /subjects"]);
   });
 
   it("says so when the login is not tied to a teacher record", async () => {

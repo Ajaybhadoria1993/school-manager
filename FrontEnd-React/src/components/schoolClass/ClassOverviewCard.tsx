@@ -1,86 +1,106 @@
+import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { ArrowRight } from "lucide-react";
-import { TONES, type Tone } from "../../constants/tones";
-import { classMark, plural } from "../../utils/academics";
+import { Armchair, Baby, ChevronRight, Layers, Star, UsersRound, type LucideIcon } from "lucide-react";
+import { classMark, keyOf, plural } from "../../utils/academics";
 import { cn } from "../../utils/helpers";
 import type { ClassOverview } from "../../types";
-import { SEAT_LOOK } from "./seatLook";
+import { AbcBlocks, BearFace, Duotone, RockingHorse } from "./kidIcons";
+
+/** The classes of a department take these colours in turn (the mark, and the seats bar), like the user's reference design (2026-11-04). */
+const CLASS_COLOURS = [
+  { mark: "bg-blue-100 text-blue-600", bar: "bg-blue-500" },
+  { mark: "bg-emerald-100 text-emerald-600", bar: "bg-emerald-500" },
+  { mark: "bg-violet-100 text-violet-600", bar: "bg-violet-500" },
+  { mark: "bg-orange-100 text-orange-500", bar: "bg-orange-400" },
+  { mark: "bg-sky-100 text-sky-600", bar: "bg-sky-500" },
+  { mark: "bg-rose-100 text-rose-500", bar: "bg-rose-400" },
+] as const;
+
+type Picture = (props: { className?: string }) => ReactNode;
+const StarPicture: Picture = ({ className }) => <Duotone icon={Star} name="star" className={className} />;
+const BabyPicture: Picture = ({ className }) => <Duotone icon={Baby} name="baby" className={className} />;
+
+/** A picture for the usual early classes, as in the reference (a rocking horse, a bear, ABC blocks, a star); other classes show their number or initials. */
+const CLASS_PICTURES: Record<string, Picture> = {
+  "pre-nursery": RockingHorse,
+  playgroup: BabyPicture,
+  nursery: BearFace,
+  lkg: AbcBlocks,
+  ukg: StarPicture,
+};
+
+const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** One fact of the card's line ("48 Students"), with the line before it on a wide card ("|"); on a narrow one the facts wrap without it. */
+function Fact({ icon: Icon, first = false, children }: { icon: LucideIcon; first?: boolean; children: ReactNode }) {
+  return (
+    <>
+      {!first && <span aria-hidden className="hidden h-3 w-px bg-border xl:block" />}
+      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+        <Icon className="size-3.5" aria-hidden />
+        {children}
+      </span>
+    </>
+  );
+}
 
 /**
- * One class at a glance, as a card in its department's colour: its mark and name, how many students are in it (the big number), how
- * many sections, how full the seats are together, and each section with its own count ("A 20/40"). The class name is the link that
- * opens the class (stretched over the whole card, so the keyboard and a new tab work); each section is a link of its own that opens the
- * class on that section's students.
+ * One class of the Classes page (2026-11-04, after the user's reference design), a card of its department's panel: a round mark in the
+ * class's own colour (its number, its initials, or a picture for the early classes), the name, "48 Students | 2 Sections | 120 Seats",
+ * how full its seats are (a bar and the per cent) and a chevron. The seats are the class's limit from the server: its sections' seats added
+ * up, or its own when it has no sections; with no limit set there are no seats and no bar. The name is the link that opens the class,
+ * stretched over the whole card, so a click anywhere opens it and the keyboard and a new tab work.
  */
-export function ClassOverviewCard({ overview, tone, index }: { overview: ClassOverview; tone: Tone; index: number }) {
-  const t = TONES[tone];
+export function ClassOverviewCard({ overview, index }: { overview: ClassOverview; index: number }) {
   const { id, name, students, sections, seats, seatsLeft, percent } = overview;
+  const colour = CLASS_COLOURS[index % CLASS_COLOURS.length];
+  const PictureOf = CLASS_PICTURES[keyOf(name)];
+  const mark = classMark(name);
 
   return (
-    <article
-      className="stagger-item group relative overflow-hidden rounded-2xl border border-border bg-surface p-4 shadow-card transition-all duration-300 focus-within:ring-4 focus-within:ring-primary/20 hover:-translate-y-1 hover:border-transparent hover:shadow-float sm:p-5"
+    <li
+      className="stagger-item group relative flex items-center gap-3 rounded-xl border border-border bg-surface px-3.5 py-3.5 transition-all duration-200 focus-within:ring-4 focus-within:ring-primary/20 hover:border-[#cbd5e1] hover:shadow-card sm:gap-4 sm:px-4"
       style={{ "--i": Math.min(index, 8) } as React.CSSProperties}
     >
-      <div aria-hidden className={cn("absolute -right-10 -top-10 size-36 rounded-full bg-gradient-to-br to-transparent blur-2xl transition-transform duration-500 group-hover:scale-150", t.glow)} />
+      <span aria-hidden className={cn("flex size-11 shrink-0 items-center justify-center rounded-full font-extrabold tracking-tight sm:size-12", colour.mark, mark.length > 2 ? "text-sm" : "text-xl sm:text-2xl")}>
+        {PictureOf ? <PictureOf className="size-6 sm:size-7" /> : mark}
+      </span>
 
-      <div className="relative flex items-start gap-3.5">
-        <span aria-hidden className={cn("flex size-12 shrink-0 items-center justify-center rounded-2xl text-lg font-extrabold tracking-tight transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-105", t.gradient)}>
-          {classMark(name)}
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-base font-bold tracking-tight text-foreground">
-            <Link
-              to={`/school-class/${id}`}
-              aria-label={`${name}: ${plural(students, "student")}, ${sections.length === 0 ? "no sections" : plural(sections.length, "section")}`}
-              className="after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
-            >
-              {name}
-            </Link>
-          </h3>
-          <p className="mt-0.5 text-xs text-foreground-muted">{sections.length === 0 ? "No sections: the class sits together" : plural(sections.length, "section")}</p>
-        </div>
-        <p className="text-right">
-          <span className="block text-2xl font-extrabold leading-none tracking-[-0.03em] text-foreground">{students}</span>
-          <span className="mt-1 block text-[11px] font-semibold uppercase tracking-wider text-foreground-muted">{students === 1 ? "student" : "students"}</span>
+      <div className="min-w-0 flex-1">
+        <h3 className="truncate text-base font-bold tracking-tight text-foreground">
+          <Link
+            to={`/school-class/${id}`}
+            aria-label={`${name}: ${plural(students, "student")}, ${sections.length === 0 ? "no sections" : plural(sections.length, "section")}`}
+            className="after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:outline-none"
+          >
+            {name}
+          </Link>
+        </h3>
+        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-foreground-muted xl:gap-x-2.5">
+          <Fact icon={UsersRound} first>
+            {count(students, "Student")}
+          </Fact>
+          {sections.length > 0 && <Fact icon={Layers}>{count(sections.length, "Section")}</Fact>}
+          {seats > 0 && <Fact icon={Armchair}>{count(seats, "Seat")}</Fact>}
         </p>
+        {seats > 0 && (
+          <div className="mt-2 flex items-center gap-3" title={`${percent}% of ${seats} seats filled · ${seatsLeft} left`}>
+            <div
+              role="progressbar"
+              aria-label={`Seats of ${name} filled`}
+              aria-valuenow={percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-muted"
+            >
+              <div className={cn("h-full rounded-full transition-[width] duration-500", percent >= 100 ? "bg-danger" : colour.bar)} style={{ width: `${Math.min(percent, 100)}%` }} />
+            </div>
+            <span className="w-10 shrink-0 text-right text-xs font-bold text-foreground">{percent}%</span>
+          </div>
+        )}
       </div>
 
-      {seats > 0 && (
-        <div className="relative mt-4">
-          <div className="flex items-center justify-between text-xs font-semibold text-foreground-muted">
-            <span>
-              {percent}% of {seats} seats filled
-            </span>
-            <span>{seatsLeft} left</span>
-          </div>
-          <div aria-hidden className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-muted">
-            <div className={cn("h-full rounded-full transition-[width] duration-500", percent >= 100 ? "bg-danger" : percent >= 85 ? "bg-amber-500" : t.line)} style={{ width: `${percent}%` }} />
-          </div>
-        </div>
-      )}
-
-      {sections.length > 0 && (
-        <ul className="relative z-10 mt-4 flex flex-wrap gap-1.5" aria-label={`Sections of ${name}`}>
-          {sections.map((s) => (
-            <li key={s.id}>
-              <Link
-                to={`/school-class/${id}?section=${s.id}`}
-                title={`${s.name}: ${s.capacity === null ? `${s.enrolled} students, no seat limit` : `${s.enrolled} of ${s.capacity} seats (${SEAT_LOOK[s.state].label})`}. Open its students.`}
-                className={cn("inline-flex max-w-full items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold ring-1 ring-inset transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2", t.chip)}
-              >
-                <span className="truncate">{s.name}</span>
-                <span className="font-semibold opacity-80">{s.capacity === null ? s.enrolled : `${s.enrolled}/${s.capacity}`}</span>
-                {s.state === "full" && <span aria-hidden className="size-1.5 rounded-full bg-danger" />}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <p aria-hidden className="relative mt-4 inline-flex items-center gap-1 text-xs font-bold text-primary-deep">
-        View students
-        <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-      </p>
-    </article>
+      <ChevronRight aria-hidden className="size-4 shrink-0 text-foreground-muted transition-transform group-hover:translate-x-0.5 sm:size-5" />
+    </li>
   );
 }

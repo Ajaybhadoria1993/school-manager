@@ -9,7 +9,7 @@ import { baseQueryWithReauth } from "./baseQueryWithReauth";
 export const parentApi = createApi({
   reducerPath: "parentApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Children", "Child", "ChildLeaves"],
+  tagTypes: ["Children", "Child", "ChildLeaves", "ChildAttendance", "ChildDiary", "ChildTests"],
   refetchOnMountOrArgChange: 60,
   refetchOnReconnect: true,
   endpoints: (build) => ({
@@ -27,15 +27,16 @@ export const parentApi = createApi({
     }),
     getChildAttendance: build.query<ApiResponse<ChildAttendance>, { id: string; month?: string }>({
       query: ({ id, month }) => ({ url: `/parent/children/${id}/attendance`, params: month ? { month } : {} }),
-      providesTags: (_result, _error, { id }) => [{ type: "Child", id }],
+      // Each part of the child has its own tag, so a notification refreshes only that part (hooks/useLiveNotifications.ts).
+      providesTags: (_result, _error, { id }) => [{ type: "ChildAttendance", id }],
     }),
     getChildDiary: build.query<ApiResponse<ChildDiary>, { id: string; date?: string }>({
       query: ({ id, date }) => ({ url: `/parent/children/${id}/diary`, params: date ? { date } : {} }),
-      providesTags: (_result, _error, { id }) => [{ type: "Child", id }],
+      providesTags: (_result, _error, { id }) => [{ type: "ChildDiary", id }],
     }),
     getChildTests: build.query<ApiResponse<ChildTests>, string>({
       query: (id) => `/parent/children/${id}/tests`,
-      providesTags: (_result, _error, id) => [{ type: "Child", id }],
+      providesTags: (_result, _error, id) => [{ type: "ChildTests", id }],
     }),
     getChildLeaves: build.query<ApiResponse<{ items: Leave[] }>, string>({
       query: (id) => `/parent/children/${id}/leaves`,

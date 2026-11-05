@@ -50,8 +50,10 @@ const routes: RouteObject[] = [
           {
             ...lazyRoute(() => import("./SchoolManagerRoute")),
             children: [
-              // School Class: every class with its sections and students, and one class's own page (its students by section).
+              // School Class: Classes (the menu's first entry) and Students (its second) are one page on two addresses; one class's own page
+              // (its students by section) is under Classes. The static "students" wins over ":classId".
               { path: "school-class", ...lazyRoute(() => import("../pages/school/SchoolClass")) },
+              { path: "school-class/students", ...lazyRoute(() => import("../pages/school/SchoolClass")) },
               { path: "school-class/:classId", ...lazyRoute(() => import("../pages/school/SchoolClassDetail")) },
               // Teacher (the menu entry on top): every teacher, and each one's page and change form under the same address.
               { path: "teachers", ...lazyRoute(() => import("../pages/teachers/TeacherDirectory")) },
