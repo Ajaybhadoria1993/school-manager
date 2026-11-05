@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
+import { Notify } from "../../notifications/services/events";
 import { CalendarEvent, type CalendarKind, type ICalendarEvent } from "../models/CalendarEvent";
 import type { CalendarQuery, CreateEventInput, UpdateEventInput } from "../schemas/classroom.schemas";
 
@@ -29,7 +30,8 @@ export class CalendarService {
     return { items: events.map(toDto) };
   }
 
-  static async create(tenantId: string, input: CreateEventInput): Promise<CalendarEventDto> {
+  /** Everyone of the school hears of it (but `actorId`, who put it there). */
+  static async create(tenantId: string, input: CreateEventInput, actorId: string | null = null): Promise<CalendarEventDto> {
     const made = await CalendarEvent.create({
       tenantId: new Types.ObjectId(tenantId),
       title: input.title,
@@ -38,10 +40,12 @@ export class CalendarService {
       endDate: fromDay(input.endDate ?? input.startDate),
       note: input.note ?? null,
     });
-    return toDto(made.toObject());
+    const dto = toDto(made.toObject());
+    if (actorId) Notify.calendar(tenantId, actorId, "added", dto);
+    return dto;
   }
 
-  static async update(tenantId: string, id: string, input: UpdateEventInput): Promise<CalendarEventDto> {
+  static async update(tenantId: string, id: string, input: UpdateEventInput, actorId: string | null = null): Promise<CalendarEventDto> {
     const school = new Types.ObjectId(tenantId);
     const current = await CalendarEvent.findOne({ _id: id, tenantId: school }).lean();
     if (!current) throw NOT_FOUND();
@@ -54,12 +58,15 @@ export class CalendarService {
     if (input.note !== undefined) set.note = input.note;
     const updated = await CalendarEvent.findOneAndUpdate({ _id: id, tenantId: school }, { $set: set }, { new: true }).lean();
     if (!updated) throw NOT_FOUND();
-    return toDto(updated);
+    const dto = toDto(updated);
+    if (actorId) Notify.calendar(tenantId, actorId, "changed", dto);
+    return dto;
   }
 
-  static async remove(tenantId: string, id: string): Promise<void> {
-    const done = await CalendarEvent.deleteOne({ _id: id, tenantId: new Types.ObjectId(tenantId) });
-    if (done.deletedCount === 0) throw NOT_FOUND();
+  static async remove(tenantId: string, id: string, actorId: string | null = null): Promise<void> {
+    const gone = await CalendarEvent.findOneAndDelete({ _id: id, tenantId: new Types.ObjectId(tenantId) }).lean();
+    if (!gone) throw NOT_FOUND();
+    if (actorId) Notify.calendar(tenantId, actorId, "removed", toDto(gone));
   }
 
   /** The holidays touching these days (attendance is not taken on them). */

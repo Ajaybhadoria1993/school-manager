@@ -9,6 +9,7 @@ import staffRoutes from "../main/staff/routes/v1/staff.routes";
 import timetableRoutes from "../main/timetable/routes/v1/timetable.routes";
 import parentRoutes from "../main/parents/routes/v1/parents.routes";
 import classroomRoutes from "../main/classroom/routes/v1/classroom.routes";
+import notificationRoutes from "../main/notifications/routes/v1/notifications.routes";
 
 // One line per feature module. Add new modules here as they are built.
 const router = Router();
@@ -25,5 +26,7 @@ router.use("/timetable", timetableRoutes);
 router.use("/parent", parentRoutes);
 // The daily flow of parents and teachers: calendar, leave, attendance, diary, tests (docs/parent-teacher-flow.md).
 router.use("/classroom", classroomRoutes);
+// The signed-in person's bell; new ones also come live on the socket (docs/notifications.md).
+router.use("/notifications", notificationRoutes);
 
 export default router;

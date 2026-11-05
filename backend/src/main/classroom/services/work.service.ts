@@ -7,11 +7,12 @@ import { placesOf } from "../../students/services/shared";
 import { Allotment } from "../../subjects/models/Allotment";
 import { Subject } from "../../subjects/models/Subject";
 import { resolveUnit } from "../../timetable/services/unit";
+import { Notify } from "../../notifications/services/events";
 import { User } from "../../users/models/User";
 import { ClassTest, DiaryEntry, type IClassTest } from "../models/ClassWork";
 import type { AddTestInput, SaveDiaryInput, SaveMarksInput, UnitDayQuery, UnitQuery } from "../schemas/classroom.schemas";
 import { classTeacherUnits, RUNNER_ROLES, sameUnit, teacherOfUser } from "./access";
-import { childrenOf } from "./attendance.service";
+import { childrenOf } from "./children";
 import { fromDay, toDay } from "./calendar.service";
 import type { Caller } from "./leave.service";
 
@@ -101,11 +102,16 @@ export class WorkService {
     if (!access.subjects.has(input.subjectId)) throw NOT_THEIRS();
     if (input.date > todayInIndia()) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "date", message: "The diary is written on the day or after it" }]);
     const user = await User.findById(caller.userId).select("name").lean();
-    await DiaryEntry.findOneAndUpdate(
+    const before = await DiaryEntry.findOneAndUpdate(
       { ...unitFilter(tenantId, unit), date: fromDay(input.date), subjectId: new Types.ObjectId(input.subjectId) },
       { $set: { academicYearId: unit.yearId, taught: input.taught, homework: input.homework, writtenBy: { name: user?.name ?? "The school", role: caller.role } } },
-      { upsert: true, new: true }
-    );
+      { upsert: true, new: false }
+    ).lean();
+    // Saved again with the same words: the parents are not told twice.
+    if (!before || before.taught !== input.taught || before.homework !== input.homework) {
+      const subjectName = (await subjectNames(tenantId, [input.subjectId])).get(input.subjectId) ?? "A subject";
+      Notify.diarySaved(tenantId, caller.userId, { unit, date: input.date, subjectName, taught: input.taught, homework: input.homework, by: user?.name ?? "The school" });
+    }
     return WorkService.diaryDay(tenantId, caller, { classId: unit.classId, sectionId: unit.sectionId ?? "none", date: input.date });
   }
 
@@ -137,7 +143,10 @@ export class WorkService {
       maxMarks: input.maxMarks,
       createdBy: { name: user?.name ?? "The school", role: caller.role },
     });
-    return testDto(made.toObject(), await subjectNames(tenantId, [made.subjectId]), true);
+    const names = await subjectNames(tenantId, [made.subjectId]);
+    const dto = testDto(made.toObject(), names, true);
+    Notify.testAdded(tenantId, caller.userId, { unit, subjectName: dto.subjectName, date: dto.date, topic: dto.topic, maxMarks: dto.maxMarks, by: user?.name ?? "The school" });
+    return dto;
   }
 
   private static async testWithAccess(tenantId: string, caller: Caller, id: string) {
@@ -172,13 +181,33 @@ export class WorkService {
     const kept = test.marks.filter((m) => !given.has(m.studentId.toString()));
     const next = [...kept, ...input.marks.map((m) => ({ studentId: new Types.ObjectId(m.studentId), marks: m.absent ? null : m.marks, absent: m.absent }))];
     await ClassTest.updateOne({ _id: test._id, tenantId: new Types.ObjectId(tenantId) }, { $set: { marks: next } });
-    return WorkService.test(tenantId, caller, id);
+    const saved = await WorkService.test(tenantId, caller, id);
+    // The parents of the children whose marks are new or different hear them; the others are not told again.
+    const old = new Map(test.marks.map((m) => [m.studentId.toString(), m]));
+    const nameOf = new Map(saved.students.map((c) => [c.id, c.name]));
+    const changed = input.marks
+      .map((m) => ({ id: m.studentId, name: nameOf.get(m.studentId) ?? "Your child", marks: m.absent ? null : m.marks, absent: m.absent }))
+      .filter((m) => (m.absent || m.marks !== null) && ((old.get(m.id)?.marks ?? null) !== m.marks || (old.get(m.id)?.absent ?? false) !== m.absent));
+    const user = await User.findById(caller.userId).select("name").lean();
+    Notify.marksSaved(tenantId, caller.userId, {
+      unit,
+      subjectName: saved.subjectName,
+      date: saved.date,
+      topic: saved.topic,
+      maxMarks: saved.maxMarks,
+      average: saved.average,
+      by: user?.name ?? "The school",
+      changed,
+    });
+    return saved;
   }
 
   static async removeTest(tenantId: string, caller: Caller, id: string) {
-    const { test, canWrite } = await WorkService.testWithAccess(tenantId, caller, id);
+    const { test, unit, canWrite } = await WorkService.testWithAccess(tenantId, caller, id);
     if (!canWrite) throw NOT_THEIRS();
     await ClassTest.deleteOne({ _id: test._id, tenantId: new Types.ObjectId(tenantId) });
+    const subjectName = (await subjectNames(tenantId, [test.subjectId])).get(test.subjectId.toString()) ?? "A subject";
+    Notify.testRemoved(tenantId, caller.userId, { unit, subjectName, date: toDay(test.date), topic: test.topic });
   }
 
   // ---- For a parent ------------------------------------------------------------------------------------------------------------------

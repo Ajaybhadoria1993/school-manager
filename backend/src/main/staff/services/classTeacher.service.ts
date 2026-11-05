@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import { Notify } from "../../notifications/services/events";
 import { ApiError } from "../../../utils/ApiError";
 import { AcademicYear } from "../../academics/models/AcademicYear";
 import { SchoolClass } from "../../academics/models/SchoolClass";
@@ -77,8 +78,8 @@ export async function describeUnits<T extends { classId: Types.ObjectId; section
  * leaves lets go of their classes; one whose classes are given to another teacher hands them over too.
  */
 export class ClassTeacherService {
-  /** Makes `teacherId` the class teacher of the unit, or takes the class teacher away (null). */
-  static async set(tenantId: string, input: SetClassTeacherInput): Promise<ClassTeacherDto> {
+  /** Makes `teacherId` the class teacher of the unit, or takes the class teacher away (null). The teachers concerned hear of it. */
+  static async set(tenantId: string, input: SetClassTeacherInput, actorId: string | null = null): Promise<ClassTeacherDto> {
     const unit = await resolveUnit(tenantId, input.classId, input.sectionId);
     const school = new Types.ObjectId(tenantId);
     const where = {
@@ -88,8 +89,10 @@ export class ClassTeacherService {
       sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null,
     };
     const base = { classId: unit.classId, sectionId: unit.sectionId, label: unit.label };
+    const before = (await ClassTeacher.findOne(where).select("teacherId").lean())?.teacherId.toString() ?? null;
     if (!input.teacherId) {
       await ClassTeacher.deleteOne(where);
+      if (actorId) Notify.classTeacherChanged(tenantId, actorId, unit, null, before);
       return { ...base, teacher: null };
     }
 
@@ -105,7 +108,9 @@ export class ClassTeacherService {
       if (!isDuplicateKey(err)) throw err;
       await write();
     }
-    return { ...base, teacher: { id: teacher._id.toString(), name: teacher.name } };
+    const now = { id: teacher._id.toString(), name: teacher.name };
+    if (actorId) Notify.classTeacherChanged(tenantId, actorId, unit, now, before);
+    return { ...base, teacher: now };
   }
 
   /** Every class teacher of a year, by unit key (for the class pages). */

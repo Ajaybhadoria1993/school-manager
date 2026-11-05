@@ -6,13 +6,15 @@ export type LeaveStatus = (typeof LEAVE_STATUSES)[number];
 
 /**
  * A parent's leave application for their child (docs/parent-teacher-flow.md, phase 2). The child's class and section when it was sent are
- * kept, so it reaches that class's class teacher; who sent it ("Ravi Verma (Father)") and who answered it are kept as words, as they were.
+ * kept (with the session it was sent in), so it reaches that class's class teacher; who sent it ("Ravi Verma (Father)") and who answered it are kept as words, as they were.
  */
 export interface ILeaveRequest {
   _id: Types.ObjectId;
   tenantId: Types.ObjectId;
   studentId: Types.ObjectId;
   guardianId: Types.ObjectId;
+  /** The session running when it was sent (null only if none was: then it has no class either). */
+  academicYearId: Types.ObjectId | null;
   classId: Types.ObjectId | null;
   sectionId: Types.ObjectId | null;
   label: string;
@@ -32,6 +34,7 @@ const leaveRequestSchema = new Schema<ILeaveRequest>(
   {
     studentId: { type: Schema.Types.ObjectId, ref: "Student", required: true },
     guardianId: { type: Schema.Types.ObjectId, ref: "Guardian", required: true },
+    academicYearId: { type: Schema.Types.ObjectId, ref: "AcademicYear", default: null },
     classId: { type: Schema.Types.ObjectId, default: null },
     sectionId: { type: Schema.Types.ObjectId, default: null },
     label: { type: String, default: "" },

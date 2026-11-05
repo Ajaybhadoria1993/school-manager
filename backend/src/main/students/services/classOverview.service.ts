@@ -35,7 +35,10 @@ export interface ClassOverviewDto {
   departmentName: string | null;
   /** Every student of the class this year: its sections together, or the class as a whole when it has none. */
   students: number;
-  /** The sum of the limits that were set, how many of them are still free, and how full they are together. */
+  /**
+   * The class's seat limit, how many of them are still free, and how full it is: its sections' limits added up, or, for a class without
+   * sections (or whose sections have no limit), the class's own seats; 0 when nothing is set.
+   */
   seats: number;
   seatsLeft: number;
   percent: number;
@@ -101,17 +104,21 @@ export class ClassOverviewService {
             classTeacher: heads.get(unitKeyOf(c.id, s.id)) ?? null,
           };
         });
+        const students = inClass.get(c.id) ?? 0;
+        // The class's seat limit (2026-11-04): its sections' seats added up (3 sections of 40 = 120); a class without sections, or whose
+        // sections have no limit, has its own (the seats set when it was made); nothing set: none (0).
         const limited = sections.filter((s) => s.capacity !== null);
-        const seats = limited.reduce((sum, s) => sum + (s.capacity ?? 0), 0);
-        const used = limited.reduce((sum, s) => sum + s.enrolled, 0);
+        const bySections = limited.length > 0;
+        const seats = bySections ? limited.reduce((sum, s) => sum + (s.capacity ?? 0), 0) : (c.capacity ?? 0);
+        const used = bySections ? limited.reduce((sum, s) => sum + s.enrolled, 0) : students;
         return {
           id: c.id,
           name: c.name,
           departmentId: c.departmentId,
           departmentName: c.departmentId ? (departmentName.get(c.departmentId) ?? null) : null,
-          students: inClass.get(c.id) ?? 0,
+          students,
           seats,
-          seatsLeft: limited.reduce((sum, s) => sum + (s.seatsLeft ?? 0), 0),
+          seatsLeft: bySections ? limited.reduce((sum, s) => sum + (s.seatsLeft ?? 0), 0) : Math.max(0, seats - used),
           percent: seats > 0 ? Math.min(100, Math.round((used / seats) * 100)) : 0,
           sections,
           classTeacher: sections.length === 0 ? (heads.get(unitKeyOf(c.id, null)) ?? null) : null,

@@ -4,6 +4,7 @@ import { AcademicYearService } from "../../academics/services/academicYear.servi
 import { ParentService } from "../../parents/services/parent.service";
 import { Student } from "../../students/models/Student";
 import { placesOf, placeTitle, fullName } from "../../students/services/shared";
+import { Notify } from "../../notifications/services/events";
 import { User } from "../../users/models/User";
 import { LeaveRequest, type ILeaveRequest, type LeaveStatus } from "../models/LeaveRequest";
 import type { ApplyLeaveInput, DecideLeaveInput, LeaveQuery } from "../schemas/classroom.schemas";
@@ -33,6 +34,8 @@ export interface Caller {
 
 const NOT_FOUND = () => ApiError.notFound("Leave not found", "LEAVE_NOT_FOUND");
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** The class or section the leave was sent for (none when the child had no class then). */
+const unitOf = (l: Pick<ILeaveRequest, "classId" | "sectionId">) => (l.classId ? { classId: l.classId.toString(), sectionId: l.sectionId ? l.sectionId.toString() : null } : null);
 const daysOf = (l: Pick<ILeaveRequest, "fromDate" | "toDate">) => Math.round((l.toDate.getTime() - l.fromDate.getTime()) / DAY_MS) + 1;
 
 async function toDtos(tenantId: string, leaves: ILeaveRequest[]): Promise<LeaveDto[]> {
@@ -75,6 +78,7 @@ export class LeaveService {
       tenantId: school,
       studentId: student._id,
       guardianId: guardian._id,
+      academicYearId: yearId ?? null,
       classId: place ? new Types.ObjectId(place.classId) : null,
       sectionId: place?.sectionId ? new Types.ObjectId(place.sectionId) : null,
       label: place ? placeTitle(place.className, place.sectionName) : "",
@@ -83,7 +87,9 @@ export class LeaveService {
       reason: input.reason,
       appliedBy: `${guardian.name} (${relation})`,
     });
-    return (await toDtos(tenantId, [made.toObject()]))[0];
+    const dto = (await toDtos(tenantId, [made.toObject()]))[0];
+    Notify.leaveApplied(tenantId, userId, dto, unitOf(made));
+    return dto;
   }
 
   /** The child's leaves, newest first (for their parent). */
@@ -102,7 +108,9 @@ export class LeaveService {
     if (current.status !== "pending") throw ApiError.conflict("This leave is already answered: it cannot be taken back.", "LEAVE_DECIDED");
     const updated = await LeaveRequest.findOneAndUpdate({ _id: current._id, tenantId: school, status: "pending" }, { $set: { status: "cancelled" } }, { new: true }).lean();
     if (!updated) throw ApiError.conflict("This leave is already answered: it cannot be taken back.", "LEAVE_DECIDED");
-    return (await toDtos(tenantId, [updated]))[0];
+    const dto = (await toDtos(tenantId, [updated]))[0];
+    Notify.leaveCancelled(tenantId, userId, dto, unitOf(updated));
+    return dto;
   }
 
   /** The leaves a class teacher answers (their classes) or, for the people who run the school, every one; newest first. */
@@ -137,6 +145,8 @@ export class LeaveService {
       { new: true }
     ).lean();
     if (!updated) throw ApiError.conflict("This leave is already answered.", "LEAVE_DECIDED");
-    return (await toDtos(tenantId, [updated]))[0];
+    const dto = (await toDtos(tenantId, [updated]))[0];
+    Notify.leaveDecided(tenantId, caller.userId, dto, unitOf(updated), input.status, user?.name ?? "The school");
+    return dto;
   }
 }

@@ -84,9 +84,39 @@ describe("the classes at a glance (every filter is the server's)", () => {
     ]);
     // Seats are the sum of the limits that were set (40 + 2), and how many of them are used (2 + 1).
     expect(five).toMatchObject({ seats: 42, seatsLeft: 39, percent: 7 });
-    expect(o.classes[0]).toMatchObject({ seats: 0, seatsLeft: 0, percent: 0, sections: [] });
+    // A class without sections has its own seat limit (2000 here), and its students use it (2026-11-04).
+    expect(o.classes[0]).toMatchObject({ seats: 2000, seatsLeft: 1999, percent: 0, sections: [] });
     expect(o.departments.map((d) => d.name)).toEqual(["Primary", "Middle"]);
-    expect(o.summary).toMatchObject({ classes: 4, sections: 4, students: 4, seats: 72, seatsLeft: 69 });
+    expect(o.summary).toMatchObject({ classes: 4, sections: 4, students: 4, seats: 4072, seatsLeft: 4068 });
+  });
+
+  it("a class's seats: its sections' seats added up (3 sections of 40 = 120), or its own limit when it has no sections, or none when nothing is set", async () => {
+    const s = await ready();
+    const make = async (name: string, capacity: number | null) => (await acad(s.token, "/classes", { name, departmentId: null, capacity, sectionCount: 0 })).body.data.id as string;
+    const seven = await make("Class 7", 120);
+    const sevenA = (await acad(s.token, `/classes/${seven}/sections`, { name: "A", capacity: 40, room: "Room 7A" })).body.data.id as string;
+    for (const n of ["B", "C"]) await acad(s.token, `/classes/${seven}/sections`, { name: n, capacity: 40, room: `Room 7${n}` });
+    const eight = await make("Class 8", 40);
+    const admit = (firstName: string, classId: string, sectionId: string | null, mobile: string) =>
+      post(s.token, "", {
+        firstName,
+        lastName: "Shah",
+        gender: "Male",
+        dateOfBirth: "2015-02-02",
+        address: { line1: "1 Park Road", city: "Bhopal", state: "Madhya Pradesh", pincode: "462001" },
+        previousSchool: { name: "Little Flower School" },
+        classId,
+        sectionId,
+        guardians: [{ name: `Father of ${firstName}`, relation: "Father", isPrimary: true, mobile }],
+      });
+    expect((await admit("Kunal", seven, sevenA, "9000000011")).status).toBe(201);
+    expect((await admit("Lalit", seven, sevenA, "9000000012")).status).toBe(201);
+    for (const [i, n] of ["Manu", "Neel", "Om", "Pari"].entries()) expect((await admit(n, eight, null, `900000002${i}`)).status).toBe(201);
+
+    const o = await overview(s.token);
+    const byName = (n: string) => o.classes.find((c) => c.name === n)!;
+    expect(byName("Class 7")).toMatchObject({ students: 2, seats: 120, seatsLeft: 118, percent: 2 });
+    expect(byName("Class 8")).toMatchObject({ students: 4, seats: 40, seatsLeft: 36, percent: 10 });
   });
 
   it("a section at its limit is full, and one from 85% is almost full", async () => {

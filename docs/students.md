@@ -314,7 +314,7 @@ or hidden, never required.
 | :-- | :-- | :-- |
 | `GET /` | this year's students: `q` (part of a name or an admission number), `departmentId` (an id or `none`: the students of the classes in that department), `classId`, `sectionId` (an id or `none`), `sort` (`class`, `name`, `admissionNumber`, `admissionDate`), `dir`, `page`, `limit` (1 to 50, default 12). One aggregation over the year's enrolments. Answers `{ academicYear, items, page, limit, total, totalPages }`; a row has the student, `place` (class, section, roll number) and `primaryGuardian` | readers |
 | `GET /capacity` | `{ academicYear, sections: [{ sectionId, classId, capacity, enrolled, seatsLeft, nextRollNumber }], classes: [{ classId, enrolled, nextRollNumber }], totals: { students, seats, seatsLeft, fullSections } }`. `nextRollNumber` is the one after the highest roll number given in the section (or, in `classes`, to the students of a class without sections), 1 when none is given yet, null past 999; the same aggregation, no extra query | readers |
-| `GET /class-overview` | the classes at a glance (School Class): `departmentId` (an id or `none`), `classId`, `q` (part of a class name); the server filters. `{ academicYear, departments, summary: { classes, sections, students, seats, seatsLeft, fullSections }, classes: [{ id, name, departmentId, departmentName, students, seats, seatsLeft, percent, sections: [{ id, name, room, capacity, enrolled, seatsLeft, state, percent }] }] }`; `departments` is every department (for the dropdown), `summary` is of the classes returned; inactive students are not counted | readers |
+| `GET /class-overview` | the classes at a glance (School Class): `departmentId` (an id or `none`), `classId`, `q` (part of a class name); the server filters. `{ academicYear, departments, summary: { classes, sections, students, seats, seatsLeft, fullSections }, classes: [{ id, name, departmentId, departmentName, students, seats, seatsLeft, percent, sections: [{ id, name, room, capacity, enrolled, seatsLeft, state, percent }] }] }`; `departments` is every department (for the dropdown), `summary` is of the classes returned; inactive students are not counted; a class's `seats` = its sections' seats added up, or its own seats when it has no sections (or none with a limit) | readers |
 | `GET /:id` | the student with `guardians`, `place`, `enrolments` (every year, newest first) and `siblings` | readers |
 | `POST /` | the admission (above). `admissionDate` defaults to today; `allowOverCapacity`, `confirmNotDuplicate` are the person's answers | writers |
 | `PATCH /:id` | the student's own details, only what is sent (null clears an optional one); the age rule is checked on the result; the admission number never changes | writers |
@@ -547,16 +547,34 @@ deleted (`SECTION_HAS_STUDENTS`), a class whose sections or whose own whole-clas
 (`CLASS_HAS_STUDENTS`), and a class with students in another academic year cannot be deleted either (`CLASS_HAS_HISTORY`), because
 history keeps a class alive.
 
-## The School Class page (`/school-class`)
+## The School Class page: Classes (`/school-class`) and Students (`/school-class/students`)
 
 Laid out like the Teacher page since 2026-11-04 (`FrontEnd-React/src/pages/school/SchoolClass.tsx`): the plain header (title with the
-academic year, breadcrumb, **Manage classes** and **Add student**, which carries the chosen class and section), four tiles
+academic year, breadcrumb and ONE button in the primary colour: **Manage classes** on Classes, **Add student** on Students, which carries
+the chosen class and section; each page lacks the other's button), four tiles
 **Departments / Classes / Sections / Students** (the class layout's totals and the students of `GET /students/capacity`: no new request
-type; *seats left* is not a tile because those counts know only the seats of sections), then two tabs **Classes | Students**
-(`?view=students`), each with its own one-line row of a search and dropdowns without labels (`components/ui/FilterBar.tsx`, shared with
-`/teachers`; a dropdown shows its name until something is picked, its first row takes it away):
+type; *seats left* is not a tile because those counts know only the seats of sections), then a one-line row of a search and dropdowns
+without labels (`components/ui/FilterBar.tsx`, shared with `/teachers`; a dropdown shows its name until something is picked, its first row
+takes it away). Since 2026-11-04 there are **no tabs**: Classes and Students are two entries of the menu (Overview group, **Classes** and
+under it **Students**), one page on two addresses, and the heading and breadcrumb say which one it is. The old `/school-class?view=students&...`
+goes to `/school-class/students?...`. The menu's old *Students* under Manage school is now **Manage Students** (`/school/students`: admit,
+edit, import, export, inactive), like Manage Teacher, so no two entries are both Students:
 
-* **Classes**: search a class name, Department, Class -> the class cards of `GET /students/class-overview`, wing by wing.
+* **Classes**: search a class name, Department, Class -> `GET /students/class-overview`, wing by wing, laid out after the user's reference
+  design (2026-11-04). A wing is ONE panel (`components/schoolClass/DepartmentPanel.tsx`): a stripe of its colour on the left; its icon, its
+  name, a pill with how many classes ("4 classes"), which ones ("Classes 1 to 4", "Pre-Nursery to UKG": `classRange` in `utils/academics.ts`;
+  none for a single class); **Add class** (opens the department's own screen, where classes are added; not on "Other classes") and a **⋮**
+  menu (*Manage <department>*, *View students* = `/school-class/students?department=<id|none>`). No students total. Its classes are cards
+  two to a row (one on a phone, `components/schoolClass/ClassOverviewCard.tsx`): a round mark in the class's own colour (its number, its
+  initials, or a picture as in the reference: rocking horse for Pre-Nursery, bear for Nursery, ABC blocks for LKG, star for UKG; the
+  departments: ABC blocks for Pre-Primary, an open book for Primary; `components/schoolClass/kidIcons.tsx`), the name,
+  "48 Students | 2 Sections | 120 Seats" (no Sections part for a class without sections, no Seats part with no limit), a bar of the seats
+  filled with its per cent (the tooltip says "52% of 42 seats filled · 20 left") and a chevron. A click anywhere on the card opens the
+  class. The section chips that opened one section from here are gone (the class's page has its sections).
+
+  **A class's seats** (`seats` of `GET /class-overview`, 2026-11-04): its sections' seats added up (3 sections of 40 = 120); a class
+  without sections, or whose sections have no limit, has its own seats (the number set when it was made); nothing set: 0, and no bar.
+  `seatsLeft` and `percent` follow. The class's own page says the same ("39 of 40 seats left").
 * **Students**: search name or admission number, Department, Class, Section (once a class with sections is picked), Gender, Order (the
   usual class-and-section order is the list's first row) -> `GET /students`, with the pager (its "Showing 1 to 12 of 40" is the count).
 

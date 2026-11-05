@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import { Notify } from "../../notifications/services/events";
 import { ApiError } from "../../../utils/ApiError";
 import { Section } from "../../academics/models/Section";
 import { Teacher } from "../../staff/models/Teacher";
@@ -106,7 +107,7 @@ export class AllotmentService {
    * teacher is the school's and teaching, the periods fit the timing, a teacher already busy at a period the subject is taught is
    * refused). A subject the unit does not study yet is added at the end with `periodsPerWeek`.
    */
-  static async assignTeacher(tenantId: string, input: AssignTeacherInput): Promise<AllotmentView> {
+  static async assignTeacher(tenantId: string, input: AssignTeacherInput, actorId: string | null = null): Promise<AllotmentView> {
     const unit = await resolveUnit(tenantId, input.classId, input.sectionId);
     const school = new Types.ObjectId(tenantId);
     const stored = await Allotment.find({
@@ -125,6 +126,7 @@ export class AllotmentService {
       group: r.group ?? null,
     }));
     let at = rows.findIndex((r) => r.subjectId === input.subjectId);
+    const before = at >= 0 ? rows[at].teacherId : null;
     if (at >= 0) {
       rows[at] = { ...rows[at], teacherId: input.teacherId, ...(input.periodsPerWeek ? { periodsPerWeek: input.periodsPerWeek } : {}) };
     } else {
@@ -137,7 +139,20 @@ export class AllotmentService {
       at = rows.length - 1;
     }
     try {
-      return await AllotmentService.save(tenantId, { classId: input.classId, sectionId: input.sectionId, rows, alsoSections: [], withTeachers: false });
+      const view = await AllotmentService.save(tenantId, { classId: input.classId, sectionId: input.sectionId, rows, alsoSections: [], withTeachers: false });
+      if (actorId && (input.teacherId ?? null) !== before) {
+        const [subject, teacher] = await Promise.all([
+          Subject.findOne({ _id: input.subjectId, tenantId: school }).select("name").lean(),
+          input.teacherId ? Teacher.findOne({ _id: input.teacherId, tenantId: school }).select("name").lean() : Promise.resolve(null),
+        ]);
+        Notify.subjectTeacherChanged(tenantId, actorId, {
+          unit,
+          subjectName: subject?.name ?? "A subject",
+          now: teacher ? { id: teacher._id.toString(), name: teacher.name } : null,
+          before,
+        });
+      }
+      return view;
     } catch (err) {
       // The whole list's words point at a row (`rows.2.teacherId`); this request has one box of each.
       if (err instanceof ApiError && Array.isArray(err.details)) {

@@ -49,5 +49,5 @@ export const updateSubject = asyncHandler(async (req: Request, res: Response) =>
 
 /** The teacher of one subject of one unit (a teacher's page, a class's page). */
 export const assignAllotmentTeacher = asyncHandler(async (req: Request, res: Response) => {
-  return sendOk(res, await AllotmentService.assignTeacher(tenantOf(req), req.validatedBody as AssignTeacherInput), "Teacher saved");
+  return sendOk(res, await AllotmentService.assignTeacher(tenantOf(req), req.validatedBody as AssignTeacherInput, req.user!.userId), "Teacher saved");
 });

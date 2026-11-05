@@ -38,6 +38,8 @@ const YEAR_FREE_MODELS: Record<string, string> = {
   BellSchedule: "the school's bell (periods, lunch, breaks) is the same every session; a class's timetable of a year points to it",
   Teacher: "the same person every year; what they teach in a year is an Allotment and the periods they take are in that year's timetable",
   Subject: "the school's list of subjects (Mathematics, Art) lasts across years; which class studies it in a year is an Allotment",
+  CalendarEvent: "a holiday or event is a date (or a few), and the date itself says which session it falls in; it is read by date",
+  Notification: "a line in one person's bell, kept 90 days whatever the session; the record it is about keeps its own year",
 };
 
 const modulesDir = resolve(__dirname, "../..");

@@ -59,7 +59,7 @@ export const changeTeacherUsername = asyncHandler(async (req: Request, res: Resp
 });
 
 export const setClassTeacher = asyncHandler(async (req: Request, res: Response) => {
-  return sendOk(res, await ClassTeacherService.set(tenantOf(req), body<SetClassTeacherInput>(req)), "Class teacher saved");
+  return sendOk(res, await ClassTeacherService.set(tenantOf(req), body<SetClassTeacherInput>(req), req.user!.userId), "Class teacher saved");
 });
 
 export const checkUsernameFree = asyncHandler(async (req: Request, res: Response) => {

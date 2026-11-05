@@ -7,12 +7,14 @@ import { Student } from "../../students/models/Student";
 import { todayInIndia } from "../../students/schemas/students.schemas";
 import { fullName } from "../../students/services/shared";
 import { resolveUnit } from "../../timetable/services/unit";
+import { Notify } from "../../notifications/services/events";
 import { User } from "../../users/models/User";
 import { AttendanceDay, type AttendanceStatus } from "../models/AttendanceDay";
 import { LeaveRequest } from "../models/LeaveRequest";
 import type { AttendanceQuery, ChildAttendanceQuery, SaveAttendanceInput } from "../schemas/classroom.schemas";
 import { classTeacherUnits, RUNNER_ROLES, sameUnit, teacherOfUser } from "./access";
 import { CalendarService, fromDay, toDay } from "./calendar.service";
+import { childrenOf } from "./children";
 import type { Caller } from "./leave.service";
 
 export interface AttendanceSheetDto {
@@ -47,25 +49,6 @@ async function assertTakes(tenantId: string, caller: Caller, unit: { classId: st
   const teacher = caller.role === "teacher" ? await teacherOfUser(tenantId, caller.userId) : null;
   const units = teacher ? await classTeacherUnits(tenantId, teacher._id) : [];
   if (!units.some((u) => sameUnit(u, unit))) throw ApiError.forbidden("Only the class teacher of this class or the school takes its attendance.", "NOT_CLASS_TEACHER");
-}
-
-/** The active children of a class or section this year, by roll number then name. */
-export async function childrenOf(tenantId: string, unit: { classId: string; sectionId: string | null; yearId: Types.ObjectId }) {
-  const school = new Types.ObjectId(tenantId);
-  const enrolments = await Enrolment.find({
-    tenantId: school,
-    academicYearId: unit.yearId,
-    classId: new Types.ObjectId(unit.classId),
-    sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null,
-    status: "active",
-  })
-    .select("studentId rollNumber")
-    .lean();
-  const students = await Student.find({ tenantId: school, _id: { $in: enrolments.map((e) => e.studentId) }, status: "active" }).select("firstName lastName admissionNumber").lean();
-  const roll = new Map(enrolments.map((e) => [e.studentId.toString(), e.rollNumber ?? null]));
-  return students
-    .map((s) => ({ id: s._id.toString(), name: fullName(s), admissionNumber: s.admissionNumber, rollNumber: roll.get(s._id.toString()) ?? null }))
-    .sort((a, b) => (a.rollNumber ?? 9999) - (b.rollNumber ?? 9999) || a.name.localeCompare(b.name));
 }
 
 /**
@@ -117,8 +100,11 @@ export class AttendanceService {
     if (input.marks.some((m) => !known.has(m.studentId))) throw ApiError.badRequest("A child in this list is not in this class.", "NOT_IN_CLASS");
     const given = new Map(input.marks.map((m) => [m.studentId, m.status]));
     const user = await User.findById(caller.userId).select("name").lean();
+    const where = { tenantId: school, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null, date: fromDay(input.date) };
+    // What the day said before, so a parent hears of a child marked absent or late once, not every time the day is saved again.
+    const before = new Map(((await AttendanceDay.findOne(where).select("marks").lean())?.marks ?? []).map((m) => [m.studentId.toString(), m.status]));
     await AttendanceDay.findOneAndUpdate(
-      { tenantId: school, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null, date: fromDay(input.date) },
+      where,
       {
         $set: {
           academicYearId: unit.yearId,
@@ -128,7 +114,10 @@ export class AttendanceService {
       },
       { upsert: true, new: true }
     );
-    return AttendanceService.sheet(tenantId, caller, { classId: unit.classId, sectionId: unit.sectionId ?? "none", date: input.date });
+    const sheet = await AttendanceService.sheet(tenantId, caller, { classId: unit.classId, sectionId: unit.sectionId ?? "none", date: input.date });
+    const marked = sheet.students.flatMap((c) => ((c.status === "absent" || c.status === "late") && before.get(c.id) !== c.status ? [{ id: c.id, name: c.name, status: c.status }] : []));
+    Notify.attendanceSaved(tenantId, caller.userId, { unit, date: input.date, counts: sheet.counts, by: user?.name ?? "The school", marked });
+    return sheet;
   }
 
   /** A child's days of a month (this month when none is asked) and the tally of the year, for their parent. */

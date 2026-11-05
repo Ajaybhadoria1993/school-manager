@@ -8,7 +8,7 @@ screen to add one (the handoff of the same day, open point 1).
 
 ## What the school does
 
-0. **Teacher** (the menu's Overview group, under School Class; `/teachers`, title *All Teachers*) is for finding and opening teachers, laid
+0. **Teacher** (the menu's Overview group, under Classes and Students; `/teachers`, title *All Teachers*) is for finding and opening teachers, laid
    out like Infinity Medisetu's patient list (2026-11-03, round 4): **Add teacher** at the top right (`/teachers/new`, the same 4 steps,
    breadcrumb under Teacher); four tiles **Teachers / Class teachers / Without classes / Have left** (`GET /staff/teachers/summary`, read once,
    not again for each filter; *without classes* = no subject of a class and no class to look after); then **one line** (from 1280px; narrower,

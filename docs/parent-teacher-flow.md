@@ -60,3 +60,16 @@ Progress is written at the end of this file.
   as there). Frontend: teacher home *My classes* (`components/dashboard/MyClasses.tsx`) -> `/class-work/:classId?section=`
   (`pages/classwork/ClassWorkPage.tsx`, `components/classwork/AttendancePanel.tsx`: Today / Yesterday, Present / Absent / Late / Leave
   per child, Save attendance -> window with the counts); parent `components/parent/ChildAttendance.tsx` (year %, month days, arrows).
+* **Phase 4 done**: `DiaryEntry` (one per class/section/day/subject: `taught`, `homework`, `writtenBy`). `GET|PUT /classroom/diary`
+  (a subject's teacher writes their subject, the class teacher and the school every subject: `NOT_THEIR_SUBJECT`; not ahead), parent
+  `GET /parent/children/:id/diary?date`. Frontend: Diary tab (`components/classwork/DiaryPanel.tsx`: a card per subject, Write ->
+  window "Taught today" / "Homework" -> "Diary saved"); parent `ChildDiary` (day arrows).
+* **Phase 5 done**: `ClassTest` (subject, day, topic, out of, marks per child or absent). `GET|POST /classroom/tests`,
+  `GET|DELETE /classroom/tests/:id`, `PUT /classroom/tests/:id/marks` (not before the test day: `TEST_NOT_HELD`; average leaves out
+  the absent), parent `GET /parent/children/:id/tests` (coming tests, results with %, average). Frontend: Tests tab
+  (`components/classwork/TestsPanel.tsx`: Add a test with Today / Tomorrow / In a week, Enter marks with absent ticks -> window with
+  the class average, Take away); parent `ChildTests`; the school reaches a class's work from its School Class page (*Class work*).
+  The child's page puts the day first (diary, tests, attendance, leave, timetable), the child's details after.
+  Checked in real Chrome (`flow-r9.mjs`, 18/18).
+* **Not built**: the school's own *Add a test* (it has no subjects of its own on the Tests tab); a teacher setting a test for a
+  subject they do not teach. Live notifications for all of this: docs/notifications.md (2026-11-04).

@@ -17,6 +17,8 @@ import { Teacher } from "../main/staff/models/Teacher";
 import { BellSchedule } from "../main/timetable/models/BellSchedule";
 import { Allotment } from "../main/subjects/models/Allotment";
 import { Subject } from "../main/subjects/models/Subject";
+import { Notification } from "../main/notifications/models/Notification";
+import { NotificationService } from "../main/notifications/services/notification.service";
 
 beforeAll(async () => {
   // Safety net: this setup wipes and drops the database, so it must only ever be a local test database.
@@ -42,10 +44,13 @@ beforeAll(async () => {
     Allotment.syncIndexes(),
     Teacher.syncIndexes(),
     BellSchedule.syncIndexes(),
+    Notification.syncIndexes(),
   ]);
 });
 
 afterEach(async () => {
+  // Notifications still being sent after a test answered must not land in the next test.
+  await NotificationService.idle();
   // Isolate cases from each other: wipe every collection's documents (indexes stay).
   await Promise.all(Object.values(mongoose.connection.collections).map((c) => c.deleteMany({})));
 });

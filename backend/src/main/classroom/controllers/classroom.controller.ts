@@ -31,10 +31,10 @@ export const body = <T>(req: Request) => req.validatedBody as T;
 
 // ---- Calendar ------------------------------------------------------------------------------------------------------------------------
 export const listCalendar = asyncHandler(async (req: Request, res: Response) => sendOk(res, await CalendarService.list(tenantOf(req), req.validatedQuery as CalendarQuery)));
-export const createEvent = asyncHandler(async (req: Request, res: Response) => sendCreated(res, await CalendarService.create(tenantOf(req), body<CreateEventInput>(req)), "Added to the calendar"));
-export const updateEvent = asyncHandler(async (req: Request, res: Response) => sendOk(res, await CalendarService.update(tenantOf(req), idOf(req), body<UpdateEventInput>(req)), "Saved"));
+export const createEvent = asyncHandler(async (req: Request, res: Response) => sendCreated(res, await CalendarService.create(tenantOf(req), body<CreateEventInput>(req), req.user!.userId), "Added to the calendar"));
+export const updateEvent = asyncHandler(async (req: Request, res: Response) => sendOk(res, await CalendarService.update(tenantOf(req), idOf(req), body<UpdateEventInput>(req), req.user!.userId), "Saved"));
 export const deleteEvent = asyncHandler(async (req: Request, res: Response) => {
-  await CalendarService.remove(tenantOf(req), idOf(req));
+  await CalendarService.remove(tenantOf(req), idOf(req), req.user!.userId);
   return sendOk(res, { id: idOf(req) }, "Taken off the calendar");
 });
 
