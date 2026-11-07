@@ -1,4 +1,6 @@
 /** The shapes of the Staff (teachers) API (backend/src/main/staff). */
+import type { CustomFieldDef } from "../constants/studentFields";
+import type { UserRole } from "./auth";
 
 export type TeacherGender = "Male" | "Female" | "Other";
 export type EmploymentType = "full_time" | "part_time" | "contract";
@@ -39,6 +41,8 @@ export interface Teacher {
   experienceYears: number | null;
   joiningDate: string | null;
   employmentType: EmploymentType | null;
+  /** The answers to the school's own fields, by their `c_` key (a field the school no longer has is not shown). */
+  custom: Record<string, string | number | boolean>;
   /** null: no login yet. */
   login: TeacherLogin | null;
   /** The units they are the class teacher of, this year and the next ("Class 5 - A"). */
@@ -82,6 +86,8 @@ export interface TeacherInput {
   experienceYears?: number | null;
   joiningDate?: string | null;
   employmentType?: EmploymentType | null;
+  /** Answers to the school's own fields by key (a change: null clears one). */
+  custom?: Record<string, string | number | boolean | null>;
   /** Makes the teacher's login in the same step (Add teacher only). */
   login?: LoginAccount;
 }
@@ -146,4 +152,105 @@ export interface AssignTeacherInput {
   subjectId: string;
   teacherId: string | null;
   periodsPerWeek?: number;
+}
+
+/**
+ * `PUT /subjects/allotments/teachers`: what a class's Save button sends, in one request, all or nothing: the class teacher (left out = as
+ * it is, null = none) and, for the subjects named, the main teacher and the backups in order (priority 2, 3...).
+ */
+export interface SaveUnitTeachersInput {
+  classId: string;
+  sectionId: string | null;
+  classTeacherId?: string | null;
+  subjects: { subjectId: string; teacherId: string | null; backupTeacherIds: string[] }[];
+}
+
+/** One row of a bulk upload of teachers, as the screen sends it (`POST /staff/teachers/import`, up to 10 rows a request). */
+export interface TeacherImportRowInput {
+  /** The row's number in the file. */
+  row: number;
+  /** The boxes of Add teacher the file gave (an empty box is left out); the login and the subjects are not part of it. */
+  teacher: TeacherInput;
+  /** The subjects the teacher can teach, in words: a name the school has is that subject, any other is added. */
+  subjectNames: string[];
+  /** The login the file gives; left out, the server makes them up. */
+  username?: string;
+  password?: string;
+}
+
+export interface TeacherImportRowResult {
+  row: number;
+  ok: boolean;
+  /** TEACHER_MOBILE_EXISTS (already in the school), TEACHER_CODE_EXISTS, USERNAME_TAKEN, LOGIN_EMAIL_TAKEN...; none for a row whose boxes are wrong. */
+  code?: string;
+  /** By box ("name", "mobile", "address.pincode", "username"...; "" for the row as a whole). */
+  errors: { path: string; message: string }[];
+  teacher?: { id: string; name: string };
+  /** `password` is there only when the server made it up: it is told this once and never kept. */
+  login?: { username: string; password: string | null };
+}
+
+export interface TeacherImportResult {
+  results: TeacherImportRowResult[];
+  ok: number;
+  failed: number;
+}
+
+/** How the school keeps its teachers' details beyond the usual ones: its own fields (`GET` / `PUT /staff/teachers/settings`). */
+export interface TeacherSettings {
+  customFields: CustomFieldDef[];
+}
+
+/** A person who works for the school without teaching (`/staff/members`): invited by email, then active. */
+export type StaffMemberStatus = "invited" | "active" | "inactive";
+
+export interface StaffMember {
+  id: string;
+  name: string;
+  role: UserRole;
+  roleLabel: string;
+  email: string;
+  mobile: string | null;
+  gender: TeacherGender | null;
+  dateOfBirth: string | null;
+  address: TeacherAddress;
+  designation: string | null;
+  employeeCode: string | null;
+  joiningDate: string | null;
+  status: StaffMemberStatus;
+  invitedAt: string;
+  acceptedAt: string | null;
+}
+
+/** What the server says about an invitation it just made (or made again). */
+export interface StaffInviteDelivery {
+  /** False when the mail server did not take the email: the school uses Resend invite. */
+  emailSent: boolean;
+  inviteExpiresAt: string;
+  /** Development only, with no mail server: the link itself. */
+  devInviteLink?: string;
+}
+
+export interface StaffMemberInput {
+  name: string;
+  role: UserRole;
+  email: string;
+  mobile?: string | null;
+  gender?: TeacherGender | null;
+  dateOfBirth?: string | null;
+  address?: Partial<TeacherAddress>;
+  designation?: string | null;
+  employeeCode?: string | null;
+  joiningDate?: string | null;
+}
+
+export interface StaffMemberQuery {
+  status: StaffMemberStatus | "all";
+  role?: UserRole;
+  search?: string;
+}
+
+export interface StaffMemberList {
+  items: StaffMember[];
+  counts: Record<StaffMemberStatus, number>;
 }

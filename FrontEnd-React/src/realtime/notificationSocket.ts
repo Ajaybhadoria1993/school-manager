@@ -15,6 +15,8 @@ export interface NotificationHandlers {
   onUnread: (unread: number, readId?: string) => void;
   /** The line is back after a break: whatever came meanwhile is read again. */
   onReconnect: () => void;
+  /** A teacher marked themselves present (the school's open sheet of the teachers' attendance reads again). A quiet push: no bell line. */
+  onTeacherAttendance?: () => void;
 }
 
 /**
@@ -48,6 +50,7 @@ export function connectNotifications(handlers: NotificationHandlers): () => void
   });
   socket.on("notification", (item: NotificationItem) => handlers.onNotification(item));
   socket.on("notifications:unread", (p: { unread: number; id?: string }) => handlers.onUnread(p.unread, p.id));
+  socket.on("attendance:teacher", () => handlers.onTeacherAttendance?.());
   socket.on("connect_error", (err: Error) => {
     if (stopped) return;
     const code = err.message;

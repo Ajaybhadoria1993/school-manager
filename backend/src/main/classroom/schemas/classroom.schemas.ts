@@ -45,6 +45,11 @@ export type UpdateEventInput = z.infer<typeof updateEventSchema>;
 export const calendarQuerySchema = z.object({ from: dayText("first day").optional(), to: dayText("last day").optional() });
 export type CalendarQuery = z.infer<typeof calendarQuerySchema>;
 
+/** A standard holiday by its key ("2026-11-08-diwali"); a key the list does not know is answered in words (404), not refused here. */
+export const standardKeyParamSchema = z.object({ key: z.string().trim().min(1).max(100) });
+export const setStandardShownSchema = z.object({ shown: z.boolean({ required_error: "Say whether it is on the calendar", invalid_type_error: "Say whether it is on the calendar" }) });
+export type SetStandardShownInput = z.infer<typeof setStandardShownSchema>;
+
 // ---- Leave -------------------------------------------------------------------------------------------------------------------------
 const MAX_LEAVE_DAYS = 31;
 export const applyLeaveSchema = z

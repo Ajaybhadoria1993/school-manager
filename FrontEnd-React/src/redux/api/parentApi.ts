@@ -1,5 +1,5 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type { ApiResponse, ChildAttendance, ChildDetail, ChildDiary, ChildTests, ChildTimetable, Leave, LeaveInput, MyChildren } from "../../types";
+import type { ApiResponse, ChildAttendance, ChildDetail, ChildDiary, ChildExams, ChildTests, ChildTimetable, Leave, LeaveInput, MyChildren } from "../../types";
 import { baseQueryWithReauth } from "./baseQueryWithReauth";
 
 /**
@@ -9,7 +9,7 @@ import { baseQueryWithReauth } from "./baseQueryWithReauth";
 export const parentApi = createApi({
   reducerPath: "parentApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Children", "Child", "ChildLeaves", "ChildAttendance", "ChildDiary", "ChildTests"],
+  tagTypes: ["Children", "Child", "ChildLeaves", "ChildAttendance", "ChildDiary", "ChildTests", "ChildExams"],
   refetchOnMountOrArgChange: 60,
   refetchOnReconnect: true,
   endpoints: (build) => ({
@@ -38,6 +38,10 @@ export const parentApi = createApi({
       query: (id) => `/parent/children/${id}/tests`,
       providesTags: (_result, _error, id) => [{ type: "ChildTests", id }],
     }),
+    getChildExams: build.query<ApiResponse<ChildExams>, string>({
+      query: (id) => `/parent/children/${id}/exams`,
+      providesTags: (_result, _error, id) => [{ type: "ChildExams", id }],
+    }),
     getChildLeaves: build.query<ApiResponse<{ items: Leave[] }>, string>({
       query: (id) => `/parent/children/${id}/leaves`,
       providesTags: (_result, _error, id) => [{ type: "ChildLeaves", id }],
@@ -60,6 +64,7 @@ export const {
   useGetChildAttendanceQuery,
   useGetChildDiaryQuery,
   useGetChildTestsQuery,
+  useGetChildExamsQuery,
   useGetChildLeavesQuery,
   useApplyLeaveMutation,
   useCancelLeaveMutation,

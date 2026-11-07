@@ -82,7 +82,12 @@ export default function AcceptInvite() {
     // POST, so the one-time token travels in the body and never lands in a server's access log.
     checkInvite({ token })
       .unwrap()
-      .then((res) => !cancelled && setLink({ kind: "valid", info: res.data }))
+      .then((res) => {
+        if (cancelled) return;
+        setLink({ kind: "valid", info: res.data });
+        // A staff invitation knows the person's name: it is there to confirm or correct.
+        if (res.data.kind === "staff" && res.data.name) setName(res.data.name);
+      })
       .catch((err) => {
         if (cancelled) return;
         const e = getApiError(err);
@@ -162,6 +167,7 @@ export default function AcceptInvite() {
       <AuthShell title={PROBLEM_TITLES[link.code] ?? "This link doesn't work"}>
         <div className="space-y-4 text-sm text-foreground-muted">
           <p>{link.message}</p>
+          {(link.code === "INVITE_EXPIRED" || link.code === "INVITE_INVALID") && <p>Invited to join a school as staff? Ask your school to send the invitation again.</p>}
           {link.code === "ALREADY_REGISTERED" && (
             <Link to="/login">
               <Button size="lg" className="w-full">
@@ -185,16 +191,20 @@ export default function AcceptInvite() {
 
   const info = link.info;
   const isSignup = info.kind === "signup";
+  const isStaff = info.kind === "staff";
   const mismatch = confirm.length > 0 && password !== confirm;
 
   return (
     <AuthShell
-      variant="register"
-      title={isSignup ? "Confirm your email" : `Set up ${info.schoolName}`}
+      // The side panel of registering a school (confirm email, four steps, approved by a person) is not for a staff member.
+      variant={isStaff ? "signin" : "register"}
+      title={isSignup ? "Confirm your email" : isStaff ? `Join ${info.schoolName}` : `Set up ${info.schoolName}`}
       subtitle={
         isSignup
           ? "Your email is confirmed by opening this link. Choose your name and a password to create your account."
-          : "Choose your name and a password to create the school administrator account."
+          : isStaff
+            ? `You are invited as ${info.roleLabel}. Choose a password to accept the invitation: from then on you sign in with your email and this password.`
+            : "Choose your name and a password to create the school administrator account."
       }
       footer={
         <Link
@@ -311,7 +321,7 @@ export default function AcceptInvite() {
           loading={submitting}
           disabled={!name || !password || !confirm}
         >
-          Create my account
+          {isStaff ? "Accept invitation" : "Create my account"}
         </Button>
       </form>
     </AuthShell>

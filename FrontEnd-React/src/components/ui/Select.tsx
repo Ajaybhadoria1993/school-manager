@@ -1,4 +1,5 @@
 import { ListBox, Select as HeroSelect, type Key } from "@heroui/react";
+import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../../utils/helpers";
 import { controlClass, controlHeight, iconClass, useControlStyle } from "./Input";
@@ -39,6 +40,8 @@ interface MultiSelectProps extends FieldProps {
   value: string[];
   /** The chosen values, always in the order of `options`. */
   onChange: (values: string[]) => void;
+  /** What the closed box says once something is chosen, instead of one chip per name ("2 other teachers"). */
+  renderValue?: (values: string[]) => ReactNode;
 }
 
 /** More chips than this collapse into "+N" so the box never wraps. */
@@ -83,10 +86,12 @@ function SelectField({
   multiple,
   value,
   onChange,
+  renderValue,
 }: FieldProps & {
   multiple: boolean;
   value: string | string[];
   onChange: (value: string | string[]) => void;
+  renderValue?: (values: string[]) => ReactNode;
 }) {
   const style = useControlStyle();
   const items = options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
@@ -141,7 +146,11 @@ function SelectField({
         <HeroSelect.Value className="min-w-0 truncate">
           {({ defaultChildren, isPlaceholder, state }) =>
             multiple && !isPlaceholder && state.selectedItems.length > 0 ? (
-              <Chips labels={state.selectedItems.map((item) => item.textValue)} />
+              renderValue ? (
+                renderValue(value as string[])
+              ) : (
+                <Chips labels={state.selectedItems.map((item) => item.textValue)} />
+              )
             ) : (
               defaultChildren
             )

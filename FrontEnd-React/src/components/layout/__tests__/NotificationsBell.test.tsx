@@ -8,6 +8,9 @@ import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { sessionStarted, signedOut } from "../../../redux/slices/authSlice";
 import { useLiveNotifications } from "../../../hooks/useLiveNotifications";
+import { useGetClassExamsQuery } from "../../../redux/api/examsApi";
+import { useGetTeachersAttendanceQuery } from "../../../redux/api/attendanceApi";
+import { useGetChildExamsQuery } from "../../../redux/api/parentApi";
 import { fakeApi, type Handler } from "../../../test/fakeApi";
 import { clearTokens, setTokens } from "../../../utils/auth";
 import type { NotificationItem } from "../../../types";
@@ -69,7 +72,20 @@ function Shell() {
   );
 }
 
-function openApp(extra: Record<string, Handler> = {}) {
+/** A page that shows exams (a parent's child page, a teacher's class tab): what the exam notifications must make stale. */
+function ExamsProbe() {
+  const child = useGetChildExamsQuery("s1");
+  const klass = useGetClassExamsQuery({ classId: "c5", sectionId: null });
+  return <p>{child.isSuccess && klass.isSuccess ? "Exams are shown" : "Exams are loading"}</p>;
+}
+
+/** The school's open sheet of the teachers' attendance. */
+function SheetProbe() {
+  const sheet = useGetTeachersAttendanceQuery({ from: "2026-11-01", to: "2026-11-30" });
+  return <p>{sheet.isSuccess ? "Sheet is shown" : "Sheet is loading"}</p>;
+}
+
+function openApp(extra: Record<string, Handler> = {}, path = "/") {
   const calls = fakeApi({
     "GET /notifications": (_body, query) => (query.get("before") ? { items: [item("n0", { title: "Older one", readAt: "2026-11-01T10:00:00.000Z" })], unread: 1, hasMore: false } : { items: [FIRST, SECOND], unread: 1, hasMore: true }),
     "POST /notifications/n1/read": () => ({ unread: 0 }),
@@ -83,10 +99,12 @@ function openApp(extra: Record<string, Handler> = {}) {
         children: [
           { path: "/", element: <p>Home page</p> },
           { path: "/leaves", element: <p>Leave requests page</p> },
+          { path: "/exams-probe", element: <ExamsProbe /> },
+          { path: "/sheet-probe", element: <SheetProbe /> },
         ],
       },
     ],
-    { initialEntries: ["/"] }
+    { initialEntries: [path] }
   );
   render(
     <Provider store={store}>
@@ -200,5 +218,59 @@ describe("live, on the socket", () => {
     expect(calls.some((c) => c.path === "/auth/refresh")).toBe(true);
     const got = await new Promise<object>((resolve) => fake.options!.auth!(resolve));
     expect(got).toEqual({ token: "token-2" });
+  });
+});
+
+describe("the exam notifications refresh what is on screen (2026-11-06)", () => {
+  const examReads = (calls: { path: string }[], path: string) => calls.filter((c) => c.path === path).length;
+  const handlers = {
+    "GET /parent/children/s1/exams": () => ({ items: [], week: { from: "2026-09-14", to: "2026-09-20", days: [] } }),
+    "GET /exams/class": () => ({ label: "Class 5", items: [], week: { from: "2026-09-14", to: "2026-09-20", days: [] } }),
+  };
+
+  it.each(["exam.scheduled", "exam.changed", "exam.removed", "exam.timetable", "exam.paper_changed", "exam.paper_removed", "exam.marks"] as const)(
+    "%s reads the child's exams and the class's exams again",
+    async (kind) => {
+      const { calls } = openApp(handlers, "/exams-probe");
+      expect(await screen.findByText("Exams are shown")).toBeInTheDocument();
+      expect(examReads(calls, "/parent/children/s1/exams")).toBe(1);
+      expect(examReads(calls, "/exams/class")).toBe(1);
+      await fire("notification", item("n20", { kind, title: "Half-Yearly Exam", childId: "s1", link: "/my-children/s1" }));
+      await waitFor(() => expect(examReads(calls, "/parent/children/s1/exams")).toBe(2));
+      await waitFor(() => expect(examReads(calls, "/exams/class")).toBe(2));
+    }
+  );
+
+  it("one for another child leaves this child's exams alone; one with no child (a teacher's) still refreshes the class", async () => {
+    const { calls } = openApp(handlers, "/exams-probe");
+    expect(await screen.findByText("Exams are shown")).toBeInTheDocument();
+    await fire("notification", item("n21", { kind: "exam.marks", title: "Marks", childId: "s2", link: "/my-children/s2" }));
+    await waitFor(() => expect(examReads(calls, "/exams/class")).toBe(2));
+    expect(examReads(calls, "/parent/children/s1/exams")).toBe(1);
+    await fire("notification", item("n22", { kind: "exam.timetable", title: "Timetable", childId: null, link: "/class-work/c5?tab=exams" }));
+    await waitFor(() => expect(examReads(calls, "/exams/class")).toBe(3));
+  });
+});
+
+describe("the school's open sheet of the teachers' attendance (2026-11-06)", () => {
+  const sheet = () => ({ from: "2026-11-01", to: "2026-11-30", days: [], teachers: [], summary: { teachers: 0, present: 0, late: 0, absent: 0 } });
+
+  it("reads again by itself when a teacher marks themselves present (the quiet push, no bell line, no toast)", async () => {
+    const { calls } = openApp({ "GET /attendance/teachers": sheet }, "/sheet-probe");
+    expect(await screen.findByText("Sheet is shown")).toBeInTheDocument();
+    const reads = () => calls.filter((c) => c.method === "GET" && c.path === "/attendance/teachers").length;
+    expect(reads()).toBe(1);
+    await fire("attendance:teacher", { date: "2026-11-05", teacherId: "t1" });
+    await waitFor(() => expect(reads()).toBe(2));
+    expect(screen.getByRole("status")).toBeEmptyDOMElement(); // no toast
+    await waitFor(async () => expect(await badge()).toHaveTextContent("1")); // the bell is as it was
+  });
+
+  it("a page that is not showing the sheet asks for nothing", async () => {
+    const { calls } = openApp({ "GET /attendance/teachers": sheet });
+    await waitFor(async () => expect(await badge()).toHaveTextContent("1"));
+    await fire("attendance:teacher", { date: "2026-11-05", teacherId: "t1" });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(calls.filter((c) => c.path === "/attendance/teachers")).toHaveLength(0);
   });
 });

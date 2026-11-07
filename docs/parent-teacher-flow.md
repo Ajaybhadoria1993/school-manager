@@ -43,9 +43,34 @@ Progress is written at the end of this file.
   `classroom/__tests__/calendar.test.ts` + `classroom.isolation.test.ts`, test school `src/test/classroom.ts` (`classroomSchool`: Class
   5 - A with Asha (father Ravi) and Kabir (mother Sita), Class 1 with Mira (father Anil), Meena class teacher + Maths of 5 - A, Dev
   English of 5 - A, Kiran nothing; every one with a login and a token). Frontend: menu *Calendar* (`/calendar`) for everyone of the
-  school; `pages/calendar/CalendarPage.tsx` (month by month; Add holiday or event / pencil / bin for the people who run the school),
-  `components/calendar/EventDialog.tsx`, `classroomApi`, and **`components/ui/ResultModal.tsx`** (`useResultModal`: done / failed
-  window with one OK, for every action of this flow).
+  school; `pages/calendar/CalendarPage.tsx`, `components/calendar/EventDialog.tsx`, `classroomApi`, and
+  **`components/ui/ResultModal.tsx`** (`useResultModal`: done / failed window with one OK, for every action of this flow).
+  **Calendar redesign (2026-11-05)**: the page is a real calendar. *Month* = grid of days, Sunday first, holidays (red) and events
+  (blue) as bars (a few days = one straight bar, at most 3 rows a day then "+N more"); *Year* = 12 small months with the days marked,
+  a month's name opens it; arrows (month / year), Today, counts, Month | Year switch; beside it the list "Holidays & events" of what is
+  shown (the year grouped by month) with pencil and bin. A click on a day: school + empty day = the Add window with that day already
+  in; otherwise a window with what is on the day (school: pencil, bin, Add for that day; teacher / parent: read only). The server is
+  asked once per year (`GET ...?from=<year start - 7 days>&to=<year end + 7 days>`), so moving between months asks for nothing.
+  Pieces: `utils/calendar.ts` (monthGrid, weekLanes / visibleLanes, dayKinds, yearRange...), `components/calendar/` (MonthGrid,
+  YearGrid, CalendarToolbar, EventList, EventRow, DayDialog, look.ts). Calendar year (Jan to Dec), not the school's academic year.
+  **Standard holidays (2026-11-05, asked: "the calendar should have the holidays a calendar at home has, Diwali and the national days;
+  the school adds or takes off by itself, but the national ones stay")**: every school's calendar starts with the Government of
+  India's gazetted holidays (DoPT list, 17 a year: Republic Day, Holi, Id-ul-Fitr, Ram Navami, Mahavir Jayanti, Good Friday, Buddha
+  Purnima, Bakrid, Muharram, Independence Day, Milad-un-Nabi, Janmashtami, Gandhi Jayanti, Dussehra, Diwali, Guru Nanak Jayanti,
+  Christmas). They are not stored per school: `backend/src/main/classroom/data/standardHolidays.ts` holds them (2026 and 2027 as the
+  Government published; every other year only the days that never move: 26 Jan, 15 Aug, 2 Oct, 25 Dec; **add the next year's list there
+  each July**, when DoPT publishes it). `GET /classroom/calendar?from=&to=` (both days) returns them among `items`, each with a
+  `source`: `school` (the school's own record), `national` (Republic Day, Independence Day, Gandhi Jayanti: always on) or `festival`
+  (the rest); without both days only the school's own come. A holiday the school put on with the same name over that day takes the
+  standard one's place. A school that does not close for a festival takes it off: `PUT /classroom/calendar/standard/:key` `{ shown }`
+  (school admin / principal; key like `2026-11-08-diwali`; national: 409 `HOLIDAY_LOCKED`; unknown: 404 `HOLIDAY_NOT_FOUND`), kept in
+  `HiddenHoliday` (one row per school and key) and returned as `hidden` so it can be brought back (the page: bin on a festival, "Taken
+  off (n)" under the list with "Bring back"). Everyone of the school hears of it (bell). **Attendance** is not taken on a standard
+  holiday the school has not taken off (`CalendarService.holidaysBetween`), a national day always. The moon-dependent ones (Eid,
+  Muharram) can differ by a day by state (the Government moved Bakrid 2026 from 27 to 28 May): the school takes the day off and
+  adds its own. Tests run with the standard holidays off (`STANDARD_HOLIDAYS=off` in vitest.config.mts) so "today" is never a
+  national holiday to them; `calendar.test.ts` "the standard holidays" switches them on. Which are national (locked) is a choice
+  of mine: Diwali and the other festivals the school may take off; to lock one, change its `source` in the data file.
 * **Phase 2 done**: `LeaveRequest` (child's class kept at sending; `appliedBy` "Ravi Verma (Father)"). Parent:
   `GET|POST /parent/children/:id/leaves`, `POST /parent/children/:id/leaves/:leaveId/cancel` (pending only). School:
   `GET /classroom/leaves?status=pending|all` (a teacher sees the classes they are class teacher of; school admin / principal all),

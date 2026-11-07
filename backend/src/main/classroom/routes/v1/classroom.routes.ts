@@ -17,6 +17,7 @@ import {
   saveAttendance,
   saveDiary,
   saveMarks,
+  setStandardHoliday,
   updateEvent,
 } from "../../controllers/classroom.controller";
 import {
@@ -32,6 +33,8 @@ import {
   idParamSchema,
   leaveQuerySchema,
   saveAttendanceSchema,
+  setStandardShownSchema,
+  standardKeyParamSchema,
   updateEventSchema,
 } from "../../schemas/classroom.schemas";
 
@@ -53,6 +56,8 @@ router.get("/calendar", SCHOOL_PEOPLE, validate(calendarQuerySchema, "query"), l
 router.post("/calendar", RUNNERS, validate(createEventSchema), createEvent);
 router.patch("/calendar/:id", RUNNERS, validate(idParamSchema, "params"), validate(updateEventSchema), updateEvent);
 router.delete("/calendar/:id", RUNNERS, validate(idParamSchema, "params"), deleteEvent);
+// The standard holidays (Diwali, Holi...): the school takes a festival off its calendar or brings it back.
+router.put("/calendar/standard/:key", RUNNERS, validate(standardKeyParamSchema, "params"), validate(setStandardShownSchema), setStandardHoliday);
 
 // ---- Leave: what parents sent; a class teacher sees their classes', the people who run the school every one --------------------------
 const STAFF = requireRole("school_admin", "principal", "teacher");

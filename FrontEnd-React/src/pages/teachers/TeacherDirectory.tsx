@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { BookX, FilterX, Pencil, Plus, Search, SearchX, UserRoundCheck, UserRoundMinus, UsersRound } from "lucide-react";
+import { BookX, FileUp, FilterX, ListPlus, Pencil, Plus, Search, SearchX, UserRoundCheck, UserRoundMinus, UsersRound } from "lucide-react";
 import { DESIGNATIONS } from "../../constants/teachers";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetSubjectsQuery, useGetTeacherSummaryQuery, useGetTeachersQuery } from "../../redux/api/timetableApi";
@@ -9,6 +9,7 @@ import { cn } from "../../utils/helpers";
 import { formatMobile } from "../../utils/students";
 import type { Teacher, TeacherQuery } from "../../types";
 import { StatTile } from "../../components/dashboard/school/StatTile";
+import { ExportTeachersButton } from "../../components/teachers/ExportTeachersButton";
 import { StudentAvatar } from "../../components/students/StudentAvatar";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
@@ -30,6 +31,8 @@ const STATUSES = [
 const FILTER_KEYS = ["subject", "class", "designation"] as const;
 
 const TH = "whitespace-nowrap px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-foreground-muted";
+const outlineLink =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:border-[#cbd5e1] hover:bg-background focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 const primaryLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_4px_10px_-2px_rgb(37_99_235/0.4)] transition-all duration-150 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 
@@ -220,10 +223,22 @@ export default function TeacherDirectoryPage() {
         current="Teacher"
         crumbs={[{ label: "Dashboard", to: "/dashboard" }]}
         actions={
-          <Link to="/teachers/new" className={primaryLink}>
-            <Plus className="size-4" aria-hidden />
-            Add teacher
-          </Link>
+          <>
+            {/* Like the students' header: Export (the list as Excel), Bulk upload (the teachers a school already has, from Excel), Add teacher. */}
+            <Link to="/teachers/fields" className={outlineLink}>
+              <ListPlus className="size-4" aria-hidden />
+              Fields
+            </Link>
+            <ExportTeachersButton query={query} empty={teachers.length === 0} />
+            <Link to="/teachers/import" className={outlineLink}>
+              <FileUp className="size-4" aria-hidden />
+              Bulk upload
+            </Link>
+            <Link to="/teachers/new" className={primaryLink}>
+              <Plus className="size-4" aria-hidden />
+              Add teacher
+            </Link>
+          </>
         }
       />
 

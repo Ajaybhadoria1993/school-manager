@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { useToast } from "../components/ui/toast-context";
 import { classroomApi } from "../redux/api/classroomApi";
+import { attendanceApi } from "../redux/api/attendanceApi";
+import { examsApi } from "../redux/api/examsApi";
 import { addLive, notificationsApi, setUnread } from "../redux/api/notificationsApi";
 import { parentApi } from "../redux/api/parentApi";
 import { useAppDispatch } from "../redux/hooks";
@@ -14,7 +16,7 @@ import { useAuth } from "./useAuth";
  */
 function staleBy(n: NotificationItem) {
   const child = n.childId;
-  const ofChild = (type: "ChildLeaves" | "ChildAttendance" | "ChildDiary" | "ChildTests") => (child ? [parentApi.util.invalidateTags([{ type, id: child }])] : []);
+  const ofChild = (type: "ChildLeaves" | "ChildAttendance" | "ChildDiary" | "ChildTests" | "ChildExams") => (child ? [parentApi.util.invalidateTags([{ type, id: child }])] : []);
   switch (n.kind) {
     case "leave.applied":
     case "leave.cancelled":
@@ -29,6 +31,18 @@ function staleBy(n: NotificationItem) {
     case "test.removed":
     case "marks.saved":
       return [classroomApi.util.invalidateTags(["Tests"]), ...ofChild("ChildTests")];
+    case "exam.scheduled":
+    case "exam.changed":
+    case "exam.removed":
+    case "exam.timetable":
+    case "exam.paper_changed":
+    case "exam.paper_removed":
+    case "exam.marks":
+      // The school's exam list and page, a class's exams and marks sheets (a teacher's tab), and the child's exams (a parent's page) that is on screen.
+      return [examsApi.util.invalidateTags(["Exams", "Exam", "ClassExams", "MarksSheet"]), ...(child ? ofChild("ChildExams") : [parentApi.util.invalidateTags(["ChildExams"])])];
+    case "teacher.attendance":
+      // The school marked or corrected the teacher's day: their own card reads again.
+      return [attendanceApi.util.invalidateTags(["MyAttendance"])];
     case "calendar.added":
     case "calendar.changed":
     case "calendar.removed":
@@ -64,6 +78,8 @@ export function useLiveNotifications() {
       },
       onUnread: (unread, readId) => dispatch(setUnread(unread, readId)),
       onReconnect: () => dispatch(notificationsApi.util.invalidateTags(["Notifications"])),
+      // A teacher marked themselves present: the school's sheet of the teachers (if it is open) reads again.
+      onTeacherAttendance: () => dispatch(attendanceApi.util.invalidateTags(["TeacherAttendance"])),
     });
   }, [userId, dispatch, push]);
 }

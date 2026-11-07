@@ -2,7 +2,13 @@
 
 export type CalendarKind = "holiday" | "event";
 
-/** A holiday or an event on the school's calendar; `endDate` is the last day (the same as `startDate` for one day). */
+/**
+ * Who put it on the calendar: the school itself, or the standard list every calendar starts with (Diwali, Republic Day...): a
+ * `national` day stays, a `festival` the school may take off and bring back.
+ */
+export type CalendarSource = "school" | "national" | "festival";
+
+/** A holiday or an event on the school's calendar; `endDate` is the last day (the same as `startDate` for one day). A standard holiday's `id` is its key ("2026-11-08-diwali"). */
 export interface CalendarEvent {
   id: string;
   title: string;
@@ -10,6 +16,13 @@ export interface CalendarEvent {
   startDate: string;
   endDate: string;
   note: string | null;
+  source: CalendarSource;
+}
+
+/** What a read of the calendar gives: what is on it, and the standard festivals the school took off in those days. */
+export interface CalendarDays {
+  items: CalendarEvent[];
+  hidden: CalendarEvent[];
 }
 
 export interface CalendarEventInput {
@@ -69,7 +82,7 @@ export interface AttendanceSheet {
   saved: boolean;
   markedBy: { name: string; role: string } | null;
   counts: Record<AttendanceStatus, number>;
-  students: { id: string; name: string; admissionNumber: string; rollNumber: number | null; status: AttendanceStatus }[];
+  students: { id: string; name: string; admissionNumber: string; rollNumber: number | null; status: AttendanceStatus; reason: string | null }[];
 }
 
 export type AttendanceTally = Record<AttendanceStatus, number> & { days: number; percent: number | null };
@@ -77,7 +90,7 @@ export type AttendanceTally = Record<AttendanceStatus, number> & { days: number;
 /** A child's attendance for their parent: the days of a month, that month's tally and the year's. */
 export interface ChildAttendance {
   month: string;
-  days: { date: string; status: AttendanceStatus }[];
+  days: { date: string; status: AttendanceStatus; reason?: string | null }[];
   monthTally: AttendanceTally;
   year: AttendanceTally;
 }

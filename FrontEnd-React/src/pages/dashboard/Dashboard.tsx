@@ -1,6 +1,7 @@
 import { useAuth } from "../../hooks/useAuth";
 import { ParentDashboard } from "../../components/dashboard/ParentDashboard";
 import { SchoolDashboard } from "../../components/dashboard/SchoolDashboard";
+import { StaffHome } from "../../components/dashboard/StaffHome";
 import { SuperAdminDashboard } from "../../components/dashboard/SuperAdminDashboard";
 import { TeacherDashboard } from "../../components/dashboard/TeacherDashboard";
 
@@ -10,5 +11,8 @@ export default function DashboardPage() {
   if (!user) return null;
   if (user.role === "super_admin") return <SuperAdminDashboard />;
   if (user.role === "parent") return <ParentDashboard />;
-  return user.role === "teacher" ? <TeacherDashboard /> : <SchoolDashboard />;
+  if (user.role === "teacher") return <TeacherDashboard />;
+  // Staff who work for the school without teaching (Staff > Add staff): their own home until their role is given the school's pages.
+  if (user.role === "receptionist" || user.role === "management") return <StaffHome />;
+  return <SchoolDashboard />;
 }

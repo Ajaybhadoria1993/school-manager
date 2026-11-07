@@ -10,6 +10,8 @@ describe("the menu of the people who run a school", () => {
       ["Classes", "/school-class"],
       ["Students", "/school-class/students"],
       ["Teacher", "/teachers"],
+      ["Attendance", "/attendance"],
+      ["Staff", "/staff"],
       ["Calendar", "/calendar"],
       ["Leave requests", "/leaves"],
     ]);
@@ -19,6 +21,13 @@ describe("the menu of the people who run a school", () => {
   it("gives teachers the Calendar and the leave requests, parents the Calendar (2026-11-04), and nothing of the school's setup", () => {
     expect(NAV_ITEMS.filter((i) => i.roles.includes("teacher")).map((i) => i.label)).toEqual(["Dashboard", "Calendar", "Leave requests"]);
     expect(NAV_ITEMS.filter((i) => i.roles.includes("parent")).map((i) => i.label)).toEqual(["Dashboard", "Calendar"]);
+  });
+
+  it("gives the staff who work for the school without teaching (2026-11-07) the Dashboard and the Calendar, and nothing of the school's setup; Staff is for the people who run the school", () => {
+    for (const role of ["receptionist", "management"] as const) {
+      expect(NAV_ITEMS.filter((i) => i.roles.includes(role)).map((i) => i.label)).toEqual(["Dashboard", "Calendar"]);
+    }
+    expect(NAV_ITEMS.find((i) => i.label === "Staff")?.roles).toEqual(["school_admin", "principal"]);
   });
 
   it("calls the teachers' page under Manage school Manage Teacher, and the students' page Manage Students (so no two entries are both Students)", () => {
@@ -31,6 +40,23 @@ describe("the menu of the people who run a school", () => {
     expect(NAV_ITEMS.find((i) => i.label === "Manage Students")?.href).toBe("/school/students");
     const labels = forAdmin.map((i) => i.label);
     expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("has Test & Exam under Manage school for the people who run the school only (2026-11-06), lit up on an exam's own page too", () => {
+    const item = NAV_ITEMS.find((i) => i.label === "Test & Exam");
+    expect(item).toMatchObject({ href: "/school/exams", group: "Manage school" });
+    expect(item?.roles).toEqual(["school_admin", "principal"]);
+    expect(activeNavItem("/school/exams")?.label).toBe("Test & Exam");
+    expect(activeNavItem("/school/exams/e1")?.label).toBe("Test & Exam");
+  });
+
+  it("has Attendance right under Teacher for the people who run the school only (2026-11-06); teachers mark themselves on their home", () => {
+    const item = NAV_ITEMS.find((i) => i.label === "Attendance");
+    expect(item).toMatchObject({ href: "/attendance", group: "Overview" });
+    expect(item?.roles).toEqual(["school_admin", "principal"]);
+    const overview = NAV_ITEMS.filter((i) => i.group === "Overview").map((i) => i.label);
+    expect(overview.indexOf("Attendance")).toBe(overview.indexOf("Teacher") + 1);
+    expect(activeNavItem("/attendance")?.label).toBe("Attendance");
   });
 
   it("lights up the entry of the page: a teacher opened from Teacher, or from Manage Teacher", () => {

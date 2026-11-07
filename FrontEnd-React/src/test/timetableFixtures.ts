@@ -28,8 +28,8 @@ export const MATHS: Subject = { id: "maths", name: "Mathematics", code: null, ca
 export const ENGLISH: Subject = { id: "english", name: "English", code: "ENG", category: "academic", isActive: true, sections: 2 };
 export const ART: Subject = { id: "art", name: "Art & Craft", code: null, category: "activity", isActive: true, sections: 0 };
 
-export const MEENA: Teacher = { id: "meena", name: "Meena Singh", mobile: "9876543210", email: null, employeeCode: "T-1", subjectIds: ["maths"], maxPeriodsPerDay: null, maxPeriodsPerWeek: null, offDays: [], isActive: true, load: { sections: 2, periodsAllotted: 12 }, gender: null, dateOfBirth: null, address: { line1: null, city: null, state: null, pincode: null }, designation: null, qualification: null, experienceYears: null, joiningDate: null, employmentType: null, login: null, classTeacherOf: [] };
-export const DEV: Teacher = { id: "dev", name: "Dev Patel", mobile: null, email: null, employeeCode: null, subjectIds: [], maxPeriodsPerDay: 5, maxPeriodsPerWeek: null, offDays: [1], isActive: true, load: { sections: 0, periodsAllotted: 0 }, gender: null, dateOfBirth: null, address: { line1: null, city: null, state: null, pincode: null }, designation: null, qualification: null, experienceYears: null, joiningDate: null, employmentType: null, login: null, classTeacherOf: [] };
+export const MEENA: Teacher = { id: "meena", name: "Meena Singh", mobile: "9876543210", email: null, employeeCode: "T-1", subjectIds: ["maths"], maxPeriodsPerDay: null, maxPeriodsPerWeek: null, offDays: [], isActive: true, load: { sections: 2, periodsAllotted: 12 }, gender: null, dateOfBirth: null, address: { line1: null, city: null, state: null, pincode: null }, designation: null, qualification: null, experienceYears: null, joiningDate: null, employmentType: null, custom: {}, login: null, classTeacherOf: [] };
+export const DEV: Teacher = { id: "dev", name: "Dev Patel", mobile: null, email: null, employeeCode: null, subjectIds: [], maxPeriodsPerDay: 5, maxPeriodsPerWeek: null, offDays: [1], isActive: true, load: { sections: 0, periodsAllotted: 0 }, gender: null, dateOfBirth: null, address: { line1: null, city: null, state: null, pincode: null }, designation: null, qualification: null, experienceYears: null, joiningDate: null, employmentType: null, custom: {}, login: null, classTeacherOf: [] };
 
 const unit = { classId: "c5", className: "Class 5", sectionId: "c5-A", sectionName: "A", label: "Class 5 - A", academicYear: { id: "y1", name: "2026-2027" } };
 
@@ -48,8 +48,8 @@ export const OVERVIEW: TimetableOverview = {
 export const ALLOTMENT: AllotmentView = {
   unit,
   rows: [
-    { subjectId: "maths", subjectName: "Mathematics", subjectCode: null, category: "academic", subjectActive: true, periodsPerWeek: 6, blockSize: 1, teacherId: "meena", teacherName: "Meena Singh", group: null },
-    { subjectId: "english", subjectName: "English", subjectCode: "ENG", category: "academic", subjectActive: true, periodsPerWeek: 5, blockSize: 1, teacherId: null, teacherName: null, group: null },
+    { subjectId: "maths", subjectName: "Mathematics", subjectCode: null, category: "academic", subjectActive: true, periodsPerWeek: 6, blockSize: 1, teacherId: "meena", teacherName: "Meena Singh", backups: [], group: null },
+    { subjectId: "english", subjectName: "English", subjectCode: "ENG", category: "academic", subjectActive: true, periodsPerWeek: 5, blockSize: 1, teacherId: null, teacherName: null, backups: [], group: null },
   ],
   siblings: [{ id: "c5-B", name: "B" }],
   totals: { periods: 11, available: 40 },

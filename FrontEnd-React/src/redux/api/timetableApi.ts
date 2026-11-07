@@ -11,17 +11,22 @@ import type {
   CopyInput,
   GridCell,
   GridView,
+  ImportSheet,
   LoginAccount,
   OverviewQuery,
   PublishedUnits,
   QuickAddSubjectsResult,
   ReplaceTeacherInput,
   SaveAllotmentsInput,
+  SaveUnitTeachersInput,
   Schedule,
   ScheduleInput,
   SchoolDayInput,
   Subject,
   SubjectInput,
+  TeacherImportResult,
+  TeacherSettings,
+  TeacherImportRowInput,
   Teacher,
   TeacherClasses,
   TeacherInput,
@@ -53,7 +58,7 @@ export const unitTag = (unit: UnitRef) => `${unit.classId}:${sectionOf(unit)}`;
 export const timetableApi = createApi({
   reducerPath: "timetableApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Subject", "Teacher", "Schedule", "Allotment", "Overview", "TeacherWeek"],
+  tagTypes: ["Subject", "Teacher", "Schedule", "Allotment", "Overview", "TeacherWeek", "Grid", "TeacherSettings"],
   refetchOnMountOrArgChange: 60,
   refetchOnReconnect: true,
   endpoints: (build) => ({
@@ -139,7 +144,47 @@ export const timetableApi = createApi({
     // One subject's teacher in one unit, the rest of its list as it is: the timetable reads the same list.
     assignTeacher: build.mutation<ApiResponse<AllotmentView>, AssignTeacherInput>({
       query: (body) => ({ url: "/subjects/allotments/teacher", method: "PUT", body }),
-      invalidatesTags: ["Teacher", "Allotment", "Overview", "Subject", "TeacherWeek"],
+      invalidatesTags: ["Teacher", "Allotment", "Overview", "Subject", "TeacherWeek", "Grid"],
+    }),
+    // The school's own fields for its teachers (one read, kept until they are changed).
+    getTeacherSettings: build.query<ApiResponse<TeacherSettings>, void>({
+      query: () => "/staff/teachers/settings",
+      providesTags: ["TeacherSettings"],
+    }),
+    updateTeacherSettings: build.mutation<ApiResponse<TeacherSettings>, TeacherSettings>({
+      query: (body) => ({ url: "/staff/teachers/settings", method: "PUT", body }),
+      // The answer is the list as it is now: it is put into the read.
+      async onQueryStarted(_input, { dispatch, queryFulfilled }) {
+        try {
+          const { data } = await queryFulfilled;
+          dispatch(timetableApi.util.updateQueryData("getTeacherSettings", undefined, () => data));
+        } catch {
+          // The page shows the reason.
+        }
+      },
+    }),
+    // Bringing many teachers in from a file (Teacher > Bulk upload): the file is read (nothing is kept), then its rows are made in parts of 10.
+    // Nothing is marked stale by a part: the page sends every part and then refreshes once (`refreshAfterTeacherImport`).
+    readTeacherFile: build.mutation<ApiResponse<ImportSheet>, FormData>({
+      query: (body) => ({ url: "/staff/teachers/import/read", method: "POST", body }),
+    }),
+    importTeachers: build.mutation<ApiResponse<TeacherImportResult>, { rows: TeacherImportRowInput[] }>({
+      query: (body) => ({ url: "/staff/teachers/import", method: "POST", body }),
+    }),
+    // A class's Save button (2026-11-06): its class teacher and the main + backup teachers of the subjects changed, all or nothing.
+    saveUnitTeachers: build.mutation<ApiResponse<AllotmentView & { classTeacher: { id: string; name: string } | null }>, SaveUnitTeachersInput>({
+      query: (body) => ({ url: "/subjects/allotments/teachers", method: "PUT", body }),
+      // The answer is the unit's list as it is now: it is put into the read (no second read); the week below it is read again.
+      invalidatesTags: ["Teacher", "Overview", "Subject", "TeacherWeek", "Grid"],
+      async onQueryStarted(input, { dispatch, queryFulfilled }) {
+        try {
+          const { data } = await queryFulfilled;
+          dispatch(timetableApi.util.updateQueryData("getAllotments", { classId: input.classId, sectionId: input.sectionId }, () => data));
+          dispatch(studentsApi.util.invalidateTags(["Capacity"]));
+        } catch {
+          // The page shows the reason.
+        }
+      },
     }),
     // Is this username free on the whole platform (Add teacher, while it is typed)? Never kept: someone may take it any moment.
     checkUsername: build.query<ApiResponse<UsernameCheck>, string>({
@@ -228,6 +273,8 @@ export const timetableApi = createApi({
     // ---- A class's weekly timetable -------------------------------------------------------------------------------------------------
     getGrid: build.query<ApiResponse<GridView>, UnitRef>({
       query: (unit) => ({ url: "/timetable/grid", params: { classId: unit.classId, sectionId: sectionOf(unit) } }),
+      // Only a change of who teaches (a class's Save, one subject's teacher, a teacher replaced) asks for the week again.
+      providesTags: ["Grid"],
       keepUnusedDataFor: 0,
     }),
     saveGrid: build.mutation<ApiResponse<GridView>, UnitRef & { cells: GridCell[] }>({
@@ -283,7 +330,7 @@ export const timetableApi = createApi({
     }),
     replaceTeacher: build.mutation<ApiResponse<{ allotments: number; lessons: number }>, { id: string } & ReplaceTeacherInput>({
       query: ({ id, ...body }) => ({ url: `/timetable/teachers/${id}/replace`, method: "POST", body }),
-      invalidatesTags: ["Teacher", "Allotment", "Overview", "TeacherWeek"],
+      invalidatesTags: ["Teacher", "Allotment", "Overview", "TeacherWeek", "Grid"],
     }),
     /** The set-up at a glance; the class list is filtered by the server (by name, by where the timetable stands). */
     getOverview: build.query<ApiResponse<TimetableOverview>, OverviewQuery>({
@@ -313,6 +360,11 @@ export const {
   useGetTeacherClassesQuery,
   useSetClassTeacherMutation,
   useAssignTeacherMutation,
+  useSaveUnitTeachersMutation,
+  useReadTeacherFileMutation,
+  useGetTeacherSettingsQuery,
+  useUpdateTeacherSettingsMutation,
+  useImportTeachersMutation,
   useCreateTeacherMutation,
   useUpdateTeacherMutation,
   useGetSchedulesQuery,
@@ -335,3 +387,6 @@ export const {
   useGetOverviewQuery,
   useGetPublishedUnitsQuery,
 } = timetableApi;
+
+/** After a bulk upload of teachers: the teacher lists and numbers, and the subjects a file may have added, are read again (the ones on screen only). */
+export const refreshAfterTeacherImport = () => timetableApi.util.invalidateTags(["Teacher", "Overview", "Subject"]);

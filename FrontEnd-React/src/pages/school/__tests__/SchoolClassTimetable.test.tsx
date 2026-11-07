@@ -69,15 +69,26 @@ afterEach(() => {
 const gridCalls = (calls: Call[]) => calls.filter((c) => c.path === "/timetable/grid");
 
 describe("a class's Timetable & teachers page", () => {
-  it("has the plain header (title, breadcrumb back to the class, Edit timetable) and asks for this section's week once", async () => {
+  it("has the plain header (title, breadcrumb back to the class) and asks for this section's week once", async () => {
     const { calls } = openPage("/school-class/c5/timetable?section=c5-A");
     expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Classes" })).toHaveAttribute("href", "/school-class");
     expect(screen.getByRole("link", { name: "Class 5" })).toHaveAttribute("href", "/school-class/c5?section=c5-A");
-    expect(screen.getByRole("link", { name: "Edit timetable" })).toHaveAttribute("href", "/school/timetable?tab=classes&class=c5&section=c5-A");
     await screen.findByRole("table", { name: "Weekly timetable of Class 5 - A" });
     expect(gridCalls(calls)).toHaveLength(1);
     expect(gridCalls(calls)[0].query).toBe("?classId=c5&sectionId=c5-A");
+  });
+
+  it("Edit timetable (2026-11-07) is on the right of the Week heading, not in the page header", async () => {
+    openPage("/school-class/c5/timetable?section=c5-A");
+    const week = await screen.findByRole("region", { name: "Week" });
+    const link = within(week).getByRole("link", { name: "Edit timetable" });
+    expect(link).toHaveAttribute("href", "/school/timetable?tab=classes&class=c5&section=c5-A");
+    // The same line as the heading and its Published badge, the link last (right edge).
+    const line = within(week).getByRole("heading", { name: "Week" }).parentElement!.parentElement!;
+    expect(line).toContainElement(link);
+    expect(line.lastElementChild).toBe(link);
+    expect(screen.getAllByRole("link", { name: "Edit timetable" })).toHaveLength(1);
   });
 
   it("shows four numbers: the class teacher (N/A when none), the subjects, the periods a week and the school day", async () => {
@@ -129,5 +140,44 @@ describe("a class's Timetable & teachers page", () => {
   it("a class that is not in the school says so", async () => {
     openPage("/school-class/nope/timetable");
     expect(await screen.findByRole("heading", { name: "This class is not in your school" })).toBeInTheDocument();
+  });
+});
+
+describe("the week gives way on an exam day (2026-11-06)", () => {
+  const EXAM_WEEK = {
+    label: "Class 5 - A",
+    items: [],
+    week: {
+      from: "2026-09-14",
+      to: "2026-09-20",
+      days: [
+        {
+          date: "2026-09-15",
+          day: 2,
+          replacesLessons: true,
+          schoolHours: { start: "08:00", end: "12:30" },
+          exams: [{ id: "e1", name: "Half-Yearly Exam", typeLabel: "Half-yearly exam", full: true }],
+          papers: [{ id: "p1", subject: { id: "maths", name: "Mathematics" }, date: "2026-09-15", startTime: "09:00", endTime: "10:00", durationMinutes: 60, topic: null, maxMarks: 50 }],
+        },
+      ],
+    },
+  };
+
+  it("shows the exam in place of that day's lessons, and reads this section's exams once", async () => {
+    const { calls } = openPage("/school-class/c5/timetable?section=c5-A", { "GET /exams/class": () => EXAM_WEEK });
+    const table = await screen.findByRole("table", { name: "Weekly timetable of Class 5 - A" });
+    const cell = await within(table).findByRole("cell", { name: "Half-Yearly Exam" });
+    expect(cell).toHaveTextContent("No regular lessons");
+    expect(within(table).queryByText("English")).not.toBeInTheDocument(); // Tuesday's lesson is off, Monday's Maths stays
+    expect(within(table).getByText("Mathematics", { selector: "span.text-xs" })).toBeInTheDocument();
+    const reads = calls.filter((c) => c.path === "/exams/class");
+    expect(reads).toHaveLength(1);
+    expect(reads[0].query).toBe("?classId=c5&sectionId=c5-A");
+  });
+
+  it("if the exams cannot be read the week shows as it is placed", async () => {
+    openPage("/school-class/c5/timetable?section=c5-A");
+    const table = await screen.findByRole("table", { name: "Weekly timetable of Class 5 - A" });
+    expect(within(table).getByText("English")).toBeInTheDocument();
   });
 });

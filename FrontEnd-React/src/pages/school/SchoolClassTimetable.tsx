@@ -1,5 +1,6 @@
 import { Link, useParams, useSearchParams } from "react-router";
 import { BookOpen, CalendarClock, Clock3, FolderTree, ListOrdered, Pencil, UserRound } from "lucide-react";
+import { useGetClassExamsQuery } from "../../redux/api/examsApi";
 import { useGetClassOverviewQuery } from "../../redux/api/studentsApi";
 import { useGetGridQuery } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
@@ -21,8 +22,9 @@ const outlineLink =
 /**
  * A class's Timetable & teachers (`/school-class/:classId/timetable`, from its School Class page): only this class, or one section of it
  * (`?section=`; a class with sections opens on its first one and switches with the section links). Four numbers (its class teacher or
- * N/A, its subjects, their periods a week, its school day), its teachers (the class teacher and each subject's teacher, picked here and
- * saved at once: it is the timetable's own list), its week as it is placed (to look at: Edit timetable opens the timetable on this class)
+ * N/A, its subjects, their periods a week, its school day), its teachers (the class teacher and each subject's teachers in tiles, picked
+ * here and saved with one Save button: it is the timetable's own list), its week as it is placed (to look at: Edit timetable, on the right
+ * of the Week heading, opens the timetable on this class)
  * and its timing, kind of day by kind of day. One read for the week (`/timetable/grid`), besides what the class page already read.
  */
 export default function SchoolClassTimetablePage() {
@@ -35,6 +37,8 @@ export default function SchoolClassTimetablePage() {
   const unit = { classId, sectionId: section?.id ?? null };
   const gridRes = useGetGridQuery(unit, { skip: !overview });
   const grid = gridRes.data?.data;
+  // This week's exam days of the class, so the week gives way on them (a failed read leaves the week as it is placed).
+  const examsRes = useGetClassExamsQuery(unit, { skip: !overview });
 
   if (overviewRes.error && !overview) {
     return (
@@ -84,12 +88,6 @@ export default function SchoolClassTimetablePage() {
           { label: "Classes", to: "/school-class" },
           { label: overview.name, to: `/school-class/${classId}${section ? `?section=${section.id}` : ""}` },
         ]}
-        actions={
-          <Link to={unitPath(unit)} className={outlineLink}>
-            <Pencil className="size-4" aria-hidden />
-            Edit timetable
-          </Link>
-        }
       />
 
       {hasSections && (
@@ -144,11 +142,17 @@ export default function SchoolClassTimetablePage() {
       ) : (
         <>
           <section aria-label="Week" className="space-y-3">
-            <div className="flex items-center gap-2.5">
-              <h2 className="text-lg font-bold tracking-tight text-foreground">Week</h2>
-              {grid.exists ? <Badge tone={grid.status === "published" ? "success" : "warning"}>{grid.status === "published" ? "Published" : "Draft"}</Badge> : <Badge>Not made yet</Badge>}
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-lg font-bold tracking-tight text-foreground">Week</h2>
+                {grid.exists ? <Badge tone={grid.status === "published" ? "success" : "warning"}>{grid.status === "published" ? "Published" : "Draft"}</Badge> : <Badge>Not made yet</Badge>}
+              </div>
+              <Link to={unitPath(unit)} className={outlineLink}>
+                <Pencil className="size-4" aria-hidden />
+                Edit timetable
+              </Link>
             </div>
-            <ClassWeekView view={grid} label={label} />
+            <ClassWeekView view={grid} label={label} examDays={examsRes.data?.data.week.days} />
           </section>
 
           <Card role="region" aria-label="Timing" className="space-y-2 p-4 sm:p-5">

@@ -44,3 +44,9 @@ export const TEACHER_LIMITS = {
   /** A teacher may be added this many days before they join. */
   daysBeforeJoining: 366,
 } as const;
+
+/** A bulk upload of teachers (the server's limits, backend/src/main/staff/constants.ts): a file may hold a school's most, and goes in parts. */
+export const TEACHER_IMPORT = { maxRows: 300, rowsPerRequest: 10, maxFileMb: 5, maxSubjects: 30 } as const;
+
+/** The words of the own-field dialog when the field is a teacher's (the students' are the dialog's default). */
+export const TEACHER_WORDS = { where: "Add teacher and the Excel", form: "Add teacher", who: "teachers" };

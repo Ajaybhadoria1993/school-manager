@@ -89,6 +89,8 @@ export interface AllotmentRow {
   blockSize: number;
   teacherId: string | null;
   teacherName: string | null;
+  /** The backup teachers in order (priority 2, 3...): they manage the subject when the main teacher cannot come. */
+  backups: { id: string; name: string }[];
   group: string | null;
 }
 

@@ -1,9 +1,11 @@
 import {
   Backpack,
   Building2,
+  CalendarCheck2,
   CalendarClock,
   CalendarDays,
   CalendarRange,
+  ClipboardList,
   FolderTree,
   GraduationCap,
   LayoutDashboard,
@@ -11,6 +13,7 @@ import {
   MailCheck,
   Rocket,
   School,
+  UserCog,
   UserRoundCheck,
   UsersRound,
   type LucideIcon,
@@ -44,6 +47,8 @@ export const NAV_ITEMS: NavItem[] = [
       "principal",
       "accountant",
       "teacher",
+      "receptionist",
+      "management",
       "parent",
       "student",
     ],
@@ -75,11 +80,29 @@ export const NAV_ITEMS: NavItem[] = [
     group: "Overview",
   },
   {
+    // The students' attendance of any class for any days, and the teachers' (who came and when), in tabs (2026-11-06). A teacher marks
+    // themselves present on their home; a class teacher takes a class's attendance in its work page.
+    label: "Attendance",
+    href: "/attendance",
+    icon: CalendarCheck2,
+    roles: ["school_admin", "principal"],
+    group: "Overview",
+  },
+  {
+    // The people who work for the school without teaching (a receptionist, an accountant, the management): added with a role and an email,
+    // invited by email, they set a password and sign in (2026-11-07). STAFF_MANAGERS in constants/staffMembers.ts.
+    label: "Staff",
+    href: "/staff",
+    icon: UserCog,
+    roles: ["school_admin", "principal"],
+    group: "Overview",
+  },
+  {
     // The school's holidays and events (2026-11-04): the school adds them, everyone of the school (teachers, parents) sees them.
     label: "Calendar",
     href: "/calendar",
     icon: CalendarDays,
-    roles: ["school_admin", "principal", "accountant", "teacher", "parent"],
+    roles: ["school_admin", "principal", "accountant", "teacher", "receptionist", "management", "parent"],
     group: "Overview",
   },
   {
@@ -125,6 +148,14 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Timetable",
     href: "/school/timetable",
     icon: CalendarClock,
+    roles: ["school_admin", "principal"],
+    group: "Manage school",
+  },
+  {
+    // Exams and tests of the year (2026-11-06): Half-Yearly, Annual, Unit, Monthly, Class test; which classes write what, when and for how long.
+    label: "Test & Exam",
+    href: "/school/exams",
+    icon: ClipboardList,
     roles: ["school_admin", "principal"],
     group: "Manage school",
   },
@@ -175,6 +206,8 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   principal: "Principal",
   accountant: "Accountant",
   teacher: "Teacher",
+  receptionist: "Receptionist",
+  management: "Management",
   parent: "Parent",
   student: "Student",
 };

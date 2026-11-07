@@ -98,7 +98,7 @@ describe("A teacher's page", () => {
     const { calls } = openPage(FULL);
     await screen.findByRole("heading", { name: "Meena Singh" });
     await screen.findByText("Mathematics");
-    expect(calls.filter((c) => c.method === "GET").map((c) => c.path).sort()).toEqual(["/staff/teachers/meena", "/staff/teachers/meena/classes", "/subjects"]);
+    expect(calls.filter((c) => c.method === "GET").map((c) => c.path).sort()).toEqual(["/staff/teachers/meena", "/staff/teachers/meena/classes", "/staff/teachers/settings", "/subjects"]);
   });
 
   it("goes to the week and to the change form", async () => {

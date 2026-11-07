@@ -6,7 +6,7 @@ import { RouterProvider, createMemoryRouter } from "react-router";
 import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
-import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
+import { fakeApi, spreadsheet, type Call, type Handler } from "../../../test/fakeApi";
 import { DEV, ENGLISH, MATHS, MEENA } from "../../../test/timetableFixtures";
 import type { Teacher } from "../../../types";
 import TeachersPage from "../Teachers";
@@ -21,6 +21,8 @@ function openPage(teachers: Teacher[], extra: Record<string, Handler> = {}) {
     [
       { path: "/school/teachers", element: <TeachersPage /> },
       { path: "/school/teachers/new", element: <p>Add a teacher page</p> },
+      { path: "/school/teachers/import", element: <p>Bulk upload page</p> },
+      { path: "/school/teachers/fields", element: <p>Teacher fields page</p> },
       { path: "/school/teachers/:id", element: <p>One teacher</p> },
       { path: "/school/teachers/:id/edit", element: <p>Change a teacher</p> },
       { path: "/school/timetable/teacher/:teacherId", element: <p>The week</p> },
@@ -118,6 +120,65 @@ describe("Teachers: the list", () => {
     for (const link of links) expect(link).toHaveAttribute("href", "/school/teachers/new");
     await user.click(links[0]);
     expect(router.state.location.pathname).toBe("/school/teachers/new");
+  });
+
+  it("goes to Bulk upload from the header button and from the empty page (2026-11-07)", async () => {
+    const { user, router } = openPage([]);
+    await screen.findByText("No teachers yet");
+    const links = screen.getAllByRole("link", { name: "Bulk upload" });
+    expect(links).toHaveLength(2);
+    for (const link of links) expect(link).toHaveAttribute("href", "/school/teachers/import");
+    await user.click(links[0]);
+    expect(router.state.location.pathname).toBe("/school/teachers/import");
+  });
+
+  it("has Bulk upload in the header when there are teachers, before Add teacher", async () => {
+    openPage([MEENA]);
+    await screen.findByText("Meena Singh");
+    const links = screen.getAllByRole("link", { name: "Bulk upload" });
+    expect(links).toHaveLength(1);
+    expect(links[0].nextElementSibling).toBe(screen.getByRole("link", { name: "Add teacher" }));
+  });
+
+  it("offers Export, before Bulk upload: the teachers of the tab and the search shown, as one Excel file (2026-11-07)", async () => {
+    const saved: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      saved.push(this.download);
+    });
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:teachers", revokeObjectURL: () => {} }));
+    const left = { ...MEENA, id: "gone", name: "Old Teacher", isActive: false };
+    const { calls, user } = openPage([MEENA, left], { "GET /staff/teachers/export": () => spreadsheet("teachers-sunrise-public-school-2026-11-07.xlsx") });
+    await screen.findByText("Meena Singh");
+    const exportButton = screen.getByRole("button", { name: "Export" });
+    expect(exportButton.nextElementSibling).toBe(screen.getByRole("link", { name: "Bulk upload" }));
+    await user.click(exportButton);
+    await waitFor(() => expect(saved).toEqual(["teachers-sunrise-public-school-2026-11-07.xlsx"]));
+    expect(Object.fromEntries(new URLSearchParams(calls.filter((c) => c.path === "/staff/teachers/export")[0].query))).toEqual({ status: "active" });
+
+    // The Left tab and a search: the file is those.
+    await user.click(screen.getByRole("tab", { name: "Left" }));
+    await screen.findByText("Old Teacher");
+    await user.type(screen.getByLabelText("Search teachers"), "old");
+    await waitFor(() => expect(lists(calls).at(-1)?.query).toContain("search=old"));
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    await waitFor(() => expect(calls.filter((c) => c.path === "/staff/teachers/export")).toHaveLength(2));
+    expect(Object.fromEntries(new URLSearchParams(calls.filter((c) => c.path === "/staff/teachers/export")[1].query))).toEqual({ status: "inactive", search: "old" });
+  });
+
+  it("has a Fields button, first in the header: the school's own fields for its teachers (2026-11-07)", async () => {
+    const { user, router } = openPage([MEENA]);
+    await screen.findByText("Meena Singh");
+    const fields = screen.getByRole("link", { name: "Fields" });
+    expect(fields).toHaveAttribute("href", "/school/teachers/fields");
+    expect(fields.nextElementSibling).toBe(screen.getByRole("button", { name: "Export" }));
+    await user.click(fields);
+    expect(router.state.location.pathname).toBe("/school/teachers/fields");
+  });
+
+  it("has nothing to export while the school has no teacher", async () => {
+    openPage([]);
+    await screen.findByText("No teachers yet");
+    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
   });
 
   it("brings back a teacher who had left", async () => {

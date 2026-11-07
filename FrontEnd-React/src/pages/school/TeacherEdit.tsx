@@ -3,10 +3,13 @@ import { Link, useNavigate, useParams } from "react-router";
 import { Save } from "lucide-react";
 import { useTeacherBase } from "../../hooks/useTeacherBase";
 import { useTeacherForm } from "../../hooks/useTeacherForm";
-import { useGetTeacherQuery, useUpdateTeacherMutation } from "../../redux/api/timetableApi";
+import type { CustomFieldDef } from "../../constants/studentFields";
+import { useGetTeacherQuery, useGetTeacherSettingsQuery, useUpdateTeacherMutation } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
 import { formFromTeacher, stepOfKey, toTeacherInput, type TeacherFormKey } from "../../utils/teachers";
+import { askedFields, ownAnswersOf, ownFieldId, ownProblems, ownValuesOf, refusedOwn, type OwnValues } from "../../utils/teacherOwn";
 import type { Teacher } from "../../types";
+import { OwnFieldsCard } from "../../components/teachers/OwnFieldsCard";
 import { JobFields, PersonalFields, TeachingFields } from "../../components/teachers/TeacherFields";
 import { FormActionBar } from "../../components/students/form/FormActionBar";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
@@ -31,9 +34,11 @@ export default function TeacherEditPage() {
   const { id = "" } = useParams();
   const { base, label } = useTeacherBase();
   const res = useGetTeacherQuery(id);
+  // The school's own fields are read with the page: the form starts with them (a failed read is a form without them).
+  const settings = useGetTeacherSettingsQuery();
   const teacher = res.data?.data;
 
-  if (res.isLoading) {
+  if (res.isLoading || settings.isLoading) {
     return (
       <div className="space-y-6" aria-busy="true">
         <Skeleton className="h-14 rounded-2xl" />
@@ -55,10 +60,10 @@ export default function TeacherEditPage() {
       </div>
     );
   }
-  return <EditForm teacher={teacher} />;
+  return <EditForm teacher={teacher} fields={askedFields(settings.data?.data.customFields)} />;
 }
 
-function EditForm({ teacher }: { teacher: Teacher }) {
+function EditForm({ teacher, fields }: { teacher: Teacher; fields: CustomFieldDef[] }) {
   const navigate = useNavigate();
   const { base, label } = useTeacherBase();
   const { push } = useToast();
@@ -67,6 +72,13 @@ function EditForm({ teacher }: { teacher: Teacher }) {
   const hasLogin = teacher.login !== null;
   const form = useTeacherForm(initial, hasLogin ? WITH_LOGIN_BOXES : WITHOUT_LOGIN);
   const [formError, setFormError] = useState<string | null>(null);
+  // The school's own fields the school asks: their boxes, kept apart from the form's own (the page sends both).
+  const initialOwn = useMemo(() => ownValuesOf(fields, teacher.custom), [fields, teacher.custom]);
+  const [ownValues, setOwnValues] = useState<OwnValues>(initialOwn);
+  const [ownShown, setOwnShown] = useState(false);
+  const [ownServer, setOwnServer] = useState<Record<string, string>>({});
+  const ownChanged = JSON.stringify(ownValues) !== JSON.stringify(initialOwn);
+  const ownErrors = { ...(ownShown ? ownProblems(fields, ownValues) : {}), ...ownServer };
 
   // The login's own boxes are not on this form: they are not asked here, whatever they hold.
   const problemKeys = (Object.keys(form.problems) as TeacherFormKey[]).filter((k) => stepOfKey(k) !== "login");
@@ -75,22 +87,27 @@ function EditForm({ teacher }: { teacher: Teacher }) {
     e.preventDefault();
     if (saving) return;
     setFormError(null);
-    if (problemKeys.length > 0) {
+    const ownWrong = Object.keys(ownProblems(fields, ownValues));
+    if (problemKeys.length > 0 || ownWrong.length > 0) {
       form.reveal(problemKeys);
-      form.focusFirst(problemKeys);
+      setOwnShown(true);
+      if (problemKeys.length > 0) form.focusFirst(problemKeys);
+      else document.getElementById(ownFieldId(ownWrong[0]))?.focus();
       setFormError("Some boxes need a change: see the messages in red.");
       return;
     }
     try {
-      await update({ id: teacher.id, ...toTeacherInput(form.values, WITHOUT_LOGIN) }).unwrap();
+      await update({ id: teacher.id, ...toTeacherInput(form.values, WITHOUT_LOGIN), ...(fields.length > 0 ? { custom: ownAnswersOf(fields, ownValues, "change") } : {}) }).unwrap();
       push("success", `${form.values.name.trim()} is saved`);
       navigate(`${base}/${teacher.id}`);
     } catch (err) {
       const error = getApiError(err);
       const keys = form.showServerErrors(error?.details);
-      if (keys.length > 0) {
+      const ownRefused = refusedOwn(error?.details);
+      if (Object.keys(ownRefused).length > 0) setOwnServer(ownRefused);
+      if (keys.length > 0 || Object.keys(ownRefused).length > 0) {
         setFormError("Some boxes need a change: see the messages in red.");
-        form.focusFirst(keys);
+        if (keys.length > 0) form.focusFirst(keys);
       } else {
         setFormError(error?.message ?? "Could not save the teacher. Please try again.");
       }
@@ -105,11 +122,22 @@ function EditForm({ teacher }: { teacher: Teacher }) {
 
       <PersonalFields form={form} needed={hasLogin} genderNeeded={false} />
       <JobFields form={form} index={2} />
+      {fields.length > 0 && (
+        <OwnFieldsCard
+          fields={fields}
+          values={ownValues}
+          errors={ownErrors}
+          onChange={(key, value) => {
+            setOwnValues((now) => ({ ...now, [key]: value }));
+            setOwnServer(({ [key]: _gone, ...rest }) => rest);
+          }}
+        />
+      )}
       <TeachingFields form={form} index={3} />
 
       <FormActionBar>
         <span />
-        <Button type="submit" size="lg" loading={saving} disabled={!form.changed}>
+        <Button type="submit" size="lg" loading={saving} disabled={!form.changed && !ownChanged}>
           {!saving && <Save className="size-4" aria-hidden />}
           Save changes
         </Button>

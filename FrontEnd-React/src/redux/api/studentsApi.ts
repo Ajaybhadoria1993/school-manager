@@ -223,7 +223,7 @@ export const studentsApi = createApi({
      * A spreadsheet the server makes (the sample template, the export): saved by the browser under the server's name. Nothing is
      * cached (only a null lands in the store; the file goes straight to the browser).
      */
-    downloadSheet: build.mutation<null, { url: "/students/import/template" | "/students/export"; params?: Record<string, string>; fallbackName: string }>({
+    downloadSheet: build.mutation<null, { url: "/students/import/template" | "/students/export" | "/staff/teachers/import/template" | "/staff/teachers/export"; params?: Record<string, string>; fallbackName: string }>({
       async queryFn({ url, params, fallbackName }, _api, _extra, baseQuery) {
         const result = await baseQuery({
           url,

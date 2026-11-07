@@ -4,11 +4,13 @@ import { ArrowLeft, ArrowRight, CircleCheck, UserPlus } from "lucide-react";
 import { teacherFieldId, useTeacherForm } from "../../hooks/useTeacherForm";
 import { useFreeUsername, useUsernameCheck } from "../../hooks/useUsernameCheck";
 import { useTeacherBase } from "../../hooks/useTeacherBase";
-import { useCreateTeacherMutation } from "../../redux/api/timetableApi";
+import { useCreateTeacherMutation, useGetTeacherSettingsQuery } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
 import { TEACHER_STEPS, emptyTeacherForm, generatePassword, problemKeysOf, stepOfKey, toTeacherInput, usernameFor, type TeacherFormKey } from "../../utils/teachers";
+import { askedFields, ownAnswersOf, ownFieldId, ownProblems, refusedOwn, type OwnValues } from "../../utils/teacherOwn";
 import type { Teacher } from "../../types";
 import { CredentialsCard } from "../../components/teachers/CredentialsCard";
+import { OwnFieldsCard } from "../../components/teachers/OwnFieldsCard";
 import { JobFields, LoginFields, PersonalFields, TeachingFields } from "../../components/teachers/TeacherFields";
 import { FormActionBar } from "../../components/students/form/FormActionBar";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
@@ -34,6 +36,12 @@ export default function TeacherAddPage() {
   const crumbs = [{ label, to: base }];
   const [create, { isLoading: sending }] = useCreateTeacherMutation();
   const form = useTeacherForm(useMemo(emptyTeacherForm, []), WITH_LOGIN);
+  // The school's own fields the school asks (Teacher > Fields): asked in the Job step, sent with the teacher.
+  const own = askedFields(useGetTeacherSettingsQuery().data?.data.customFields);
+  const [ownValues, setOwnValues] = useState<OwnValues>({});
+  const [ownShown, setOwnShown] = useState(false);
+  const [ownServer, setOwnServer] = useState<Record<string, string>>({});
+  const ownErrors = { ...(ownShown ? ownProblems(own, ownValues) : {}), ...ownServer };
 
   const [position, setPosition] = useState(0);
   const [furthest, setFurthest] = useState(0);
@@ -87,6 +95,13 @@ export default function TeacherAddPage() {
       form.focusFirst(wrong);
       return;
     }
+    // The Job step also holds the school's own fields: a needed one left empty, or a wrong answer, holds Next back.
+    const ownWrong = step.key === "job" ? Object.keys(ownProblems(own, ownValues)) : [];
+    if (ownWrong.length > 0) {
+      setOwnShown(true);
+      document.getElementById(ownFieldId(ownWrong[0]))?.focus();
+      return;
+    }
     setPassed((p) => (p.includes(position) ? p : [...p, position]));
     openStep(position + 1);
   }
@@ -94,12 +109,17 @@ export default function TeacherAddPage() {
   async function send() {
     setFormError(null);
     try {
-      const res = await create(toTeacherInput(form.values, WITH_LOGIN)).unwrap();
+      const res = await create({ ...toTeacherInput(form.values, WITH_LOGIN), ...(own.length > 0 ? { custom: ownAnswersOf(own, ownValues, "add") } : {}) }).unwrap();
       setAdded({ teacher: res.data, password: form.values.password });
     } catch (err) {
       const error = getApiError(err);
       const keys = form.showServerErrors(error?.details);
-      if (keys.length > 0) {
+      const ownRefused = refusedOwn(error?.details);
+      if (Object.keys(ownRefused).length > 0) {
+        setOwnServer(ownRefused);
+        setFormError("Some boxes need a change: see the messages in red.");
+        openStep(TEACHER_STEPS.findIndex((s) => s.key === "job"));
+      } else if (keys.length > 0) {
         setFormError("Some boxes need a change: see the messages in red.");
         showStepOf(keys);
       } else {
@@ -126,6 +146,14 @@ export default function TeacherAddPage() {
       else form.focusFirst(problemKeysOf(form.problems, step.key));
       return;
     }
+    // The school's own fields: a needed one left empty, or a wrong answer, is said in the Job step.
+    const ownWrong = Object.keys(ownProblems(own, ownValues));
+    if (ownWrong.length > 0) {
+      setOwnShown(true);
+      setFormError("Some boxes need a change: see the messages in red.");
+      if (step.key !== "job") openStep(TEACHER_STEPS.findIndex((s) => s.key === "job"));
+      return;
+    }
     // Taken, as the box already says (with free ones under it): nothing is sent.
     if (usernameCheck.state === "taken") {
       document.getElementById(teacherFieldId("username"))?.focus();
@@ -136,6 +164,9 @@ export default function TeacherAddPage() {
 
   function startAgain() {
     form.reset(emptyTeacherForm());
+    setOwnValues({});
+    setOwnShown(false);
+    setOwnServer({});
     setPosition(0);
     setFurthest(0);
     setPassed([]);
@@ -178,7 +209,23 @@ export default function TeacherAddPage() {
       {/* `key` gives each step a fresh start; the values are the form's, so nothing typed is lost by moving. */}
       <div key={step.key} className="rise-in min-w-0 space-y-6">
         {step.key === "personal" && <PersonalFields form={form} needed />}
-        {step.key === "job" && <JobFields form={form} />}
+        {step.key === "job" && (
+          <>
+            <JobFields form={form} />
+            {own.length > 0 && (
+              <OwnFieldsCard
+                index={1}
+                fields={own}
+                values={ownValues}
+                errors={ownErrors}
+                onChange={(key, value) => {
+                  setOwnValues((now) => ({ ...now, [key]: value }));
+                  setOwnServer(({ [key]: _gone, ...rest }) => rest);
+                }}
+              />
+            )}
+          </>
+        )}
         {step.key === "teaching" && <TeachingFields form={form} />}
         {step.key === "login" && <LoginFields form={form} check={usernameCheck} />}
       </div>

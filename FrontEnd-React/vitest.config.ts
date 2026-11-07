@@ -12,8 +12,9 @@ export default defineConfig({
     // The app's CSS is not needed to test what a component does.
     css: false,
     restoreMocks: true,
-    // A page test types and clicks through HeroUI in a simulated browser: slow when several files run at once.
-    testTimeout: 15000,
+    // A page test types and clicks through HeroUI in a simulated browser: slow when several files run at once (the biggest pages take 10 to 14 s
+    // alone, so 15 s made the full run fail for load, not for a bug).
+    testTimeout: 30000,
     // A whole address for the API (no dev server to forward "/api" here); the page tests answer every request themselves.
     env: { VITE_API_BASE_URL: "http://localhost/api/v1" },
   },

@@ -6,6 +6,8 @@ export type UserRole =
   | "principal"
   | "accountant"
   | "teacher"
+  | "receptionist"
+  | "management"
   | "parent"
   | "student";
 
@@ -42,7 +44,10 @@ export interface InviteInfo {
   schoolName: string;
   expiresAt: string;
   /** "invite": the platform team invited this school. "signup": the visitor registered from the login page. */
-  kind: "invite" | "signup";
+  kind: "invite" | "signup" | "staff";
+  /** A staff invitation: who is invited and as what (the page greets them by it). */
+  name?: string;
+  roleLabel?: string;
 }
 
 /** Why a session was ended for the user (shown on the sign-in page). */

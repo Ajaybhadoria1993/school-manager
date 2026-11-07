@@ -78,12 +78,12 @@ describe("A teacher's home", () => {
     }
   });
 
-  it("asks only for the teacher's own record, their classes and the subject names, nothing of the school's setup", async () => {
+  it("asks only for the teacher's own record, their classes, their own attendance of the day and the subject names, nothing of the school's setup", async () => {
     const calls = openPage("teacher", { "GET /staff/teachers/me": () => OWN, "GET /subjects": () => ({ items: [MATHS] }), "GET /classroom/my-classes": () => ({ items: [] }) });
     await screen.findByRole("region", { name: "About you" });
     await screen.findByText("Mathematics");
-    // My classes (docs/parent-teacher-flow.md, 2026-11-04) is on the teacher's home too.
-    expect([...paths(calls)].sort()).toEqual(["GET /classroom/my-classes", "GET /staff/teachers/me", "GET /subjects"]);
+    // My classes (docs/parent-teacher-flow.md, 2026-11-04) and My attendance (2026-11-06) are on the teacher's home too.
+    expect([...paths(calls)].sort()).toEqual(["GET /attendance/teachers/me", "GET /classroom/my-classes", "GET /staff/teachers/me", "GET /subjects"]);
   });
 
   it("says so when the login is not tied to a teacher record", async () => {
@@ -100,5 +100,34 @@ describe("The school's dashboard", () => {
     expect(await screen.findByText("Approved and live")).toBeInTheDocument();
     expect(screen.getByText("Administrators")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "About you" })).not.toBeInTheDocument();
+  });
+
+  it.each(["principal", "accountant"] as const)("is still what the %s sees (added from Staff, with the school's pages)", async (role) => {
+    openPage(role);
+    expect(await screen.findByText("Approved and live")).toBeInTheDocument();
+  });
+});
+
+describe("The home of a receptionist or a member of the management (Staff > Add staff)", () => {
+  it.each([
+    ["receptionist", "Receptionist"],
+    ["management", "Management"],
+  ] as const)("greets the %s and shows who they are signed in as, and asks the server for nothing", async (role, label) => {
+    const calls = openPage(role);
+    expect(await screen.findByRole("heading", { name: /Good (morning|afternoon|evening), Meena/ })).toBeInTheDocument();
+    const about = await screen.findByRole("region", { name: "About you" });
+    expect(about).toHaveTextContent("Meena Singh");
+    expect(about).toHaveTextContent(label);
+    expect(about).toHaveTextContent("m@school.example");
+    expect(about).toHaveTextContent("Sunrise Public School");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("is not the school's dashboard: no admin tiles, no shortcuts, no sample charts, and not a teacher's home", async () => {
+    openPage("receptionist");
+    await screen.findByRole("region", { name: "About you" });
+    for (const text of ["Administrators", "You, as the school admin", "Add a student", "Send a notice", "Sample data", "Approved and live", "My classes"]) {
+      expect(screen.queryByText(text), text).not.toBeInTheDocument();
+    }
   });
 });

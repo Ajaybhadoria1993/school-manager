@@ -9,6 +9,7 @@ import { Block, None, Row } from "../teachers/DetailBlocks";
 import { Badge } from "../ui/Badge";
 import { Card } from "../ui/Card";
 import { Skeleton } from "../ui/Skeleton";
+import { MyAttendanceCard } from "./MyAttendanceCard";
 import { MyClasses } from "./MyClasses";
 import { WelcomeHeader } from "./school/WelcomeHeader";
 
@@ -28,6 +29,9 @@ export function TeacherDashboard() {
   return (
     <div className="space-y-6">
       <WelcomeHeader firstName={user.name.split(" ")[0]} schoolName={tenant?.name ?? "your school"} shortcuts={false} />
+
+      {/* The teacher's own attendance first: they mark themselves present here (2026-11-06). */}
+      <MyAttendanceCard />
 
       <MyClasses />
 

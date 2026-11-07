@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CalendarCheck2, ChevronLeft, ChevronRight } from "lucide-react";
 import { useGetChildAttendanceQuery } from "../../redux/api/parentApi";
-import { monthTitle, shortDay } from "../../utils/calendar";
+import { monthTitle, shiftMonth, shortDay } from "../../utils/calendar";
 import { cn } from "../../utils/helpers";
 import type { AttendanceStatus } from "../../types";
 import { Button } from "../ui/Button";
@@ -13,12 +13,6 @@ const LOOK: Record<AttendanceStatus, { label: string; chip: string }> = {
   absent: { label: "Absent", chip: "bg-danger-soft text-danger" },
   late: { label: "Late", chip: "bg-warning-soft text-warning" },
   leave: { label: "Leave", chip: "bg-info-soft text-info" },
-};
-
-const shiftMonth = (month: string, n: number) => {
-  const [y, m] = month.split("-").map(Number);
-  const d = new Date(Date.UTC(y, m - 1 + n, 1));
-  return d.toISOString().slice(0, 7);
 };
 
 /**
@@ -64,6 +58,7 @@ export function ChildAttendance({ childId }: { childId: string }) {
                 <li key={d.date} aria-label={shortDay(d.date)} className={cn("rounded-lg px-2.5 py-1.5 text-xs font-bold", LOOK[d.status].chip)}>
                   <span className="block">{shortDay(d.date)}</span>
                   <span className="block font-semibold opacity-80">{LOOK[d.status].label}</span>
+                  {d.reason && <span className="block max-w-[10rem] font-medium opacity-90">{d.reason}</span>}
                 </li>
               ))}
             </ul>

@@ -6,7 +6,7 @@ import { RouterProvider, createMemoryRouter } from "react-router";
 import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
-import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
+import { fakeApi, spreadsheet, type Call, type Handler } from "../../../test/fakeApi";
 import { STRUCTURE } from "../../../test/schoolClass";
 import { DEV, ENGLISH, MATHS, MEENA } from "../../../test/timetableFixtures";
 import type { Teacher } from "../../../types";
@@ -36,6 +36,8 @@ function openPage(path = "/teachers", extra: Record<string, Handler> = {}) {
     [
       { path: "/teachers", element: <TeacherDirectoryPage /> },
       { path: "/teachers/new", element: <p>Add teacher</p> },
+      { path: "/teachers/import", element: <p>Bulk upload teachers</p> },
+      { path: "/teachers/fields", element: <p>Teacher fields</p> },
       { path: "/teachers/:id", element: <p>One teacher</p> },
       { path: "/teachers/:id/edit", element: <p>Change teacher</p> },
     ],
@@ -77,6 +79,73 @@ describe("Teacher (the menu entry on top)", () => {
     const counts = screen.getByRole("region", { name: "Teacher counts" });
     await waitFor(() => expect(counts).toHaveTextContent(/Teachers\s*3.*Class teachers\s*1.*Without classes\s*1.*Have left\s*2/));
     expect(calls.filter((c) => c.path === "/staff/teachers/summary")).toHaveLength(1);
+  });
+
+  it("offers Bulk upload next to Add teacher: the teachers a school already has, from Excel (2026-11-07)", async () => {
+    const { user, router } = openPage();
+    await screen.findByRole("heading", { name: "All Teachers", level: 1 });
+    const bulk = screen.getByRole("link", { name: "Bulk upload" });
+    expect(bulk).toHaveAttribute("href", "/teachers/import");
+    // Beside Add teacher, in front of it (the main button stays last).
+    expect(bulk.nextElementSibling).toBe(screen.getByRole("link", { name: "Add teacher" }));
+    await user.click(bulk);
+    expect(router.state.location.pathname).toBe("/teachers/import");
+  });
+
+  it("offers Export, before Bulk upload and Add teacher: the teachers the list shows, with its search and filters, as one Excel file (2026-11-07)", async () => {
+    const saved: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      saved.push(this.download);
+    });
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:teachers", revokeObjectURL: () => {} }));
+    const { calls, user } = openPage("/teachers?status=all&q=asha&subject=maths&class=c5&designation=PGT%20(Post%20graduate%20teacher)", {
+      "GET /staff/teachers/export": () => spreadsheet("teachers-sunrise-public-school-2026-11-07.xlsx"),
+    });
+    await screen.findByRole("heading", { name: "All Teachers", level: 1 });
+    const exportButton = screen.getByRole("button", { name: "Export" });
+    expect(exportButton.nextElementSibling).toBe(screen.getByRole("link", { name: "Bulk upload" }));
+    await waitFor(() => expect(exportButton).toBeEnabled());
+    expect(calls.filter((c) => c.path === "/staff/teachers/export")).toHaveLength(0);
+    await user.click(exportButton);
+    await waitFor(() => expect(saved).toEqual(["teachers-sunrise-public-school-2026-11-07.xlsx"]));
+    const asked = calls.filter((c) => c.path === "/staff/teachers/export");
+    expect(asked).toHaveLength(1);
+    const query = new URLSearchParams(asked[0].query);
+    expect(Object.fromEntries(query)).toEqual({ status: "all", search: "asha", subjectId: "maths", classId: "c5", designation: "PGT (Post graduate teacher)" });
+  });
+
+  it("says why the Export failed, and saves nothing", async () => {
+    const saved: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      saved.push(this.download);
+    });
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:teachers", revokeObjectURL: () => {} }));
+    const { user } = openPage("/teachers", {
+      "GET /staff/teachers/export": () => new Response(JSON.stringify({ success: false, message: "The file could not be made. Try again in a minute." }), { status: 500, headers: { "Content-Type": "application/json" } }),
+    });
+    await screen.findByRole("heading", { name: "All Teachers", level: 1 });
+    const exportButton = screen.getByRole("button", { name: "Export" });
+    await waitFor(() => expect(exportButton).toBeEnabled());
+    await user.click(exportButton);
+    expect(await screen.findByText("The file could not be made. Try again in a minute.")).toBeInTheDocument();
+    expect(saved).toEqual([]);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Export" })).toBeEnabled());
+  });
+
+  it("has a Fields button, first in the header: the school's own fields for its teachers (2026-11-07)", async () => {
+    const { user, router } = openPage();
+    await screen.findByRole("heading", { name: "All Teachers", level: 1 });
+    const fields = screen.getByRole("link", { name: "Fields" });
+    expect(fields).toHaveAttribute("href", "/teachers/fields");
+    expect(fields.nextElementSibling).toBe(screen.getByRole("button", { name: "Export" }));
+    await user.click(fields);
+    expect(router.state.location.pathname).toBe("/teachers/fields");
+  });
+
+  it("has nothing to export while the list shows nobody", async () => {
+    openPage("/teachers", { "GET /staff/teachers": () => ({ items: [] }) });
+    expect(await screen.findByText("No teachers yet")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
   });
 
   it("lists every teacher: who they are, how to reach them, what they teach, their class, their username and whether they teach here", async () => {

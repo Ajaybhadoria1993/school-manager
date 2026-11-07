@@ -47,6 +47,8 @@ export const MIN_PERIOD_MINUTES = 10;
 export const MAX_PERIOD_MINUTES = 120;
 export const MAX_BREAK_MINUTES = 180;
 export const MAX_PERIODS_PER_WEEK = 20;
+/** Teachers after the main one (priority 2, 3...) a subject of a class can have; the server refuses more. */
+export const MAX_BACKUP_TEACHERS = 4;
 export const MAX_SAME_SUBJECT_PER_DAY = 2;
 export const TIME_MESSAGE = "Enter a time like 08:30";
 

@@ -23,6 +23,9 @@ export default defineConfig({
       DISABLE_RATE_LIMIT: "1",
       LOGIN_RATE_LIMIT_MAX: "5",
       SMTP_HOST: "",
+      // The standard holidays (Diwali, Republic Day...) are off, so a test that takes attendance "today" does not depend on today being
+      // one. The tests of the standard holidays switch them on (calendar.test.ts).
+      STANDARD_HOLIDAYS: "off",
     },
     // Several suites wipe shared collections between cases, so files must not run in parallel.
     fileParallelism: false,

@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router";
-import { AtSign, BookOpen, Briefcase, CalendarDays, KeyRound, LogOut, Pencil, Repeat2, RotateCcw, UserRound, UserRoundCog } from "lucide-react";
+import { AtSign, BookOpen, Briefcase, CalendarDays, KeyRound, ListPlus, LogOut, Pencil, Repeat2, RotateCcw, UserRound, UserRoundCog } from "lucide-react";
 import { employmentLabel } from "../../constants/teachers";
 import { useTeacherBase } from "../../hooks/useTeacherBase";
 import { DAY_SHORT } from "../../constants/timetable";
-import { useGetSubjectsQuery, useGetTeacherQuery, useUpdateTeacherMutation } from "../../redux/api/timetableApi";
+import { useGetSubjectsQuery, useGetTeacherQuery, useGetTeacherSettingsQuery, useUpdateTeacherMutation } from "../../redux/api/timetableApi";
 import { formatDay } from "../../utils/academicYear";
 import { getApiError } from "../../utils/apiErrors";
+import { askedFields, ownAnswerText } from "../../utils/teacherOwn";
 import { formatMobile } from "../../utils/students";
 import type { Teacher } from "../../types";
 import { AssignClassDialog } from "../../components/teachers/AssignClassDialog";
@@ -40,6 +41,8 @@ export default function TeacherDetailPage() {
   const res = useGetTeacherQuery(id);
   const subjectNames = new Map((useGetSubjectsQuery("all").data?.data.items ?? []).map((s) => [s.id, s.name]));
   const [update] = useUpdateTeacherMutation();
+  // The school's own fields the school asks (Teacher > Fields): a card of their answers.
+  const own = askedFields(useGetTeacherSettingsQuery().data?.data.customFields);
   const { push } = useToast();
   const [dialog, setDialog] = useState<"password" | "login" | "leave" | "replace" | "username" | "assign" | null>(null);
   const t = res.data?.data;
@@ -155,6 +158,16 @@ export default function TeacherDetailPage() {
             )}
           </Row>
         </Block>
+
+        {own.length > 0 && (
+          <Block icon={ListPlus} tone="success" title="Your own fields" index={4}>
+            {own.map((f) => (
+              <Row key={f.key} label={f.label}>
+                {ownAnswerText(f, t.custom?.[f.key]) ?? <None />}
+              </Row>
+            ))}
+          </Block>
+        )}
 
         <Block icon={KeyRound} tone="warning" title="Login" index={3}>
           {t.login ? (

@@ -134,12 +134,13 @@ describe("Add teacher: the steps", () => {
   it("asks for the subjects only on the Teaching step, once", async () => {
     const { calls, user } = openPage();
     await screen.findByLabelText(/^Name/);
-    expect(reads(calls)).toHaveLength(0);
+    // Only the school's own fields (Teacher > Fields) are read with the page.
+    expect(reads(calls).map((c) => c.path)).toEqual(["/staff/teachers/settings"]);
     await fillPersonal(user);
     await next(user);
     await next(user);
     expect(await screen.findByRole("button", { name: "Mathematics" })).toBeInTheDocument();
-    expect(reads(calls).map((c) => c.path)).toEqual(["/subjects"]);
+    expect(reads(calls).map((c) => c.path)).toEqual(["/staff/teachers/settings", "/subjects"]);
   });
 });
 

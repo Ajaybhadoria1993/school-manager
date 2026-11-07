@@ -1,6 +1,11 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
+import { configure } from "@testing-library/dom";
+
+// findBy... and waitFor give a slow page 5 s (the default is 1 s): the biggest pages take seconds to answer when several test files run at
+// once, and a test that fails for load, not for a bug, hides the ones that do.
+configure({ asyncUtilTimeout: 5000 });
 
 // Each test starts from an empty page.
 afterEach(() => cleanup());

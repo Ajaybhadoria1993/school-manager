@@ -18,15 +18,16 @@ const KINDS: { value: CalendarKind; label: string }[] = [
 ];
 
 /**
- * Add (or change) a holiday or an event: its name, Holiday or Event, the first day (Today / Tomorrow in one click), the last day for a
- * few days (empty: one day), a note. Save closes it and the page says it is done (`onDone`).
+ * Add (or change) a holiday or an event: its name, Holiday or Event, the first day (Today / Tomorrow in one click; a day clicked on the
+ * calendar is already there, `initialDay`), the last day for a few days (empty: one day), a note. Save closes it and the page says it is
+ * done (`onDone`).
  */
-export function EventDialog({ event, onClose, onDone }: { event: CalendarEvent | null; onClose: () => void; onDone: (title: string, message: string) => void }) {
+export function EventDialog({ event, initialDay, onClose, onDone }: { event: CalendarEvent | null; initialDay?: string; onClose: () => void; onDone: (title: string, message: string) => void }) {
   const [create] = useCreateEventMutation();
   const [update] = useUpdateEventMutation();
   const [title, setTitle] = useState(event?.title ?? "");
   const [kind, setKind] = useState<CalendarKind>(event?.kind ?? "holiday");
-  const [startDate, setStartDate] = useState(event?.startDate ?? "");
+  const [startDate, setStartDate] = useState(event?.startDate ?? initialDay ?? "");
   const [endDate, setEndDate] = useState(event && event.endDate !== event.startDate ? event.endDate : "");
   const [note, setNote] = useState(event?.note ?? "");
   const [tried, setTried] = useState(false);

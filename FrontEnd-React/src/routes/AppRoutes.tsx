@@ -57,8 +57,16 @@ const routes: RouteObject[] = [
               { path: "school-class/:classId", ...lazyRoute(() => import("../pages/school/SchoolClassDetail")) },
               // Teacher (the menu entry on top): every teacher, and each one's page and change form under the same address.
               { path: "teachers", ...lazyRoute(() => import("../pages/teachers/TeacherDirectory")) },
+              // Attendance (under Teacher in the menu): the students' of any class and the teachers', in tabs.
+              { path: "attendance", ...lazyRoute(() => import("../pages/attendance/AttendancePage")) },
               { path: "school-class/:classId/timetable", ...lazyRoute(() => import("../pages/school/SchoolClassTimetable")) },
               { path: "teachers/new", ...lazyRoute(() => import("../pages/school/TeacherAdd")) },
+              // Staff: the people who work for the school without teaching (a role each, invited by email).
+              { path: "staff", ...lazyRoute(() => import("../pages/staff/StaffDirectory")) },
+              { path: "staff/new", ...lazyRoute(() => import("../pages/staff/StaffAdd")) },
+              { path: "staff/:id/edit", ...lazyRoute(() => import("../pages/staff/StaffEdit")) },
+              { path: "teachers/import", ...lazyRoute(() => import("../pages/school/TeacherImport")) },
+              { path: "teachers/fields", ...lazyRoute(() => import("../pages/school/TeacherFields")) },
               { path: "teachers/:id", ...lazyRoute(() => import("../pages/school/TeacherDetail")) },
               { path: "teachers/:id/edit", ...lazyRoute(() => import("../pages/school/TeacherEdit")) },
               { path: "school/classes", ...lazyRoute(() => import("../pages/school/Classes")) },
@@ -80,8 +88,13 @@ const routes: RouteObject[] = [
               // Teachers: the list, the Add teacher steps, one teacher's page and the change form (fixed paths before ":id").
               { path: "school/teachers", ...lazyRoute(() => import("../pages/school/Teachers")) },
               { path: "school/teachers/new", ...lazyRoute(() => import("../pages/school/TeacherAdd")) },
+              { path: "school/teachers/import", ...lazyRoute(() => import("../pages/school/TeacherImport")) },
+              { path: "school/teachers/fields", ...lazyRoute(() => import("../pages/school/TeacherFields")) },
               { path: "school/teachers/:id", ...lazyRoute(() => import("../pages/school/TeacherDetail")) },
               { path: "school/teachers/:id/edit", ...lazyRoute(() => import("../pages/school/TeacherEdit")) },
+              // Test & Exam: the year's exams and tests, and one exam's timetable (which classes write what, when, for how long).
+              { path: "school/exams", ...lazyRoute(() => import("../pages/school/Exams")) },
+              { path: "school/exams/:id", ...lazyRoute(() => import("../pages/school/ExamDetail")) },
               // Students: the list, the admission form, the bulk upload, the export (the school's fields and Excel layout), one student's page (fixed paths before ":id").
               { path: "school/students", ...lazyRoute(() => import("../pages/school/Students")) },
               { path: "school/students/new", ...lazyRoute(() => import("../pages/school/StudentAdmit")) },

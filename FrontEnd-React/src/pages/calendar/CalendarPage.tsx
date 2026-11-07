@@ -1,15 +1,20 @@
 import { useMemo, useState } from "react";
-import { CalendarDays, CalendarPlus, Pencil, Trash2 } from "lucide-react";
+import { CalendarPlus, Trash2 } from "lucide-react";
 import { Button as HeroButton } from "@heroui/react";
 import { useAuth } from "../../hooks/useAuth";
-import { useDeleteEventMutation, useGetCalendarQuery } from "../../redux/api/classroomApi";
+import { useDeleteEventMutation, useGetCalendarQuery, useSetStandardHolidayMutation } from "../../redux/api/classroomApi";
 import { getApiError } from "../../utils/apiErrors";
-import { dayRange, monthTitle } from "../../utils/calendar";
+import { eventsOnDay, eventsTouching, monthBounds, monthTitle, shiftMonth, shiftYear, yearRange } from "../../utils/calendar";
 import { cn } from "../../utils/helpers";
+import { todayInIndia } from "../../utils/students";
 import type { CalendarEvent } from "../../types";
+import { CalendarToolbar, type CalendarView } from "../../components/calendar/CalendarToolbar";
+import { DayDialog } from "../../components/calendar/DayDialog";
 import { EventDialog } from "../../components/calendar/EventDialog";
+import { EventList } from "../../components/calendar/EventList";
+import { MonthGrid } from "../../components/calendar/MonthGrid";
+import { YearGrid } from "../../components/calendar/YearGrid";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
-import { StudentsNotice } from "../../components/students/StudentsNotice";
 import { AppModal } from "../../components/ui/AppModal";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -17,34 +22,77 @@ import { useResultModal } from "../../components/ui/ResultModal";
 import { Skeleton } from "../../components/ui/Skeleton";
 
 /**
- * The school's calendar (`/calendar`, docs/parent-teacher-flow.md phase 1): its holidays and events, month by month. The people who run
- * the school add one (a window), change it (its pencil) or take it away (its bin, after asking); each ends in a window that says so.
- * Teachers and parents see the same list, without those buttons.
+ * The school's calendar (`/calendar`, docs/parent-teacher-flow.md phase 1): a month as a grid of days, or the whole year at once, with
+ * its holidays and events. A click on a day opens it: the people who run the school add a holiday or event there (an empty day goes
+ * straight to the form), change or take away what is on it (each ends in a window that says so); teachers and parents only read it.
+ * The calendar starts with the standard holidays (Diwali, Republic Day...): a national day stays, a festival the school takes off with
+ * the bin and brings back from "Taken off" under the list. The server is asked once for a whole year, so moving between its months costs nothing.
  */
 export default function CalendarPage() {
   const { user } = useAuth();
   const canEdit = user?.role === "school_admin" || user?.role === "principal";
-  const res = useGetCalendarQuery();
+  const today = useMemo(() => todayInIndia(), []);
+  const [view, setView] = useState<CalendarView>("month");
+  const [month, setMonth] = useState(today.slice(0, 7));
+  const year = Number(month.slice(0, 4));
+  const res = useGetCalendarQuery(yearRange(year));
   const [remove, { isLoading: removing }] = useDeleteEventMutation();
-  const [editing, setEditing] = useState<CalendarEvent | "new" | null>(null);
+  const [setStandard, { isLoading: switching }] = useSetStandardHolidayMutation();
+  const [editing, setEditing] = useState<{ event: CalendarEvent | null; day?: string } | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
   const [asking, setAsking] = useState<CalendarEvent | null>(null);
   const result = useResultModal();
   const events = res.data?.data.items;
-  const months = useMemo(() => {
-    const groups = new Map<string, CalendarEvent[]>();
-    for (const e of events ?? []) groups.set(e.startDate.slice(0, 7), [...(groups.get(e.startDate.slice(0, 7)) ?? []), e]);
-    return [...groups.entries()];
-  }, [events]);
+  const hidden = res.data?.data.hidden;
+  const loadingYear = res.isFetching && res.currentData === undefined;
+  const all = useMemo(() => events ?? [], [events]);
+
+  // What is shown: the month, or the year; the list at the side and the counts follow it.
+  const period = view === "month" ? monthBounds(month) : { from: `${year}-01-01`, to: `${year}-12-31` };
+  const inPeriod = useMemo(() => eventsTouching(all, period.from, period.to), [all, period.from, period.to]);
+  const takenOff = useMemo(() => eventsTouching(hidden ?? [], period.from, period.to), [hidden, period.from, period.to]);
+  const holidays = inPeriod.filter((e) => e.kind === "holiday").length;
+
+  function pick(day: string) {
+    // An empty day goes straight to the form for the school; anything else opens what is on it.
+    if (canEdit && eventsOnDay(all, day).length === 0) setEditing({ event: null, day });
+    else setPicked(day);
+  }
+
+  function change(e: CalendarEvent) {
+    setPicked(null);
+    setEditing({ event: e });
+  }
+
+  function ask(e: CalendarEvent) {
+    setPicked(null);
+    setAsking(e);
+  }
 
   async function confirmRemove() {
     if (!asking) return;
     try {
-      await remove(asking.id).unwrap();
-      result.done("Taken off the calendar", `${asking.title} is not on the calendar any more.`);
+      // A standard festival is not the school's own record: it is switched off for this school, not deleted.
+      if (asking.source === "festival") {
+        await setStandard({ key: asking.id, shown: false }).unwrap();
+        result.done("Taken off the calendar", `${asking.title} is not a holiday for your school now.`);
+      } else {
+        await remove(asking.id).unwrap();
+        result.done("Taken off the calendar", `${asking.title} is not on the calendar any more.`);
+      }
     } catch (err) {
       result.failed("Could not take it off", getApiError(err)?.message ?? "Please try again.");
     }
     setAsking(null);
+  }
+
+  async function bringBack(e: CalendarEvent) {
+    try {
+      await setStandard({ key: e.id, shown: true }).unwrap();
+      result.done("Back on the calendar", `${e.title} is a holiday again.`);
+    } catch (err) {
+      result.failed("Could not bring it back", getApiError(err)?.message ?? "Please try again.");
+    }
   }
 
   return (
@@ -54,7 +102,7 @@ export default function CalendarPage() {
         crumbs={[{ label: "Dashboard", to: "/dashboard" }]}
         actions={
           canEdit ? (
-            <Button onClick={() => setEditing("new")}>
+            <Button onClick={() => setEditing({ event: null })}>
               <CalendarPlus className="size-4" aria-hidden />
               Add holiday or event
             </Button>
@@ -63,51 +111,71 @@ export default function CalendarPage() {
       />
 
       {res.isLoading ? (
-        <Skeleton className="h-48 rounded-2xl" />
+        <Skeleton className="h-[40rem] rounded-2xl" />
       ) : !events ? (
         <Card className="px-5 py-8 text-center text-sm text-danger">{getApiError(res.error)?.message ?? "Could not load the calendar."}</Card>
-      ) : events.length === 0 ? (
-        <StudentsNotice icon={CalendarDays} tone="primary" title="Nothing on the calendar yet" />
       ) : (
-        months.map(([month, items]) => (
-          <section key={month} aria-label={monthTitle(month)} className="space-y-3">
-            <h2 className="text-lg font-bold tracking-tight text-foreground">{monthTitle(month)}</h2>
-            <ul className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {items.map((e) => (
-                <li key={e.id} className="flex items-start gap-3 rounded-[var(--radius-card)] border border-border bg-surface p-4 shadow-card">
-                  <span
-                    aria-hidden
-                    className={cn("flex size-12 shrink-0 flex-col items-center justify-center rounded-xl text-center leading-none", e.kind === "holiday" ? "bg-danger-soft text-danger" : "bg-primary-soft text-primary-deep")}
-                  >
-                    <span className="text-lg font-extrabold">{Number(e.startDate.slice(8, 10))}</span>
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-bold text-foreground">{e.title}</span>
-                    <span className="block text-sm text-foreground-muted">
-                      <span className={cn("font-semibold", e.kind === "holiday" ? "text-danger" : "text-primary-deep")}>{e.kind === "holiday" ? "Holiday" : "Event"}</span> · {dayRange(e.startDate, e.endDate)}
-                    </span>
-                    {e.note && <span className="mt-1 block text-sm text-foreground">{e.note}</span>}
-                  </span>
-                  {canEdit && (
-                    <span className="flex shrink-0 gap-1">
-                      <Button variant="ghost" size="sm" aria-label={`Change ${e.title}`} onClick={() => setEditing(e)}>
-                        <Pencil className="size-4" aria-hidden />
-                      </Button>
-                      <Button variant="ghost" size="sm" aria-label={`Remove ${e.title}`} className="hover:text-danger" onClick={() => setAsking(e)}>
-                        <Trash2 className="size-4" aria-hidden />
-                      </Button>
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_23rem]">
+          {/* Dimmed only while another year is being read, not each time a change is saved and the same year is read again. */}
+          <Card aria-busy={loadingYear} className={cn("overflow-hidden transition-opacity", loadingYear && "opacity-60")}>
+            <CalendarToolbar
+              view={view}
+              title={view === "month" ? monthTitle(month) : String(year)}
+              holidays={holidays}
+              events={inPeriod.length - holidays}
+              onView={setView}
+              onStep={(n) => setMonth((m) => (view === "month" ? shiftMonth(m, n) : shiftYear(m, n)))}
+              onToday={() => setMonth(today.slice(0, 7))}
+            />
+            {view === "month" ? (
+              <MonthGrid month={month} events={all} today={today} onPick={pick} />
+            ) : (
+              <YearGrid
+                year={year}
+                events={all}
+                today={today}
+                onPick={pick}
+                onOpenMonth={(m) => {
+                  setMonth(m);
+                  setView("month");
+                }}
+              />
+            )}
+          </Card>
+          <div className="relative">
+            <EventList
+              events={inPeriod}
+              from={period.from}
+              grouped={view === "year"}
+              emptyText={view === "month" ? "Nothing this month" : "Nothing this year"}
+              canEdit={canEdit}
+              takenOff={takenOff}
+              onEdit={change}
+              onRemove={ask}
+              onBring={(e) => void bringBack(e)}
+            />
+          </div>
+        </div>
       )}
 
+      {picked && (
+        <DayDialog
+          day={picked}
+          events={eventsOnDay(all, picked)}
+          canEdit={canEdit}
+          onClose={() => setPicked(null)}
+          onAdd={(day) => {
+            setPicked(null);
+            setEditing({ event: null, day });
+          }}
+          onEdit={change}
+          onRemove={ask}
+        />
+      )}
       {editing && (
         <EventDialog
-          event={editing === "new" ? null : editing}
+          event={editing.event}
+          initialDay={editing.day}
           onClose={() => setEditing(null)}
           onDone={(title, message) => {
             setEditing(null);
@@ -121,20 +189,20 @@ export default function CalendarPage() {
           icon={Trash2}
           tone="danger"
           size="sm"
-          busy={removing}
+          busy={removing || switching}
           onClose={() => setAsking(null)}
           footer={
             <>
-              <HeroButton variant="secondary" onPress={() => setAsking(null)} isDisabled={removing}>
+              <HeroButton variant="secondary" onPress={() => setAsking(null)} isDisabled={removing || switching}>
                 Cancel
               </HeroButton>
-              <HeroButton variant="danger" isPending={removing} onPress={() => void confirmRemove()}>
+              <HeroButton variant="danger" isPending={removing || switching} onPress={() => void confirmRemove()}>
                 Remove
               </HeroButton>
             </>
           }
         >
-          <p className="text-sm text-foreground">Teachers and parents will not see it any more.</p>
+          <p className="text-sm text-foreground">{asking.source === "festival" ? "It will not be a holiday for your school." : "Teachers and parents will not see it any more."}</p>
         </AppModal>
       )}
       {result.modal}

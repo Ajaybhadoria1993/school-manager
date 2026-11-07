@@ -1,12 +1,13 @@
 import { useMemo } from "react";
 import { useParams } from "react-router";
 import { CalendarDays, ClipboardList, FolderTree, MapPin, UserRound, UsersRound } from "lucide-react";
-import { useGetMyChildQuery, useGetMyChildTimetableQuery } from "../../redux/api/parentApi";
+import { useGetChildExamsQuery, useGetMyChildQuery, useGetMyChildTimetableQuery } from "../../redux/api/parentApi";
 import { formatDay } from "../../utils/academicYear";
 import { getApiError } from "../../utils/apiErrors";
 import { ageText, formatAadhaar, formatMobile } from "../../utils/students";
 import type { ChildTimetable, GridView } from "../../types";
 import { ChildAttendance } from "../../components/parent/ChildAttendance";
+import { ChildExamsSection } from "../../components/parent/ChildExams";
 import { ChildLeaves } from "../../components/parent/ChildLeaves";
 import { ChildDiary, ChildTests } from "../../components/parent/ChildWork";
 import { ClassWeekView } from "../../components/schoolClass/ClassWeekView";
@@ -61,6 +62,8 @@ export default function ChildPage() {
   const { id = "" } = useParams();
   const childRes = useGetMyChildQuery(id);
   const weekRes = useGetMyChildTimetableQuery(id);
+  // The same read as the Exams section below (one request): the days of this week the timetable gives way on.
+  const examsRes = useGetChildExamsQuery(id);
   const child = childRes.data?.data;
   const week = weekRes.data?.data;
   const view = useMemo(() => (week ? asGridView(week) : null), [week]);
@@ -98,6 +101,8 @@ export default function ChildPage() {
 
       <ChildTests childId={child.id} />
 
+      <ChildExamsSection childId={child.id} />
+
       <ChildAttendance childId={child.id} />
 
       <ChildLeaves childId={child.id} childName={child.name} />
@@ -110,7 +115,7 @@ export default function ChildPage() {
         {weekRes.isLoading ? (
           <Skeleton className="h-64 rounded-2xl" />
         ) : view && week ? (
-          <ClassWeekView view={view} label={week.label} />
+          <ClassWeekView view={view} label={week.label} examDays={examsRes.data?.data.week.days} />
         ) : (
           <Card className="px-5 py-8 text-center text-sm text-foreground-muted">The timetable is not published yet</Card>
         )}

@@ -8,4 +8,6 @@ export * from "./staff";
 export * from "./timetable";
 export * from "./parent";
 export * from "./classroom";
+export * from "./exams";
+export * from "./attendance";
 export * from "./notifications";

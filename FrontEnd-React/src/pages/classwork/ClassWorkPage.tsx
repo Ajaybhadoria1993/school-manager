@@ -1,21 +1,23 @@
 import { useParams, useSearchParams } from "react-router";
-import { BookOpenText, CalendarCheck2, ClipboardList } from "lucide-react";
+import { BookOpenText, CalendarCheck2, ClipboardList, GraduationCap } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { useGetMyClassesQuery } from "../../redux/api/classroomApi";
 import { useGetClassOverviewQuery } from "../../redux/api/studentsApi";
 import { cn } from "../../utils/helpers";
 import { AttendancePanel } from "../../components/classwork/AttendancePanel";
 import { DiaryPanel } from "../../components/classwork/DiaryPanel";
+import { ExamsPanel } from "../../components/classwork/ExamsPanel";
 import { TestsPanel } from "../../components/classwork/TestsPanel";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { Skeleton } from "../../components/ui/Skeleton";
 
-type Tab = "attendance" | "diary" | "tests";
+type Tab = "attendance" | "diary" | "tests" | "exams";
 
 /**
  * A class's work (`/class-work/:classId?section=&tab=`, docs/parent-teacher-flow.md): for a teacher, one of their classes (from their
- * home); for the people who run the school, any class (from School Class). Three tabs: **Attendance** (the class teacher and the school),
- * **Diary** (what was taught, the homework) and **Tests** (with their marks). A teacher who is not the class teacher opens on the Diary.
+ * home); for the people who run the school, any class (from School Class). Four tabs: **Attendance** (the class teacher and the school),
+ * **Diary** (what was taught, the homework), **Tests** (with their marks) and **Exams** (the school's exams for this class, and their
+ * marks). A teacher who is not the class teacher opens on the Diary.
  */
 export default function ClassWorkPage() {
   const { classId = "" } = useParams();
@@ -36,6 +38,7 @@ export default function ClassWorkPage() {
     ...(takesAttendance ? [{ value: "attendance" as const, label: "Attendance", icon: CalendarCheck2 }] : []),
     { value: "diary", label: "Diary", icon: BookOpenText },
     { value: "tests", label: "Tests", icon: ClipboardList },
+    { value: "exams", label: "Exams", icon: GraduationCap },
   ];
   const asked = params.get("tab") as Tab | null;
   const tab: Tab = asked && tabs.some((t) => t.value === asked) ? asked : tabs[0].value;
@@ -76,6 +79,7 @@ export default function ClassWorkPage() {
         {tab === "attendance" && <AttendancePanel classId={classId} sectionId={sectionId} />}
         {tab === "diary" && <DiaryPanel classId={classId} sectionId={sectionId} />}
         {tab === "tests" && <TestsPanel classId={classId} sectionId={sectionId} subjects={testSubjects} />}
+        {tab === "exams" && <ExamsPanel classId={classId} sectionId={sectionId} />}
       </div>
     </div>
   );

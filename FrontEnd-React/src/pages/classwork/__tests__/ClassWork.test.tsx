@@ -27,8 +27,8 @@ const SHEET: AttendanceSheet = {
   markedBy: null,
   counts: { present: 1, absent: 0, late: 0, leave: 1 },
   students: [
-    { id: "s1", name: "Asha Verma", admissionNumber: "ADM-1", rollNumber: 1, status: "present" },
-    { id: "s2", name: "Kabir Rao", admissionNumber: "ADM-2", rollNumber: 2, status: "leave" },
+    { id: "s1", name: "Asha Verma", admissionNumber: "ADM-1", rollNumber: 1, status: "present", reason: null },
+    { id: "s2", name: "Kabir Rao", admissionNumber: "ADM-2", rollNumber: 2, status: "leave", reason: null },
   ],
 };
 
@@ -132,5 +132,61 @@ describe("a class's attendance", () => {
     openPage("/class-work/c5?section=c5-A", "teacher", { "GET /classroom/my-classes": () => ({ items: [{ ...FIVE_A, isClassTeacher: false }] }) });
     expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 1 })).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Attendance" })).not.toBeInTheDocument();
+  });
+});
+
+describe("the reason of an absence (2026-11-06)", () => {
+  const asha = () => within(screen.getByRole("listitem", { name: "Asha Verma" }));
+
+  it("a child marked Absent or Late gets a Reason box; a child Present has none", async () => {
+    const { user } = openPage("/class-work/c5?section=c5-A");
+    await screen.findByRole("list", { name: "Attendance" });
+    expect(asha().queryByRole("textbox", { name: "Reason for Asha Verma" })).not.toBeInTheDocument();
+    await user.click(asha().getByRole("radio", { name: "Absent" }));
+    expect(asha().getByRole("textbox", { name: "Reason for Asha Verma" })).toHaveAttribute("maxlength", "200");
+    await user.click(asha().getByRole("radio", { name: "Late" }));
+    expect(asha().getByRole("textbox", { name: "Reason for Asha Verma" })).toBeInTheDocument();
+    await user.click(asha().getByRole("radio", { name: "Present" }));
+    expect(asha().queryByRole("textbox", { name: "Reason for Asha Verma" })).not.toBeInTheDocument();
+  });
+
+  it("the reason is sent with the mark when the day is saved; the children with none send none", async () => {
+    const { calls, user } = openPage("/class-work/c5?section=c5-A");
+    await screen.findByRole("list", { name: "Attendance" });
+    await user.click(asha().getByRole("radio", { name: "Absent" }));
+    await user.type(asha().getByRole("textbox", { name: "Reason for Asha Verma" }), "  Fever, doctor's advice ");
+    await user.click(screen.getByRole("button", { name: "Save attendance" }));
+    await waitFor(() => expect(puts(calls)).toHaveLength(1));
+    expect(puts(calls)[0].body).toEqual({
+      classId: "c5",
+      sectionId: "c5-A",
+      date: today,
+      marks: [
+        { studentId: "s1", status: "absent", reason: "Fever, doctor's advice" },
+        { studentId: "s2", status: "leave" },
+      ],
+    });
+  });
+
+  it("a reason already saved is in the box when the day is opened, and changing the child back to Present drops it", async () => {
+    const withReason = { ...SHEET, saved: true, students: [{ ...SHEET.students[0], status: "absent" as const, reason: "Wedding" }, SHEET.students[1]] };
+    const { calls, user } = openPage("/class-work/c5?section=c5-A", "teacher", { "GET /classroom/attendance": () => withReason });
+    await screen.findByRole("list", { name: "Attendance" });
+    await waitFor(() => expect(asha().getByRole("textbox", { name: "Reason for Asha Verma" })).toHaveValue("Wedding"));
+    await user.click(asha().getByRole("radio", { name: "Present" }));
+    await user.click(screen.getByRole("button", { name: "Save attendance" }));
+    await waitFor(() => expect(puts(calls)).toHaveLength(1));
+    expect((puts(calls)[0].body as { marks: object[] }).marks[0]).toEqual({ studentId: "s1", status: "present" });
+  });
+
+  it("a reason typed and then the child changed to Late keeps what was typed", async () => {
+    const { calls, user } = openPage("/class-work/c5?section=c5-A");
+    await screen.findByRole("list", { name: "Attendance" });
+    await user.click(asha().getByRole("radio", { name: "Absent" }));
+    await user.type(asha().getByRole("textbox", { name: "Reason for Asha Verma" }), "Bus");
+    await user.click(asha().getByRole("radio", { name: "Late" }));
+    await user.click(screen.getByRole("button", { name: "Save attendance" }));
+    await waitFor(() => expect(puts(calls)).toHaveLength(1));
+    expect((puts(calls)[0].body as { marks: object[] }).marks[0]).toEqual({ studentId: "s1", status: "late", reason: "Bus" });
   });
 });

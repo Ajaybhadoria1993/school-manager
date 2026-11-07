@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { CalendarDays, LogOut, Pencil, Plus, Repeat2, RotateCcw, Search, UsersRound } from "lucide-react";
+import { CalendarDays, FileUp, ListPlus, LogOut, Pencil, Plus, Repeat2, RotateCcw, Search, UsersRound } from "lucide-react";
 import { DAY_SHORT } from "../../constants/timetable";
 import { useGetSubjectsQuery, useGetTeachersQuery, useUpdateTeacherMutation } from "../../redux/api/timetableApi";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
@@ -9,6 +9,7 @@ import { cn } from "../../utils/helpers";
 import type { Teacher } from "../../types";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
+import { ExportTeachersButton } from "../../components/teachers/ExportTeachersButton";
 import { LeaveTeacherModal } from "../../components/teachers/LeaveTeacherModal";
 import { ReplaceTeacherDialog } from "../../components/teachers/ReplaceTeacherDialog";
 import { Badge } from "../../components/ui/Badge";
@@ -41,6 +42,13 @@ export default function TeachersPage() {
   const [leaving, setLeaving] = useState<Teacher | null>(null);
 
   const teachers = res.data?.data.items ?? [];
+  // The teachers a school already has can come in from Excel (the students' Bulk upload, for teachers).
+  const bulkLink = (
+    <Link to="/school/teachers/import" className={cn(linkClass, "h-10 gap-2 px-4")}>
+      <FileUp className="size-4" aria-hidden />
+      Bulk upload
+    </Link>
+  );
   const addLink = (
     <Link to="/school/teachers/new" className={primaryLink}>
       <Plus className="size-4" aria-hidden />
@@ -50,7 +58,19 @@ export default function TeachersPage() {
 
   return (
     <div className="space-y-6">
-      <StudentFormHeader title="Manage Teacher" crumbs={[{ label: "Dashboard", to: "/dashboard" }]} actions={addLink} />
+      <StudentFormHeader title="Manage Teacher" crumbs={[{ label: "Dashboard", to: "/dashboard" }]}
+        actions={
+          <>
+            <Link to="/school/teachers/fields" className={cn(linkClass, "h-10 gap-2 px-4")}>
+              <ListPlus className="size-4" aria-hidden />
+              Fields
+            </Link>
+            <ExportTeachersButton query={{ status, ...(typed ? { search: typed } : {}) }} empty={teachers.length === 0} />
+            {bulkLink}
+            {addLink}
+          </>
+        }
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div role="tablist" aria-label="Which teachers to show" className="flex gap-1 rounded-xl border border-border bg-surface p-1 shadow-sm">
@@ -86,7 +106,17 @@ export default function TeachersPage() {
         typed || status === "inactive" ? (
           <p className="rounded-2xl border border-border bg-surface px-4 py-10 text-center text-sm text-foreground-muted">{typed ? "No teacher matches." : "No teacher has left."}</p>
         ) : (
-          <StudentsNotice icon={UsersRound} tone="primary" title="No teachers yet" actions={addLink}>
+          <StudentsNotice
+            icon={UsersRound}
+            tone="primary"
+            title="No teachers yet"
+            actions={
+              <>
+                {bulkLink}
+                {addLink}
+              </>
+            }
+          >
             <p>With your teachers added, no teacher is put in two classes at the same time, and each teacher can sign in.</p>
           </StudentsNotice>
         )

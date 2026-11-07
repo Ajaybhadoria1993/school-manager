@@ -23,7 +23,8 @@ const MARKS: { value: AttendanceStatus; label: string; on: string }[] = [
 /**
  * A class's (or section's) attendance for a day (docs/parent-teacher-flow.md phase 3): the day (Today / Yesterday in one click), every
  * child with Present / Absent / Late / Leave (Present to start with, an approved leave already Leave), one **Save attendance**; a window
- * then says how many were present, absent, late and on leave. A holiday says so and has nothing to save.
+ * then says how many were present, absent, late and on leave. A child marked Absent or Late can be given a **reason** (optional, 2026-11-06:
+ * "Fever"): the school and the parent see it. A holiday says so and has nothing to save.
  */
 export function AttendancePanel({ classId, sectionId }: { classId: string; sectionId: string | null }) {
   const today = todayInIndia();
@@ -32,15 +33,25 @@ export function AttendancePanel({ classId, sectionId }: { classId: string; secti
   const [save, { isLoading: saving }] = useSaveAttendanceMutation();
   const sheet = res.currentData?.data;
   const [marks, setMarks] = useState<Record<string, AttendanceStatus>>({});
+  const [reasons, setReasons] = useState<Record<string, string>>({});
   const result = useResultModal();
   useEffect(() => {
-    if (sheet) setMarks(Object.fromEntries(sheet.students.map((s) => [s.id, s.status])));
+    if (sheet) {
+      setMarks(Object.fromEntries(sheet.students.map((s) => [s.id, s.status])));
+      setReasons(Object.fromEntries(sheet.students.map((s) => [s.id, s.reason ?? ""])));
+    }
   }, [sheet]);
+
+  /** A child's line of the save: a reason goes only with an absence or a late coming, and only when one was given. */
+  const markOf = (studentId: string, status: AttendanceStatus) => {
+    const reason = (reasons[studentId] ?? "").trim();
+    return { studentId, status, ...((status === "absent" || status === "late") && reason ? { reason } : {}) };
+  };
 
   async function send() {
     if (!sheet) return;
     try {
-      const saved = (await save({ classId, sectionId, date: sheet.date, marks: sheet.students.map((s) => ({ studentId: s.id, status: marks[s.id] ?? s.status })) }).unwrap()).data;
+      const saved = (await save({ classId, sectionId, date: sheet.date, marks: sheet.students.map((s) => markOf(s.id, marks[s.id] ?? s.status)) }).unwrap()).data;
       const c = saved.counts;
       result.done("Attendance saved", `${saved.label}, ${shortDay(saved.date)}: ${c.present} present, ${c.absent} absent, ${c.late} late, ${c.leave} on leave.`);
     } catch (err) {
@@ -92,6 +103,16 @@ export function AttendancePanel({ classId, sectionId }: { classId: string; secti
                   <span className="block truncate font-semibold text-foreground">{s.name}</span>
                   <span className="text-xs text-foreground-muted">{s.rollNumber != null ? `Roll ${s.rollNumber}` : s.admissionNumber}</span>
                 </span>
+                {(marks[s.id] ?? s.status) === "absent" || (marks[s.id] ?? s.status) === "late" ? (
+                  <input
+                    aria-label={`Reason for ${s.name}`}
+                    placeholder="Reason (optional)"
+                    maxLength={200}
+                    value={reasons[s.id] ?? ""}
+                    onChange={(e) => setReasons((all) => ({ ...all, [s.id]: e.target.value }))}
+                    className="h-8 min-w-0 flex-1 basis-40 rounded-lg border border-border bg-surface px-2.5 text-sm text-foreground placeholder:text-foreground-muted/70 focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/15 sm:max-w-xs"
+                  />
+                ) : null}
                 <span role="radiogroup" aria-label={`Mark of ${s.name}`} className="flex gap-1">
                   {MARKS.map((m) => (
                     <label

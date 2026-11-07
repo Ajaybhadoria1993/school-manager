@@ -195,6 +195,20 @@ describe("the calendar", () => {
     expect((await bell(s.tokens.ravi)).items[0]).toMatchObject({ kind: "calendar.removed", title: "Taken off the calendar: Diwali" });
   });
 
+  it("taking a standard festival off the calendar, and bringing it back, is heard by the school; doing it twice is not", async () => {
+    const s = await classroomSchool();
+    const set = (shown: boolean) => request(app).put(`${api}/classroom/calendar/standard/2026-03-04-holi`).set(auth(s.tokens.admin)).send({ shown });
+    expect((await set(false)).status).toBe(200);
+    expect((await bell(s.tokens.ravi)).items[0]).toMatchObject({ kind: "calendar.removed", title: "Taken off the calendar: Holi", body: "4 Mar", link: "/calendar" });
+    expect((await bell(s.tokens.meena)).items).toHaveLength(1);
+    await set(false);
+    await NotificationService.idle();
+    expect((await bell(s.tokens.ravi)).items).toHaveLength(1);
+    await set(true);
+    expect((await bell(s.tokens.ravi)).items[0]).toMatchObject({ kind: "calendar.added", title: "Holiday: Holi" });
+    expect(await kinds(s.tokens.admin)).toEqual([]);
+  });
+
   it("a closed login hears nothing", async () => {
     const s = await classroomSchool();
     const raviId = (await request(app).get(`${api}/auth/me`).set(auth(s.tokens.ravi))).body.data.user.id as string;

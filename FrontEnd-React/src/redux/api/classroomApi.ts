@@ -1,5 +1,5 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type { ApiResponse, AttendanceSheet, AttendanceStatus, CalendarEvent, CalendarEventInput, ClassTestDetail, ClassTestItem, DiaryDay, Leave, MyClass } from "../../types";
+import type { ApiResponse, AttendanceSheet, AttendanceStatus, CalendarDays, CalendarEvent, CalendarEventInput, ClassTestDetail, ClassTestItem, DiaryDay, Leave, MyClass } from "../../types";
 import { baseQueryWithReauth } from "./baseQueryWithReauth";
 
 /**
@@ -13,7 +13,7 @@ export const classroomApi = createApi({
   refetchOnMountOrArgChange: 60,
   refetchOnReconnect: true,
   endpoints: (build) => ({
-    getCalendar: build.query<ApiResponse<{ items: CalendarEvent[] }>, { from?: string; to?: string } | void>({
+    getCalendar: build.query<ApiResponse<CalendarDays>, { from?: string; to?: string } | void>({
       query: (range) => ({ url: "/classroom/calendar", params: range ?? {} }),
       providesTags: ["Calendar"],
     }),
@@ -27,6 +27,11 @@ export const classroomApi = createApi({
     }),
     deleteEvent: build.mutation<ApiResponse<{ id: string }>, string>({
       query: (id) => ({ url: `/classroom/calendar/${id}`, method: "DELETE" }),
+      invalidatesTags: ["Calendar"],
+    }),
+    // A standard festival holiday (its key is the id of the item): off the school's calendar (shown false), or back on it.
+    setStandardHoliday: build.mutation<ApiResponse<{ key: string; title: string; shown: boolean }>, { key: string; shown: boolean }>({
+      query: ({ key, shown }) => ({ url: `/classroom/calendar/standard/${key}`, method: "PUT", body: { shown } }),
       invalidatesTags: ["Calendar"],
     }),
 
@@ -50,7 +55,7 @@ export const classroomApi = createApi({
       providesTags: ["Attendance"],
       keepUnusedDataFor: 0,
     }),
-    saveAttendance: build.mutation<ApiResponse<AttendanceSheet>, { classId: string; sectionId: string | null; date: string; marks: { studentId: string; status: AttendanceStatus }[] }>({
+    saveAttendance: build.mutation<ApiResponse<AttendanceSheet>, { classId: string; sectionId: string | null; date: string; marks: { studentId: string; status: AttendanceStatus; reason?: string | null }[] }>({
       query: (body) => ({ url: "/classroom/attendance", method: "PUT", body }),
       invalidatesTags: ["Attendance"],
     }),
@@ -93,6 +98,7 @@ export const {
   useCreateEventMutation,
   useUpdateEventMutation,
   useDeleteEventMutation,
+  useSetStandardHolidayMutation,
   useGetLeavesQuery,
   useDecideLeaveMutation,
   useGetMyClassesQuery,
