@@ -128,7 +128,7 @@ function FormCompletion({ problems, rules, custom }: { problems: FormErrors; rul
 }
 
 const TIPS: { icon: typeof Phone; tone: "success" | "info" | "warning" | "primary"; text: string }[] = [
-  { icon: Phone, tone: "success", text: "Type the parent's mobile first: a parent already here is found and linked." },
+  { icon: Phone, tone: "success", text: "Type the parent's mobile number: a parent already here is found and linked." },
   { icon: Hash, tone: "info", text: "The admission number (ADM-2026-0001) is given when you press Admit." },
   { icon: ShieldCheck, tone: "warning", text: "A full section asks before it takes one more student." },
   { icon: UsersRound, tone: "primary", text: "A brother or sister: Admit a sibling on the student's page fills the parents in." },

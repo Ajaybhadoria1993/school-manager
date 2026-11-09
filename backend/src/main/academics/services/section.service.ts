@@ -1,11 +1,13 @@
 import { ApiError } from "../../../utils/ApiError";
 import { nameKeyOf } from "../../tenants/services/tenantFactory";
+import { TimetableCleanup } from "../../timetable/services/cleanup";
 import { MAX_SECTIONS_PER_CLASS } from "../constants";
 import { SchoolClass } from "../models/SchoolClass";
 import { Section } from "../models/Section";
 import type { CreateSectionInput, UpdateSectionInput } from "../schemas/academics.schemas";
 import { AcademicSettingsService } from "./academicSettings.service";
 import { AcademicYearService } from "./academicYear.service";
+import { assertSectionFits, seatsHeldBySections } from "./seats";
 import { isDuplicateKey, toSectionDto, type SectionDto } from "./shared";
 import { studentCountsBySection } from "./usage";
 
@@ -41,12 +43,13 @@ async function assertCurrentYear(tenantId: string, sectionYear: { toString(): st
 
 export class SectionService {
   static async create(tenantId: string, classId: string, input: CreateSectionInput): Promise<SectionDto> {
-    if (!(await SchoolClass.exists({ _id: classId, tenantId }))) {
-      throw ApiError.notFound("Class not found", "CLASS_NOT_FOUND");
-    }
+    const klass = await SchoolClass.findOne({ _id: classId, tenantId }).select("name capacity").lean();
+    if (!klass) throw ApiError.notFound("Class not found", "CLASS_NOT_FOUND");
     assertDetails((await AcademicSettingsService.get(tenantId)).sectionDetailsRequired, input.capacity ?? null, input.room ?? null);
     // A new section is for the school's current session; the limit and the "already exists" check are per session too.
     const academicYearId = await AcademicYearService.activeYearId(tenantId);
+    // Its seats come out of the class's seats, with those of the sections the class already has.
+    assertSectionFits(klass.name, klass.capacity, await seatsHeldBySections(tenantId, classId, academicYearId), input.capacity);
     if ((await Section.countDocuments({ tenantId, classId, academicYearId })) >= MAX_SECTIONS_PER_CLASS) {
       throw ApiError.conflict(`A class can have up to ${MAX_SECTIONS_PER_CLASS} sections.`, "LIMIT_REACHED");
     }
@@ -70,7 +73,7 @@ export class SectionService {
   static async update(tenantId: string, id: string, input: UpdateSectionInput): Promise<SectionDto> {
     // The section as it will be after this change must have what the school requires; a section that never had its seats or
     // room (made before the rule, or in bulk with its class) is completed the first time it is changed.
-    const current = await Section.findOne({ _id: id, tenantId }).select("capacity room academicYearId").lean();
+    const current = await Section.findOne({ _id: id, tenantId }).select("capacity room academicYearId classId").lean();
     if (!current) throw NOT_FOUND();
     await assertCurrentYear(tenantId, current.academicYearId);
     assertDetails(
@@ -78,6 +81,13 @@ export class SectionService {
       input.capacity !== undefined ? input.capacity : (current.capacity ?? null),
       input.room !== undefined ? input.room : (current.room ?? null)
     );
+    // New seats must fit in the class with the other sections' seats; a change of anything else never trips this.
+    if (input.capacity != null) {
+      const klass = await SchoolClass.findOne({ _id: current.classId, tenantId }).select("name capacity").lean();
+      if (klass) {
+        assertSectionFits(klass.name, klass.capacity, await seatsHeldBySections(tenantId, current.classId.toString(), current.academicYearId, id), input.capacity);
+      }
+    }
 
     const changes: Record<string, unknown> = {};
     if (input.name !== undefined) Object.assign(changes, { name: input.name, nameKey: nameKeyOf(input.name) });
@@ -108,5 +118,7 @@ export class SectionService {
       );
     }
     await Section.deleteOne({ _id: id, tenantId });
+    // What it studied and its timetable go with it.
+    await TimetableCleanup.forSection(tenantId, id);
   }
 }

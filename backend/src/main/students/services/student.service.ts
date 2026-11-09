@@ -3,11 +3,16 @@ import { ApiError } from "../../../utils/ApiError";
 import { AcademicYear } from "../../academics/models/AcademicYear";
 import { SchoolClass } from "../../academics/models/SchoolClass";
 import { Section } from "../../academics/models/Section";
+import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { isDuplicateKey } from "../../academics/services/shared";
+import { seatedIn } from "../../academics/services/viewedYear";
 import type { Relation } from "../constants";
 import { Enrolment, type IEnrolment } from "../models/Enrolment";
+import { EnrolmentChange, type IPlaceSnapshot } from "../models/EnrolmentChange";
+import { TeacherLogin } from "../../staff/services/teacherLogin.service";
 import { Guardian } from "../models/Guardian";
 import { Student, type IStudent } from "../models/Student";
+import { actorRecord, type Actor } from "./actor";
 import { ageProblem, type ListStudentsQuery, type MoveStudentInput, type UpdateStudentInput } from "../schemas/students.schemas";
 import {
   assertRollNumberFree,
@@ -49,8 +54,11 @@ export interface StudentPage {
   totalPages: number;
 }
 
+/** The running year: what a change is made in. */
 const activeYear = (school: Types.ObjectId) =>
   AcademicYear.findOne({ tenantId: school, status: "active" }).select("_id name startDate").lean();
+/** The year a read is about: the running one, or a past one being looked at (academics/services/viewedYear.ts). */
+const shownYear = (school: Types.ObjectId) => AcademicYearService.shownYear(school);
 
 /** What every row and the detail share. */
 const summaryOf = (s: IStudent) => ({
@@ -63,6 +71,15 @@ const summaryOf = (s: IStudent) => ({
   dateOfBirth: day(s.dateOfBirth),
   admissionDate: day(s.admissionDate),
   status: s.status,
+});
+
+/** A written-down place as it leaves the API (ids as strings). */
+const snapshotOf = (p: IPlaceSnapshot) => ({
+  classId: p.classId.toString(),
+  className: p.className,
+  sectionId: p.sectionId ? p.sectionId.toString() : null,
+  sectionName: p.sectionName ?? null,
+  rollNumber: p.rollNumber ?? null,
 });
 
 /** The row as the list's aggregation leaves it. */
@@ -81,24 +98,28 @@ export class StudentService {
   /** A student with everything their page shows: details, guardians, every year's class, and the other children of their guardians. */
   static async get(tenantId: string, id: string | Types.ObjectId): Promise<StudentDetailDto> {
     const school = new Types.ObjectId(tenantId);
+    // An inactive student is read like any other (their details are wanted when they leave and when they come back).
     const student = await Student.findOne({ _id: id, tenantId: school }).lean();
     if (!student) throw STUDENT_NOT_FOUND();
 
     const guardianIds = student.guardians.map((g) => g.guardianId);
-    const [year, guardians, enrolments, siblings] = await Promise.all([
-      activeYear(school),
+    const [year, guardians, enrolments, siblings, changes] = await Promise.all([
+      shownYear(school),
       Guardian.find({ tenantId: school, _id: { $in: guardianIds } }).lean(),
       Enrolment.find({ tenantId: school, studentId: student._id }).lean(),
-      Student.find({ tenantId: school, _id: { $ne: student._id }, "guardians.guardianId": { $in: guardianIds } })
+      Student.find({ tenantId: school, status: "active", _id: { $ne: student._id }, "guardians.guardianId": { $in: guardianIds } })
         .select("firstName lastName admissionNumber")
         .sort({ admissionNumber: 1 })
         .lean(),
+      EnrolmentChange.find({ tenantId: school, studentId: student._id }).sort({ createdAt: -1, _id: -1 }).limit(100).lean(),
     ]);
-    const [years, classes, sections, siblingPlaces] = await Promise.all([
+    const [years, classes, sections, siblingPlaces, logins] = await Promise.all([
       AcademicYear.find({ tenantId: school, _id: { $in: enrolments.map((e) => e.academicYearId) } }).select("name status startDate").lean(),
       SchoolClass.find({ tenantId: school, _id: { $in: enrolments.map((e) => e.classId) } }).select("name").lean(),
       Section.find({ tenantId: school, _id: { $in: enrolments.flatMap((e) => (e.sectionId ? [e.sectionId] : [])) } }).select("name").lean(),
       placesOf(school, year?._id ?? null, siblings.map((s) => s._id)),
+      // The parents' logins (their usernames), for the Parents card.
+      TeacherLogin.byIds(guardians.flatMap((g) => (g.userId ? [g.userId] : []))),
     ]);
 
     const yearById = new Map(years.map((y) => [y._id.toString(), y]));
@@ -154,7 +175,7 @@ export class StudentService {
         .sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary))
         .flatMap((link) => {
           const g = guardianById.get(link.guardianId.toString());
-          return g ? [toGuardianDto(g, link)] : [];
+          return g ? [toGuardianDto(g, link, g.userId ? (logins.get(g.userId.toString()) ?? null) : null)] : [];
         }),
       enrolments: history.map(({ startsOn: _startsOn, ...e }) => e),
       siblings: siblings.map((s) => {
@@ -167,22 +188,49 @@ export class StudentService {
           sectionName: place?.sectionName ?? null,
         };
       }),
+      inactive: student.inactive
+        ? {
+            at: student.inactive.at.toISOString(),
+            by: { name: student.inactive.by.name, role: student.inactive.by.role },
+            reason: student.inactive.reason ?? null,
+            transfer: student.inactive.transfer ?? null,
+          }
+        : null,
+      moves: changes.map((c) => ({
+        id: c._id.toString(),
+        kind: c.kind,
+        at: c.createdAt.toISOString(),
+        reason: c.reason ?? null,
+        academicYear: yearById.get(c.academicYearId.toString()) ? { id: c.academicYearId.toString(), name: yearById.get(c.academicYearId.toString())!.name } : null,
+        from: c.from ? snapshotOf(c.from) : null,
+        to: c.to ? snapshotOf(c.to) : null,
+        school: c.school ?? null,
+        by: { name: c.by.name, role: c.by.role },
+      })),
       createdAt: student.createdAt.toISOString(),
     };
   }
 
   /**
-   * The students of the current academic year, searched (part of the name or of the admission number), filtered by class and
-   * section, sorted and cut into pages by the database: one aggregation over the year's enrolments, so a screen never downloads
-   * every student to filter them. Each row carries the class and section names and the primary guardian.
+   * The students of the current academic year (or of a past one being looked at: then everyone who sat in it, even those who left
+   * later), searched (part of the name or of the admission number), filtered by class and section, sorted and cut into pages by the
+   * database: one aggregation over the year's enrolments, so a screen never downloads every student to filter them. Each row carries
+   * the class and section names and the primary guardian.
    */
   static async list(tenantId: string, query: ListStudentsQuery): Promise<StudentPage> {
     const school = new Types.ObjectId(tenantId);
-    const year = await activeYear(school);
+    const year = await shownYear(school);
     if (!year) return { academicYear: null, items: [], page: query.page, limit: query.limit, total: 0, totalPages: 1 };
 
-    const match: Record<string, unknown> = { tenantId: school, academicYearId: year._id, status: "active" };
-    if (query.classId) match.classId = new Types.ObjectId(query.classId);
+    const match: Record<string, unknown> = { tenantId: school, academicYearId: year._id, ...seatedIn(year._id) };
+    if (query.departmentId) {
+      // The classes of the department (or of none): a class asked for must be one of them, else nobody is listed.
+      const inDepartment = await SchoolClass.find({ tenantId: school, departmentId: query.departmentId === "none" ? null : new Types.ObjectId(query.departmentId) })
+        .select("_id")
+        .lean();
+      const ids = inDepartment.map((c) => c._id);
+      match.classId = query.classId ? { $in: ids.filter((id) => id.toString() === query.classId) } : { $in: ids };
+    } else if (query.classId) match.classId = new Types.ObjectId(query.classId);
     if (query.sectionId) match.sectionId = query.sectionId === "none" ? null : new Types.ObjectId(query.sectionId);
 
     const search = query.q
@@ -235,6 +283,7 @@ export class StudentService {
         guardians: 1,
       }),
       { $match: { student: { $exists: true } } },
+      ...(query.gender ? [{ $match: { "student.gender": query.gender } } as PipelineStage] : []),
       ...search,
       ...lookupOne(SchoolClass.collection.name, "classId", "klass", { name: 1, order: 1 }),
       ...lookupOne(Section.collection.name, "sectionId", "section", { name: 1 }),
@@ -298,7 +347,7 @@ export class StudentService {
    */
   static async update(tenantId: string, id: string, input: UpdateStudentInput): Promise<StudentDetailDto> {
     const school = new Types.ObjectId(tenantId);
-    const current = await Student.findOne({ _id: id, tenantId: school }).lean();
+    const current = await Student.findOne({ _id: id, tenantId: school, status: "active" }).lean();
     if (!current) throw STUDENT_NOT_FOUND();
 
     if (input.dateOfBirth || input.admissionDate) {
@@ -329,7 +378,7 @@ export class StudentService {
 
     if (input.aadhaarNumber) {
       const holder = await Student.findOne({ tenantId: school, aadhaarNumber: input.aadhaarNumber, _id: { $ne: current._id } })
-        .select("firstName lastName admissionNumber")
+        .select("firstName lastName admissionNumber status")
         .lean();
       if (holder) throw aadhaarTaken(input.aadhaarNumber, holder);
     }
@@ -353,9 +402,9 @@ export class StudentService {
    * person's "yes" (`allowOverCapacity`), and a roll number is used once in a section. A roll number is per section, so when the
    * class or section changes and no new one is sent, the old one is dropped. Last year's enrolment is never touched.
    */
-  static async move(tenantId: string, id: string, input: MoveStudentInput): Promise<StudentDetailDto> {
+  static async move(tenantId: string, id: string, input: MoveStudentInput, actor?: Actor): Promise<StudentDetailDto> {
     const school = new Types.ObjectId(tenantId);
-    const student = await Student.findOne({ _id: id, tenantId: school }).select("_id").lean();
+    const student = await Student.findOne({ _id: id, tenantId: school, status: "active" }).select("_id").lean();
     if (!student) throw STUDENT_NOT_FOUND();
     const year = await activeYear(school);
     if (!year) throw NO_ACTIVE_YEAR();
@@ -374,6 +423,7 @@ export class StudentService {
     if (moved) await assertSeat(school, year._id, placement, input.allowOverCapacity, student._id);
     await assertRollNumberFree(school, year._id, placement, rollNumber, student._id);
 
+    const was = (await placesOf(school, year._id, [student._id])).get(student._id.toString());
     const before: Pick<IEnrolment, "classId" | "sectionId" | "rollNumber"> = {
       classId: enrolment.classId,
       sectionId: enrolment.sectionId ?? null,
@@ -396,6 +446,21 @@ export class StudentService {
         await Enrolment.updateOne({ _id: enrolment._id, tenantId: school }, { $set: before });
         throw sectionFull(placement, taken - 1);
       }
+    }
+    // Where the student was, who moved them, when and why: the year's enrolment is changed in place, so this is what keeps the history.
+    const changed = moved || (enrolment.rollNumber ?? null) !== rollNumber;
+    if (changed && actor && was) {
+      await EnrolmentChange.create({
+        tenantId: school,
+        academicYearId: year._id,
+        studentId: student._id,
+        enrolmentId: enrolment._id,
+        kind: "moved",
+        from: { classId: new Types.ObjectId(was.classId), className: was.className, sectionId: was.sectionId ? new Types.ObjectId(was.sectionId) : null, sectionName: was.sectionName, rollNumber: was.rollNumber },
+        to: { classId: placement.classId, className: placement.className, sectionId: placement.sectionId, sectionName: placement.sectionName, rollNumber },
+        reason: input.reason ?? null,
+        by: await actorRecord(actor),
+      });
     }
     return StudentService.get(tenantId, student._id);
   }

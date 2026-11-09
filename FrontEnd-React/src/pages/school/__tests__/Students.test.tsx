@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
+import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
 import type { StudentPage, StudentRow, StudentSettings } from "../../../types";
 import { fakeApi, type Handler } from "../../../test/fakeApi";
 import { CAPACITY, SETTINGS, STRUCTURE } from "../../../test/fixtures";
@@ -43,8 +44,8 @@ function school(students: StudentRow[] = [], extra: Record<string, Handler> = {}
   });
 }
 
-function openPage() {
-  const router = createMemoryRouter([{ path: "/school/students", element: <StudentsPage /> }], { initialEntries: ["/school/students"] });
+function openPage(entry = "/school/students") {
+  const router = createMemoryRouter([{ path: "/school/students", element: <StudentsPage /> }], { initialEntries: [entry] });
   render(
     <Provider store={store}>
       <ToastProvider>
@@ -101,7 +102,73 @@ describe("Students, a new school with nobody admitted yet", () => {
   });
 });
 
+const KABIR: StudentRow = { ...ASHA, id: "s2", firstName: "Kabir", lastName: "Rao", name: "Kabir Rao", admissionNumber: "ADM-2026-0002", primaryGuardian: { id: "g2", name: "Anil Rao", relation: "Father", mobile: "9111111111" } };
+
+describe("Students, active and inactive", () => {
+  it("has two tabs, Active and Inactive, and no Recycle bin anywhere", async () => {
+    school([ASHA, KABIR]);
+    openPage();
+    await screen.findByText("Asha Verma");
+    const tabs = screen.getByRole("navigation", { name: "Students by status" });
+    expect(within(tabs).getByRole("link", { name: "Active students" })).toHaveAttribute("href", "/school/students");
+    expect(within(tabs).getByRole("link", { name: "Inactive students" })).toHaveAttribute("href", "/school/students/inactive");
+    expect(screen.queryByText(/recycle/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/selected/)).not.toBeInTheDocument();
+  });
+
+  it("ticking rows says how many are chosen; the box at the top chooses (or clears) the whole page", async () => {
+    school([ASHA, KABIR]);
+    const user = openPage();
+    await screen.findByText("Asha Verma");
+    await user.click(screen.getByRole("checkbox", { name: "Select Asha Verma" }));
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Kabir Rao" })).not.toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "Select all students on this page" }));
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Select all students on this page" }));
+    expect(screen.queryByText(/selected/)).not.toBeInTheDocument();
+  });
+
+  it("Make inactive asks first (with an optional reason), sends one request with the ids, and clears the selection; Cancel sends nothing", async () => {
+    const calls = school([ASHA, KABIR], { "POST /students/deactivate": () => ({ deactivated: 2, skipped: 0 }) });
+    const user = openPage();
+    await screen.findByText("Asha Verma");
+    await user.click(screen.getByRole("checkbox", { name: "Select Asha Verma" }));
+    await user.click(screen.getByRole("checkbox", { name: "Select Kabir Rao" }));
+    await user.click(screen.getByRole("button", { name: "Make inactive" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Make 2 students inactive?" });
+    expect(dialog).toHaveTextContent("Asha Verma and Kabir Rao");
+    expect(dialog).toHaveTextContent("Nothing is deleted");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "Make inactive" }));
+    const again = await screen.findByRole("dialog");
+    await user.type(within(again).getByRole("textbox", { name: /Why/ }), "Wrong file");
+    await user.click(within(again).getByRole("button", { name: "Make inactive" }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST" && c.path === "/students/deactivate")).toHaveLength(1));
+    expect(calls.find((c) => c.path === "/students/deactivate")?.body).toEqual({ ids: ["s1", "s2"], reason: "Wrong file" });
+    await waitFor(() => expect(screen.queryByText(/selected/)).not.toBeInTheDocument());
+    await waitFor(() => expect(calls.filter((c) => c.method === "GET" && c.path === "/students").length).toBeGreaterThan(1));
+  });
+});
+
 describe("Students, a school that has students", () => {
+  it("Add student carries the class and section chosen in the list, so the form opens with them filled in", async () => {
+    school([ASHA]);
+    openPage("/school/students?class=c6&section=c6-A");
+    await screen.findByText("Asha Verma");
+    expect(screen.getByRole("link", { name: "Add student" })).toHaveAttribute("href", "/school/students/new?class=c6&section=c6-A");
+  });
+
+  it("Add student opens a plain form when no class is chosen", async () => {
+    school([ASHA]);
+    openPage();
+    await screen.findByText("Asha Verma");
+    expect(screen.getByRole("link", { name: "Add student" })).toHaveAttribute("href", "/school/students/new");
+  });
+
   it("shows the list, not the empty state, under the same header", async () => {
     school([ASHA]);
     openPage();
@@ -109,5 +176,28 @@ describe("Students, a school that has students", () => {
     expect(screen.queryByText("No students yet")).not.toBeInTheDocument();
     expect(headerButtons()).toEqual(["Guide", "Export", "Bulk upload", "Add student"]);
     expect(screen.getByRole("link", { name: "Bulk upload" })).toHaveAttribute("href", "/school/students/import");
+  });
+});
+
+describe("Students while a year that is over is open (read only)", () => {
+  afterEach(() => {
+    store.dispatch(yearViewChanged(null));
+  });
+
+  it("is only looked at: Guide and Export stay; no Bulk upload, no Add student, no ticking of students to make them inactive", async () => {
+    school([ASHA]);
+    store.dispatch(yearViewChanged("y26"));
+    openPage();
+    expect(await screen.findByText("Asha Verma")).toBeInTheDocument();
+    expect(headerButtons()).toEqual(["Guide", "Export"]);
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("the running year still has all four buttons and the tick boxes", async () => {
+    school([ASHA]);
+    openPage();
+    expect(await screen.findByText("Asha Verma")).toBeInTheDocument();
+    expect(headerButtons()).toEqual(["Guide", "Export", "Bulk upload", "Add student"]);
+    expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
   });
 });

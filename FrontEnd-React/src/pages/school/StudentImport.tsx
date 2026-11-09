@@ -18,6 +18,7 @@ import { getApiError } from "../../utils/apiErrors";
 import {
   IMPORT_FIELDS,
   SCHOOL_NEEDS,
+  alreadyOf,
   assignColumn,
   autoMap,
   columnChoices,
@@ -26,11 +27,16 @@ import {
   crossCheck,
   fieldDef,
   fieldsByColumn,
+  lookAlikes,
+  matchInputOf,
+  matchNoteOf,
+  matchProblemOf,
   ownColumnsOf,
   prepareRow,
   problemOf,
   problemsCsv,
   saveBlob,
+  takenNameNote,
   tidy,
   typedTableFields,
   type ColumnMapping,
@@ -39,7 +45,7 @@ import {
   type PreparedRow,
   type RowProblem,
 } from "../../utils/studentImport";
-import type { ImportSheet } from "../../types";
+import type { ImportMatch, ImportSheet } from "../../types";
 import { CustomFieldDialog } from "../../components/students/export/CustomFieldDialog";
 import { DoneCard, FileBar, ProgressCard, SeatWarning, StoppedNote } from "../../components/students/import/ImportPanels";
 import { ImportRowsTable, type ViewRow } from "../../components/students/import/ImportRowsTable";
@@ -62,7 +68,12 @@ type Admitted = Omit<ViewRow, "status" | "problems"> & { source: PreparedRow };
  * What the server said about a row it did not admit (cleared when the row is changed). `seats`: the only reason was a full section, so
  * the row is ready again once the person says "admit them all anyway".
  */
-type ServerAnswer = { problems: RowProblem[]; warnings: string[]; seats: boolean };
+type ServerAnswer = { problems: RowProblem[]; warnings: string[]; seats: boolean; already: boolean };
+/**
+ * What the check of the whole file said about a row (a student the school already has, a number of another child, a maybe), with the
+ * row's identity as it was asked: a row whose name, birthday, mobile, number or Aadhaar number changed since is not that row any more.
+ */
+type Met = { sig: string; match: ImportMatch };
 /** Which column of the table each of the school's own fields is in, by its key. */
 type OwnColumns = Record<string, number>;
 /** After a box that needed a fix was changed: the other rows with the same value in that column, which can take the same change. */
@@ -130,6 +141,12 @@ export default function StudentImportPage() {
   const [mapping, setMapping] = useState<ColumnMapping | null>(null);
   const [ownColumns, setOwnColumns] = useState<OwnColumns>({});
   const [answers, setAnswers] = useState<Map<number, ServerAnswer>>(() => new Map());
+  // The students of the file the school already has: asked once when a file opens (not for a typed table), kept by row.
+  const [met, setMet] = useState<Map<number, Met>>(() => new Map());
+  const [checking, setChecking] = useState(false);
+  const [checkFailed, setCheckFailed] = useState(false);
+  const [checkFor, setCheckFor] = useState(0);
+  const checked = useRef(0);
   const [admitted, setAdmitted] = useState<Admitted[]>([]);
   const [lastRun, setLastRun] = useState<{ admitted: Admitted[] } | null>(null);
   const [filter, setFilter] = useState<RowFilter>("all");
@@ -137,7 +154,8 @@ export default function StudentImportPage() {
   const [fixing, setFixing] = useState<ReadonlySet<number>>(() => new Set());
   const [page, setPage] = useState(1);
   const [addOpen, setAddOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
+  // The window to make a new field of the school's own: for a new column (`column` null) or for a column the file already has, named `name` at first.
+  const [creating, setCreating] = useState<{ column: number | null; name: string } | null>(null);
   const [offer, setOffer] = useState<Offer | null>(null);
   const [busy, setBusy] = useState<{ done: number; total: number } | null>(null);
   const [stopped, setStopped] = useState<string | null>(null);
@@ -193,6 +211,10 @@ export default function StudentImportPage() {
   }, [sheet, rowCache]);
   // The rows already admitted from this file come first, so a row left that repeats one of them is still "the same student as row 4".
   const crossed = useMemo(() => crossCheck([...admitted.map((a) => a.source), ...prepared]), [admitted, prepared]);
+  // Inside the file: the same name and birthday with another parent's mobile (a maybe), the admitted rows of this file counted too.
+  const alike = useMemo(() => lookAlikes([...admitted.map((a) => a.source), ...prepared]), [admitted, prepared]);
+  // Each row's identity as it is now: an answer of the check is that of the row only while it is the same.
+  const sigs = useMemo(() => new Map(matchInputOf(prepared).map((r) => [r.row, JSON.stringify(r)])), [prepared]);
   const wholeName = !!mapping && mapping.firstName === null && mapping.lastName === null && mapping.fullName !== null;
 
   /**
@@ -203,16 +225,26 @@ export default function StudentImportPage() {
     const cells = sheet!.rows[i].cells;
     // An empty row of the typed table (nothing in any cell) is waiting for a student: it is not a problem and is not uploaded.
     const blank = cells.every((c) => !c.trim());
-    const own = blank ? [] : [...p.problems, ...(crossed.get(p.row) ?? [])];
     const answer = answers.get(p.row);
-    const server = answer && !(answer.seats && allowOver) ? answer.problems : [];
+    // What the check of the file said about this row (only while the row is still the same student).
+    const meeting = blank ? undefined : met.get(p.row);
+    const meets = meeting && meeting.sig === sigs.get(p.row) ? meeting.match : undefined;
+    const meetsProblem = meets ? matchProblemOf(meets) : null;
+    const meetsNote = meets ? matchNoteOf(meets) : null;
+    // A student the school already has (the check said so, or the server refused the row for it): not uploaded again, and nothing else
+    // about the row needs a fix.
+    const already = blank ? undefined : meets?.kind === "same" ? alreadyOf(meets) : answer?.already ? { label: "Already in your school", detail: answer.problems[0]?.message ?? "" } : undefined;
+    const own = blank || already ? [] : [...p.problems, ...(crossed.get(p.row) ?? []), ...(meetsProblem ? [meetsProblem] : [])];
+    const server = !already && answer && !(answer.seats && allowOver) ? answer.problems : [];
     // The school's own needs never stop a row (a student is admitted without them): the server's word about them is left out.
     const serverWarnings = (answer?.warnings ?? []).filter((w) => !w.startsWith(SCHOOL_NEEDS));
-    return { p, cells, blank, own, problems: blank ? [] : [...own, ...server], warnings: [...p.warnings, ...serverWarnings], seatsOnly: !!answer?.seats };
+    const notes = [...p.warnings, ...(meetsNote ? [meetsNote] : []), ...(alike.has(p.row) ? [alike.get(p.row)!] : []), ...serverWarnings];
+    return { p, cells, blank, already, own, problems: blank || already ? [] : [...own, ...server], warnings: already ? [] : notes, seatsOnly: !!answer?.seats };
   });
   const filled = rows.filter((r) => !r.blank);
-  const ready = filled.filter((r) => r.problems.length === 0);
-  const toFix = filled.length - ready.length;
+  const skipped = filled.filter((r) => r.already);
+  const ready = filled.filter((r) => !r.already && r.problems.length === 0);
+  const toFix = filled.length - ready.length - skipped.length;
 
   // What each column is: a detail of the list, one of the school's own fields, or nothing (not uploaded).
   const byColumn: (string | null)[] = sheet && mapping ? fieldsByColumn(mapping, sheet.headers.length) : [];
@@ -221,18 +253,26 @@ export default function StudentImportPage() {
   const ownFields = custom.filter((f) => f.mode !== "hidden" || ownColumns[f.key] !== undefined);
 
   const shown = rows.filter((r) =>
-    filter === "all" ? true : r.blank ? false : filter === "bad" ? r.problems.length > 0 || fixing.has(r.p.row) : r.problems.length === 0
+    filter === "all"
+      ? true
+      : r.blank
+        ? false
+        : filter === "already"
+          ? !!r.already
+          : filter === "bad"
+            ? r.problems.length > 0 || fixing.has(r.p.row)
+            : !r.already && r.problems.length === 0
   );
   const pages = Math.max(1, Math.ceil(shown.length / IMPORT_ROWS_PER_PAGE));
   const current = Math.min(page, pages);
   const pageRows: GridRow[] = shown
     .slice((current - 1) * IMPORT_ROWS_PER_PAGE, current * IMPORT_ROWS_PER_PAGE)
-    .map((r) => ({ row: r.p.row, cells: r.cells, blank: r.blank, problems: r.problems, warnings: r.warnings }));
+    .map((r) => ({ row: r.p.row, cells: r.cells, blank: r.blank, problems: r.problems, warnings: r.warnings, already: r.already }));
 
   // The sections the rows to upload would fill past their seats this year: the ready ones, and the ones refused only for the seats.
   const coming = new Map<string, number>();
   for (const r of filled) {
-    const goes = r.own.length === 0 && (!answers.has(r.p.row) || r.seatsOnly);
+    const goes = !r.already && r.own.length === 0 && (!answers.has(r.p.row) || r.seatsOnly);
     if (goes && r.p.sectionId) coming.set(r.p.sectionId, (coming.get(r.p.sectionId) ?? 0) + 1);
   }
   const over = [...coming].flatMap(([sectionId, count]) => {
@@ -242,6 +282,31 @@ export default function StudentImportPage() {
     const section = klass?.sections.find((s) => s.id === sectionId);
     return [{ label: `${klass?.name ?? "Class"} - ${section?.name ?? ""}`, coming: count, seatsLeft: load.seatsLeft }];
   });
+
+  // Which students of a new file the school already has: ONE request for the whole file, once its rows are prepared. A failed check
+  // is no reason to stop: the server checks every row again at the upload.
+  useEffect(() => {
+    if (checkFor === 0 || checked.current === checkFor || prepared.length === 0) return;
+    checked.current = checkFor;
+    const token = checkFor;
+    const asked = matchInputOf(prepared);
+    if (asked.length === 0) return;
+    const identity = new Map(asked.map((r) => [r.row, JSON.stringify(r)]));
+    setChecking(true);
+    setCheckFailed(false);
+    dispatch(studentsApi.endpoints.matchImportRows.initiate({ rows: asked }, { track: false }))
+      .unwrap()
+      .then((res) => {
+        if (checked.current !== token) return;
+        setMet(new Map(res.data.matches.flatMap((m) => (identity.has(m.row) ? [[m.row, { sig: identity.get(m.row)!, match: m }] as const] : []))));
+      })
+      .catch(() => {
+        if (checked.current === token) setCheckFailed(true);
+      })
+      .finally(() => {
+        if (checked.current === token) setChecking(false);
+      });
+  }, [checkFor, prepared, dispatch]);
 
   // ---- The file -----------------------------------------------------------------------------------------------------------------
 
@@ -253,6 +318,11 @@ export default function StudentImportPage() {
     setMapping(nextMapping);
     setOwnColumns(own);
     setAnswers(new Map());
+    // Whatever the last table was asked is forgotten, and an answer still on its way is not for this table.
+    checked.current = 0;
+    setMet(new Map());
+    setChecking(false);
+    setCheckFailed(false);
     setAdmitted([]);
     setLastRun(null);
     setFilter("all");
@@ -281,6 +351,8 @@ export default function StudentImportPage() {
         ? data
         : { ...data, headers: [...data.headers, ...add.map(headingOf)], rows: data.rows.map((r) => ({ ...r, cells: [...padTo(r.cells, width), ...add.map(() => "")] })) };
     openTable(table, next, own, source, false);
+    // The file is asked about once, when its rows are prepared (the effect below).
+    setCheckFor((n) => n + 1);
   }
 
   async function readFile(picked: File) {
@@ -336,6 +408,10 @@ export default function StudentImportPage() {
     setOwnColumns({});
     setReadError(null);
     setAnswers(new Map());
+    checked.current = 0;
+    setMet(new Map());
+    setChecking(false);
+    setCheckFailed(false);
     setAdmitted([]);
     setLastRun(null);
     setOffer(null);
@@ -428,13 +504,21 @@ export default function StudentImportPage() {
     focusAt.current = { row, column };
   }
 
-  /** A new field of the school's own, made from the table: saved at once (Add student and the Excel get it too), then its column is added. */
-  async function createField(field: CustomFieldDef) {
+  /**
+   * A new field of the school's own, made from the table: saved at once (Add student and the Excel get it too). Then it gets a column
+   * of its own at the right, or, made from a column's heading, that column becomes it (the file's answers in it stay).
+   */
+  async function createField(field: CustomFieldDef, column: number | null) {
     if (!settings) return;
-    setCreating(false);
+    setCreating(null);
     try {
       await updateSettings({ customFields: [...settings.customFields, field], exportColumns: [...settings.exportColumns, { key: field.key, heading: field.label }] }).unwrap();
-      addColumn(field.key, "", field.label);
+      if (column === null) addColumn(field.key, "", field.label);
+      else {
+        placeColumn(column, field.key);
+        const first = pageRows[0]?.row;
+        if (first !== undefined) focusAt.current = { row: first, column };
+      }
       push("success", `${field.label} is now one of your fields: on Add student, in the Excel and here`);
     } catch (err) {
       push("error", getApiError(err)?.message ?? "Could not add the field. Please try again.");
@@ -483,6 +567,8 @@ export default function StudentImportPage() {
               problems: result.errors.map((e) => serverProblem(e.path, e.message, p)),
               warnings: result.warnings,
               seats: result.code === "SECTION_FULL",
+              // The same child, found by the server (the check could not be made, or the row changed since): the row moves to Already in school.
+              already: result.code === "DUPLICATE_STUDENT",
             });
           }
         }
@@ -575,7 +661,17 @@ export default function StudentImportPage() {
   // After an upload every row still in the table was not admitted (refused by the server, or not sent because it needed a fix).
   const doneRows: ViewRow[] = [
     ...(lastRun?.admitted ?? []).map(({ source: _source, ...a }) => ({ ...a, warnings: a.warnings.filter((w) => !w.startsWith(SCHOOL_NEEDS)), status: "admitted" as const, problems: [] })),
-    ...filled.map((r) => ({ row: r.p.row, name: r.p.name, admissionNumber: r.p.input.admissionNumber ?? null, classLabel: r.p.classLabel, parentLabel: r.p.parentLabel, status: "failed" as const, problems: r.problems, warnings: r.warnings })),
+    ...filled.map((r) => ({
+      row: r.p.row,
+      name: r.p.name,
+      admissionNumber: r.p.input.admissionNumber ?? null,
+      classLabel: r.p.classLabel,
+      parentLabel: r.p.parentLabel,
+      status: r.already ? ("already" as const) : ("failed" as const),
+      problems: r.problems,
+      warnings: r.warnings,
+      already: r.already,
+    })),
   ];
 
   return (
@@ -590,7 +686,23 @@ export default function StudentImportPage() {
 
         {step === 1 && sheet && mapping && file && (
           <>
-            <FileBar file={file} sheetName={sheet.sheetName} rows={filled.length} ready={ready.length} toFix={toFix} onChangeFile={startOver} disabled={!!busy} />
+            <FileBar file={file} sheetName={sheet.sheetName} rows={filled.length} ready={ready.length} toFix={toFix} already={skipped.length} onChangeFile={startOver} disabled={!!busy} />
+            {checking && (
+              <p role="status" className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-foreground-muted">
+                Checking the file against the students already in your school...
+              </p>
+            )}
+            {checkFailed && (
+              <p role="status" className="rounded-2xl border border-warning-line bg-warning-soft px-4 py-3 text-sm text-warning">
+                The file could not be checked against the students already in your school. Every row is checked again when you upload, and a student who is already
+                there is not admitted twice.
+              </p>
+            )}
+            {!checking && ready.length === 0 && toFix === 0 && skipped.length > 0 && (
+              <p className="rounded-2xl border border-primary/30 bg-primary-soft/60 px-4 py-3 text-sm text-primary-deep">
+                Every student of this file is already in your school. There is nothing new to upload.
+              </p>
+            )}
             {admitted.length > 0 && (
               <p className="rounded-2xl border border-success-line bg-success-soft px-4 py-3 text-sm text-success">
                 <span className="font-bold">{admitted.length} student{admitted.length === 1 ? "" : "s"} of this file already admitted.</span> The rows below still
@@ -608,7 +720,7 @@ export default function StudentImportPage() {
                 setFilter(f);
                 setPage(1);
               }}
-              counts={{ all: rows.length, bad: toFix, good: ready.length }}
+              counts={{ all: rows.length, bad: toFix, good: ready.length, already: skipped.length }}
               onAddRows={typed ? addBlankRows : undefined}
               onDownloadProblems={downloadProblems}
             />
@@ -618,7 +730,7 @@ export default function StudentImportPage() {
                 onAdd={(key, fill) => addColumn(key, fill)}
                 onCreate={() => {
                   setAddOpen(false);
-                  setCreating(true);
+                  setCreating({ column: null, name: "" });
                 }}
                 onClose={() => setAddOpen(false)}
               />
@@ -653,6 +765,8 @@ export default function StudentImportPage() {
                 onColumn={placeColumn}
                 onMissing={addMissing}
                 onAddColumn={() => setAddOpen((open) => !open)}
+                onNewField={(column, name) => setCreating({ column, name })}
+                newFieldProblem={(name) => takenNameNote(name, settings?.customFields ?? NO_FIELDS)}
               />
             )}
 
@@ -686,7 +800,7 @@ export default function StudentImportPage() {
                     {toFix} row{toFix === 1 ? " needs" : "s need"} a fix and {toFix === 1 ? "is" : "are"} not uploaded.
                   </p>
                 )}
-                <Button size="lg" loading={!!busy} disabled={!!busy || ready.length === 0} onClick={() => setAsk("upload")}>
+                <Button size="lg" loading={!!busy} disabled={!!busy || checking || ready.length === 0} onClick={() => setAsk("upload")}>
                   {!busy && <UserPlus className="size-4" aria-hidden />}
                   Upload {ready.length} student{ready.length === 1 ? "" : "s"}
                 </Button>
@@ -699,7 +813,8 @@ export default function StudentImportPage() {
           <>
             <DoneCard
               admitted={lastRun?.admitted.length ?? 0}
-              notAdmitted={filled.length}
+              notAdmitted={filled.length - skipped.length}
+              already={skipped.length}
               linked={linkedNow}
               year={year}
               onFix={() => {
@@ -715,11 +830,18 @@ export default function StudentImportPage() {
         )}
       </div>
 
-      {creating && settings && <CustomFieldDialog field={null} others={settings.customFields} onSave={(f) => void createField(f)} onClose={() => setCreating(false)} />}
+      {creating && settings && (
+        <CustomFieldDialog field={null} name={creating.name} others={settings.customFields} onSave={(f) => void createField(f, creating.column)} onClose={() => setCreating(null)} />
+      )}
       {ask === "upload" && (
         <AskDialog title={`Upload ${ready.length} student${ready.length === 1 ? "" : "s"}?`} icon={UserPlus} confirmLabel="Upload and admit" onClose={() => setAsk(null)} onConfirm={() => void upload()}>
           <p>Each is admitted into the class and section of their row, in {year}, with the parents of their row (a parent already in your school is linked).</p>
           {toFix > 0 && <p>The {toFix} row{toFix === 1 ? "" : "s"} that need a fix are not uploaded; they stay in the table.</p>}
+          {skipped.length > 0 && (
+            <p>
+              The {skipped.length} row{skipped.length === 1 ? " already in your school is" : "s already in your school are"} not uploaded again.
+            </p>
+          )}
           {over.length > 0 && !allowOver && <p className="font-semibold text-warning">Full sections take students only up to their seats; the others are not admitted.</p>}
         </AskDialog>
       )}

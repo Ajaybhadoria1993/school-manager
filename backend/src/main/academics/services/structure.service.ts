@@ -3,7 +3,6 @@ import { CLASS_LEVELS } from "../../tenants/constants";
 import type { ITenant } from "../../tenants/models/Tenant";
 import { nameKeyOf } from "../../tenants/services/tenantFactory";
 import { MAX_CLASSES, MAX_DEPARTMENTS, levelToClass, sectionLetters } from "../constants";
-import { AcademicYear } from "../models/AcademicYear";
 import { Department } from "../models/Department";
 import { SchoolClass } from "../models/SchoolClass";
 import { Section } from "../models/Section";
@@ -26,7 +25,7 @@ export interface Structure {
     departments: number;
     classes: number;
     sections: number;
-    /** The sum of the limits that were set; a section without a limit adds nothing. */
+    /** The seats of all the classes, added up; a class whose seats are not set yet adds nothing. */
     seats: number;
   };
 }
@@ -41,11 +40,8 @@ export interface QuickSetupResult {
 
 export class StructureService {
   static async get(tenantId: string): Promise<Structure> {
-    // Departments and classes are the school's lasting layout; sections are the current session's.
-    const [year, settings] = await Promise.all([
-      AcademicYear.findOne({ tenantId, status: "active" }).select("_id name").lean(),
-      AcademicSettingsService.get(tenantId),
-    ]);
+    // Departments and classes are the school's lasting layout; sections are the session's (the running one, or a past one being looked at).
+    const [year, settings] = await Promise.all([AcademicYearService.shownYear(tenantId), AcademicSettingsService.get(tenantId)]);
     const [departments, classes, sections] = await Promise.all([
       Department.find({ tenantId }).lean(),
       SchoolClass.find({ tenantId }).sort({ order: 1, _id: 1 }).lean(),
@@ -83,7 +79,7 @@ export class StructureService {
         departments: departments.length,
         classes: classes.length,
         sections: sections.length,
-        seats: sections.reduce((sum, s) => sum + (s.capacity ?? 0), 0),
+        seats: classes.reduce((sum, c) => sum + (c.capacity ?? 0), 0),
       },
     };
   }

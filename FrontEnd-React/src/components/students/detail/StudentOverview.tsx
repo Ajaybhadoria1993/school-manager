@@ -23,6 +23,8 @@ import type { CustomFieldDef } from "../../../constants/studentFields";
 import { TONES, type Tone } from "../../../constants/tones";
 import { formatDay } from "../../../utils/academicYear";
 import { cn } from "../../../utils/helpers";
+import { GuardianLogin } from "./GuardianLogin";
+import { MovesList } from "./MovesList";
 import { ageText, avatarTone, formatAadhaar, formatMobile, placeLabel } from "../../../utils/students";
 import type { StudentDetail } from "../../../types";
 import { Card } from "../../ui/Card";
@@ -120,11 +122,11 @@ export function StudentOverview({ student, custom = [] }: { student: StudentDeta
         title="Parents and guardians"
         index={2}
         className="lg:col-span-2"
-        tip="One parent is one record for all their children. The primary contact's mobile number will be their sign-in to the parent app; it is verified the first time they sign in."
+        tip="One parent is one record for all their children, and one login shows them all of their children."
       >
         <ul className="grid gap-3 md:grid-cols-2">
           {student.guardians.map((g) => (
-            <li key={g.id} className={cn("rounded-2xl border p-4", g.isPrimary ? "border-primary/30 bg-primary-soft/30" : "border-border bg-background/60")}>
+            <li key={g.id} aria-label={g.name} className={cn("rounded-2xl border p-4", g.isPrimary ? "border-primary/30 bg-primary-soft/30" : "border-border bg-background/60")}>
               <div className="flex items-center gap-3">
                 <StudentAvatar name={g.name} seed={g.mobile ?? g.id} size="sm" />
                 <div className="min-w-0 flex-1">
@@ -175,6 +177,7 @@ export function StudentOverview({ student, custom = [] }: { student: StudentDeta
                   </div>
                 )}
               </dl>
+              <GuardianLogin guardian={g} />
             </li>
           ))}
         </ul>
@@ -220,6 +223,7 @@ export function StudentOverview({ student, custom = [] }: { student: StudentDeta
             </li>
           ))}
         </ol>
+        <MovesList moves={student.moves} />
       </Block>
 
       <Block icon={MapPin} tone="navy" title="Address" index={5}>

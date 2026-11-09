@@ -15,7 +15,7 @@ export const authApi = createApi({
       query: () => "/auth/me",
     }),
 
-    login: build.mutation<ApiResponse<SessionPayload>, { email: string; password: string }>({
+    login: build.mutation<ApiResponse<SessionPayload>, { identifier: string; password: string }>({
       query: (body) => ({ url: "/auth/login", method: "POST", body }),
       extraOptions: ANSWER_ON_401,
     }),

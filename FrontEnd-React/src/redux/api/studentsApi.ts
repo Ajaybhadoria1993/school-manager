@@ -2,18 +2,30 @@ import { createApi } from "@reduxjs/toolkit/query/react";
 import type {
   AdmitStudentInput,
   ApiResponse,
+  ClassOverviewPage,
+  ClassOverviewQuery,
   ExportPreview,
+  GuardianLoginAnswer,
   GuardianMatch,
+  ImportMatch,
+  ImportMatchRow,
   ImportResult,
   ImportRowInput,
   ImportSheet,
+  InactivePage,
+  InactiveQuery,
   MoveStudentInput,
+  Promotion,
+  PromotionChange,
+  ReactivatePlacement,
   StudentCapacity,
   StudentDetail,
   StudentListQuery,
   StudentPage,
   StudentPlace,
+  StatusResult,
   StudentSettings,
+  TransferOutInput,
   UpdateGuardianInput,
   UpdateStudentInput,
   UpdateStudentSettingsInput,
@@ -90,7 +102,7 @@ function seatsMoved(draft: StudentCapacity, from: Seat, to: Seat) {
 export const studentsApi = createApi({
   reducerPath: "studentsApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["StudentList", "Student", "Capacity", "StudentSettings"],
+  tagTypes: ["StudentList", "Student", "Capacity", "StudentSettings", "StudentInactive", "StudentPromotion"],
   // Like the classes screens: a copy younger than a minute is shown as it is when a screen comes back; our own changes already
   // refresh what they touch.
   refetchOnMountOrArgChange: 60,
@@ -106,6 +118,14 @@ export const studentsApi = createApi({
     }),
     getCapacity: build.query<ApiResponse<StudentCapacity>, void>({
       query: () => "/students/capacity",
+      providesTags: ["Capacity"],
+    }),
+    /**
+     * The classes at a glance (School Class): students, sections and seats of the classes that match the filter. The server filters; an
+     * admission, a move or a student made inactive reads it again (it shares the seat counts' tag).
+     */
+    getClassOverview: build.query<ApiResponse<ClassOverviewPage>, ClassOverviewQuery>({
+      query: (params) => ({ url: "/students/class-overview", params }),
       providesTags: ["Capacity"],
     }),
 
@@ -203,7 +223,7 @@ export const studentsApi = createApi({
      * A spreadsheet the server makes (the sample template, the export): saved by the browser under the server's name. Nothing is
      * cached (only a null lands in the store; the file goes straight to the browser).
      */
-    downloadSheet: build.mutation<null, { url: "/students/import/template" | "/students/export"; params?: Record<string, string>; fallbackName: string }>({
+    downloadSheet: build.mutation<null, { url: "/students/import/template" | "/students/export" | "/staff/teachers/import/template" | "/staff/teachers/export"; params?: Record<string, string>; fallbackName: string }>({
       async queryFn({ url, params, fallbackName }, _api, _extra, baseQuery) {
         const result = await baseQuery({
           url,
@@ -224,6 +244,14 @@ export const studentsApi = createApi({
     }),
 
     /**
+     * Which rows of a file are students the school already has: ONE request for the whole file (up to 1000 rows), before anything is
+     * uploaded. Reads only (nothing is saved, nothing is marked stale).
+     */
+    matchImportRows: build.mutation<ApiResponse<{ matches: ImportMatch[] }>, { rows: ImportMatchRow[] }>({
+      query: (body) => ({ url: "/students/import/match", method: "POST", body }),
+    }),
+
+    /**
      * A part of a bulk import (up to 100 rows): checked (`dryRun`) or admitted. Marks nothing stale by itself: the import screen sends
      * every part and then refreshes once (`refreshAfterImport`).
      */
@@ -231,7 +259,81 @@ export const studentsApi = createApi({
       query: (body) => ({ url: "/students/import", method: "POST", body }),
     }),
 
+    /**
+     * Active and inactive students. Making students inactive (they left) or active again (they came back) changes the list, the seats,
+     * the pages of their brothers and sisters and the inactive list, so those are read again (only the ones on screen are). Nobody is
+     * ever deleted.
+     */
+    getInactive: build.query<ApiResponse<InactivePage>, InactiveQuery>({
+      query: (params) => ({ url: "/students/inactive", params }),
+      providesTags: ["StudentInactive"],
+    }),
+    deactivateStudents: build.mutation<ApiResponse<StatusResult>, { ids: string[]; reason?: string }>({
+      query: (body) => ({ url: "/students/deactivate", method: "POST", body }),
+      invalidatesTags: ["StudentList", "Capacity", "Student", "StudentInactive"],
+    }),
+    reactivateStudents: build.mutation<ApiResponse<StatusResult>, { ids: string[]; placement?: ReactivatePlacement }>({
+      query: (body) => ({ url: "/students/reactivate", method: "POST", body }),
+      invalidatesTags: ["StudentList", "Capacity", "Student", "StudentInactive"],
+    }),
+
+    /**
+     * A student leaves for another school: inactive, with the transfer certificate kept (nothing is deleted). The student's own page takes
+     * the answer; the lists, the seats and the inactive list are read again where they are on screen.
+     */
+    transferOutStudent: build.mutation<ApiResponse<StudentDetail>, { id: string } & TransferOutInput>({
+      query: ({ id, ...body }) => ({ url: `/students/${id}/transfer-out`, method: "POST", body }),
+      invalidatesTags: ["StudentList", "Capacity", "StudentInactive", "Student"],
+    }),
+
+    /**
+     * Promotion to the next academic year: the open list for the year that waits, and what is done to it. The list is one piece, so every
+     * action answers with the whole list and writes it into the cache (nothing is asked again); the admin's approval also changes what
+     * the next year's classes will hold, but nothing on screen today.
+     */
+    getPromotion: build.query<ApiResponse<Promotion | null>, string>({
+      query: (toAcademicYearId) => ({ url: "/students/promotions", params: { toAcademicYearId } }),
+      providesTags: ["StudentPromotion"],
+    }),
+    startPromotion: build.mutation<ApiResponse<Promotion>, { toAcademicYearId: string }>({
+      query: (body) => ({ url: "/students/promotions", method: "POST", body }),
+      invalidatesTags: ["StudentPromotion"],
+    }),
+    updatePromotion: build.mutation<ApiResponse<Promotion>, { id: string; entries: PromotionChange[] }>({
+      query: ({ id, entries }) => ({ url: `/students/promotions/${id}`, method: "PATCH", body: { entries } }),
+      invalidatesTags: ["StudentPromotion"],
+    }),
+    submitPromotion: build.mutation<ApiResponse<Promotion>, string>({
+      query: (id) => ({ url: `/students/promotions/${id}/submit`, method: "POST", body: {} }),
+      invalidatesTags: ["StudentPromotion"],
+    }),
+    rejectPromotion: build.mutation<ApiResponse<Promotion>, { id: string; note?: string }>({
+      query: ({ id, note }) => ({ url: `/students/promotions/${id}/reject`, method: "POST", body: note ? { note } : {} }),
+      invalidatesTags: ["StudentPromotion"],
+    }),
+    approvePromotion: build.mutation<ApiResponse<Promotion>, { id: string; allowOverCapacity?: boolean }>({
+      query: ({ id, allowOverCapacity }) => ({ url: `/students/promotions/${id}/approve`, method: "POST", body: { allowOverCapacity: !!allowOverCapacity } }),
+      invalidatesTags: ["StudentPromotion"],
+    }),
+    cancelPromotion: build.mutation<ApiResponse<Promotion>, string>({
+      query: (id) => ({ url: `/students/promotions/${id}/cancel`, method: "POST", body: {} }),
+      invalidatesTags: ["StudentPromotion"],
+    }),
+
     /** A guardian's own details: every child of theirs shows them, and the list shows the primary guardian's name and number. */
+    // A parent's login (the guardian's, one for all their children): make it, another username, a new password. Every page of a student
+    // shows the parents' usernames, so the students' pages are read again.
+    createGuardianLogin: build.mutation<ApiResponse<GuardianLoginAnswer>, { id: string; username: string; password: string }>({
+      query: ({ id, ...body }) => ({ url: `/students/guardians/${id}/login`, method: "POST", body }),
+      invalidatesTags: ["Student"],
+    }),
+    changeGuardianUsername: build.mutation<ApiResponse<GuardianLoginAnswer>, { id: string; username: string }>({
+      query: ({ id, ...body }) => ({ url: `/students/guardians/${id}/login`, method: "PATCH", body }),
+      invalidatesTags: ["Student"],
+    }),
+    resetGuardianPassword: build.mutation<ApiResponse<GuardianLoginAnswer>, { id: string; password: string }>({
+      query: ({ id, ...body }) => ({ url: `/students/guardians/${id}/reset-password`, method: "POST", body }),
+    }),
     updateGuardian: build.mutation<ApiResponse<GuardianMatch>, { id: string; refresh?: boolean } & UpdateGuardianInput>({
       query: ({ id, refresh: _refresh, ...body }) => ({ url: `/students/guardians/${id}`, method: "PATCH", body }),
       invalidatesTags: (result, _error, { refresh }) =>
@@ -260,12 +362,28 @@ export const {
   useDownloadSheetMutation,
   useReadImportFileMutation,
   useImportStudentsMutation,
+  useMatchImportRowsMutation,
   useGetStudentsQuery,
   useGetStudentQuery,
   useGetCapacityQuery,
+  useGetClassOverviewQuery,
   useLookupGuardianMutation,
   useAdmitStudentMutation,
   useUpdateStudentMutation,
   useMoveStudentMutation,
   useUpdateGuardianMutation,
+  useCreateGuardianLoginMutation,
+  useChangeGuardianUsernameMutation,
+  useResetGuardianPasswordMutation,
+  useGetInactiveQuery,
+  useDeactivateStudentsMutation,
+  useReactivateStudentsMutation,
+  useTransferOutStudentMutation,
+  useGetPromotionQuery,
+  useStartPromotionMutation,
+  useUpdatePromotionMutation,
+  useSubmitPromotionMutation,
+  useRejectPromotionMutation,
+  useApprovePromotionMutation,
+  useCancelPromotionMutation,
 } = studentsApi;

@@ -35,7 +35,9 @@ export function ExportPreviewCard({
         </h2>
         {preview && (
           <p className="text-xs text-foreground-muted">
-            {preview.total === 0
+            {preview.sample
+              ? `Sample row · ${layout.length} column${layout.length === 1 ? "" : "s"}`
+              : preview.total === 0
               ? `No student to export · ${layout.length} column${layout.length === 1 ? "" : "s"}`
               : `The first ${Math.min(preview.rows.length, preview.total)} of ${preview.total} student${preview.total === 1 ? "" : "s"} · ${layout.length} column${layout.length === 1 ? "" : "s"}, exactly as the file will have them`}
           </p>
@@ -89,6 +91,12 @@ export function ExportPreviewCard({
             </tbody>
           </table>
         </div>
+      )}
+      {preview?.sample && (
+        <p className="mt-3 flex items-center gap-2 rounded-xl bg-primary-soft px-4 py-3 text-sm text-primary-deep">
+          <FileSpreadsheet className="size-4 shrink-0" aria-hidden />
+          No student is admitted yet, so the file has this one sample row. It is only for trying the file: it is not saved anywhere.
+        </p>
       )}
       {preview && preview.rows.length === 0 && (
         <p className="mt-3 flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-6 text-sm text-foreground-muted">

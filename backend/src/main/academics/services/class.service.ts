@@ -2,12 +2,15 @@ import { Types, type PipelineStage } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { nameKeyOf } from "../../tenants/services/tenantFactory";
 import { CLASS_LEVELS } from "../../tenants/constants";
+import { TimetableCleanup } from "../../timetable/services/cleanup";
+import { ExamCleanup } from "../../exams/services/cleanup";
 import { MAX_CLASSES, levelToClass, sectionLetters } from "../constants";
 import { Department } from "../models/Department";
 import { SchoolClass, type ISchoolClass } from "../models/SchoolClass";
 import { Section, type ISection } from "../models/Section";
 import type { CreateClassInput, ListClassesQuery, UpdateClassInput } from "../schemas/academics.schemas";
 import { AcademicYearService } from "./academicYear.service";
+import { assertClassHolds, seatsHeldBySections } from "./seats";
 import { isDuplicateKey, toClassDto, type ClassDto } from "./shared";
 import { enrolmentCountsByClass, studentCountsBySection } from "./usage";
 
@@ -47,19 +50,19 @@ export class ClassService {
   static async get(tenantId: string, id: string): Promise<ClassDto> {
     const found = await SchoolClass.findOne({ _id: id, tenantId }).lean();
     if (!found) throw NOT_FOUND();
-    const academicYearId = await AcademicYearService.activeYearId(tenantId);
+    const academicYearId = await AcademicYearService.shownYearId(tenantId);
     return toClassDto(found, await Section.find({ tenantId, classId: found._id, academicYearId }).lean());
   }
 
   /**
    * The school's classes, filtered, sorted and cut into pages by the database (one aggregation), each with its sections.
-   * A class's seats are the sum of its sections' limits; a class whose seats are not set at all is left out when the list is
-   * filtered by seats, because "no limit" is not a number of seats.
+   * A class's seats are its own (SchoolClass.capacity, whether or not it has sections); a class whose seats are not set is left
+   * out when the list is filtered by seats, because "not set" is not a number of seats.
    */
   static async list(tenantId: string, query: ListClassesQuery): Promise<ClassPage> {
     const school = new Types.ObjectId(tenantId);
-    // A class's sections (and so its seats) are those of the current session.
-    const academicYearId = await AcademicYearService.activeYearId(tenantId);
+    // A class's sections (and so its seats) are those of the session shown (the running one, or a past one being looked at).
+    const academicYearId = await AcademicYearService.shownYearId(tenantId);
     const match: Record<string, unknown> = { tenantId: school };
     if (query.departmentId) match.departmentId = query.departmentId === "none" ? null : new Types.ObjectId(query.departmentId);
     if (query.search) match.nameKey = { $regex: escapeRegex(nameKeyOf(query.search)) };
@@ -87,7 +90,8 @@ export class ClassService {
           as: "sections",
         },
       },
-      { $addFields: { seatsTotal: { $sum: "$sections.capacity" } } },
+      // The class's own seats; a class whose seats are not set counts as 0, which a seat filter then leaves out.
+      { $addFields: { seatsTotal: { $ifNull: ["$capacity", 0] } } },
       ...(filteredBySeats ? [{ $match: { seatsTotal: { $gt: 0, ...seatsLimits } } } as PipelineStage] : []),
       { $sort: sort },
       {
@@ -111,7 +115,10 @@ export class ClassService {
     };
   }
 
-  /** The new class goes last (a standard one goes in its teaching place, see placeInTeachingOrder). It starts with `sectionCount` sections (A, B, ...). */
+  /**
+   * The new class goes last (a standard one goes in its teaching place, see placeInTeachingOrder). It has its `capacity` seats from the
+   * start, with or without sections, and starts with `sectionCount` sections (A, B, ...), which have no seats of their own yet.
+   */
   static async create(tenantId: string, input: CreateClassInput): Promise<ClassDto> {
     if ((await SchoolClass.countDocuments({ tenantId })) >= MAX_CLASSES) {
       throw ApiError.conflict(`A school can have up to ${MAX_CLASSES} classes.`, "LIMIT_REACHED");
@@ -127,6 +134,7 @@ export class ClassService {
         nameKey: nameKeyOf(input.name),
         departmentId: input.departmentId ?? null,
         order: (last?.order ?? 0) + 1,
+        capacity: input.capacity,
       });
     } catch (err) {
       if (isDuplicateKey(err)) throw EXISTS(input.name);
@@ -139,7 +147,7 @@ export class ClassService {
     const sections = await Section.insertMany(
       sectionLetters(input.sectionCount).map((name) => ({ tenantId, classId: created._id, academicYearId, name, nameKey: nameKeyOf(name) }))
     );
-    return toClassDto({ _id: created._id, name: created.name, departmentId: created.departmentId, order }, sections);
+    return toClassDto({ _id: created._id, name: created.name, departmentId: created.departmentId, capacity: created.capacity, order }, sections);
   }
 
   /**
@@ -176,6 +184,14 @@ export class ClassService {
     const changes: Record<string, unknown> = {};
     if (input.name !== undefined) Object.assign(changes, { name: input.name, nameKey: nameKeyOf(input.name) });
     if (input.departmentId !== undefined) changes.departmentId = input.departmentId;
+    if (input.capacity !== undefined) {
+      // The sections of the class split its seats, so it cannot be given fewer than they hold.
+      const current = await SchoolClass.findOne({ _id: id, tenantId }).select("name").lean();
+      if (!current) throw NOT_FOUND();
+      const academicYearId = await AcademicYearService.activeYearId(tenantId);
+      assertClassHolds(current.name, input.capacity, await seatsHeldBySections(tenantId, id, academicYearId));
+      changes.capacity = input.capacity;
+    }
 
     try {
       const updated = await SchoolClass.findOneAndUpdate({ _id: id, tenantId }, { $set: changes }, { new: true });
@@ -225,6 +241,10 @@ export class ClassService {
 
     await Section.deleteMany({ tenantId, classId: id });
     await SchoolClass.deleteOne({ _id: id, tenantId });
+    // What the class studied, its timetables and its place in the school's timings go with it.
+    await TimetableCleanup.forClass(tenantId, id);
+    // ...and so does its place in the exam papers (a paper left for nobody is taken away).
+    await ExamCleanup.forClass(tenantId, id);
     return { removedSections: sections.length };
   }
 }

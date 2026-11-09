@@ -8,6 +8,9 @@ import type { Gender, Relation, UserRole } from "../types";
 /** Who may admit and change students (the same one list as the server's STUDENT_WRITERS; a "reception" role joins later). */
 export const STUDENT_WRITERS: readonly UserRole[] = ["school_admin", "principal"];
 
+/** Who may approve the promotion list and switch the next academic year on (the server's STUDENT_APPROVERS: the school admin only). */
+export const STUDENT_APPROVERS: readonly UserRole[] = ["school_admin"];
+
 export const GENDERS: readonly Gender[] = ["Male", "Female", "Other"];
 export const RELATIONS: readonly Relation[] = ["Father", "Mother", "Guardian", "Other"];
 export const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] as const;
@@ -42,7 +45,9 @@ export const MESSAGES = {
   gender: "Choose the gender",
   bornInFuture: "The date of birth cannot be in the future",
   admittedInFuture: "The admission date cannot be in the future",
-  age: `The student must be ${MIN_AGE} to ${MAX_AGE} years old on the admission date`,
+  /** How old the student was on which day (the age counts from the ADMISSION date, not today), and which dates to fix. `day` is "2022-04-03". */
+  age: (years: number, day: string) =>
+    `The student was ${years < 1 ? "less than a year" : `${years} year${years === 1 ? "" : "s"}`} old on the admission date (${day.split("-").reverse().join("-")}); a student must be ${MIN_AGE} to ${MAX_AGE} years old then. Fix the date of birth or the admission date`,
   street: "Enter the street address",
   city: "Enter the city",
   state: "Choose the state",
@@ -59,7 +64,10 @@ export const MESSAGES = {
   email: "Enter a valid email address",
   previousSchool: "Enter the previous school's name",
   tcInFuture: "The TC date cannot be in the future",
-  aadhaar: "Enter a valid 12-digit Aadhaar number",
+  // What is wrong with an Aadhaar number is said by what is wrong: the digits, the first digit, or the last (check) digit.
+  aadhaarLength: "The Aadhaar number has 12 digits",
+  aadhaarStart: "An Aadhaar number does not start with 0 or 1",
+  aadhaarCheck: "This Aadhaar number is not valid: its last digit (the check digit) does not match the other digits",
   samagra: "Samagra ID is 8 or 9 digits",
   apaar: "APAAR ID is 12 digits",
   pen: "PEN is 11 digits",

@@ -11,8 +11,11 @@ import {
   SearchX,
   ShieldAlert,
   UserPlus,
+  UserX,
   UsersRound,
+  X,
 } from "lucide-react";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useStudentFilters } from "../../hooks/useStudentFilters";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetCapacityQuery, useGetStudentsQuery } from "../../redux/api/studentsApi";
@@ -29,6 +32,9 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { InfoTip, WithTip } from "../../components/ui/Hint";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { admitLink } from "../../utils/students";
+import { DeactivateDialog } from "../../components/students/status/DeactivateDialog";
+import { StudentStatusTabs } from "../../components/students/status/StudentStatusTabs";
 
 const GUIDE_KEY = "edushiksha.students.guide-closed";
 
@@ -68,6 +74,9 @@ export default function StudentsPage() {
   const capacityRes = useGetCapacityQuery();
   const listRes = useGetStudentsQuery(query);
   const [guideChoice, setGuideChoice] = useState<boolean | null>(null);
+  // The students ticked to be made inactive (only those of the page on screen count, so a tick on another page is never sent).
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
+  const [asking, setAsking] = useState(false);
 
   const structure = structureRes.data?.data;
   const capacity = capacityRes.data?.data;
@@ -88,6 +97,20 @@ export default function StudentsPage() {
     Object.entries({ q: query.q, class: query.classId, section: query.sectionId }).filter((e): e is [string, string] => !!e[1])
   ).toString();
 
+  const chosen = (page?.items ?? []).filter((s) => ticked.has(s.id));
+  const selection = {
+    selected: ticked,
+    onToggle: (id: string) =>
+      setTicked((now) => {
+        const next = new Set(now);
+        if (!next.delete(id)) next.add(id);
+        return next;
+      }),
+    onToggleAll: (on: boolean) => setTicked(on ? new Set((page?.items ?? []).map((s) => s.id)) : new Set()),
+  };
+
+  // A year that is over is only looked at: no admitting, uploading or making inactive (the server refuses them too).
+  const readOnly = useReadOnlyYear();
   const classesWithStudents = capacity?.classes.filter((c) => c.enrolled > 0).length ?? 0;
   const year = capacity?.academicYear?.name ?? page?.academicYear?.name ?? null;
 
@@ -129,7 +152,7 @@ export default function StudentsPage() {
               </Link>
             </WithTip>
           )}
-          {!noYear && (
+          {!noYear && !readOnly && (
             <WithTip tip="Bring in many students at once from Excel: the sample file or your school's own sheet.">
               <Link to="/school/students/import" className={outlineLink}>
                 <FileUp className="size-4" aria-hidden />
@@ -137,9 +160,9 @@ export default function StudentsPage() {
               </Link>
             </WithTip>
           )}
-          {!noYear && (
-            <WithTip tip="Opens the admission form: the student, the class and section, a parent and the address, on one page.">
-              <Link to="/school/students/new" className={plainLink}>
+          {!noYear && !readOnly && (
+            <WithTip tip="Opens the admission form: the student, the class and section (the one chosen in the list, if any), a parent and the address.">
+              <Link to={admitLink({ classId: filters.classId, sectionId: filters.sectionId })} className={plainLink}>
                 <UserPlus className="size-4" aria-hidden />
                 Add student
               </Link>
@@ -147,6 +170,8 @@ export default function StudentsPage() {
           )}
         </div>
       </header>
+
+      {!noYear && <StudentStatusTabs />}
 
       {guideOpen && <StudentsGuide onClose={toggleGuide} />}
 
@@ -232,10 +257,12 @@ export default function StudentsPage() {
               title="No students yet"
               actions={
                 <>
-                  <Link to="/school/students/new" className={plainLink}>
-                    <UserPlus className="size-4" aria-hidden />
-                    Add your first student
-                  </Link>
+                  {!readOnly && (
+                    <Link to="/school/students/new" className={plainLink}>
+                      <UserPlus className="size-4" aria-hidden />
+                      Add your first student
+                    </Link>
+                  )}
                   <Link to="/school/classes" className={outlineLink}>
                     <FolderTree className="size-4" aria-hidden />
                     Check your classes and sections
@@ -261,7 +288,24 @@ export default function StudentsPage() {
                   <p>No student of this year matches {filters.q ? `"${filters.q}"` : "these filters"}.</p>
                 </StudentsNotice>
               ) : filters.view === "table" ? (
-                <StudentTable students={page.items} loading={listRes.isFetching} />
+                <>
+                  {chosen.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary-soft/60 px-4 py-2.5">
+                      <p className="text-sm font-semibold text-primary-deep">{chosen.length} selected</p>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" onClick={() => setTicked(new Set())}>
+                          <X className="size-4" aria-hidden />
+                          Clear
+                        </Button>
+                        <Button onClick={() => setAsking(true)}>
+                          <UserX className="size-4" aria-hidden />
+                          Make inactive
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  <StudentTable students={page.items} loading={listRes.isFetching} selection={readOnly ? undefined : selection} />
+                </>
               ) : (
                 <ul
                   aria-label="Students"
@@ -279,6 +323,8 @@ export default function StudentsPage() {
           )}
         </>
       )}
+
+      {asking && chosen.length > 0 && <DeactivateDialog students={chosen} onClose={() => setAsking(false)} onDone={() => setTicked(new Set())} />}
     </div>
   );
 }

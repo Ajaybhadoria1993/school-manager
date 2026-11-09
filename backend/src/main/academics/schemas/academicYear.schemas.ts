@@ -35,29 +35,42 @@ const calendarDay = (what: string) =>
  * An academic year as a school names it: its name and its own first and last day. The dates are the school's choice
  * (April to March, June to May, January to December...); only the order is checked: the end must come after the start.
  */
-export const academicYearInputSchema = z
-  .object(
-    {
+const academicYearObject = z.object(
+  {
     name: z
       .string({ required_error: "Enter the academic year name", invalid_type_error: "Enter the academic year name" })
       .trim()
       .min(4, "Enter the academic year name, for example 2026-2027")
       .max(20, "Keep the academic year name under 20 characters")
       .regex(/^[A-Za-z0-9 /._-]*$/, "Use only letters, digits, spaces and - / . _ in the name")
-      .transform((value) => value.replace(/\s+/g, " ")),
+      .transform((value) => value.replace(/s+/g, " ")),
     startDate: calendarDay("start date"),
     endDate: calendarDay("end date"),
-    },
-    { required_error: "Enter the academic year", invalid_type_error: "Enter the academic year" }
-  )
-  .superRefine((year, ctx) => {
-    // Only two real days can be compared; a missing or impossible one already has its own message.
-    if (!(year.startDate instanceof Date) || !(year.endDate instanceof Date)) return;
-    if (year.endDate.getTime() <= year.startDate.getTime()) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: "The end date must be after the start date" });
-    } else if ((year.endDate.getTime() - year.startDate.getTime()) / DAY_MS > MAX_ACADEMIC_YEAR_DAYS) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: "An academic year can be at most two years long" });
-    }
-  });
+  },
+  { required_error: "Enter the academic year", invalid_type_error: "Enter the academic year" }
+);
+
+/** The order of the two days, and the longest a year may run. */
+const checkDays = (year: { startDate: Date | undefined; endDate: Date | undefined }, ctx: z.RefinementCtx) => {
+  // Only two real days can be compared; a missing or impossible one already has its own message.
+  if (!(year.startDate instanceof Date) || !(year.endDate instanceof Date)) return;
+  if (year.endDate.getTime() <= year.startDate.getTime()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: "The end date must be after the start date" });
+  } else if ((year.endDate.getTime() - year.startDate.getTime()) / DAY_MS > MAX_ACADEMIC_YEAR_DAYS) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: "An academic year can be at most two years long" });
+  }
+};
+
+export const academicYearInputSchema = academicYearObject.superRefine(checkDays);
+
+/** The school's next session: the same fields, whether the sections of the running year are copied into it (they are, unless said not), and whether the subjects and timetables go with them. */
+export const nextAcademicYearSchema = academicYearObject
+  .extend({
+    copySections: z.boolean().default(true),
+    /** Also copy what each class studies and its timetable (as drafts). Off unless asked: the sections alone are what promotion needs. */
+    copyTimetable: z.boolean().default(false),
+  })
+  .superRefine(checkDays);
 
 export type AcademicYearInput = z.infer<typeof academicYearInputSchema>;
+export type NextAcademicYearInput = z.infer<typeof nextAcademicYearSchema>;

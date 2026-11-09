@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { FolderX, PencilLine, Plus } from "lucide-react";
+import { FolderX, PencilLine, Plus, Users } from "lucide-react";
 import { Button } from "@heroui/react";
-import { MAX_NEW_SECTIONS, STANDARD_CLASSES } from "../../constants/academics";
+import { MAX_CLASS_CAPACITY, MAX_NEW_SECTIONS, STANDARD_CLASSES } from "../../constants/academics";
 import { useCreateClassMutation } from "../../redux/api/academicsApi";
-import { departmentIcon, describeSections, keyOf, NO_DEPARTMENT, OTHER, plural, toneOf } from "../../utils/academics";
+import { classSeatsProblem, departmentIcon, describeSections, keyOf, NO_DEPARTMENT, OTHER, plural, toneOf } from "../../utils/academics";
 import type { AcademicStructure } from "../../types";
 import { AppModal, ModalError } from "../ui/AppModal";
 import { ChipPicker, type Chip } from "../ui/ChipPicker";
@@ -17,7 +17,7 @@ const FORM_ID = "class-form";
 const SECTION_CHIPS: Chip[] = Array.from({ length: MAX_NEW_SECTIONS + 1 }, (_, n) => ({ value: String(n), label: n === 0 ? "None" : String(n) }));
 
 /**
- * Add a class, by picking: the usual classes of a school in India that this school does not have yet are chips (one click),
+ * Add a class: its seats are decided here (the whole class, with or without sections; they can be changed later), the usual classes of a school in India that this school does not have yet are chips (one click),
  * **Other...** opens a box for a name of your own, the department is a row of chips (it follows the class you pick, until you pick
  * one yourself) and so is the number of sections, with what they will be called shown right under it. Changing a class later is
  * done from its department's Manage screen.
@@ -34,6 +34,8 @@ export function ClassModal({ structure, onClose }: { structure: AcademicStructur
   const [departmentId, setDepartmentId] = useState(NO_DEPARTMENT);
   const [sectionCount, setSectionCount] = useState("1");
   const [tooShort, setTooShort] = useState(false);
+  const [seats, setSeats] = useState("");
+  const [seatsError, setSeatsError] = useState<string | null>(null);
   // Until the person picks a department themselves, the class picked or typed picks the department made for it (Nursery: Pre-Primary).
   const [departmentChosen, setDepartmentChosen] = useState(false);
   const { busy, error, run, clearError } = useSave(onClose);
@@ -75,11 +77,17 @@ export function ClassModal({ structure, onClose }: { structure: AcademicStructur
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!clean) return setTooShort(true);
+    const seatsProblem = classSeatsProblem(seats);
+    if (!clean || seatsProblem) {
+      setTooShort(!clean);
+      setSeatsError(seatsProblem);
+      return;
+    }
     run(async () => {
       await create({
         name: clean,
         departmentId: departmentId === NO_DEPARTMENT ? null : departmentId,
+        capacity: Number(seats.trim()),
         sectionCount: Number(sectionCount),
       }).unwrap();
       push("success", `${clean} added`);
@@ -139,6 +147,29 @@ export function ClassModal({ structure, onClose }: { structure: AcademicStructur
               />
             )}
           </div>
+        </Field>
+
+        <Field
+          id="class-seats"
+          label="Seats"
+          hint="How many students this whole class can take, with or without sections. You can change it later."
+          error={seatsError ?? undefined}
+        >
+          <Input
+            id="class-seats"
+            icon={Users}
+            inputMode="numeric"
+            value={seats}
+            maxLength={String(MAX_CLASS_CAPACITY).length}
+            placeholder="For example 120"
+            aria-invalid={!!seatsError || undefined}
+            autoComplete="off"
+            onChange={(e) => {
+              setSeats(e.target.value);
+              setSeatsError(null);
+              clearError();
+            }}
+          />
         </Field>
 
         <Field

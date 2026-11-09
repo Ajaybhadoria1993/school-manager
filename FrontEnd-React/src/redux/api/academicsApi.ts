@@ -4,7 +4,10 @@ import type {
   AcademicStructure,
   AcademicYear,
   AcademicYearInput,
+  ActivatedAcademicYear,
   CurrentAcademicYear,
+  NextAcademicYear,
+  NextAcademicYearInput,
   AddClassesInput,
   AddClassesResult,
   ApiResponse,
@@ -22,6 +25,7 @@ import type {
   SectionItem,
 } from "../../types";
 import { baseQueryWithReauth } from "./baseQueryWithReauth";
+import { studentsApi } from "./studentsApi";
 
 /**
  * Classes, sections and departments, and which request each screen really needs.
@@ -62,6 +66,32 @@ export const academicsApi = createApi({
     getCurrentAcademicYear: build.query<ApiResponse<CurrentAcademicYear>, void>({
       query: () => "/academics/academic-years/current",
       providesTags: ["AcademicYear"],
+    }),
+    /** Every year of the school, the newest first: the next one waiting, the running one, the closed ones. */
+    getAcademicYears: build.query<ApiResponse<AcademicYear[]>, void>({
+      query: () => "/academics/academic-years",
+      providesTags: ["AcademicYear"],
+    }),
+    /** The next session, made waiting (the sections of the running year are copied into it unless said not). It changes nothing that is shown today. */
+    createNextAcademicYear: build.mutation<ApiResponse<NextAcademicYear>, NextAcademicYearInput>({
+      query: (body) => ({ url: "/academics/academic-years", method: "POST", body }),
+      invalidatesTags: ["AcademicYear"],
+    }),
+    /**
+     * Switches the waiting year on (the school admin): the running year closes. Everything of the school is about another year from then
+     * on, so the class layout and every student list, seat count and promotion list are read again where they are on screen.
+     */
+    activateAcademicYear: build.mutation<ApiResponse<ActivatedAcademicYear>, string>({
+      query: (id) => ({ url: `/academics/academic-years/${id}/activate`, method: "POST", body: {} }),
+      invalidatesTags: ["AcademicYear", "Structure", "ClassList", "Class"],
+      async onQueryStarted(_id, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          dispatch(studentsApi.util.invalidateTags(["StudentList", "Capacity", "Student", "StudentInactive", "StudentPromotion"]));
+        } catch {
+          // The screen shows the reason.
+        }
+      },
     }),
     /** Only for a school with no academic year at all (approved before academic years existed): names the running session, once. */
     setUpFirstAcademicYear: build.mutation<ApiResponse<AcademicYear>, AcademicYearInput>({
@@ -174,6 +204,9 @@ export const {
   useGetClassQuery,
   useGetCurrentAcademicYearQuery,
   useSetUpFirstAcademicYearMutation,
+  useGetAcademicYearsQuery,
+  useCreateNextAcademicYearMutation,
+  useActivateAcademicYearMutation,
   useUpdateAcademicSettingsMutation,
   useQuickSetupMutation,
   useAddClassesToDepartmentMutation,

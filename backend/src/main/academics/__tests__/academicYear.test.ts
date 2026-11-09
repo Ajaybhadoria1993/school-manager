@@ -57,8 +57,8 @@ describe("a school approved before academic years existed", () => {
   it("gives the sections it already had to the year it names, and leaves another school's alone", async () => {
     const a = await createSchool("Sunrise Public School");
     const b = await createSchool("Moonrise Public School");
-    const classA = (await post(a.token, "/classes", { name: "Class 5", sectionCount: 2 })).body.data;
-    const classB = (await post(b.token, "/classes", { name: "Class 5", sectionCount: 1 })).body.data;
+    const classA = (await post(a.token, "/classes", { name: "Class 5", capacity: 2000, sectionCount: 2 })).body.data;
+    const classB = (await post(b.token, "/classes", { name: "Class 5", capacity: 2000, sectionCount: 1 })).body.data;
     expect(await Section.countDocuments({ tenantId: a.tenantId, academicYearId: null })).toBe(2);
 
     const year = (await post(a.token, "/academic-years/initial", YEAR)).body.data;
@@ -80,7 +80,7 @@ describe("sections belong to one academic year", () => {
     // These tests add sections by name only, so the school makes seats and room optional (they are required by default).
     await Tenant.updateOne({ _id: s.tenantId }, { $set: { "settings.sectionDetailsRequired": false } });
     const year = (await post(s.token, "/academic-years/initial", YEAR)).body.data;
-    const klass = (await post(s.token, "/classes", { name: "Class 5", sectionCount: 2 })).body.data;
+    const klass = (await post(s.token, "/classes", { name: "Class 5", capacity: 2000, sectionCount: 2 })).body.data;
     const lastYear = await AcademicYear.create({
       tenantId: s.tenantId,
       name: "2025-2026",
@@ -112,7 +112,8 @@ describe("sections belong to one academic year", () => {
     const { token, klass } = await schoolWithTwoSessions();
     const structure = (await get(token, "/structure")).body.data;
     expect(structure.classes[0].sections.map((s: { name: string }) => s.name)).toEqual(["A", "B"]);
-    expect(structure.totals).toMatchObject({ sections: 2, seats: 0 });
+    // The class's seats are the class's own, the same in every year; only the sections are the current year's.
+    expect(structure.totals).toMatchObject({ sections: 2, seats: 2000 });
     expect((await get(token, `/classes/${klass.id}`)).body.data.sections).toHaveLength(2);
     const page = (await get(token, "/classes")).body.data;
     expect(page.items[0].sections).toHaveLength(2);
@@ -146,7 +147,7 @@ describe("the history of other academic years is kept", () => {
     const s = await createSchool("Sunrise Public School");
     await Tenant.updateOne({ _id: s.tenantId }, { $set: { "settings.sectionDetailsRequired": false } });
     await post(s.token, "/academic-years/initial", YEAR);
-    const klass = (await post(s.token, "/classes", { name: "Class 5", sectionCount: 1 })).body.data;
+    const klass = (await post(s.token, "/classes", { name: "Class 5", capacity: 2000, sectionCount: 1 })).body.data;
     const lastYear = await AcademicYear.create({
       tenantId: s.tenantId,
       name: "2025-2026",
@@ -184,7 +185,7 @@ describe("the history of other academic years is kept", () => {
   it("still deletes a class whose sections are all of the current year", async () => {
     const s = await createSchool("Moonrise Public School");
     await post(s.token, "/academic-years/initial", YEAR);
-    const klass = (await post(s.token, "/classes", { name: "Class 6", sectionCount: 2 })).body.data;
+    const klass = (await post(s.token, "/classes", { name: "Class 6", capacity: 2000, sectionCount: 2 })).body.data;
     expect((await request(app).delete(`${api}/classes/${klass.id}`).set(auth(s.token))).status).toBe(200);
     expect(await Section.countDocuments({ tenantId: s.tenantId })).toBe(0);
   });

@@ -36,8 +36,10 @@ export interface SchoolReview {
 
 const NOT_FOUND = () => ApiError.notFound("School not found", "NOT_FOUND");
 
+/** The school's administrator. They signed up with an email (the invitation or the sign-up link), so one without it is not an administrator. */
 async function adminOf(tenantId: ITenant["_id"]) {
-  return User.findOne({ tenantId, role: "school_admin" });
+  const admin = await User.findOne({ tenantId, role: "school_admin" });
+  return admin?.email ? (admin as typeof admin & { email: string }) : null;
 }
 
 /** A decision can only be taken on a school that is waiting for one, exactly once. */

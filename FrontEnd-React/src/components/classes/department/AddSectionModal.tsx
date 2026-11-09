@@ -26,14 +26,20 @@ export function AddSectionModal({
   className,
   suggestedName,
   required,
+  classSeats,
+  heldBySections,
   onClose,
 }: {
   classId: string;
   className: string;
   suggestedName: string;
   required: boolean;
+  /** The seats of the whole class (null when not set yet) and what its sections already hold: this section's seats come out of the rest. */
+  classSeats: number | null;
+  heldBySections: number;
   onClose: () => void;
 }) {
+  const seatsLeft = classSeats === null ? null : Math.max(0, classSeats - heldBySections);
   const { push } = useToast();
   const [create] = useCreateSectionMutation();
   const [values, setValues] = useState<Record<Box, string>>({ name: suggestedName, seats: "", room: "" });
@@ -57,6 +63,9 @@ export function AddSectionModal({
     if (!name) wrong.name = "Enter the section name.";
     if (seats === null ? required : !Number.isInteger(seats) || seats < 1 || seats > MAX_SECTION_CAPACITY) {
       wrong.seats = seats === null ? "Enter the seats." : `Seats must be a whole number from 1 to ${MAX_SECTION_CAPACITY}.`;
+    }
+    if (!wrong.seats && seats !== null && seatsLeft !== null && seats > seatsLeft) {
+      wrong.seats = seatsLeft === 0 ? "No seats are left in the class." : `At most ${seatsLeft} seats are left in the class.`;
     }
     if (required && !room) wrong.room = "Enter the room.";
     setProblems(wrong);
@@ -110,7 +119,11 @@ export function AddSectionModal({
             label="Seats"
             optional={!required}
             error={problems.seats}
-            hint="The most students this section should have."
+            hint={
+              seatsLeft === null
+                ? "The most students this section should have."
+                : `The most students this section should have. ${className} has ${seatsLeft} of its ${classSeats} seats left for sections.`
+            }
           >
             <Input
               id="new-section-seats"

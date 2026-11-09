@@ -18,10 +18,10 @@ import { STUDENT_WRITERS } from "../../constants/students";
 import { TONES } from "../../constants/tones";
 import { cn } from "../../utils/helpers";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
-import { KpiCard } from "./school/KpiCard";
+import { StatTile } from "./school/StatTile";
 import { SamplePreview } from "./school/SamplePreview";
 import { SchoolSummary } from "./school/SchoolSummary";
-import { WelcomeBanner } from "./school/WelcomeBanner";
+import { WelcomeHeader } from "./school/WelcomeHeader";
 import { AcademicYearBadge, AcademicYearSetUp } from "./school/AcademicYearStatus";
 
 /** How many classes run from the lowest to the highest the school named, or null if it has not said. */
@@ -32,8 +32,9 @@ function classCount(lowest: string | null, highest: string | null) {
 }
 
 /**
- * The home page of an approved school. The numbers that come from the school's own answers are real; everything that
- * needs a module we have not built yet shows a dash and "Coming soon" instead of an invented number.
+ * The home page of an approved school, kept plain like the Infinity Medisetu dashboard: a greeting, one status line, flat
+ * tiles. The numbers that come from the school's own answers are real; everything that needs a module we have not built yet
+ * shows a dash and "Coming soon" instead of an invented number.
  */
 export function SchoolDashboard() {
   const { user, tenant } = useAuth();
@@ -49,36 +50,33 @@ export function SchoolDashboard() {
   );
 
   return (
-    <div className="space-y-8">
-      <WelcomeBanner
+    <div className="space-y-6">
+      <WelcomeHeader
         firstName={user.name.split(" ")[0]}
-        schoolName={tenant?.name ?? "Your school"}
+        schoolName={tenant?.name ?? "your school"}
         addStudentHref={managesStudents ? "/school/students/new" : undefined}
-      >
+      />
+
+      <Card className="flex flex-wrap items-center gap-x-8 gap-y-2 px-5 py-3.5">
+        <span className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+          <span aria-hidden className="size-2.5 rounded-full bg-success" />
+          Approved and live
+        </span>
         <AcademicYearBadge />
-      </WelcomeBanner>
+      </Card>
 
       <AcademicYearSetUp />
 
-      <section
-        aria-label="School at a glance"
-        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
-      >
-        <KpiCard
-          index={0}
+      <section aria-label="School at a glance" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatTile
           label="Students"
           value={s1?.approxStudents ?? null}
-          hint={
-            s1?.approxStudents
-              ? "About, from your registration"
-              : "Student records are coming soon"
-          }
+          hint={s1?.approxStudents ? "About, from your registration" : "Student records are coming soon"}
           icon={GraduationCap}
           tone="primary"
           href={managesStudents ? "/school/students" : "/modules/students"}
         />
-        <KpiCard
-          index={1}
+        <StatTile
           label="Teachers and staff"
           value={null}
           hint="Coming soon"
@@ -86,8 +84,7 @@ export function SchoolDashboard() {
           tone="success"
           href="/modules/hrms"
         />
-        <KpiCard
-          index={2}
+        <StatTile
           label="Classes"
           value={classes}
           hint={formatClassRange(s1?.lowestClass ?? null, s1?.highestClass ?? null) || "From your registration"}
@@ -95,8 +92,7 @@ export function SchoolDashboard() {
           tone="info"
           href="/school"
         />
-        <KpiCard
-          index={3}
+        <StatTile
           label="Administrators"
           value={1}
           hint="You, as the school admin"
@@ -104,8 +100,7 @@ export function SchoolDashboard() {
           tone="navy"
           href="/school"
         />
-        <KpiCard
-          index={4}
+        <StatTile
           label="Present today"
           value={null}
           hint="Coming soon"
@@ -113,8 +108,7 @@ export function SchoolDashboard() {
           tone="warning"
           href="/modules/attendance"
         />
-        <KpiCard
-          index={5}
+        <StatTile
           label="Fees collected"
           value={null}
           hint="Coming soon"
@@ -122,8 +116,7 @@ export function SchoolDashboard() {
           tone="success"
           href="/modules/fees"
         />
-        <KpiCard
-          index={6}
+        <StatTile
           label="Reports"
           value={null}
           hint="Coming soon"
@@ -131,8 +124,7 @@ export function SchoolDashboard() {
           tone="danger"
           href="/modules/reports"
         />
-        <KpiCard
-          index={7}
+        <StatTile
           label="Session starts"
           value={s1 ? MONTHS[s1.sessionStartMonth - 1] : null}
           hint="Your academic session"
@@ -163,19 +155,12 @@ export function SchoolDashboard() {
                     to={`/modules/${m.slug}`}
                     className="group flex items-center gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-surface-muted"
                   >
-                    <span
-                      className={cn(
-                        "flex size-9 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-110",
-                        TONES[m.tone].tile,
-                      )}
-                    >
+                    <span className={cn("flex size-9 shrink-0 items-center justify-center rounded-lg", TONES[m.tone].tile)}>
                       <m.icon className="size-[18px]" aria-hidden />
                     </span>
-                    <span className="min-w-0 flex-1 text-sm font-semibold text-foreground">
-                      {m.label}
-                    </span>
+                    <span className="min-w-0 flex-1 text-sm font-semibold text-foreground">{m.label}</span>
                     <ArrowRight
-                      className="size-4 text-foreground-muted opacity-0 transition-all group-hover:translate-x-0.5 group-hover:opacity-100"
+                      className="size-4 text-foreground-muted opacity-0 transition-opacity group-hover:opacity-100"
                       aria-hidden
                     />
                   </Link>

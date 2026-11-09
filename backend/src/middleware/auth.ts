@@ -22,7 +22,14 @@ function bearerToken(req: Request): string | null {
  * rejected) is refused. That is the default for every business route, see requireAuth.
  */
 async function authenticate(req: Request, requireApproved: boolean): Promise<void> {
-  const token = bearerToken(req);
+  req.user = await userFromToken(bearerToken(req), requireApproved);
+}
+
+/**
+ * The checks of `authenticate` for an access token that did not come in a header (the notification socket's handshake,
+ * src/realtime/socket.ts): the same answers, so a socket is refused exactly when a request would be.
+ */
+export async function userFromToken(token: string | null | undefined, requireApproved: boolean): Promise<NonNullable<Request["user"]>> {
   if (!token) throw ApiError.unauthorized("Authentication token missing", "TOKEN_MISSING");
 
   let payload;
@@ -60,7 +67,7 @@ async function authenticate(req: Request, requireApproved: boolean): Promise<voi
     }
   }
 
-  req.user = {
+  return {
     userId: user._id.toString(),
     role: user.role,
     tenantId: user.tenantId ? user.tenantId.toString() : null,

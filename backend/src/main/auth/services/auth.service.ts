@@ -38,13 +38,14 @@ export async function buildSession(user: SessionUser, meta: SessionMeta): Promis
 }
 
 export class AuthService {
-  static async login(email: string, password: string, meta: SessionMeta): Promise<SessionPayload> {
-    const user = await User.findOne({ email });
+  /** `identifier` is an email or a username, already trimmed and lower-cased (an email has the @, a username never can). */
+  static async login(identifier: string, password: string, meta: SessionMeta): Promise<SessionPayload> {
+    const user = await User.findOne(identifier.includes("@") ? { email: identifier } : { username: identifier });
 
-    // Unknown email and wrong password must be indistinguishable (same message, similar timing).
+    // Unknown email or username and wrong password must be indistinguishable (same message, similar timing).
     const passwordOk = await comparePassword(password, user ? user.passwordHash : await getDummyHash());
     if (!user || !passwordOk) {
-      throw ApiError.unauthorized("Invalid email or password");
+      throw ApiError.unauthorized("Invalid email/username or password");
     }
 
     if (!user.isActive) {

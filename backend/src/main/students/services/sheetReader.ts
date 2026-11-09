@@ -92,17 +92,28 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
+/** What a file is of, so the sentences that refuse it speak of the right people ("students", "teachers"), and how many rows it may hold. */
+export interface SheetKind {
+  /** In the plural: "students". */
+  noun: string;
+  /** Titles a row of column titles may be made of, for the sentence that says none was found. */
+  titleExamples: string;
+  maxRows: number;
+}
+
+const STUDENTS: SheetKind = { noun: "students", titleExamples: "Name, Class, Date of Birth", maxRows: MAX_IMPORT_ROWS };
+
 /** The rows of the first worksheet of an .xlsx file, as text, with their row numbers. Cells of a merged block count once. */
-async function xlsxRows(buffer: Buffer): Promise<{ sheetName: string; rows: { row: number; cells: string[] }[] }> {
+async function xlsxRows(buffer: Buffer, noun: string): Promise<{ sheetName: string; rows: { row: number; cells: string[] }[] }> {
   const workbook = new ExcelJS.Workbook();
   try {
     await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
   } catch {
     throw invalid("This file could not be read as an Excel file. Save it again as .xlsx (or .csv) and upload it.", "IMPORT_FILE_UNREADABLE");
   }
-  // The students are on the first sheet (the template's other sheets are only lists to pick from).
+  // The people are on the first sheet (the template's other sheets are only lists to pick from).
   const sheet = workbook.worksheets.find((ws) => ws.state !== "hidden" && ws.rowCount > 0) ?? workbook.worksheets[0];
-  if (!sheet) throw invalid("The file has no sheet with students in it.", "IMPORT_EMPTY");
+  if (!sheet) throw invalid(`The file has no sheet with ${noun} in it.`, "IMPORT_EMPTY");
   const rows: { row: number; cells: string[] }[] = [];
   sheet.eachRow({ includeEmpty: false }, (excelRow, rowNumber) => {
     const cells: string[] = [];
@@ -117,18 +128,19 @@ async function xlsxRows(buffer: Buffer): Promise<{ sheetName: string; rows: { ro
 }
 
 /**
- * Reads an uploaded students file (.xlsx or .csv) into column titles and rows of text. The title row is the first of the first ten
+ * Reads an uploaded people file (.xlsx or .csv) into column titles and rows of text. The title row is the first of the first ten
  * rows that has at least three filled cells, so a title line above it ("Sunrise School, students 2026") or the template's instruction
- * line is passed over. Empty rows are left out. The file is only read, never kept.
+ * line is passed over. Empty rows are left out. The file is only read, never kept. `kind` says whose file it is (the sentences that
+ * refuse it, and how many rows it may hold).
  */
-export async function readStudentSheet(fileName: string, buffer: Buffer): Promise<ReadSheet> {
+export async function readSheet(fileName: string, buffer: Buffer, kind: SheetKind): Promise<ReadSheet> {
   const lower = fileName.toLowerCase();
   let sheetName = "Sheet 1";
   let all: { row: number; cells: string[] }[];
   if (lower.endsWith(".csv")) {
     all = parseCsv(buffer.toString("utf8")).map((cells, index) => ({ row: index + 1, cells: cells.slice(0, MAX_IMPORT_COLUMNS) }));
   } else if (lower.endsWith(".xlsx")) {
-    ({ sheetName, rows: all } = await xlsxRows(buffer));
+    ({ sheetName, rows: all } = await xlsxRows(buffer, kind.noun));
   } else {
     throw invalid("Upload an Excel file (.xlsx) or a .csv file. An old .xls file: open it in Excel and save it as .xlsx.", "IMPORT_FILE_TYPE");
   }
@@ -136,7 +148,7 @@ export async function readStudentSheet(fileName: string, buffer: Buffer): Promis
   const filled = all.filter((r) => r.cells.some((c) => c !== ""));
   const header = filled.slice(0, 10).find((r) => r.cells.filter((c) => c !== "").length >= 3);
   if (!header) {
-    throw invalid("No row of column titles was found (a row near the top with at least three titles, such as Name, Class, Date of Birth).", "IMPORT_NO_HEADER");
+    throw invalid(`No row of column titles was found (a row near the top with at least three titles, such as ${kind.titleExamples}).`, "IMPORT_NO_HEADER");
   }
   const width = Math.min(MAX_IMPORT_COLUMNS, Math.max(...filled.map((r) => r.cells.length)));
   const headers = Array.from({ length: width }, (_, i) => (header.cells[i] ?? "").trim() || `Column ${columnLetter(i)}`);
@@ -144,9 +156,12 @@ export async function readStudentSheet(fileName: string, buffer: Buffer): Promis
     .filter((r) => r.row > header.row)
     .map((r) => ({ row: r.row, cells: Array.from({ length: width }, (_, i) => r.cells[i] ?? "") }));
 
-  if (rows.length === 0) throw invalid("The file has column titles but no students under them.", "IMPORT_EMPTY");
-  if (rows.length > MAX_IMPORT_ROWS) {
-    throw invalid(`The file has ${rows.length} students. Upload up to ${MAX_IMPORT_ROWS} at a time: split it into smaller files.`, "IMPORT_TOO_MANY_ROWS");
+  if (rows.length === 0) throw invalid(`The file has column titles but no ${kind.noun} under them.`, "IMPORT_EMPTY");
+  if (rows.length > kind.maxRows) {
+    throw invalid(`The file has ${rows.length} ${kind.noun}. Upload up to ${kind.maxRows} at a time: split it into smaller files.`, "IMPORT_TOO_MANY_ROWS");
   }
   return { fileName, sheetName, headerRow: header.row, headers, rows };
 }
+
+/** An uploaded students file (see readSheet). */
+export const readStudentSheet = (fileName: string, buffer: Buffer): Promise<ReadSheet> => readSheet(fileName, buffer, STUDENTS);

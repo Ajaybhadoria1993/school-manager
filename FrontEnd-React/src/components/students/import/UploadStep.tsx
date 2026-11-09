@@ -213,8 +213,13 @@ export function UploadStep({
             Note
           </p>
           <p className="mt-1.5 text-sm text-foreground">
-            Only the first sheet of the file is read, from its row of column titles down. Dates are read day first (14-05-2016). A student who is
-            already admitted (same name, date of birth and parent's mobile) is not admitted again, so the same file can be uploaded twice safely.
+            Only the first sheet of the file is read, from its row of column titles down. Dates are read day first (14-05-2016).
+          </p>
+          <p className="mt-1.5 text-sm text-foreground">
+            A student your school already has is found when the file opens and is not admitted again, so the same file, or a file that holds some of
+            your students, can be uploaded safely. It is the same student when the name, the date of birth and the parent's mobile number are the same
+            (or the admission number or Aadhaar number, with the same name and date of birth). The same name alone is not: two students may share a
+            name. A saved student is never changed by a file.
           </p>
         </div>
       </div>

@@ -1,6 +1,5 @@
 import { CalendarDays, Cake, UserRound } from "lucide-react";
-import { BLOOD_GROUPS, CATEGORIES, GENDERS, MAX_AGE, MIN_AGE } from "../../../constants/students";
-import { RELIGIONS } from "../../../constants/studentFields";
+import { CATEGORIES, GENDERS, MAX_AGE, MIN_AGE } from "../../../constants/students";
 import { asks, mayLeave } from "../../../utils/fieldRules";
 import { fieldId, type StudentForm } from "../../../hooks/useStudentForm";
 import { cn } from "../../../utils/helpers";
@@ -10,15 +9,29 @@ import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
 import { AdmissionDateField } from "./AdmissionDateField";
 import { ChoiceSelect } from "./ChoiceSelect";
+import { FieldBox } from "./FieldBox";
 import { FormCard } from "./FormCard";
 import { FORM_GRID } from "./formGrid";
 
 /**
  * The student, in rows of three like a new-patient form: first name, last name and gender; date of birth, admission date and the
  * age they come to (worked out, not typed); category, blood group and religion (each as the school wants it, or not asked).
- * `admissionDate={false}` leaves the admission date out (the admission page asks it in its Academic step).
+ * `admissionDate={false}` leaves the admission date out (the admission page asks it in its Academic step); `extras={false}` leaves the
+ * blood group and the religion out (the admission page asks them where the school placed them).
  */
-export function StudentFields({ form, mode, index = 0, admissionDate = true }: { form: StudentForm; mode: "admit" | "edit"; index?: number; admissionDate?: boolean }) {
+export function StudentFields({
+  form,
+  mode,
+  index = 0,
+  admissionDate = true,
+  extras = true,
+}: {
+  form: StudentForm;
+  mode: "admit" | "edit";
+  index?: number;
+  admissionDate?: boolean;
+  extras?: boolean;
+}) {
   const { values } = form;
   const today = todayInIndia();
   const admittedOn = values.admissionDate || today;
@@ -80,16 +93,8 @@ export function StudentFields({ form, mode, index = 0, admissionDate = true }: {
             <ChoiceSelect form={form} path="category" options={CATEGORIES} placeholder="Select category" />
           </Field>
         )}
-        {asks(form.rules, "bloodGroup") && (
-          <Field id={fieldId("bloodGroup")} label="Blood group" optional={mayLeave(form.rules, "bloodGroup")} error={form.errorOf("bloodGroup")}>
-            <ChoiceSelect form={form} path="bloodGroup" options={BLOOD_GROUPS} placeholder="Select blood group" />
-          </Field>
-        )}
-        {asks(form.rules, "religion") && (
-          <Field id={fieldId("religion")} label="Religion" optional={mayLeave(form.rules, "religion")} error={form.errorOf("religion")}>
-            <ChoiceSelect form={form} path="religion" options={RELIGIONS} placeholder="Select religion" />
-          </Field>
-        )}
+        {extras && <FieldBox form={form} rule="bloodGroup" />}
+        {extras && <FieldBox form={form} rule="religion" />}
       </div>
     </FormCard>
   );

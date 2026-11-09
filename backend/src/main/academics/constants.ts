@@ -7,6 +7,8 @@ export const MAX_SECTIONS_PER_CLASS = 30;
 /** The most sections one request may create at once ("2 sections" = A and B). */
 export const MAX_NEW_SECTIONS = 10;
 export const MAX_SECTION_CAPACITY = 200;
+/** The most seats one class can have in all (its sections together fit inside it). */
+export const MAX_CLASS_CAPACITY = 2000;
 
 type ClassLevel = (typeof CLASS_LEVELS)[number];
 

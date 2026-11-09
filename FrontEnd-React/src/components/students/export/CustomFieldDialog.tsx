@@ -2,49 +2,60 @@ import { useState } from "react";
 import { PencilLine, PlusSquare, Trash2 } from "lucide-react";
 import {
   CUSTOM_FIELD_TYPES,
-  EXPORT_COLUMNS,
   MAX_CUSTOM_LABEL,
   MAX_CUSTOM_OPTION,
   MAX_CUSTOM_OPTIONS,
-  STUDENT_FORM_FIELDS,
+  listFieldNamed,
   newCustomKey,
   type CustomFieldDef,
   type CustomFieldType,
 } from "../../../constants/studentFields";
 import { cn } from "../../../utils/helpers";
-import { AppModal } from "../../ui/AppModal";
+import { AppModal, ModalError } from "../../ui/AppModal";
 import { Button } from "../../ui/Button";
 import { Field } from "../../ui/Field";
 import { Input, Textarea } from "../../ui/Input";
 import { Switch } from "../../ui/Switch";
 
 const tidy = (text: string) => text.trim().replace(/\s+/g, " ");
-/** The names of the fields on the list: a field of the school's own cannot take one (the server says the same). */
-const LIST_NAMES = new Map<string, string>([
-  ...EXPORT_COLUMNS.map((c) => [c.heading.toLowerCase(), c.heading] as [string, string]),
-  ...STUDENT_FORM_FIELDS.map((f) => [f.label.toLowerCase(), f.label] as [string, string]),
-]);
+
+const STUDENT_WORDS = { where: "Add student and the Excel", form: "Add student", who: "students" };
 
 /**
  * Adds a field of the school's own, or changes one (`field`): its name (as Add student and the Excel show it), the kind of answer it
  * takes (fixed once it is added: the answers already kept would not fit another kind), the choices of a list, and Mandatory. Checked
  * with the server's words before it is kept in the page's draft; nothing is sent until the page's Save. `others` are the school's other
- * fields (two cannot share a name).
+ * fields (two cannot share a name). A new field can come with a `name` already typed (a word searched for, a column's title).
+ * A page that saves the field at once (Add student) says so with `busy` and shows what went wrong in `error`.
  */
 export function CustomFieldDialog({
   field,
+  name: suggested = "",
   others,
+  busy = false,
+  error = null,
   onSave,
   onDelete,
   onClose,
+  reserved,
+  words = STUDENT_WORDS,
 }: {
   field: CustomFieldDef | null;
+  name?: string;
   others: CustomFieldDef[];
+  /** The usual detail called `name` (as it is written), if any: a field of its own may not take it. The students\x27 list when left out; the teachers\x27 pass theirs. */
+  reserved?: (name: string) => string | undefined;
+  /** Where the field shows, for the sentences of the dialog: the students' (default) or the teachers'. */
+  words?: { where: string; form: string; who: string };
+  /** The field is being saved: its button waits. */
+  busy?: boolean;
+  /** Why the page could not keep the field. */
+  error?: string | null;
   onSave: (field: CustomFieldDef) => void;
   onDelete?: () => void;
   onClose: () => void;
 }) {
-  const [label, setLabel] = useState(field?.label ?? "");
+  const [label, setLabel] = useState(field?.label ?? suggested);
   const [type, setType] = useState<CustomFieldType>(field?.type ?? "text");
   const [options, setOptions] = useState((field?.options ?? []).join("\n"));
   const [required, setRequired] = useState(field?.mode === "required");
@@ -58,8 +69,13 @@ export function CustomFieldDialog({
       ? `The name is 2 to ${MAX_CUSTOM_LABEL} characters`
       : /[<>]/.test(name)
         ? "The name cannot contain < or >"
-        : LIST_NAMES.has(name.toLowerCase())
-          ? `There is already a field called ${LIST_NAMES.get(name.toLowerCase())}: switch it on in the list`
+        : (reserved ? reserved(name) : listFieldNamed(name))
+          ? // Age cannot be switched on: it is worked out by itself (the server's own words stay the ones for the other names).
+            reserved
+            ? `There is already a field called ${reserved(name)}`
+            : name.toLowerCase() === "age"
+              ? "Age is worked out from the Date of birth: give your field another name"
+              : `There is already a field called ${listFieldNamed(name)}: switch it on in the list`
           : others.some((f) => f.label.toLowerCase() === name.toLowerCase())
             ? "Two fields cannot have the same name"
             : undefined;
@@ -114,22 +130,25 @@ export function CustomFieldDialog({
                 Delete
               </Button>
             )}
-            <Button variant="outline" onClick={onClose}>
+            <Button variant="outline" disabled={busy} onClick={onClose}>
               Cancel
             </Button>
-            <Button onClick={save}>{editing ? "Keep the change" : "Add the field"}</Button>
+            <Button loading={busy} onClick={save}>
+              {editing ? "Keep the change" : "Add the field"}
+            </Button>
           </>
         )
       }
     >
       {confirmDelete ? (
         <p className="text-sm text-foreground-muted">
-          <span className="font-bold text-foreground">{field?.label}</span> leaves Add student and the Excel. What was filled in for students
+          <span className="font-bold text-foreground">{field?.label}</span> leaves {words.where}. What was filled in for {words.who}
           stays in their records but is no longer shown. Nothing is saved until you press Save on the page.
         </p>
       ) : (
         <>
-          <Field id="custom-field-label" label="Name of the field" hint="As Add student and the Excel show it, for example House or Bus pass no." error={tried ? labelProblem : undefined}>
+          <ModalError message={error} />
+          <Field id="custom-field-label" label="Name of the field" hint={`As ${words.where} show it, for example House or Bus pass no.`} error={tried ? labelProblem : undefined}>
             <Input id="custom-field-label" value={label} maxLength={MAX_CUSTOM_LABEL + 5} autoFocus onChange={(e) => setLabel(e.target.value)} aria-invalid={tried && !!labelProblem} />
           </Field>
 
@@ -171,7 +190,7 @@ export function CustomFieldDialog({
           )}
 
           {type !== "yesNo" && (
-            <Switch checked={required} onChange={setRequired} hint={required ? "Add student is not saved without it." : "Asked, may be left empty."}>
+            <Switch checked={required} onChange={setRequired} hint={required ? `${words.form} is not saved without it.` : "Asked, may be left empty."}>
               {required ? "Mandatory" : "Optional"}
             </Switch>
           )}

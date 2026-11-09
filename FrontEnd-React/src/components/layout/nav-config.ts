@@ -1,9 +1,21 @@
 import {
+  Backpack,
   Building2,
+  CalendarCheck2,
+  CalendarClock,
+  CalendarDays,
+  CalendarRange,
+  ClipboardList,
   FolderTree,
   GraduationCap,
   LayoutDashboard,
   LayoutGrid,
+  MailCheck,
+  Rocket,
+  School,
+  UserCog,
+  UserRoundCheck,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 import type { UserRole } from "../../types";
@@ -35,9 +47,71 @@ export const NAV_ITEMS: NavItem[] = [
       "principal",
       "accountant",
       "teacher",
+      "receptionist",
+      "management",
+      "staff",
       "parent",
       "student",
     ],
+    group: "Overview",
+  },
+  {
+    // Every class with its sections, students and seats, and each class's own page. For the people who run the school
+    // (SchoolManagerRoute). Since 2026-11-04 Classes and Students are two entries of the menu (they were two tabs of one School Class page).
+    label: "Classes",
+    href: "/school-class",
+    icon: School,
+    roles: ["school_admin", "principal"],
+    group: "Overview",
+  },
+  {
+    // Every student of the year, class by class, found by search and filters. A longer address than Classes', so it lights up on its own.
+    label: "Students",
+    href: "/school-class/students",
+    icon: Backpack,
+    roles: ["school_admin", "principal"],
+    group: "Overview",
+  },
+  {
+    // Every teacher, found by search and filters; a teacher's page gives their classes, class teacher post and login. (SchoolManagerRoute.)
+    label: "Teacher",
+    href: "/teachers",
+    icon: UsersRound,
+    roles: ["school_admin", "principal"],
+    group: "Overview",
+  },
+  {
+    // The students' attendance of any class for any days, and the teachers' (who came and when), in tabs (2026-11-06). A teacher marks
+    // themselves present on their home; a class teacher takes a class's attendance in its work page.
+    label: "Attendance",
+    href: "/attendance",
+    icon: CalendarCheck2,
+    roles: ["school_admin", "principal"],
+    group: "Overview",
+  },
+  {
+    // The people who work for the school without teaching (a receptionist, an accountant, the management): added with a role and an email,
+    // invited by email, they set a password and sign in (2026-11-07). STAFF_MANAGERS in constants/staffMembers.ts.
+    label: "Staff",
+    href: "/staff",
+    icon: UserCog,
+    roles: ["school_admin", "principal"],
+    group: "Overview",
+  },
+  {
+    // The school's holidays and events (2026-11-04): the school adds them, everyone of the school (teachers, parents) sees them.
+    label: "Calendar",
+    href: "/calendar",
+    icon: CalendarDays,
+    roles: ["school_admin", "principal", "accountant", "teacher", "receptionist", "management", "staff", "parent"],
+    group: "Overview",
+  },
+  {
+    // Leave sent by parents (2026-11-04): a class teacher answers their classes', the people who run the school every one.
+    label: "Leave requests",
+    href: "/leaves",
+    icon: MailCheck,
+    roles: ["school_admin", "principal", "teacher"],
     group: "Overview",
   },
   {
@@ -56,10 +130,50 @@ export const NAV_ITEMS: NavItem[] = [
     group: "Manage school",
   },
   {
-    label: "Students",
+    label: "Academic years",
+    href: "/school/academic-years",
+    icon: CalendarRange,
+    roles: ["school_admin", "principal"],
+    group: "Manage school",
+  },
+  {
+    // Who goes to which class when the year ends; the school admin approves the list.
+    label: "Promotion",
+    href: "/school/promotion",
+    icon: Rocket,
+    roles: ["school_admin", "principal"],
+    group: "Manage school",
+  },
+  {
+    // Timings, subjects, teachers and each class's weekly timetable, as a few steps (TIMETABLE_WRITERS in constants/timetable.ts).
+    label: "Timetable",
+    href: "/school/timetable",
+    icon: CalendarClock,
+    roles: ["school_admin", "principal"],
+    group: "Manage school",
+  },
+  {
+    // Exams and tests of the year (2026-11-06): Half-Yearly, Annual, Unit, Monthly, Class test; which classes write what, when and for how long.
+    label: "Test & Exam",
+    href: "/school/exams",
+    icon: ClipboardList,
+    roles: ["school_admin", "principal"],
+    group: "Manage school",
+  },
+  {
+    // Admit, edit, import, export, make inactive: "Manage Students" like "Manage Teacher", so it is not mistaken for the Students list above.
+    label: "Manage Students",
     href: "/school/students",
     icon: GraduationCap,
     // The people who admit students (STUDENT_WRITERS in constants/students.ts; the accountant reads through the API only for now).
+    roles: ["school_admin", "principal"],
+    group: "Manage school",
+  },
+  {
+    // The people who teach: added in steps with their own login, left, brought back (STAFF_WRITERS in constants/teachers.ts).
+    label: "Manage Teacher",
+    href: "/school/teachers",
+    icon: UserRoundCheck,
     roles: ["school_admin", "principal"],
     group: "Manage school",
   },
@@ -93,6 +207,9 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   principal: "Principal",
   accountant: "Accountant",
   teacher: "Teacher",
+  receptionist: "Receptionist",
+  management: "Management",
+  staff: "Staff",
   parent: "Parent",
   student: "Student",
 };

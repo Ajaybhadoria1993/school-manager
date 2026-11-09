@@ -1034,7 +1034,7 @@ describe("the academic year (named in step 1, switched on by the approval)", () 
     await request(app).post(`/api/v1/tenants/${tenantId}/approve`).set(auth(await superToken())).send({});
     const [year] = await yearsOf(tenantId);
 
-    const made = await request(app).post("/api/v1/academics/classes").set(auth(token)).send({ name: "Hobby Club", sectionCount: 2 });
+    const made = await request(app).post("/api/v1/academics/classes").set(auth(token)).send({ name: "Hobby Club", capacity: 2000, sectionCount: 2 });
     expect(made.status).toBe(201);
     const sections = await Section.find({ tenantId, classId: made.body.data.id }).lean();
     expect(sections.map((s) => String(s.academicYearId))).toEqual([String(year._id), String(year._id)]);

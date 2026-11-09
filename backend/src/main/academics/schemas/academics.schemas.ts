@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CLASS_LEVELS } from "../../tenants/constants";
-import { MAX_CLASSES, MAX_NEW_SECTIONS, MAX_SECTIONS_PER_CLASS, MAX_SECTION_CAPACITY } from "../constants";
+import { MAX_CLASSES, MAX_CLASS_CAPACITY, MAX_NEW_SECTIONS, MAX_SECTION_CAPACITY } from "../constants";
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, "Invalid id");
 
@@ -22,6 +22,13 @@ const capacity = z
   .int("Capacity must be a whole number")
   .min(1, "Capacity must be at least 1")
   .max(MAX_SECTION_CAPACITY, `Capacity cannot be more than ${MAX_SECTION_CAPACITY}`);
+
+/** The seats of a whole class. A class always has them once it is made, so they can be changed but never cleared. */
+const classCapacity = z
+  .number({ required_error: "Enter the seats of the class", invalid_type_error: "Seats must be a number" })
+  .int("Seats must be a whole number")
+  .min(1, "Seats must be at least 1")
+  .max(MAX_CLASS_CAPACITY, `Seats cannot be more than ${MAX_CLASS_CAPACITY}`);
 
 /** An empty room means "clear it". */
 const room = z
@@ -47,15 +54,18 @@ export const assignDepartmentSchema = z.object({
 
 /**
  * Fill one department from its own screen: classes the school already has are moved into it (`classIds`), and classes it does not
- * have yet are created in it (`names`, each with `sectionCount` sections, none by default).
+ * have yet are created in it (`names`, each with `capacity` seats and `sectionCount` sections, none by default). A class that is
+ * only moved keeps the seats it has, so `capacity` is asked for only when something new is made.
  */
 export const addClassesSchema = z
   .object({
     classIds: z.array(objectId).max(MAX_CLASSES).default([]),
     names: z.array(label("class name", 40)).max(MAX_CLASSES).default([]),
+    capacity: classCapacity.optional(),
     sectionCount: z.number().int().min(0).max(MAX_NEW_SECTIONS, `You can add up to ${MAX_NEW_SECTIONS} sections at once`).default(0),
   })
-  .refine((value) => value.classIds.length + value.names.length > 0, { message: "Choose at least one class to add", path: ["classIds"] });
+  .refine((value) => value.classIds.length + value.names.length > 0, { message: "Choose at least one class to add", path: ["classIds"] })
+  .refine((value) => value.names.length === 0 || value.capacity !== undefined, { message: "Enter the seats of the class", path: ["capacity"] });
 
 /** A number from the query string: absent or empty means "no limit", anything else must be a whole number in range. */
 const optionalCount = (max: number) =>
@@ -63,7 +73,7 @@ const optionalCount = (max: number) =>
 
 /**
  * What the class list can be asked: by name, by department (an id, or `none` for the classes in no department), by how many
- * seats the class has in all its sections, sorted, a page at a time. The server does all of it, so a screen never has to
+ * seats the class has, sorted, a page at a time. The server does all of it, so a screen never has to
  * download every class to filter them.
  */
 export const listClassesQuerySchema = z
@@ -75,8 +85,8 @@ export const listClassesQuerySchema = z
       .optional()
       .transform((value) => value || undefined),
     departmentId: z.union([objectId, z.literal("none")]).optional(),
-    seatsMin: optionalCount(MAX_SECTION_CAPACITY * MAX_SECTIONS_PER_CLASS),
-    seatsMax: optionalCount(MAX_SECTION_CAPACITY * MAX_SECTIONS_PER_CLASS),
+    seatsMin: optionalCount(MAX_CLASS_CAPACITY),
+    seatsMax: optionalCount(MAX_CLASS_CAPACITY),
     sort: z.enum(["order", "name", "seats"]).default("order"),
     dir: z.enum(["asc", "desc"]).default("asc"),
     page: z.coerce.number().int().min(1).max(1000).default(1),
@@ -90,6 +100,8 @@ export const listClassesQuerySchema = z
 export const createClassSchema = z.object({
   name: label("class name", 40),
   departmentId: objectId.nullable().optional(),
+  /** The seats of the whole class: decided when it is made (with or without sections), changed later if need be. */
+  capacity: classCapacity,
   /** How many sections to start with: 1 gives "A", 3 gives "A, B, C". 0 makes a class with none. */
   sectionCount: z
     .number()
@@ -101,7 +113,7 @@ export const createClassSchema = z.object({
 });
 
 export const updateClassSchema = z
-  .object({ name: label("class name", 40), departmentId: objectId.nullable() })
+  .object({ name: label("class name", 40), departmentId: objectId.nullable(), capacity: classCapacity })
   .partial()
   .refine(hasAChange, NOTHING_TO_CHANGE);
 

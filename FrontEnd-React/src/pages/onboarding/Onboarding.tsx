@@ -90,7 +90,7 @@ export default function Onboarding() {
 
   // `state` is what the server last said; `status` (from the session) can be newer, so trust that for the view.
   if (status === "pending") {
-    return <WaitingView state={state} email={user.email} onCheck={check} />;
+    return <WaitingView state={state} email={user.email ?? ""} onCheck={check} />;
   }
 
   return (

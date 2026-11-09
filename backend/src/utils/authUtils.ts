@@ -4,7 +4,9 @@ import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import type { UserRole } from "../main/users/models/User";
 
-const BCRYPT_ROUNDS = 12;
+// bcrypt is slow on purpose: 12 rounds for real passwords. The tests hash a dozen passwords for every school they make, so they use the
+// cheapest setting (a hash made at 12 rounds still verifies: the cost is stored in the hash).
+const BCRYPT_ROUNDS = process.env.NODE_ENV === "test" ? 4 : 12;
 
 export type Platform = "web" | "ios" | "android";
 
@@ -29,6 +31,29 @@ export function generateToken(bytes = 32): string {
 
 export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+// No 0 O o 1 l I: a password read out over the phone or copied by hand has no letters that are mistaken for each other.
+const PASSWORD_UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+const PASSWORD_LOWER = "abcdefghijkmnpqrstuvwxyz";
+const PASSWORD_DIGITS = "23456789";
+const PASSWORD_SPECIAL = "@#$%&*!?";
+
+/**
+ * A first password the school hands to a person (a teacher brought in with a file): 10 characters with a capital, a small letter, a
+ * number and a symbol, easy to read out. The same rules as the password Add teacher makes in the browser, and it follows the platform's
+ * policy. Made from the system's random source, never kept: only its hash is.
+ */
+export function generatePassword(): string {
+  const pick = (set: string) => set[crypto.randomInt(set.length)];
+  const all = PASSWORD_UPPER + PASSWORD_LOWER + PASSWORD_DIGITS + PASSWORD_SPECIAL;
+  const chars = [pick(PASSWORD_UPPER), pick(PASSWORD_LOWER), pick(PASSWORD_DIGITS), pick(PASSWORD_SPECIAL), ...Array.from({ length: 6 }, () => pick(all))];
+  // A shuffle, so the four kinds are not always first.
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = crypto.randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
 }
 
 export function hashPassword(plain: string): Promise<string> {

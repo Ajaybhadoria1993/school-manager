@@ -6,6 +6,9 @@ export type UserRole =
   | "principal"
   | "accountant"
   | "teacher"
+  | "receptionist"
+  | "management"
+  | "staff"
   | "parent"
   | "student";
 
@@ -13,8 +16,12 @@ export type UserRole =
 export interface AuthUser {
   id: string;
   name: string;
-  email: string;
+  /** null for a person who signs in with a username only (a teacher may have no email). */
+  email: string | null;
+  username: string | null;
   role: UserRole;
+  /** A staff member's own title ("Librarian", a role the school wrote); shown instead of the role's name. null for everyone else. */
+  roleLabel?: string | null;
   tenantId: string | null;
   emailVerifiedAt: string | null;
 }

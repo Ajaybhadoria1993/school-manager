@@ -1,5 +1,6 @@
 import { ApiError } from "../../../utils/ApiError";
 import { nameKeyOf } from "../../tenants/services/tenantFactory";
+import { TimetableCleanup } from "../../timetable/services/cleanup";
 import { MAX_CLASSES, MAX_DEPARTMENTS } from "../constants";
 import { Department } from "../models/Department";
 import { SchoolClass } from "../models/SchoolClass";
@@ -90,7 +91,8 @@ export class DepartmentService {
       await SchoolClass.updateMany({ tenantId, _id: { $in: ids } }, { $set: { departmentId: department._id } });
     }
     for (const name of wanted.values()) {
-      await ClassService.create(tenantId, { name, departmentId: id, sectionCount: input.sectionCount });
+      // The schema asks for the seats whenever a new class is made, so `capacity` is there.
+      await ClassService.create(tenantId, { name, departmentId: id, capacity: input.capacity!, sectionCount: input.sectionCount });
     }
 
     const classCount = await SchoolClass.countDocuments({ tenantId, departmentId: department._id });
@@ -125,6 +127,7 @@ export class DepartmentService {
     if (!(await Department.exists({ _id: id, tenantId }))) throw NOT_FOUND();
     const { modifiedCount } = await SchoolClass.updateMany({ tenantId, departmentId: id }, { $set: { departmentId: null } });
     await Department.deleteOne({ _id: id, tenantId });
+    await TimetableCleanup.forDepartment(tenantId, id);
     return { unlinkedClasses: modifiedCount };
   }
 }

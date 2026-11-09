@@ -1,16 +1,16 @@
 import type { ReactNode } from "react";
-import { FolderPlus, Layers, Pencil, Trash2 } from "lucide-react";
+import { FolderPlus, Layers } from "lucide-react";
 import { TONES } from "../../constants/tones";
 import { departmentIcon, plural, type ClassGroup } from "../../utils/academics";
 import { cn } from "../../utils/helpers";
 import { Button } from "../ui/Button";
-import { InfoTip, TipButton, WithTip } from "../ui/Hint";
+import { InfoTip, WithTip } from "../ui/Hint";
 import { ManageLink } from "./ManageLink";
 
 /**
- * One department: a band in its own colour with the name and what is in it, and its classes below as a grid of cards. On the right
- * of the band are a pencil (rename the department), a bin (delete it, after asking) and **Manage**, which opens the department's
- * own screen where its classes and their sections are changed.
+ * One department: a band in its own colour with the name and what is in it, and its classes below as a grid of cards. The only
+ * button on the band is **Manage**, which opens the department's own screen: its classes and their sections are changed there, and
+ * so is the department itself (the small pencil beside its name renames or deletes it).
  * Without a department (`group.department` is null) the classes are the school's "Other classes" when there are departments,
  * or just a plain grid when there are none. "Other classes" has **Manage** too (its own screen lists the classes that are in
  * no department) and an **Add department** button: it opens the dialog that makes a department and puts these classes in it.
@@ -19,8 +19,6 @@ export function DepartmentGroup({
   group,
   titled,
   onAddDepartment,
-  onRename,
-  onDelete,
   children,
 }: {
   group: ClassGroup;
@@ -28,10 +26,6 @@ export function DepartmentGroup({
   titled: boolean;
   /** For the "Other classes" group: opens the dialog that adds a department and moves classes into it. */
   onAddDepartment: () => void;
-  /** For a real department: opens the window that renames it. */
-  onRename: () => void;
-  /** For a real department: asks whether to delete it. */
-  onDelete: () => void;
   children: ReactNode;
 }) {
   const { department, classes, tone } = group;
@@ -43,7 +37,7 @@ export function DepartmentGroup({
   return (
     <section aria-label={department?.name ?? "Other classes"} className="space-y-4">
       {titled && (
-        // The buttons do not fit beside the name on a phone: they drop to a second line there, on the right.
+        // The button does not fit beside the name on a phone: it drops to a second line there, on the right.
         <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl bg-gradient-to-r to-transparent py-2 pl-2 pr-3", t.wash)}>
           <span className={cn("flex size-11 shrink-0 items-center justify-center rounded-xl", t.gradient)}>
             <Icon className="size-5" aria-hidden />
@@ -70,12 +64,6 @@ export function DepartmentGroup({
                 </Button>
               </WithTip>
             )}
-            {department && (
-              <span className="inline-flex shrink-0 items-center">
-                <TipButton label={`Rename ${department.name}`} icon={Pencil} onPress={onRename} />
-                <TipButton label={`Delete ${department.name}`} icon={Trash2} danger onPress={onDelete} />
-              </span>
-            )}
             <ManageLink
               to={manageTo}
               label={`Manage ${department?.name ?? "other classes"}`}
@@ -98,7 +86,7 @@ export function DepartmentGroup({
           )}
         </div>
       ) : (
-        <div className="grid items-start gap-4 xl:grid-cols-2">{children}</div>
+        <div className="grid items-start gap-4 xl:grid-cols-4">{children}</div>
       )}
     </section>
   );

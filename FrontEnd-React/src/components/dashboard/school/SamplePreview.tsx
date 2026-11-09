@@ -71,12 +71,12 @@ function AttendanceChart() {
                 {[
                   {
                     value: d.present,
-                    color: "bg-gradient-to-t from-emerald-600 to-emerald-400",
+                    color: "bg-emerald-500",
                     name: "present",
                   },
                   {
                     value: d.absent,
-                    color: "bg-gradient-to-t from-rose-500 to-rose-300",
+                    color: "bg-rose-400",
                     name: "absent",
                   },
                 ].map((bar) => (

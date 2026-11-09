@@ -42,7 +42,7 @@ async function guardianExists(school: Types.ObjectId, index: number, existing: I
  * and the same primary guardian's mobile number. Returns them, or null.
  */
 async function findDuplicate(school: Types.ObjectId, nameKey: string, dateOfBirth: Date, primaryMobile: string) {
-  const candidates = await Student.find({ tenantId: school, nameKey, dateOfBirth }).select("firstName lastName admissionNumber dateOfBirth guardians").lean();
+  const candidates = await Student.find({ tenantId: school, nameKey, dateOfBirth }).select("firstName lastName admissionNumber dateOfBirth guardians status").lean();
   if (candidates.length === 0) return null;
   const primaries = candidates.flatMap((c) => c.guardians.filter((g) => g.isPrimary).map((g) => g.guardianId));
   const sameMobile = await Guardian.find({ tenantId: school, _id: { $in: primaries }, mobile: primaryMobile }).select("_id").lean();
@@ -119,11 +119,11 @@ export class AdmissionService {
    */
   static async plan(school: Types.ObjectId, year: AdmissionYear, input: AdmitStudentInput, admissionNumber: string | null = null): Promise<AdmissionPlan> {
     if (admissionNumber) {
-      const holder = await Student.findOne({ tenantId: school, admissionNumber }).select("firstName lastName").lean();
-      if (holder) throw admissionNumberTaken(admissionNumber, fullName(holder));
+      const holder = await Student.findOne({ tenantId: school, admissionNumber }).select("firstName lastName status").lean();
+      if (holder) throw admissionNumberTaken(admissionNumber, fullName(holder), holder.status === "inactive");
     }
     if (input.aadhaarNumber) {
-      const holder = await Student.findOne({ tenantId: school, aadhaarNumber: input.aadhaarNumber }).select("firstName lastName admissionNumber").lean();
+      const holder = await Student.findOne({ tenantId: school, aadhaarNumber: input.aadhaarNumber }).select("firstName lastName admissionNumber status").lean();
       if (holder) throw aadhaarTaken(input.aadhaarNumber, holder);
     }
     const placement = await resolvePlacement(school, year._id, input.classId, input.sectionId);
@@ -140,13 +140,16 @@ export class AdmissionService {
       if (duplicate) {
         const place = (await placesOf(school, year._id, [duplicate._id])).get(duplicate._id.toString());
         const where = place ? ` (${placeTitle(place.className, place.sectionName)})` : "";
+        const inactive = duplicate.status === "inactive";
         throw ApiError.conflict(
-          `${fullName(duplicate)}, born on ${day(duplicate.dateOfBirth)}, is already in your school with the same primary guardian's mobile number: ${duplicate.admissionNumber}${where}.`,
+          inactive
+            ? `${fullName(duplicate)}, born on ${day(duplicate.dateOfBirth)}, is in your school as an inactive student with the same primary guardian's mobile number: ${duplicate.admissionNumber}${where}. Make them active again instead of admitting them twice.`
+            : `${fullName(duplicate)}, born on ${day(duplicate.dateOfBirth)}, is already in your school with the same primary guardian's mobile number: ${duplicate.admissionNumber}${where}.`,
           "DUPLICATE_STUDENT",
           [
             {
               path: "confirmNotDuplicate",
-              message: "This child may already be admitted",
+              message: inactive ? "This child is already in your school, as an inactive student" : "This child may already be admitted",
               student: {
                 id: duplicate._id.toString(),
                 name: fullName(duplicate),
@@ -154,6 +157,7 @@ export class AdmissionService {
                 dateOfBirth: day(duplicate.dateOfBirth),
                 className: place?.className ?? null,
                 sectionName: place?.sectionName ?? null,
+                inactive,
               },
             },
           ]
@@ -306,9 +310,9 @@ export class AdmissionService {
 }
 
 /** 409: a number the school brings with a student is already another student's. */
-function admissionNumberTaken(admissionNumber: string, holder?: string): ApiError {
+function admissionNumberTaken(admissionNumber: string, holder?: string, inactive = false): ApiError {
   const message = holder
-    ? `Admission number ${admissionNumber} is already ${holder}'s`
+    ? `Admission number ${admissionNumber} is already ${holder}'s${inactive ? ", who is inactive (make them active again instead)" : ""}`
     : `Admission number ${admissionNumber} is already used in your school`;
   return ApiError.conflict(`${message}.`, "ADMISSION_NUMBER_TAKEN", [{ path: "admissionNumber", message }]);
 }

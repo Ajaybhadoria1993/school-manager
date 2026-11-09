@@ -7,8 +7,9 @@ import { tenantScope } from "../../tenants/plugins/tenantScope";
  *
  * The mobile number is the planned login identity (mobile + OTP), so it is kept as its 10 digits and is unique in the school: the
  * database refuses a second guardian with the same mobile, and an admission LINKS the existing guardian instead of copying it.
- * `mobileVerifiedAt` stays null until an OTP proves the number (not built yet). A guardian has no User account yet.
- * Year-free on purpose: a parent is the same person every session (see YEAR_FREE_MODELS).
+ * `mobileVerifiedAt` stays null until an OTP proves the number (not built yet).
+ * `userId` is the parent's login (2026-11-04): a User with the role "parent", a username and a password the school gives them; one login
+ * for all their children (ParentLoginService). Year-free on purpose: a parent is the same person every session (see YEAR_FREE_MODELS).
  */
 export interface IGuardian {
   _id: Types.ObjectId;
@@ -20,6 +21,8 @@ export interface IGuardian {
   alternateMobile: string | null;
   email: string | null;
   occupation: string | null;
+  /** The parent's login (null: none yet). */
+  userId: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,6 +35,7 @@ const guardianSchema = new Schema<IGuardian>(
     alternateMobile: { type: String, default: null, match: /^[6-9]\d{9}$/ },
     email: { type: String, default: null, lowercase: true, trim: true, maxlength: 254 },
     occupation: { type: String, default: null, trim: true, maxlength: 60 },
+    userId: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },
   { timestamps: true }
 );
@@ -43,5 +47,8 @@ guardianSchema.index(
   { tenantId: 1, mobile: 1 },
   { unique: true, partialFilterExpression: { mobile: { $type: "string" } }, name: "one_guardian_per_mobile" }
 );
+
+// A signed-in parent is found by their login; a login belongs to one guardian.
+guardianSchema.index({ tenantId: 1, userId: 1 }, { unique: true, partialFilterExpression: { userId: { $type: "objectId" } }, name: "one_guardian_per_login" });
 
 export const Guardian = model<IGuardian>("Guardian", guardianSchema);

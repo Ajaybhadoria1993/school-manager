@@ -14,7 +14,8 @@ import type {
   UpdateClassInput,
   UpdateSectionInput,
 } from "../schemas/academics.schemas";
-import type { AcademicYearInput } from "../schemas/academicYear.schemas";
+import type { AcademicYearInput, NextAcademicYearInput } from "../schemas/academicYear.schemas";
+import { YearActivationService } from "../../students/services/yearActivation.service";
 import { AcademicYearService } from "../services/academicYear.service";
 import { AcademicSettingsService } from "../services/academicSettings.service";
 import { ClassService } from "../services/class.service";
@@ -37,6 +38,19 @@ export const getStructure = asyncHandler(async (req: Request, res: Response) => 
 
 export const currentAcademicYear = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, await AcademicYearService.current(tenantOf(req)));
+});
+
+export const listAcademicYears = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await AcademicYearService.list(tenantOf(req)));
+});
+
+export const createNextAcademicYear = asyncHandler(async (req: Request, res: Response) => {
+  return sendCreated(res, await AcademicYearService.createNext(tenantOf(req), body<NextAcademicYearInput>(req)), "Next academic year made");
+});
+
+export const activateAcademicYear = asyncHandler(async (req: Request, res: Response) => {
+  const year = await YearActivationService.activate(tenantOf(req), { userId: req.user!.userId, role: req.user!.role }, idOf(req));
+  return sendOk(res, year, `${year.name} is now the school's academic year`);
 });
 
 export const setUpFirstAcademicYear = asyncHandler(async (req: Request, res: Response) => {

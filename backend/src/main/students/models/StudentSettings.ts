@@ -8,11 +8,17 @@ import {
   MAX_CUSTOM_LABEL,
   MAX_CUSTOM_OPTION,
   MAX_EXPORT_HEADING,
+  MAX_STEP_NAME,
+  MOVABLE_KEYS,
+  STEP_KEY,
   STUDENT_FORM_FIELDS,
   type CustomFieldDef,
   type ExportColumnKey,
   type FieldMode,
   type FormFieldKey,
+  type Placement,
+  type StepDef,
+  isStepKey,
 } from "../constants";
 
 /**
@@ -27,7 +33,8 @@ export interface IExportColumn {
 /**
  * How one school wants its students' details (Manage school > Students > Export: one list of fields for the form and the file): which details the admission
  * form needs, may leave empty or does not ask (`fields`; a detail not listed is as the defaults say), the school's own fields
- * (`customFields`), and the columns of its export (`exportColumns`, in order; null = the default layout). One per school. Year-free: a
+ * (`customFields`), the columns of its export (`exportColumns`, in order; null = the default layout) and the step of Add student each
+ * movable detail and each own field is asked in (`placements`, in order; null = the usual places). One per school. Year-free: a
  * school's way of keeping records does not change with the session.
  */
 export interface IStudentSettings {
@@ -36,6 +43,9 @@ export interface IStudentSettings {
   fields: { key: FormFieldKey; mode: FieldMode }[];
   customFields: CustomFieldDef[];
   exportColumns: IExportColumn[] | null;
+  placements: Placement[] | null;
+  /** The steps after Parents, in order (More details and the school's own); null = More details alone. */
+  steps: StepDef[] | null;
   updatedBy: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
@@ -82,6 +92,34 @@ const studentSettingsSchema = new Schema<IStudentSettings>(
               validate: { validator: (key: string) => BUILT_IN_COLUMNS.has(key) || CUSTOM_KEY.test(key), message: "Unknown column" },
             },
             heading: { type: String, required: true, trim: true, maxlength: MAX_EXPORT_HEADING },
+          },
+          { _id: false }
+        ),
+      ],
+      default: null,
+    },
+    placements: {
+      type: [
+        new Schema(
+          {
+            key: {
+              type: String,
+              required: true,
+              validate: { validator: (key: string) => MOVABLE_KEYS.has(key) || CUSTOM_KEY.test(key), message: "Unknown detail" },
+            },
+            step: { type: String, required: true, validate: { validator: (step: string) => isStepKey(step), message: "Unknown step" } },
+          },
+          { _id: false }
+        ),
+      ],
+      default: null,
+    },
+    steps: {
+      type: [
+        new Schema(
+          {
+            key: { type: String, required: true, validate: { validator: (key: string) => key === "more" || STEP_KEY.test(key), message: "Unknown step" } },
+            name: { type: String, required: true, trim: true, maxlength: MAX_STEP_NAME },
           },
           { _id: false }
         ),

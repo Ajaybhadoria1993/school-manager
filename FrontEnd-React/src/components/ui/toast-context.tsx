@@ -7,9 +7,11 @@ interface Toast {
   id: number;
   kind: ToastKind;
   message: string;
+  /** A bold first line above the message (a notification: its title, then what it says). */
+  title?: string;
 }
 
-const ToastContext = createContext<{ push: (kind: ToastKind, message: string) => void } | undefined>(undefined);
+const ToastContext = createContext<{ push: (kind: ToastKind, message: string, title?: string) => void } | undefined>(undefined);
 
 const icons: Record<ToastKind, typeof CheckCircle2> = {
   success: CheckCircle2,
@@ -26,9 +28,9 @@ const styles: Record<ToastKind, string> = {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const push = useCallback((kind: ToastKind, message: string) => {
+  const push = useCallback((kind: ToastKind, message: string, title?: string) => {
     const id = Date.now() + Math.random();
-    setToasts((t) => [...t, { id, kind, message }]);
+    setToasts((t) => [...t, { id, kind, message, title }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4500);
   }, []);
 
@@ -48,7 +50,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               )}
             >
               <Icon className="mt-0.5 size-4 shrink-0" />
-              <span className="text-foreground">{t.message}</span>
+              {t.title ? (
+                <span className="min-w-0">
+                  <span className="block font-semibold text-foreground">{t.title}</span>
+                  <span className="block text-foreground-muted">{t.message}</span>
+                </span>
+              ) : (
+                <span className="text-foreground">{t.message}</span>
+              )}
             </div>
           );
         })}

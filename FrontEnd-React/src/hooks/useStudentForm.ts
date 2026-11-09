@@ -8,6 +8,8 @@ import {
   getAt,
   mobileDigits,
   setAt,
+  boxesOf,
+  EMPTY_GUARDIAN_BOXES,
   type FormErrors,
   type GuardianDraft,
   type StudentFormValues,
@@ -25,7 +27,19 @@ export type LookupState = "checking" | "failed";
 /** The boxes only (not what the lookup found), for "has anything changed?". */
 const dataOf = (v: StudentFormValues) => ({
   ...v,
-  guardians: v.guardians.map(({ key: _key, match, lookedUp: _lookedUp, manual: _manual, choice, ...g }) => ({ ...g, matchId: match?.id ?? null, choice })),
+  guardians: v.guardians.map(({ key: _key, match, lookedUp: _lookedUp, typed: _typed, choice, ...g }) => ({ ...g, matchId: match?.id ?? null, choice })),
+});
+
+/** A guardian once a parent the school has was found: shown as they are saved, kept as they are, and what was typed set aside. */
+const withMatch = (g: GuardianDraft, match: GuardianMatch): GuardianDraft => ({
+  ...g,
+  match,
+  choice: "use",
+  name: match.name,
+  alternateMobile: match.alternateMobile ?? "",
+  email: match.email ?? "",
+  occupation: match.occupation ?? "",
+  typed: g.match ? g.typed : boxesOf(g),
 });
 
 /**
@@ -140,26 +154,14 @@ export function useStudentForm(
       setValues((v) => ({
         ...v,
         guardians: v.guardians.map((g) =>
-          g.key !== key || g.mobile !== mobile
-            ? g
-            : match
-              ? {
-                  ...g,
-                  match,
-                  choice: "use",
-                  name: match.name,
-                  alternateMobile: match.alternateMobile ?? "",
-                  email: match.email ?? "",
-                  occupation: match.occupation ?? "",
-                }
-              : { ...g, match: null }
+          g.key !== key || g.mobile !== mobile ? g : match ? withMatch(g, match) : { ...g, match: null }
         ),
       }));
     },
     [lookup]
   );
 
-  /** A mobile box: digits only; a new complete number is looked up once; a changed number forgets the parent found before. */
+  /** A mobile box: digits only; a new complete number is looked up once; a changed number forgets the parent found before (the boxes get back what was typed). */
   const setMobile = useCallback(
     (index: number, typed: string) => {
       const mobile = mobileDigits(typed);
@@ -167,7 +169,8 @@ export function useStudentForm(
       if (!g || g.mobile === mobile) return;
       const others = latest.current.guardians.filter((_, i) => i !== index).map((o) => o.mobile);
       const looksUp = mode === "admit" && !g.id && isIndianMobile(mobile) && mobile !== g.lookedUp && !others.includes(mobile);
-      const forgetMatch = g.match ? { match: null, name: "", alternateMobile: "", email: "", occupation: "", choice: "use" as const } : {};
+      // The number is asked again if it comes back: it found a parent, and a number not asked would be shown as new.
+      const forgetMatch = g.match ? { match: null, ...(g.typed ?? EMPTY_GUARDIAN_BOXES), typed: undefined, choice: "use" as const, lookedUp: null } : {};
       setGuardian(index, { mobile, ...forgetMatch, ...(looksUp ? { lookedUp: mobile } : {}) });
       if (looksUp) void lookUp(g.key, mobile);
     },
@@ -200,18 +203,7 @@ export function useStudentForm(
 
   /** The server says the school has this parent (409 GUARDIAN_EXISTS): show them, as if the lookup had found them. */
   const showMatch = useCallback((index: number, match: GuardianMatch) => {
-    setValues((v) =>
-      setAt(v, `guardians.${index}`, {
-        ...v.guardians[index],
-        match,
-        lookedUp: v.guardians[index].mobile,
-        choice: "use",
-        name: match.name,
-        alternateMobile: match.alternateMobile ?? "",
-        email: match.email ?? "",
-        occupation: match.occupation ?? "",
-      })
-    );
+    setValues((v) => setAt(v, `guardians.${index}`, { ...withMatch(v.guardians[index], match), lookedUp: v.guardians[index].mobile }));
   }, []);
 
   // ---- the whole form --------------------------------------------------------------------------------------------------

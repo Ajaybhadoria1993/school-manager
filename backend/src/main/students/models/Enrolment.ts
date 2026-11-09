@@ -16,6 +16,8 @@ export interface IEnrolment {
   sectionId: Types.ObjectId | null;
   rollNumber: number | null;
   status: EnrolmentStatus;
+  /** Set when the enrolment was made by an approved promotion list (so cancelling the list can take it back); null for an admission. */
+  promotionBatchId: Types.ObjectId | null;
   enrolledAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -29,6 +31,7 @@ const enrolmentSchema = new Schema<IEnrolment>(
     sectionId: { type: Schema.Types.ObjectId, ref: "Section", default: null },
     rollNumber: { type: Number, default: null, min: 1, max: MAX_ROLL_NUMBER },
     status: { type: String, enum: ENROLMENT_STATUSES, required: true, default: "active" },
+    promotionBatchId: { type: Schema.Types.ObjectId, ref: "PromotionBatch", default: null },
     enrolledAt: { type: Date, required: true },
   },
   { timestamps: true }
@@ -43,6 +46,8 @@ enrolmentSchema.index(
   { tenantId: 1, academicYearId: 1, classId: 1, sectionId: 1, rollNumber: 1 },
   { unique: true, partialFilterExpression: { rollNumber: { $type: "number" } }, name: "one_roll_number_per_section_and_year" }
 );
+// "The places this promotion list made" (to take them back when the list is cancelled).
+enrolmentSchema.index({ tenantId: 1, promotionBatchId: 1 }, { partialFilterExpression: { promotionBatchId: { $type: "objectId" } } });
 // The year's list and the seat counts by section.
 enrolmentSchema.index({ tenantId: 1, academicYearId: 1, sectionId: 1, status: 1 });
 // "Does this class have students?" across every year (the class delete guard).

@@ -13,7 +13,8 @@ token-refresh rules. The backend is `../backend`; do not change it from here.
   or `null`; branch on `code`, not on `message`.
 - **Auth:** tokens in cookies (`utils/auth.ts`), who is signed in in `redux/slices/authSlice.ts`, everything else through `hooks/useAuth.ts`.
   An endpoint where a 401 is an answer (login, reset, invite) passes `extraOptions: { skipAuthRefresh: true }`.
-- **Dropdowns:** only `components/ui/Select.tsx` (HeroUI), never a native `<select>`.
+- **Dropdowns:** only `components/ui/Select.tsx` (HeroUI), never a native `<select>`. When the list must be searched by typing, or can make
+  a new answer (the column headings of the bulk upload), use `components/ui/SearchSelect.tsx` (HeroUI ComboBox, same look).
 - **Dialogs and help:** dialogs are `components/ui/AppModal.tsx` (HeroUI Modal, no trigger); first-time help is `components/ui/Hint.tsx`
   (`InfoTip`, `WithTip`, `TipButton`) plus a hint under every form field. "Manage school" pages follow `README.md` > Classes & Sections.
 - No Prettier. Checks: `npm test && npm run typecheck && npm run lint && npm run build`.

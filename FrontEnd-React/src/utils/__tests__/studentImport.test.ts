@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { STATES } from "../../constants/schoolOptions";
 import { GENDERS } from "../../constants/students";
 import { DEFAULT_FIELD_RULES, type CustomFieldDef, type FieldRules } from "../../constants/studentFields";
-import type { AcademicStructure, ClassItem, ExportColumn } from "../../types";
+import type { AcademicStructure, ClassItem, ExportColumn, ImportMatch } from "../../types";
 import {
   ADMISSION_NUMBER_MESSAGE,
+  alreadyOf,
   assignColumn,
   autoMap,
   columnChoices,
@@ -16,6 +17,11 @@ import {
   fileProblem,
   headerKey,
   labelOf,
+  lookAlikes,
+  maskDayInput,
+  matchInputOf,
+  matchNoteOf,
+  matchProblemOf,
   matchClass,
   normaliseBloodGroup,
   normaliseCategory,
@@ -30,6 +36,7 @@ import {
   prepareRow,
   problemOf,
   problemsCsv,
+  takenNameNote,
   typedTableFields,
   type OwnColumn,
 } from "../studentImport";
@@ -41,6 +48,7 @@ const klass = (id: string, name: string, order: number, sections: string[] = [])
   name,
   order,
   departmentId: null,
+  capacity: null,
   sections: sections.map((s) => ({ id: `${id}-${s}`, classId: id, name: s, capacity: 40, room: null })),
 });
 const CLASSES: ClassItem[] = [
@@ -174,6 +182,55 @@ describe("values are read as a person writes them", () => {
   it('reads "J&K", as forms write it, as Jammu and Kashmir', () => {
     expect(normaliseState("J&K")).toBe("Jammu and Kashmir");
     expect(normaliseState("J & K")).toBe("Jammu and Kashmir");
+  });
+});
+
+describe("a name a new field of the school's own cannot take (the heading's list says so instead of offering it)", () => {
+  const HOUSE: CustomFieldDef = { key: "c_house1", label: "House", type: "choice", options: ["Red"], mode: "hidden" };
+
+  it("Age is worked out from the date of birth, so it is not uploaded; the note says what to do instead", () => {
+    for (const typed of ["Age", "age", "  AGE  "]) {
+      const note = takenNameNote(typed, []);
+      expect(note, typed).toContain("Age is worked out from the Date of birth, so it is not uploaded");
+      expect(note, typed).toContain("another name");
+    }
+  });
+
+  it("any other detail of the list is already a field of the school, whatever its case or spacing", () => {
+    expect(takenNameNote("student  name", [])).toBe("“Student Name” is already one of your fields. Choose it from the list, or add yours under another name.");
+    expect(takenNameNote("Religion", [])).toContain("“Religion” is already one of your fields");
+    expect(takenNameNote("father's mobile", [])).toContain("“Father's Mobile” is already one of your fields");
+  });
+
+  it("one of the school's own fields too, even a switched-off one (the dialog would refuse it)", () => {
+    expect(takenNameNote("house", [HOUSE])).toBe("“House” is already one of your fields. Choose it from the list, or add yours under another name.");
+  });
+
+  it("a name that is free has no note, and neither has an empty one", () => {
+    for (const typed of ["Age in file", "Locker No", "House no", "", "   "]) expect(takenNameNote(typed, [HOUSE]), typed).toBeNull();
+  });
+});
+
+describe("a day typed in a table box puts its dashes in by itself", () => {
+  it("digits become DD-MM-YYYY as they are typed", () => {
+    expect(maskDayInput("15031998")).toBe("15-03-1998");
+    expect(maskDayInput("1")).toBe("1");
+    expect(maskDayInput("15")).toBe("15");
+    expect(maskDayInput("150")).toBe("15-0");
+    expect(maskDayInput("15031")).toBe("15-03-1");
+    // Nothing after the year's four digits.
+    expect(maskDayInput("150319981")).toBe("15-03-1998");
+  });
+
+  it("a dash typed or left behind by the mask does not break it (typing on, or deleting back)", () => {
+    expect(maskDayInput("15-0")).toBe("15-0");
+    expect(maskDayInput("15-031998")).toBe("15-03-1998");
+    expect(maskDayInput("15-")).toBe("15");
+    expect(maskDayInput("15-03-")).toBe("15-03");
+  });
+
+  it("leaves alone what the person writes in their own way: other separators, one-digit days, letters, an empty box", () => {
+    for (const own of ["", "1-5-2016", "14/05/2016", "14.05.2016", "14 May 2016", "2016-05-14", "abc", "1/5"]) expect(maskDayInput(own), own).toBe(own);
   });
 });
 
@@ -540,6 +597,87 @@ describe("what only the whole file shows", () => {
     // Roll number 7 of another section is another seat.
     expect(found.has(8)).toBe(false);
     expect(found.has(4)).toBe(false);
+  });
+
+  it("the same Aadhaar number twice (one child, one number); the same student twice is said once, as the same student", () => {
+    const headers = [...HEADERS, "Aadhaar No"];
+    const mapping = autoMap(headers);
+    const make = (row: number, values: Record<string, string>) => prepareRow(sheetRow(row, { ...AARAV, ...values } as never, headers), mapping, STRUCTURE);
+    const other = { "Student Name": "Kabir Verma", "Adm No": "2019/46", "Mobile No": "9811122233" };
+    const found = crossCheck([make(4, { "Aadhaar No": "2345 6789 0124" }), make(5, { ...other, "Aadhaar No": "234567890124" })]);
+    expect(found.get(5)).toEqual([{ label: "Aadhaar no.", message: "Aadhaar number 234567890124 is also on row 4", fields: ["aadhaarNumber"] }]);
+    const again = crossCheck([make(4, { "Aadhaar No": "234567890124" }), make(5, { "Aadhaar No": "234567890124" })]);
+    expect(again.get(5)).toEqual([{ label: "Row", message: "The same student as row 4", fields: [] }]);
+  });
+});
+
+describe("a file against the students the school already has", () => {
+  const headers = [...HEADERS, "Aadhaar No"];
+  const mapping = autoMap(headers);
+  const make = (row: number, values: Record<string, string>) => prepareRow(sheetRow(row, { ...AARAV, ...values } as never, headers), mapping, STRUCTURE);
+  const meets = (kind: ImportMatch["kind"], over: Partial<ImportMatch["student"]> = {}): ImportMatch => ({
+    row: 4,
+    kind,
+    student: { id: "s1", name: "Aarav Sharma", admissionNumber: "2019/45", dateOfBirth: "2016-05-14", className: "Class 5", sectionName: "A", inactive: false, ...over },
+  });
+
+  it("asks only about what tells one child from another: the name, the birthday, the parent's mobile, the school's number, the Aadhaar number", () => {
+    const p = make(4, { "Aadhaar No": "2345 6789 0124" });
+    expect(matchInputOf([p])).toEqual([
+      { row: 4, firstName: "Aarav Kumar", lastName: "Sharma", dateOfBirth: "2016-05-14", mobile: "9876543210", admissionNumber: "2019/45", aadhaarNumber: "234567890124" },
+    ]);
+  });
+
+  it("leaves out what a row does not have (no number, no Aadhaar, no mobile)", () => {
+    const p = make(4, { "Adm No": "", "Mobile No": "", "Aadhaar No": "" });
+    expect(matchInputOf([p])).toEqual([{ row: 4, firstName: "Aarav Kumar", lastName: "Sharma", dateOfBirth: "2016-05-14" }]);
+  });
+
+  it("does not ask about a row with no name or no real birthday: it needs a fix first, and nobody can be matched on it", () => {
+    expect(matchInputOf([make(4, { "Student Name": "" }), make(5, { DOB: "31-02-2016" }), make(6, { DOB: "" }), make(7, { "Student Name": "Asha" })])).toEqual([]);
+  });
+
+  it("says, for a student already in the school, who they are and where", () => {
+    expect(alreadyOf(meets("same"))).toEqual({ label: "Already in your school", detail: "Aarav Sharma · 2019/45 · Class 5 - A" });
+    expect(alreadyOf(meets("same", { sectionName: null }))).toEqual({ label: "Already in your school", detail: "Aarav Sharma · 2019/45 · Class 5" });
+    expect(alreadyOf(meets("same", { className: null, sectionName: null })).detail).toBe("Aarav Sharma · 2019/45 · No class this year");
+    // An inactive student is made active again, never admitted twice.
+    expect(alreadyOf(meets("same", { inactive: true }))).toEqual({
+      label: "Already in your school, inactive",
+      detail: "Aarav Sharma · 2019/45 · Class 5 - A. Make them active again instead of admitting them twice",
+    });
+  });
+
+  it("the number or the Aadhaar number of ANOTHER child is a problem in its own box, and says whose it is", () => {
+    expect(matchProblemOf(meets("number"))).toEqual({ label: "Admission no.", message: "Admission number 2019/45 is already Aarav Sharma's (Class 5 - A)", fields: ["admissionNumber"] });
+    expect(matchProblemOf(meets("aadhaar"))).toEqual({ label: "Aadhaar no.", message: "This Aadhaar number is already Aarav Sharma's (2019/45, Class 5 - A)", fields: ["aadhaarNumber"] });
+    expect(matchProblemOf(meets("number", { inactive: true }))?.message).toBe("Admission number 2019/45 is already Aarav Sharma's (Class 5 - A), who is inactive");
+    expect(matchProblemOf(meets("same"))).toBeNull();
+    expect(matchProblemOf(meets("maybe"))).toBeNull();
+  });
+
+  it("a maybe is a note and not a problem: the row is still uploaded unless the person changes it", () => {
+    expect(matchNoteOf(meets("maybe"))).toBe(
+      "Maybe the same student as Aarav Sharma (2019/45, Class 5 - A): the same name and date of birth, but not the same parent's mobile number. Uploaded as a new student unless you change this row."
+    );
+    expect(matchNoteOf(meets("same"))).toBeNull();
+    expect(matchNoteOf(meets("number"))).toBeNull();
+  });
+
+  it("the same name and birthday twice in the file with another parent's mobile: a maybe on the later row; twins and a different child are not", () => {
+    const rows = [
+      make(4, {}),
+      make(5, { "Mobile No": "9811122233", "Adm No": "2019/46" }),
+      // Twins: the same birthday and parent, another name.
+      make(6, { "Student Name": "Esha Kumar Sharma", "Adm No": "2019/47" }),
+      // The same name, another birthday.
+      make(7, { DOB: "01-01-2014", "Adm No": "2019/48", "Mobile No": "9811122234" }),
+    ];
+    expect([...lookAlikes(rows)]).toEqual([[5, "Maybe the same student as row 4: the same name and date of birth, but not the same parent's mobile number"]]);
+  });
+
+  it("the same student twice (the same mobile too) is not a maybe: crossCheck says it is the same student", () => {
+    expect([...lookAlikes([make(4, {}), make(5, { "Adm No": "2019/46" })])]).toEqual([]);
   });
 });
 

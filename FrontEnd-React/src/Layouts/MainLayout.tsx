@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { PageSpinner } from "../components/shared/PageSpinner";
 import { useAuth } from "../hooks/useAuth";
+import { useLiveNotifications } from "../hooks/useLiveNotifications";
 import { postLoginPath } from "../utils/postLoginPath";
 import { Sidebar } from "../components/layout/Sidebar";
 import { Topbar } from "../components/layout/Topbar";
+import { YearViewBanner } from "../components/layout/YearViewBanner";
 import { activeNavItem } from "../components/layout/nav-config";
 
 /** The signed-in app shell. Everything inside it requires a session and an approved school. */
@@ -13,6 +15,8 @@ export default function MainLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // New notifications, live on the socket, for the bell in the top bar (docs/notifications.md).
+  useLiveNotifications();
 
   // A school admin whose school is still being set up or waiting for approval belongs on /onboarding.
   const needsOnboarding =
@@ -43,7 +47,10 @@ export default function MainLayout() {
             title={active?.label ?? "Dashboard"}
           />
         </div>
-        <main className="mx-auto w-full max-w-[1400px] flex-1 p-4 lg:p-8 print:p-0">
+        {/* Only while a year that is over is open (read only): which year it is, and the way back. */}
+        <YearViewBanner />
+        {/* Full width, like Infinity Medisetu: no empty bands at the left and right of a wide screen. */}
+        <main className="w-full flex-1 p-4 lg:p-8 print:p-0">
           {/* A new key on every page, so each page eases in instead of snapping. */}
           <div key={pathname} className="rise-in">
             <Outlet />

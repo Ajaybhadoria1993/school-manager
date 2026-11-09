@@ -1,4 +1,4 @@
-import { AtSign, BriefcaseBusiness, Loader2, Phone, Search, Star, Trash2, UserRoundCheck, UserRoundPlus } from "lucide-react";
+import { AtSign, BriefcaseBusiness, Loader2, Phone, Star, Trash2, UserRoundCheck, UserRoundPlus } from "lucide-react";
 import { RELATIONS } from "../../../constants/students";
 import { fieldId, type StudentForm } from "../../../hooks/useStudentForm";
 import { cn } from "../../../utils/helpers";
@@ -15,11 +15,11 @@ import { FORM_GRID } from "./formGrid";
 import { StudentAvatar } from "../StudentAvatar";
 
 /**
- * One parent or guardian. On the admission form it starts with the MOBILE number: when 10 valid digits are typed the school's
- * guardians are searched once (POST /students/guardians/lookup). A parent the school already has is shown with their children
- * ("use as is" keeps their details exactly as saved, "update" lets them be changed); a new number opens the boxes for the name and the
- * rest. A second guardian may have no number ("No mobile number?"). On a student's page every box is open and changes the guardian's
- * own details (for each of their children).
+ * One parent or guardian: Full name, Relation, Mobile number, Another number, Occupation, Email, all there from the start. On the
+ * admission form, when 10 valid digits are typed in the mobile box the school's guardians are searched once (POST
+ * /students/guardians/lookup). A parent the school already has is shown with their children in place of the boxes ("use as is" keeps
+ * their details exactly as saved, "update" fills the boxes with them so they can be changed; a number changed again gives back what
+ * was typed). On a student's page the boxes change the guardian's own details (for each of their children).
  */
 export function GuardianFields({
   form,
@@ -36,8 +36,9 @@ export function GuardianFields({
   const at = (field: string) => `guardians.${index}.${field}`;
   const state = form.lookups[g.key];
   const complete = isIndianMobile(g.mobile);
-  // Admission: the boxes open once the number was checked (or the person has no number for this guardian).
-  const open = mode === "edit" || g.manual || (!!g.match && g.choice === "update") || (!g.match && complete && g.lookedUp === g.mobile && state !== "checking");
+  // A parent the school has, kept as they are, needs no boxes (but the relation to this child).
+  const keeps = keepsDetails(g);
+  const asked = !g.match && complete && g.lookedUp === g.mobile && state !== "checking";
   const title = g.match ? g.match.name : g.name.trim() || (g.relation ? `${g.relation}` : `Guardian ${index + 1}`);
 
   return (
@@ -74,29 +75,11 @@ export function GuardianFields({
       </div>
 
       <div className={cn("mt-4", FORM_GRID)}>
-        <Field
-          id={fieldId(at("mobile"))}
-          label="Mobile number"
-          optional={!g.isPrimary}
-          error={form.errorOf(at("mobile"))}
-          hint={
-            mode === "edit"
-              ? "It will be this parent's sign-in later; a new number has to be verified again."
-              : "Type it first: we check whether this parent is already in your school."
-          }
-        >
-          <Input
-            {...form.bind(at("mobile"))}
-            onChange={(e) => form.setMobile(index, e.target.value)}
-            icon={Phone}
-            prefix="+91"
-            type="tel"
-            inputMode="numeric"
-            autoComplete="off"
-            maxLength={10}
-            placeholder="98765 43210"
-          />
-        </Field>
+        {!keeps && (
+          <Field id={fieldId(at("name"))} label="Full name" error={form.errorOf(at("name"))}>
+            <Input {...form.bind(at("name"))} maxLength={80} autoComplete="off" placeholder="For example Ravi Verma" />
+          </Field>
+        )}
 
         <Field id={fieldId(at("relation"))} label={mode === "edit" ? "Relation to this student" : "Relation"} error={form.errorOf(at("relation"))}>
           {mode === "edit" ? (
@@ -116,10 +99,58 @@ export function GuardianFields({
             />
           )}
         </Field>
+
+        <Field
+          id={fieldId(at("mobile"))}
+          label="Mobile number"
+          optional={!g.isPrimary}
+          error={form.errorOf(at("mobile"))}
+          hint={
+            mode === "edit"
+              ? "It will be this parent's sign-in later; a new number has to be verified again."
+              : "A parent already in your school is found by this number."
+          }
+        >
+          <Input
+            {...form.bind(at("mobile"))}
+            onChange={(e) => form.setMobile(index, e.target.value)}
+            icon={Phone}
+            prefix="+91"
+            type="tel"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={10}
+            placeholder="98765 43210"
+          />
+        </Field>
+
+        {!keeps && (
+          <>
+            <Field id={fieldId(at("alternateMobile"))} label="Another number" optional error={form.errorOf(at("alternateMobile"))}>
+              <Input
+                {...form.bind(at("alternateMobile"))}
+                onChange={(e) => form.setGuardian(index, { alternateMobile: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                icon={Phone}
+                prefix="+91"
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+              />
+            </Field>
+            {asks(form.rules, "guardianOccupation") && (
+              <Field id={fieldId(at("occupation"))} label="Occupation" optional={mayLeave(form.rules, "guardianOccupation")} error={form.errorOf(at("occupation"))}>
+                <Input {...form.bind(at("occupation"))} icon={BriefcaseBusiness} maxLength={60} placeholder="Farmer, teacher, business..." />
+              </Field>
+            )}
+            <Field id={fieldId(at("email"))} label="Email" optional error={form.errorOf(at("email"))}>
+              <Input {...form.bind(at("email"))} icon={AtSign} type="email" maxLength={254} autoComplete="off" />
+            </Field>
+          </>
+        )}
       </div>
 
       {mode === "admit" && (
-        <div aria-live="polite" className="mt-3 text-xs">
+        <div aria-live="polite" className={cn("text-xs", (state || asked) && "mt-3")}>
           {state === "checking" ? (
             <p className="inline-flex items-center gap-1.5 font-semibold text-foreground-muted">
               <Loader2 className="size-3.5 animate-spin" aria-hidden />
@@ -127,20 +158,10 @@ export function GuardianFields({
             </p>
           ) : state === "failed" ? (
             <p className="font-semibold text-warning">Could not check this number just now. It is checked again when you press Admit.</p>
-          ) : g.match ? null : complete && g.lookedUp === g.mobile ? (
+          ) : asked ? (
             <p className="inline-flex items-center gap-1.5 font-semibold text-success">
               <UserRoundPlus className="size-3.5" aria-hidden />
-              New to your school: fill in their details below.
-            </p>
-          ) : !open ? (
-            <p className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-foreground-muted">
-              <Search className="size-3.5" aria-hidden />
-              {g.isPrimary ? "The name and the other boxes open once the 10-digit number is typed." : "Their boxes open once the number is typed."}
-              {!g.isPrimary && (
-                <button type="button" onClick={() => form.setGuardian(index, { manual: true })} className="font-semibold text-primary-deep underline-offset-2 hover:underline">
-                  No mobile number? Enter the details
-                </button>
-              )}
+              New to your school: they are added with the details above.
             </p>
           ) : null}
         </div>
@@ -176,38 +197,11 @@ export function GuardianFields({
               onChange={(choice) => form.setGuardian(index, { choice: choice as "use" | "update" })}
             />
             <p className="mt-1.5 text-xs text-foreground-muted">
-              {keepsDetails(g)
+              {keeps
                 ? "This child is linked to the same parent; their saved details are not changed."
-                : "The changes below are saved for this parent, for every one of their children."}
+                : "The boxes above hold their saved details: a change is saved for this parent, for every one of their children."}
             </p>
           </div>
-        </div>
-      )}
-
-      {open && !keepsDetails(g) && (
-        <div className={cn("fade-in mt-4", FORM_GRID)}>
-          <Field id={fieldId(at("name"))} label="Full name" error={form.errorOf(at("name"))}>
-            <Input {...form.bind(at("name"))} maxLength={80} autoComplete="off" placeholder="For example Ravi Verma" />
-          </Field>
-          <Field id={fieldId(at("alternateMobile"))} label="Another number" optional error={form.errorOf(at("alternateMobile"))}>
-            <Input
-              {...form.bind(at("alternateMobile"))}
-              onChange={(e) => form.setGuardian(index, { alternateMobile: e.target.value.replace(/\D/g, "").slice(0, 10) })}
-              icon={Phone}
-              prefix="+91"
-              type="tel"
-              inputMode="numeric"
-              maxLength={10}
-            />
-          </Field>
-          <Field id={fieldId(at("email"))} label="Email" optional error={form.errorOf(at("email"))}>
-            <Input {...form.bind(at("email"))} icon={AtSign} type="email" maxLength={254} autoComplete="off" />
-          </Field>
-          {asks(form.rules, "guardianOccupation") && (
-            <Field id={fieldId(at("occupation"))} label="Occupation" optional={mayLeave(form.rules, "guardianOccupation")} error={form.errorOf(at("occupation"))}>
-              <Input {...form.bind(at("occupation"))} icon={BriefcaseBusiness} maxLength={60} placeholder="Farmer, teacher, business..." />
-            </Field>
-          )}
         </div>
       )}
     </div>

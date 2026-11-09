@@ -9,12 +9,12 @@ import { Button } from "../../ui/Button";
 import { Card } from "../../ui/Card";
 import { useToast } from "../../ui/toast-context";
 
-const pill = "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold backdrop-blur";
+const line = "inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-sm";
 
 /**
- * The school's current session for the dashboard's banner, read from the server ("Current Academic Year: 2026-2027", with its
- * first and last day). While it loads it shows a placeholder; if the request fails it says so and offers Retry; a school
- * with no year says that (the card under the banner lets its administrator set it up).
+ * The school's current session for the dashboard's status strip, read from the server ("Current Academic Year: 2026-2027",
+ * with its first and last day). While it loads it shows a placeholder; if the request fails it says so and offers Retry; a
+ * school with no year says that (the card under the header lets its administrator set it up).
  */
 export function AcademicYearBadge() {
   const { data, isLoading, isError, refetch, isFetching } = useGetCurrentAcademicYearQuery();
@@ -22,22 +22,22 @@ export function AcademicYearBadge() {
 
   if (isLoading) {
     return (
-      <span aria-busy="true" className={`${pill} w-64 border-white/20 bg-white/10`}>
+      <span aria-busy="true" className="inline-flex w-64 items-center">
         <span className="sr-only">Loading the academic year</span>
-        <span aria-hidden className="h-3 w-full animate-pulse rounded-full bg-white/25" />
+        <span aria-hidden className="h-3.5 w-full animate-pulse rounded-full bg-surface-muted" />
       </span>
     );
   }
   if (isError || !data) {
     return (
-      <span role="alert" className={`${pill} border-amber-300/50 bg-amber-400/15 text-amber-100`}>
-        <AlertTriangle className="size-3.5" aria-hidden />
+      <span role="alert" className={`${line} font-medium text-danger`}>
+        <AlertTriangle className="size-4" aria-hidden />
         Could not load the academic year
         <button
           type="button"
           onClick={() => refetch()}
           disabled={isFetching}
-          className="ml-1 inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 hover:bg-white/25 disabled:opacity-60"
+          className="inline-flex items-center gap-1 rounded-md border border-border bg-surface px-2 py-0.5 text-xs font-semibold text-foreground hover:bg-background disabled:opacity-60"
         >
           <RefreshCw className={`size-3 ${isFetching ? "animate-spin" : ""}`} aria-hidden />
           Retry
@@ -47,19 +47,19 @@ export function AcademicYearBadge() {
   }
   if (!year) {
     return (
-      <span className={`${pill} border-amber-300/50 bg-amber-400/15 text-amber-100`}>
-        <AlertTriangle className="size-3.5" aria-hidden />
+      <span className={`${line} font-medium text-warning`}>
+        <AlertTriangle className="size-4" aria-hidden />
         Academic year not set up yet
       </span>
     );
   }
   return (
-    <span className={`${pill} border-white/20 bg-white/10 text-white`}>
-      <CalendarRange className="size-3.5 text-sky" aria-hidden />
+    <span className={`${line} text-foreground`}>
+      <CalendarRange className="size-4 text-primary" aria-hidden />
       <span>
-        Current Academic Year: <strong className="font-extrabold">{year.name}</strong>
+        Current Academic Year: <strong className="font-bold">{year.name}</strong>
       </span>
-      <span className="hidden text-slate-300 sm:inline">· {formatDayRange(year.startDate, year.endDate)}</span>
+      <span className="hidden text-foreground-muted sm:inline">· {formatDayRange(year.startDate, year.endDate)}</span>
     </span>
   );
 }

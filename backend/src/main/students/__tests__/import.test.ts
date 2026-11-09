@@ -32,10 +32,10 @@ const importRows = (token: string, body: object) => request(app).post(`${api}/im
 async function school(name = "Sunrise Public School") {
   const s = await createSchool(name);
   await request(app).post(`${academics}/academic-years/initial`).set(auth(s.token)).send(YEAR);
-  const class5 = (await request(app).post(`${academics}/classes`).set(auth(s.token)).send({ name: "Class 5", sectionCount: 0 })).body.data;
+  const class5 = (await request(app).post(`${academics}/classes`).set(auth(s.token)).send({ name: "Class 5", capacity: 2000, sectionCount: 0 })).body.data;
   const a = (await request(app).post(`${academics}/classes/${class5.id}/sections`).set(auth(s.token)).send({ name: "A", capacity: 40, room: "5A" })).body.data;
   const b = (await request(app).post(`${academics}/classes/${class5.id}/sections`).set(auth(s.token)).send({ name: "B", capacity: 1, room: "5B" })).body.data;
-  const class1 = (await request(app).post(`${academics}/classes`).set(auth(s.token)).send({ name: "Class 1", sectionCount: 0 })).body.data;
+  const class1 = (await request(app).post(`${academics}/classes`).set(auth(s.token)).send({ name: "Class 1", capacity: 2000, sectionCount: 0 })).body.data;
   return { ...s, class5: class5.id as string, a: a.id as string, b: b.id as string, class1: class1.id as string };
 }
 
@@ -319,7 +319,7 @@ describe("importing the rows", () => {
 });
 
 describe("the details every school has, in a bulk upload", () => {
-  const nursery = async (token: string) => (await request(app).post(`${academics}/classes`).set(auth(token)).send({ name: "Nursery", sectionCount: 0 })).body.data.id as string;
+  const nursery = async (token: string) => (await request(app).post(`${academics}/classes`).set(auth(token)).send({ name: "Nursery", capacity: 2000, sectionCount: 0 })).body.data.id as string;
 
   it("a row without an address, or into Class 1 to 12 without a previous school, is still admitted (an old register seldom holds them) and says what the school still needs", async () => {
     const s = await school();
@@ -506,7 +506,10 @@ describe("the export", () => {
     const b = await school("Moonrise Public School");
     await request(app).post(api).set(auth(a.token)).send(studentBody(a.class5, a.a));
     const theirs = await workbookOf((await download(b.token, "/export")).body);
-    expect(theirs.getWorksheet("Students")!.rowCount).toBe(1);
+    // Nobody of school A is in it: school B has no student, so its file holds the headings and the one sample row.
+    const sheet = theirs.getWorksheet("Students")!;
+    expect(sheet.rowCount).toBe(2);
+    expect(sheet.getRow(2).getCell(2).value).toBe("Sample Student");
 
     // School B cannot put a student into school A's class through an import either.
     const res = await importRows(b.token, { dryRun: false, rows: [row(3, studentBody(a.class5, a.a, family("Anil Rao", "9111111111")))] });

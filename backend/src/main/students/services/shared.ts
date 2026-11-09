@@ -55,6 +55,8 @@ export interface StudentGuardianDto {
   alternateMobile: string | null;
   email: string | null;
   occupation: string | null;
+  /** The parent's login (its username; the password is never sent), or null. */
+  login: { username: string; isActive: boolean } | null;
 }
 
 /** Another child of one of this student's guardians. */
@@ -79,6 +81,29 @@ export interface EnrolmentDto {
   enrolledAt: string;
   /** This is the current academic year's. */
   current: boolean;
+}
+
+/** Where a student sat, with the names as they were written then. */
+export interface PlaceSnapshotDto {
+  classId: string;
+  className: string;
+  sectionId: string | null;
+  sectionName: string | null;
+  rollNumber: number | null;
+}
+
+/** One movement of a student: moved to another class, section or roll number, or transferred out to another school. */
+export interface MoveDto {
+  id: string;
+  kind: "moved" | "transferred_out";
+  at: string;
+  reason: string | null;
+  academicYear: { id: string; name: string } | null;
+  from: PlaceSnapshotDto | null;
+  to: PlaceSnapshotDto | null;
+  /** The transfer certificate details of a transfer out. */
+  school: { schoolName: string; tcNumber: string | null; tcDate: string | null; remarks: string | null } | null;
+  by: { name: string; role: string };
 }
 
 /** The records a school may keep about a student besides the core ones (each needed, optional or not asked, as the school decides). */
@@ -137,9 +162,9 @@ export const addressOf = (a: Partial<IStudent["address"]> | null | undefined): I
 });
 
 /** 409: this Aadhaar number is already another student's (one child, one number). */
-export const aadhaarTaken = (aadhaarNumber: string, holder?: Pick<IStudent, "firstName" | "lastName" | "admissionNumber">) => {
+export const aadhaarTaken = (aadhaarNumber: string, holder?: Pick<IStudent, "firstName" | "lastName" | "admissionNumber"> & Partial<Pick<IStudent, "status">>) => {
   const message = holder
-    ? `Aadhaar number ${aadhaarNumber} is already ${fullName(holder)}'s (${holder.admissionNumber})`
+    ? `Aadhaar number ${aadhaarNumber} is already ${fullName(holder)}'s (${holder.admissionNumber})${holder.status === "inactive" ? ", who is inactive (make them active again instead)" : ""}`
     : `Aadhaar number ${aadhaarNumber} is already used in your school`;
   return ApiError.conflict(`${message}.`, "AADHAAR_TAKEN", [{ path: "aadhaarNumber", message }]);
 };
@@ -155,6 +180,15 @@ export interface StudentDetailDto extends Omit<StudentRowDto, "primaryGuardian">
   /** Every year, newest first. */
   enrolments: EnrolmentDto[];
   siblings: SiblingDto[];
+  /** When, by whom and why the student was made inactive; null for an active student. */
+  inactive: {
+    at: string;
+    by: { name: string; role: string };
+    reason: string | null;
+    transfer: { schoolName: string; tcNumber: string | null; tcDate: string | null; remarks: string | null } | null;
+  } | null;
+  /** The moves and transfers of this student, newest first. */
+  moves: MoveDto[];
   createdAt: string;
 }
 
@@ -166,6 +200,8 @@ export interface GuardianMatchDto {
   alternateMobile: string | null;
   email: string | null;
   occupation: string | null;
+  /** The parent's login (a brother's or sister's admission: the new child joins it by itself). */
+  login: { username: string; isActive: boolean } | null;
   children: (SiblingDto & { relation: Relation })[];
 }
 
@@ -173,7 +209,11 @@ export const fullName = (s: Pick<IStudent, "firstName" | "lastName">) => `${s.fi
 /** "asha verma": what the search and the duplicate check compare. */
 export const nameKeyOf = (firstName: string, lastName: string) => `${firstName} ${lastName}`.trim().toLowerCase().replace(/\s+/g, " ");
 
-export const toGuardianDto = (g: IGuardian, link: { relation: Relation; isPrimary: boolean }): StudentGuardianDto => ({
+export const toGuardianDto = (
+  g: IGuardian,
+  link: { relation: Relation; isPrimary: boolean },
+  login: { username: string; isActive: boolean } | null = null
+): StudentGuardianDto => ({
   id: g._id.toString(),
   name: g.name,
   relation: link.relation,
@@ -183,6 +223,7 @@ export const toGuardianDto = (g: IGuardian, link: { relation: Relation; isPrimar
   alternateMobile: g.alternateMobile ?? null,
   email: g.email ?? null,
   occupation: g.occupation ?? null,
+  login,
 });
 
 /** "Class 5 - A", or "Class 5" for a class with no sections. */

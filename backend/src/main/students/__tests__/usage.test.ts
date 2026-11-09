@@ -25,10 +25,10 @@ beforeEach(async () => {
 async function setUp() {
   const s = await createSchool("Sunrise Public School");
   await request(app).post(`${academics}/academic-years/initial`).set(as(s.token)).send(YEAR);
-  const class5 = (await request(app).post(`${academics}/classes`).set(as(s.token)).send({ name: "Class 5", sectionCount: 0 })).body.data;
+  const class5 = (await request(app).post(`${academics}/classes`).set(as(s.token)).send({ name: "Class 5", capacity: 2000, sectionCount: 0 })).body.data;
   const a = (await request(app).post(`${academics}/classes/${class5.id}/sections`).set(as(s.token)).send({ name: "A", capacity: 40, room: "1" })).body.data;
   const b = (await request(app).post(`${academics}/classes/${class5.id}/sections`).set(as(s.token)).send({ name: "B", capacity: 40, room: "2" })).body.data;
-  const class1 = (await request(app).post(`${academics}/classes`).set(as(s.token)).send({ name: "Class 1", sectionCount: 0 })).body.data;
+  const class1 = (await request(app).post(`${academics}/classes`).set(as(s.token)).send({ name: "Class 1", capacity: 2000, sectionCount: 0 })).body.data;
   return { ...s, class5: class5.id as string, a: a.id as string, b: b.id as string, class1: class1.id as string };
 }
 

@@ -4,6 +4,13 @@ import { INDIAN_MOBILE, optional, phoneNumber } from "../../../utils/formFields"
 import {
   ALWAYS_ASKED_RULES,
   BLOOD_GROUPS,
+  MAX_CUSTOM_STEPS,
+  MAX_STEP_NAME,
+  MOVABLE_FIELDS,
+  MOVABLE_KEYS,
+  STEP_KEY,
+  STEP_NAMES,
+  isStepKey,
   CATEGORIES,
   FIXED_RULES,
   CUSTOM_FIELD_TYPES,
@@ -16,6 +23,10 @@ import {
   MAX_CUSTOM_OPTION,
   MAX_CUSTOM_OPTIONS,
   MAX_CUSTOM_TEXT,
+  MAX_PROMOTION_CHANGES,
+  MAX_STATUS_BATCH,
+  MAX_STATUS_REASON,
+  PROMOTION_OUTCOMES,
   type CustomFieldDef,
   type CustomFieldType,
   type FieldMode,
@@ -30,6 +41,7 @@ import {
   type FormFieldKey,
   MAX_AGE,
   MAX_GUARDIANS,
+  MAX_IMPORT_ROWS,
   MAX_IMPORT_ROWS_PER_REQUEST,
   MAX_ROLL_NUMBER,
   MIN_AGE,
@@ -47,7 +59,15 @@ export const idParamSchema = z.object({ id: objectId });
  * constants/students.ts) to say what is wrong before anything is sent; the server says the same thing if it gets there anyway.
  */
 export const MOBILE_MESSAGE = "Enter a 10-digit mobile number starting with 6, 7, 8 or 9";
-export const AGE_MESSAGE = `The student must be ${MIN_AGE} to ${MAX_AGE} years old on the admission date`;
+/** "03-04-2022": a calendar day (midnight UTC) the way a school writes it. */
+const dayAsWritten = (d: Date) => `${String(d.getUTCDate()).padStart(2, "0")}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${d.getUTCFullYear()}`;
+/**
+ * The age message says how old the student was on which day, so the person knows it is the age on the ADMISSION date (not today's) and
+ * which of the two dates to fix: "The student was 1 year old on the admission date (03-04-2022); a student must be 2 to 25 years old
+ * then. Fix the date of birth or the admission date".
+ */
+export const ageMessage = (age: number, admissionDate: Date) =>
+  `The student was ${age < 1 ? "less than a year" : `${age} year${age === 1 ? "" : "s"}`} old on the admission date (${dayAsWritten(admissionDate)}); a student must be ${MIN_AGE} to ${MAX_AGE} years old then. Fix the date of birth or the admission date`;
 
 /** "2026-10-22": today's calendar day in India, whatever the server's own time zone. */
 export function todayInIndia(): string {
@@ -66,7 +86,7 @@ export function ageOn(dateOfBirth: Date, day: Date): number {
 /** null when a student born on `dateOfBirth` may be admitted on `admissionDate`, else the reason. */
 export function ageProblem(dateOfBirth: Date, admissionDate: Date): string | null {
   const age = ageOn(dateOfBirth, admissionDate);
-  return age < MIN_AGE || age > MAX_AGE ? AGE_MESSAGE : null;
+  return age < MIN_AGE || age > MAX_AGE ? ageMessage(age, admissionDate) : null;
 }
 
 const NO_ANGLE_BRACKETS = /^[^<>]*$/;
@@ -133,9 +153,25 @@ const VERHOEFF_P = [
 export const verhoeffValid = (number: string) =>
   [...number].reverse().reduce((c, digit, i) => VERHOEFF_D[c][VERHOEFF_P[i % 8][Number(digit)]], 0) === 0;
 
-export const AADHAAR_MESSAGE = "Enter a valid 12-digit Aadhaar number";
+/**
+ * What is wrong with an Aadhaar number, said by what is wrong (a person who typed 12 digits is not told to "enter 12 digits"): the
+ * number of digits, the first digit, or the last digit (a check digit worked out from the other eleven).
+ */
+export const AADHAAR_LENGTH_MESSAGE = "The Aadhaar number has 12 digits";
+export const AADHAAR_START_MESSAGE = "An Aadhaar number does not start with 0 or 1";
+export const AADHAAR_CHECK_MESSAGE = "This Aadhaar number is not valid: its last digit (the check digit) does not match the other digits";
+/** The one thing wrong with an Aadhaar number (digits only, spaces and dashes already dropped), or null. */
+export const aadhaarProblem = (v: string): string | null =>
+  !/^\d{12}$/.test(v) ? AADHAAR_LENGTH_MESSAGE : /^[01]/.test(v) ? AADHAAR_START_MESSAGE : !verhoeffValid(v) ? AADHAAR_CHECK_MESSAGE : null;
 /** 12 digits, not starting with 0 or 1, whose last digit is the Verhoeff check digit (a mistyped number is caught here). */
-const aadhaar = digits(/^\d{12}$/, AADHAAR_MESSAGE).refine((v) => /^[2-9]/.test(v) && verhoeffValid(v), AADHAAR_MESSAGE);
+const aadhaar = z
+  .preprocess(
+    (v) => (typeof v === "string" ? v.replace(/[\s-]/g, "") : v),
+    z.string({ invalid_type_error: AADHAAR_LENGTH_MESSAGE }).superRefine((v, ctx) => {
+      const problem = aadhaarProblem(v);
+      if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+    })
+  );
 
 /**
  * A calendar day as the form sends it, "2026-04-01", turned into midnight UTC of that day (like the academic year's days). A day
@@ -427,6 +463,13 @@ export const moveStudentSchema = z
     sectionId,
     rollNumber,
     allowOverCapacity: z.boolean().default(false),
+    /** Why the student is moved (optional): kept with who moved them and when. */
+    reason: z
+      .string()
+      .trim()
+      .max(MAX_STATUS_REASON, `The reason is up to ${MAX_STATUS_REASON} letters`)
+      .optional()
+      .transform((value) => value || null),
   })
   .refine((v) => v.classId !== undefined || v.sectionId !== undefined || v.rollNumber !== undefined, NOTHING_TO_CHANGE);
 
@@ -462,12 +505,115 @@ export const listStudentsQuerySchema = z.object({
     .optional()
     .transform((value) => value || undefined),
   classId: objectId.optional(),
+  /** A department's id, or `none` for the classes that are in no department: the students of the classes in it. */
+  departmentId: z.union([objectId, z.literal("none")]).optional(),
   /** A section's id, or `none` for the students of a class that has no sections. */
   sectionId: z.union([objectId, z.literal("none")]).optional(),
+  gender: z.enum(GENDERS).optional(),
   sort: z.enum(STUDENT_SORTS).default("class"),
   dir: z.enum(["asc", "desc"]).default("asc"),
   page: z.coerce.number().int().min(1).max(1000).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(12),
+});
+
+/** The classes at a glance: only the classes that match (a department, one class, part of a class name). */
+export const classOverviewQuerySchema = z.object({
+  departmentId: z.union([objectId, z.literal("none")]).optional(),
+  classId: objectId.optional(),
+  q: z
+    .string()
+    .trim()
+    .max(40)
+    .optional()
+    .transform((value) => value || undefined),
+});
+
+const statusIds = z.array(objectId).min(1, "Choose at least one student").max(MAX_STATUS_BATCH, `Choose up to ${MAX_STATUS_BATCH} students at a time`);
+
+/** The students to make inactive: a list of ids (as many as one request may carry) and, when the person says, why. */
+export const deactivateStudentsSchema = z.object({
+  ids: statusIds,
+  reason: z
+    .string()
+    .trim()
+    .max(MAX_STATUS_REASON, `The reason is up to ${MAX_STATUS_REASON} letters`)
+    .optional()
+    .transform((value) => value || null),
+});
+
+/**
+ * A student leaving for another school: its name (the only thing needed) and, when the school has them, the transfer certificate's number
+ * and day (not in the future) and a remark. The student becomes inactive with these kept; nothing is deleted.
+ */
+export const transferOutSchema = z.object({
+  schoolName: z.string({ required_error: "Enter the name of the new school" }).trim().min(2, "Enter the name of the new school").max(150, "The school's name is up to 150 letters"),
+  tcNumber: z
+    .string()
+    .trim()
+    .max(40, "The TC number is up to 40 letters")
+    .optional()
+    .transform((value) => value || null),
+  tcDate: z
+    .preprocess((v) => (v === "" ? undefined : v), calendarDay("date of the transfer certificate", "The transfer certificate cannot be dated in the future").optional())
+    .transform((day) => (day ? day.toISOString().slice(0, 10) : null)),
+  remarks: z
+    .string()
+    .trim()
+    .max(MAX_STATUS_REASON, `The remark is up to ${MAX_STATUS_REASON} letters`)
+    .optional()
+    .transform((value) => value || null),
+});
+
+/**
+ * The students to make active again: a list of ids and, for a student who has no place in the running year (they left in an earlier
+ * year), the class and section to put them in.
+ */
+export const reactivateStudentsSchema = z.object({
+  ids: statusIds,
+  placement: z.object({ classId: objectId, sectionId: objectId.nullable().optional() }).optional(),
+});
+
+/** A promotion list for the year that waits: which one. */
+export const startPromotionSchema = z.object({ toAcademicYearId: objectId });
+export const promotionQuerySchema = z.object({ toAcademicYearId: objectId });
+
+/** Changes to a draft promotion list: what happens to each student named, and where (the class and section of the next year). */
+export const updatePromotionSchema = z.object({
+  entries: z
+    .array(
+      z.object({
+        studentId: objectId,
+        outcome: z.enum(PROMOTION_OUTCOMES, { message: "Choose promote, stay or leave" }),
+        classId: objectId.optional(),
+        sectionId: objectId.nullable().optional(),
+      })
+    )
+    .min(1, "Choose at least one student")
+    .max(MAX_PROMOTION_CHANGES, `Change up to ${MAX_PROMOTION_CHANGES} students at a time`),
+});
+
+export const rejectPromotionSchema = z.object({
+  note: z
+    .string()
+    .trim()
+    .max(300, "The note is up to 300 letters")
+    .optional()
+    .transform((value) => value || null),
+});
+
+/** Approving a list: `allowOverCapacity` says yes to sections that would have more students than seats. */
+export const approvePromotionSchema = z.object({ allowOverCapacity: z.boolean().default(false) });
+
+/** The inactive students' list: a search (part of the name or of the admission number) and a page. */
+export const listInactiveQuerySchema = z.object({
+  q: z
+    .string()
+    .trim()
+    .max(60)
+    .optional()
+    .transform((value) => value || undefined),
+  page: z.coerce.number().int().min(1).max(1000).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 
 /** The admission number a school brings with a student it already has: letters, digits and / - . _ (kept upper-case), up to 30. */
@@ -496,6 +642,41 @@ export const importStudentsSchema = z.object({
     )
     .min(1, "Add at least one row")
     .max(MAX_IMPORT_ROWS_PER_REQUEST, `Send up to ${MAX_IMPORT_ROWS_PER_REQUEST} rows at a time`),
+});
+
+/** A calendar day as "2016-05-14" (a real day, not "2016-02-31"). */
+const dayText = (what: string) =>
+  z
+    .string({ required_error: `Enter the ${what}`, invalid_type_error: `Enter the ${what}` })
+    // One check for the pattern and the day, so a box has one message ("2016-13-45" matches the pattern and is no day).
+    .refine((v) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+      const parsed = new Date(`${v}T00:00:00.000Z`);
+      return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === v;
+    }, `Write the ${what} as a real day, YYYY-MM-DD`);
+
+/**
+ * "Is this student of the file already in the school?", asked once for a whole file before anything is uploaded: for each row only what
+ * tells one child from another (the name, the birthday, the parent's mobile, the school's own number, the Aadhaar number). The details
+ * that are not checked here (the mobile, the number, the Aadhaar) may be missing or wrong: a row that cannot be matched on them is
+ * matched on what it has, and the row's own mistakes are for the import to say.
+ */
+export const matchImportSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        row: z.number({ invalid_type_error: "A row number" }).int().min(1).max(1_000_000),
+        firstName: z.string({ required_error: "Enter the first name", invalid_type_error: "Enter the first name" }).trim().min(1, "Enter the first name").max(100),
+        lastName: z.string({ required_error: "Enter the last name", invalid_type_error: "Enter the last name" }).trim().min(1, "Enter the last name").max(100),
+        dateOfBirth: dayText("date of birth"),
+        mobile: z.unknown().optional(),
+        admissionNumber: z.unknown().optional(),
+        aadhaarNumber: z.unknown().optional(),
+      }),
+      { required_error: "Add at least one row", invalid_type_error: "Add at least one row" }
+    )
+    .min(1, "Add at least one row")
+    .max(MAX_IMPORT_ROWS, `Send up to ${MAX_IMPORT_ROWS} rows at a time`),
 });
 
 /** Which students an export holds: the list's search, class and section (every student of this year when none is given). */
@@ -713,7 +894,8 @@ const tidyText = (v: unknown) => (typeof v === "string" ? v.trim().replace(/\s+/
  * entry never hides another's message: a name (2 to 40 characters, not one of the list's, once), a kind, the choices of a list (1 to
  * 30, each once), and needed / optional / not asked (a yes / no is never needed). The service refuses a changed kind.
  */
-const customFieldsSchema = z
+export function customFieldListSchema(listNames: ReadonlyMap<string, string>, taken: (listed: string) => string) {
+  return z
   .array(z.object({ key: z.unknown(), label: z.unknown(), type: z.unknown(), options: z.unknown().optional(), mode: z.unknown() }), {
     invalid_type_error: "Choose your school's own fields",
   })
@@ -728,7 +910,7 @@ const customFieldsSchema = z
       const label = tidyText(f.label);
       if (label.length < 2 || label.length > MAX_CUSTOM_LABEL) say([i, "label"], `The name is 2 to ${MAX_CUSTOM_LABEL} characters`);
       else if (!NO_ANGLE_BRACKETS.test(label)) say([i, "label"], "The name cannot contain < or >");
-      else if (LIST_NAMES.has(label.toLowerCase())) say([i, "label"], `There is already a field called ${LIST_NAMES.get(label.toLowerCase())}: switch it on in the list`);
+      else if (listNames.has(label.toLowerCase())) say([i, "label"], taken(listNames.get(label.toLowerCase())!));
       else if (labels.has(label.toLowerCase())) say([i, "label"], "Two fields cannot have the same name");
       labels.add(label.toLowerCase());
       if (!(CUSTOM_FIELD_TYPES as readonly unknown[]).includes(f.type)) say([i, "type"], "Choose what kind of answer it takes");
@@ -753,6 +935,9 @@ const customFieldsSchema = z
       mode: f.mode as FieldMode,
     }))
   );
+}
+/** The students' own fields: a name may not be one of the list's. */
+const customFieldsSchema = customFieldListSchema(LIST_NAMES, (listed) => `There is already a field called ${listed}: switch it on in the list`);
 const YES_NO_KEYS = new Set<string>(STUDENT_FORM_FIELDS.filter((f) => "yesNo" in f && f.yesNo).map((f) => f.key));
 /** "A, B and C": the columns that are in every export, as a sentence. */
 const LOCKED_HEADINGS = (() => {
@@ -811,12 +996,59 @@ export const updateStudentSettingsSchema = z
       .nullable()
       .optional(),
     customFields: customFieldsSchema.optional(),
+    // The step of Add student each movable detail and each own field is asked in, in order (null = the usual places). Every entry is
+    // checked on its own; a field of its own is checked by the service against the fields the school has.
+    placements: z
+      .array(z.object({ key: z.unknown(), step: z.unknown() }), { invalid_type_error: "Choose where the details go" })
+      .min(1, "Choose where the details go")
+      .max(MOVABLE_FIELDS.length + MAX_CUSTOM_FIELDS, "A detail is placed once")
+      .superRefine((places, ctx) => {
+        const say = (path: (string | number)[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
+        const seen = new Set<string>();
+        places.forEach((p, i) => {
+          if (typeof p.key !== "string" || !(MOVABLE_KEYS.has(p.key) || CUSTOM_KEY.test(p.key))) say([i, "key"], "This detail cannot be moved");
+          else if (seen.has(p.key)) say([i, "key"], "This detail is placed once");
+          else seen.add(p.key);
+          if (!isStepKey(p.step)) say([i, "step"], "Choose Personal info, Academic, Parents, More details or a step of your own");
+        });
+      })
+      .transform((places) => places.map((p) => ({ key: p.key as string, step: p.step as string })))
+      .nullable()
+      .optional(),
+    // The steps after Parents, in order: More details (always there, under its own name) and the steps the school adds (null = More
+    // details alone). A step of its own has a name that is not another step's. A detail placed in a step the school does not have is
+    // refused by the service, which knows the steps.
+    steps: z
+      .array(z.object({ key: z.unknown(), name: z.unknown() }), { invalid_type_error: "Choose the steps" })
+      .min(1, "Choose the steps")
+      .max(1 + MAX_CUSTOM_STEPS, `A school can have up to ${MAX_CUSTOM_STEPS} steps of its own`)
+      .superRefine((steps, ctx) => {
+        const say = (path: (string | number)[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
+        const keys = new Set<string>();
+        // The names taken, by their lower case, with the way the first one writes it.
+        const taken = new Map<string, string>(Object.values(STEP_NAMES).map((n) => [n.toLowerCase(), n]));
+        steps.forEach((st, i) => {
+          if (st.key !== "more" && !(typeof st.key === "string" && STEP_KEY.test(st.key))) return say([i, "key"], "This step cannot be used");
+          if (keys.has(st.key as string)) return say([i, "key"], "This step is listed once");
+          keys.add(st.key as string);
+          if (st.key === "more") return;
+          const name = typeof st.name === "string" ? st.name.trim().replace(/\s+/g, " ") : "";
+          if (name.length < 2 || name.length > MAX_STEP_NAME) say([i, "name"], `The name of a step is 2 to ${MAX_STEP_NAME} characters`);
+          else if (!NO_ANGLE_BRACKETS.test(name)) say([i, "name"], "The name cannot contain < or >");
+          else if (taken.has(name.toLowerCase())) say([i, "name"], `There is already a step called ${taken.get(name.toLowerCase())}`);
+          else taken.set(name.toLowerCase(), name);
+        });
+      })
+      .transform((steps) => steps.map((st) => ({ key: st.key as string, name: st.key === "more" ? STEP_NAMES.more : (st.name as string).trim().replace(/\s+/g, " ") })))
+      .nullable()
+      .optional(),
   })
   .refine(hasAChange, NOTHING_TO_CHANGE);
 
 export type UpdateStudentSettingsInput = z.infer<typeof updateStudentSettingsSchema>;
 export type AdmitStudentInput = z.infer<typeof admitStudentSchema>;
 export type ImportStudentsInput = z.infer<typeof importStudentsSchema>;
+export type MatchImportInput = z.infer<typeof matchImportSchema>;
 export type ExportStudentsQuery = z.infer<typeof exportStudentsQuerySchema>;
 export type GuardianEntryInput = AdmitStudentInput["guardians"][number];
 export type UpdateStudentInput = z.infer<typeof updateStudentSchema>;
@@ -824,3 +1056,13 @@ export type MoveStudentInput = z.infer<typeof moveStudentSchema>;
 export type UpdateGuardianInput = z.infer<typeof updateGuardianSchema>;
 export type LookupGuardianInput = z.infer<typeof lookupGuardianSchema>;
 export type ListStudentsQuery = z.infer<typeof listStudentsQuerySchema>;
+export type ClassOverviewQuery = z.infer<typeof classOverviewQuerySchema>;
+export type DeactivateStudentsInput = z.infer<typeof deactivateStudentsSchema>;
+export type TransferOutInput = z.infer<typeof transferOutSchema>;
+export type ReactivateStudentsInput = z.infer<typeof reactivateStudentsSchema>;
+export type StartPromotionInput = z.infer<typeof startPromotionSchema>;
+export type PromotionQuery = z.infer<typeof promotionQuerySchema>;
+export type UpdatePromotionInput = z.infer<typeof updatePromotionSchema>;
+export type RejectPromotionInput = z.infer<typeof rejectPromotionSchema>;
+export type ApprovePromotionInput = z.infer<typeof approvePromotionSchema>;
+export type ListInactiveQuery = z.infer<typeof listInactiveQuerySchema>;

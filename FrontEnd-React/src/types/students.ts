@@ -60,7 +60,7 @@ export interface StudentRow {
   admissionNumber: string;
   dateOfBirth: string;
   admissionDate: string;
-  status: "active";
+  status: "active" | "inactive";
   place: StudentPlace | null;
   primaryGuardian: { id: string; name: string; relation: Relation; mobile: string | null } | null;
 }
@@ -77,6 +77,19 @@ export interface StudentGuardian {
   alternateMobile: string | null;
   email: string | null;
   occupation: string | null;
+  /** The parent's login (its username; the password is never sent), or null: one login for all their children. */
+  login?: ParentLogin | null;
+}
+
+export interface ParentLogin {
+  username: string;
+  isActive: boolean;
+}
+
+/** The answer to making, renaming or giving a new password to a parent's login. */
+export interface GuardianLoginAnswer {
+  guardianId: string;
+  login: ParentLogin;
 }
 
 /** Another child of one of the student's guardians. */
@@ -114,6 +127,10 @@ export interface StudentDetail extends Omit<StudentRow, "primaryGuardian">, Stud
   /** Newest year first. */
   enrolments: Enrolment[];
   siblings: Sibling[];
+  /** When, by whom and why the student was made inactive; null for an active student. */
+  inactive: { at: string; by: { name: string; role: string }; reason: string | null; transfer: TransferSchool | null } | null;
+  /** The moves and transfers of this student, newest first. */
+  moves: StudentMove[];
   createdAt: string;
 }
 
@@ -125,6 +142,8 @@ export interface GuardianMatch {
   alternateMobile: string | null;
   email: string | null;
   occupation: string | null;
+  /** The parent's login: a brother's or sister's admission joins it by itself. */
+  login?: ParentLogin | null;
   children: (Sibling & { relation: Relation })[];
 }
 
@@ -135,8 +154,11 @@ export interface StudentListQuery {
   /** Part of a name or of an admission number. */
   q?: string;
   classId?: string;
+  /** A department's id, or "none" for the classes in no department: the students of the classes in it. */
+  departmentId?: string;
   /** A section's id, or "none" for a class without sections. */
   sectionId?: string;
+  gender?: Gender;
   sort?: StudentSort;
   dir?: "asc" | "desc";
   page?: number;
@@ -231,6 +253,46 @@ export interface MoveStudentInput {
   sectionId?: string | null;
   rollNumber?: number | null;
   allowOverCapacity?: boolean;
+  /** Why (optional): kept in the student's moves with who moved them and when. */
+  reason?: string;
+}
+
+/** A student leaving for another school: its name and, when the school has them, the transfer certificate's number and day, and a remark. */
+export interface TransferOutInput {
+  schoolName: string;
+  tcNumber?: string;
+  /** "2026-10-20". */
+  tcDate?: string;
+  remarks?: string;
+}
+
+/** Where a student sat, with the names as they were written then. */
+export interface PlaceSnapshot {
+  classId: string;
+  className: string;
+  sectionId: string | null;
+  sectionName: string | null;
+  rollNumber: number | null;
+}
+
+/** One movement of a student: moved to another class, section or roll number, or transferred out to another school. */
+export interface StudentMove {
+  id: string;
+  kind: "moved" | "transferred_out";
+  at: string;
+  reason: string | null;
+  academicYear: { id: string; name: string } | null;
+  from: PlaceSnapshot | null;
+  to: PlaceSnapshot | null;
+  school: TransferSchool | null;
+  by: { name: string; role: string };
+}
+
+export interface TransferSchool {
+  schoolName: string;
+  tcNumber: string | null;
+  tcDate: string | null;
+  remarks: string | null;
 }
 
 /** An uploaded students file as the server read it: its column titles and every filled row, as text, with its row number. */
@@ -267,6 +329,39 @@ export interface ImportResult {
   failed: number;
 }
 
+/**
+ * How a row of a file meets a student the school already has: `same` (the same child: not uploaded again), `maybe` (the same name and
+ * birthday, another parent's mobile: it may be another child), `number` / `aadhaar` (the admission number, or the Aadhaar number, of a
+ * DIFFERENT child: the row needs a fix).
+ */
+export type ImportMatchKind = "same" | "maybe" | "number" | "aadhaar";
+
+/** One row of a file asked about before anything is uploaded: only what tells one child from another. */
+export interface ImportMatchRow {
+  row: number;
+  firstName: string;
+  lastName: string;
+  /** "2016-05-14". */
+  dateOfBirth: string;
+  mobile?: string;
+  admissionNumber?: string;
+  aadhaarNumber?: string;
+}
+
+export interface ImportMatch {
+  row: number;
+  kind: ImportMatchKind;
+  student: {
+    id: string;
+    name: string;
+    admissionNumber: string;
+    dateOfBirth: string;
+    className: string | null;
+    sectionName: string | null;
+    inactive: boolean;
+  };
+}
+
 export interface UpdateGuardianInput {
   name?: string;
   mobile?: string;
@@ -283,6 +378,14 @@ export interface StudentSettings {
   exportColumns: ExportColumn[];
   /** The export is still the default layout (nothing saved yet). */
   exportIsDefault: boolean;
+  /** The step of Add student each movable detail and each own field is asked in, in order (every one of them is listed). */
+  placements: import("../constants/studentFields").Placement[];
+  /** Every detail is still in its usual step (nothing moved). */
+  placementsAreDefault: boolean;
+  /** The steps after Parents, in order: More details and the school's own (always lists More details). */
+  steps: import("../constants/studentFields").StepDef[];
+  /** Only More details (the school added no step). */
+  stepsAreDefault: boolean;
   updatedAt: string | null;
 }
 
@@ -298,10 +401,167 @@ export interface UpdateStudentSettingsInput {
   customFields?: import("../constants/studentFields").CustomFieldDef[];
   /** null = back to the default layout. */
   exportColumns?: ExportColumn[] | null;
+  /** The step of Add student each detail is asked in (null = every detail in its usual step). */
+  placements?: import("../constants/studentFields").Placement[] | null;
+  /** The steps after Parents, in order (null = More details alone). */
+  steps?: import("../constants/studentFields").StepDef[] | null;
 }
 
-/** The first students of an export (every column's value, by its key) and how many there are in all. */
+/**
+ * The first students of an export (every column's value, by its key) and how many there are in all. A school with no student yet gets
+ * one made-up row (`sample`), so the file can be tried: `total` is still 0.
+ */
 export interface ExportPreview {
   total: number;
+  sample?: boolean;
   rows: Record<string, string | number>[];
+}
+
+/** One inactive student: who they are, where they were, and who made them inactive, when and why. */
+export interface InactiveStudent {
+  id: string;
+  name: string;
+  gender: Gender;
+  admissionNumber: string;
+  dateOfBirth: string;
+  className: string | null;
+  sectionName: string | null;
+  rollNumber: number | null;
+  parentName: string | null;
+  parentMobile: string | null;
+  reason: string | null;
+  transfer: TransferSchool | null;
+  inactiveAt: string;
+  inactiveBy: { name: string; role: string };
+}
+
+export interface InactivePage {
+  items: InactiveStudent[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+/** What the server did with the ids it was sent: how many it did, and how many it skipped (not found, or not in the right state). */
+export interface StatusResult {
+  deactivated?: number;
+  reactivated?: number;
+  skipped: number;
+  /** Active again only: students who came back without their roll number because someone else took it meanwhile. */
+  rollNumbersLost?: number;
+  /** Active again only: students who have no class in the running year and were left as they are (the screen asks where to put them). */
+  needsPlacement?: number;
+}
+
+/** The class (and section) of the running year a returning student is put in. */
+export interface ReactivatePlacement {
+  classId: string;
+  sectionId?: string | null;
+}
+
+export type PromotionStatus = "draft" | "submitted" | "approved" | "applied" | "cancelled";
+export type PromotionOutcome = "promote" | "retain" | "leave";
+
+export interface PromotionPlace {
+  classId: string;
+  className: string;
+  sectionId: string | null;
+  sectionName: string | null;
+}
+
+export interface PromotionEntry {
+  studentId: string;
+  name: string;
+  admissionNumber: string;
+  from: PromotionPlace;
+  outcome: PromotionOutcome;
+  to: PromotionPlace | null;
+}
+
+/** The classes of the next year with the sections they have: where a student of the list can be put. */
+export interface PromotionTarget {
+  classId: string;
+  className: string;
+  sections: { id: string; name: string; capacity: number | null }[];
+}
+
+type Person = { name: string; role: string };
+
+/** The list of who goes where when the year ends: made as a draft, sent for approval, approved by the school admin. */
+export interface Promotion {
+  id: string;
+  status: PromotionStatus;
+  fromYear: { id: string; name: string };
+  toYear: { id: string; name: string };
+  summary: { total: number; promote: number; retain: number; leave: number };
+  createdBy: Person;
+  createdAt: string;
+  submitted: { by: Person; at: string } | null;
+  decision: { outcome: "approved" | "rejected"; by: Person; at: string; note: string | null } | null;
+  appliedAt: string | null;
+  entries: PromotionEntry[];
+  targets: PromotionTarget[];
+}
+
+/** One change to a draft list: what happens to a student and, for a student who goes on, where (a class and section of the next year). */
+export interface PromotionChange {
+  studentId: string;
+  outcome: PromotionOutcome;
+  classId?: string;
+  sectionId?: string | null;
+}
+
+export interface InactiveQuery {
+  q?: string;
+  page?: number;
+  limit?: number;
+}
+
+export type SeatState = "open" | "almost" | "full" | "unlimited";
+
+/** One section of the classes at a glance: its students, its room and how full its seats are (the server's count). */
+export interface SectionOverview {
+  id: string;
+  name: string;
+  room: string | null;
+  /** Null when the section has no limit. */
+  capacity: number | null;
+  enrolled: number;
+  seatsLeft: number | null;
+  state: SeatState;
+  percent: number;
+  /** The section's class teacher this year; null until one is picked. */
+  classTeacher: { id: string; name: string } | null;
+}
+
+/** One class at a glance: its department, its students (the sections together), its sections and how full the seats are together. */
+export interface ClassOverview {
+  id: string;
+  name: string;
+  departmentId: string | null;
+  departmentName: string | null;
+  students: number;
+  seats: number;
+  seatsLeft: number;
+  percent: number;
+  sections: SectionOverview[];
+  /** The class teacher of a class without sections (a split class has one for each section). */
+  classTeacher: { id: string; name: string } | null;
+}
+
+/** The classes that match the filter, with the totals of those classes and every department (for the dropdown). */
+export interface ClassOverviewPage {
+  academicYear: { id: string; name: string } | null;
+  departments: { id: string; name: string }[];
+  summary: { classes: number; sections: number; students: number; seats: number; seatsLeft: number; fullSections: number };
+  classes: ClassOverview[];
+}
+
+export interface ClassOverviewQuery {
+  /** A department's id, or "none". */
+  departmentId?: string;
+  classId?: string;
+  /** Part of a class name. */
+  q?: string;
 }

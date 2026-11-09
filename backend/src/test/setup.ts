@@ -13,6 +13,17 @@ import { AdmissionCounter } from "../main/students/models/AdmissionCounter";
 import { Enrolment } from "../main/students/models/Enrolment";
 import { Guardian } from "../main/students/models/Guardian";
 import { Student } from "../main/students/models/Student";
+import { Teacher } from "../main/staff/models/Teacher";
+import { BellSchedule } from "../main/timetable/models/BellSchedule";
+import { Allotment } from "../main/subjects/models/Allotment";
+import { Subject } from "../main/subjects/models/Subject";
+import { HiddenHoliday } from "../main/classroom/models/HiddenHoliday";
+import { TeacherAttendance } from "../main/attendance/models/TeacherAttendance";
+import { Exam } from "../main/exams/models/Exam";
+import { ExamMark } from "../main/exams/models/ExamMark";
+import { ExamPaper } from "../main/exams/models/ExamPaper";
+import { Notification } from "../main/notifications/models/Notification";
+import { NotificationService } from "../main/notifications/services/notification.service";
 
 beforeAll(async () => {
   // Safety net: this setup wipes and drops the database, so it must only ever be a local test database.
@@ -34,10 +45,22 @@ beforeAll(async () => {
     Guardian.syncIndexes(),
     Enrolment.syncIndexes(),
     AdmissionCounter.syncIndexes(),
+    Subject.syncIndexes(),
+    Allotment.syncIndexes(),
+    Teacher.syncIndexes(),
+    BellSchedule.syncIndexes(),
+    HiddenHoliday.syncIndexes(),
+    Exam.syncIndexes(),
+    ExamPaper.syncIndexes(),
+    ExamMark.syncIndexes(),
+    TeacherAttendance.syncIndexes(),
+    Notification.syncIndexes(),
   ]);
 });
 
 afterEach(async () => {
+  // Notifications still being sent after a test answered must not land in the next test.
+  await NotificationService.idle();
   // Isolate cases from each other: wipe every collection's documents (indexes stay).
   await Promise.all(Object.values(mongoose.connection.collections).map((c) => c.deleteMany({})));
 });

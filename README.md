@@ -76,9 +76,10 @@ Multi-tenant School ERP, built step by step from the specs in [`docs/`](docs/) (
   the school asks for any of it, More details), laid out like a new-patient page: the form as cards on the left, a live preview, a
   form-completion checklist and tips on the right, and a bar pinned to the bottom with **Clear all**, **Back**, **Next step** and, on the
   last step, **Admit**. Next checks only its own step. The class and a section of the
-  **current academic year** (each section chip says how many seats are left; a full one asks before it is picked); the parents, starting
-  with the **mobile number** (when 10 digits are typed the school's parents are searched once: a parent who already has a child here is
-  shown with their children and **linked**, as is or with updated details, never typed twice); the address; the IDs (Aadhaar, checked
+  **current academic year** (each section chip says how many seats are left; a full one asks before it is picked); the parents, every box there
+  from the start in the order Full name, Relation, Mobile number, Another number, Occupation, Email (when 10 digits are typed in the
+  mobile box the school's parents are searched once: a parent who already has a child here is shown with their children in place of the
+  boxes and **linked**, as is or with updated details, never typed twice; a number changed again gives back what was typed); the address; the IDs (Aadhaar, checked
   by its check digit and once per school; Samagra, APAAR, PEN, SR number); the previous school and TC (needed for Class 1 to 12, optional
   for Nursery, LKG and UKG); and more details (religion,
   nationality, emergency / WhatsApp number, disability, medical notes, RTE / BPL, fee concession, transport). The **admission number**
@@ -94,22 +95,50 @@ Multi-tenant School ERP, built step by step from the specs in [`docs/`](docs/) (
   from the "+" with one value for every row, a class name that is not the school's is changed in every row at once, a row can be left out, and red cells show what
   to fix with the admission form's own rules. **Upload** then admits the ready rows, each into the class and section of their row
   ("V", "5th", "5-A" are understood); rows the server refuses stay in the table with the reason. The school's own admission numbers
-  are kept, a parent already in the school is linked, and nothing is admitted twice.
+  are kept, a parent already in the school is linked, and nothing is admitted twice: when the file opens, the students the school already
+  has (the same name, date of birth and parent's mobile, or the same admission or Aadhaar number with the same name and date of birth) are
+  marked **Already in your school** and are not uploaded again, so the same file, or a file with some old students, is safe to upload; the same
+  name alone is never the same student.
   **An upload is flexible** (an old register seldom has the address, the previous school or the IDs): only the name, gender, date of birth, class
   (and section) and a parent's mobile number are needed; what the school's form needs besides never stops a row. A file the school exported comes
   back as it is (its own headings are recognised). No Excel file to upload? Paste a copied table, or type the students in an empty table.
-- **Export** (`/school/students/export`): the school's fields and its Excel on one page. Every field has an **On** switch (on: asked on
-  Add student and a column of the Excel; off: neither, and the row stays where it is), a **Mandatory** switch (Add student is not
-  saved without it; the name, gender, birthday, class and the primary parent are always needed) and its place in the Excel (**↑ ↓**
-  or drag the row), with its heading typed over. **Add your own field** makes a field the list does not have (a house, a bus pass
-  number: text, a number, a date, yes / no or a list of choices), asked on Add student and exported like the others. The fields are a
-  closed accordion when the page opens, with the **preview** of the file under them; open it to change them. Saved for the school, so the form and every export follow it. The year's students, or the
-  ones the list's filters show.
+- **Export** (`/school/students/export`): the Excel's columns and the file on one page. Every column has an **In Excel** switch (out:
+  the row stays where it is, dimmed), a **Mandatory** switch (the same setting as on the form: Add student is not saved without it,
+  and a mandatory detail's column cannot be taken out) and its place in the file (**↑ ↓** or drag the row), with its heading typed
+  over. What Add student asks is **not** changed here: it is arranged in Manage fields (a link is in the header). The columns are a
+  closed accordion when the page opens, with the **preview** of the file under them; open it to change them. Saved for the school, so
+  every export follows it. The year's students, or the ones the list's filters show.
+- **Manage fields** (`/school/students/fields`): a page of its own (a school with no student can use it), with the explanation behind
+  an **(i)** beside the title and **two cards, each the school's to arrange on its own**. **Add student form** shows the steps as the form has them
+  (Personal info, Academic, Parents, More details, and any step the school adds with **Add a step**), every box in the form's order: the
+  boxes the software always asks have a lock; the details the school decides about have **Asked** and **Mandatory**; the ones it may move
+  (blood group, religion, the IDs, health, fees, the bus) and its own fields can be dragged to another step or sent with their **Move**
+  list (the app's usual dropdown). The **Preview** button at the top opens Add student exactly as it will be drawn (the stepper, the
+  cards, the school's classes), with what is on the page now. A step with nothing asked in it is not on Add student, so a school that
+  asks nothing of the health, fees or the bus has three steps. A new school's details are shared out so the four steps are about as tall
+  as each other (blood group in Personal info, the SR number, PEN and Aadhaar number in Academic, the family's in Parents, the rest in
+  More details). **Excel columns** is the file: in it or not, heading, place. They meet in one place: **Mandatory is one setting**
+  (change it in either card and both follow), so a mandatory detail is on the form and a column of the file, and its column cannot be
+  taken out until it is optional (the server holds the same rule). **Add your own field** saves the field at once, in the step you
+  choose. Everything is the school's own: no other school sees it.
 - Three records, never one: the student (year-free), the guardian (year-free, one per mobile number in a school, linked to every child of
   theirs) and the enrolment (one per student per academic year). One admission is one request, made safe without database transactions.
   A school with no current academic year is sent to the dashboard to set it up first. Parent login (by mobile number and OTP) is planned on
   top of the guardian records; nothing makes logins yet.
 - Design, API, rules and tests: [docs/students.md](docs/students.md); the screens: [`FrontEnd-React/README.md`](FrontEnd-React/README.md#manage-school-students).
+
+## Manage school: Timetable (subjects, teachers, timings, each class's week)
+
+- Menu **Manage school > Timetable** (`/school/timetable`): the set-up as four steps (school timings, subjects, teachers, what each class
+  studies) and then every class or section with where its timetable stands (not started / draft / published). Three backend modules:
+  `staff` (teachers), `subjects` (the subject list, and what each class studies: periods a week, double periods, teacher, choices) and
+  `timetable` (the school's timings, each class's weekly grid, the program's fill, publish, copy, a teacher's week, next year's copy).
+- The school day is made from a few numbers (start, period length, number of periods, **one lunch** for the school, assembly, breaks); a
+  half-day Saturday or other timings for the little ones are more timings. The server refuses a teacher in two places (compared by the clock),
+  a room used twice, a teacher on a day off, a lesson in a period that does not exist; it only warns about the rest (a subject short of
+  periods, no teacher, too many in a day).
+- Design, the API, the rules, what is and is not covered, the problems found and fixed: [docs/timetable.md](docs/timetable.md); the
+  screens: [`FrontEnd-React/README.md`](FrontEnd-React/README.md#manage-school-timetable).
 
 ## Next steps (planned, in order)
 

@@ -30,7 +30,7 @@ async function schoolWithYear(name = "Sunrise Public School") {
 
 /** A class with these sections (seats and room are required by default, so every section has both). */
 async function addClass(token: string, name: string, sections: { name: string; capacity: number }[] = []) {
-  const klass = (await request(app).post(`${academics}/classes`).set(auth(token)).send({ name, sectionCount: 0 })).body.data;
+  const klass = (await request(app).post(`${academics}/classes`).set(auth(token)).send({ name, capacity: 2000, sectionCount: 0 })).body.data;
   const made: { id: string; name: string }[] = [];
   for (const s of sections) {
     made.push((await request(app).post(`${academics}/classes/${klass.id}/sections`).set(auth(token)).send({ ...s, room: `Room ${s.name}` })).body.data);
@@ -68,6 +68,8 @@ const admission = (classId: string, sectionId: string | null, over: Body = {}): 
 });
 
 const details = (res: request.Response) => res.body.details as { path: string; message: string }[];
+/** The end of the age message: the rule, and what to do. */
+const AGE_RULE = "a student must be 2 to 25 years old then. Fix the date of birth or the admission date";
 const names = (res: request.Response) => res.body.data.items.map((i: { name: string }) => i.name);
 
 beforeEach(async () => {
@@ -203,8 +205,11 @@ describe("admitting a student", () => {
       [{ dateOfBirth: "2016-02-30" }, "dateOfBirth", "Choose a valid date of birth"],
       [{ dateOfBirth: "14/05/2016" }, "dateOfBirth", "Choose a valid date of birth"],
       [{ dateOfBirth: tomorrow }, "dateOfBirth", "The date of birth cannot be in the future"],
-      [{ dateOfBirth: "2025-01-01" }, "dateOfBirth", "The student must be 2 to 25 years old on the admission date"],
-      [{ dateOfBirth: "1990-01-01" }, "dateOfBirth", "The student must be 2 to 25 years old on the admission date"],
+      // The message says how old the student was on which day, so the person knows which of the two dates to fix.
+      [{ dateOfBirth: "2025-01-01" }, "dateOfBirth", `The student was 1 year old on the admission date (01-06-2026); ${AGE_RULE}`],
+      [{ dateOfBirth: "1990-01-01" }, "dateOfBirth", `The student was 36 years old on the admission date (01-06-2026); ${AGE_RULE}`],
+      [{ dateOfBirth: "2020-06-18", admissionDate: "2022-04-03" }, "dateOfBirth", `The student was 1 year old on the admission date (03-04-2022); ${AGE_RULE}`],
+      [{ dateOfBirth: "2022-10-18", admissionDate: "2023-04-10" }, "dateOfBirth", `The student was less than a year old on the admission date (10-04-2023); ${AGE_RULE}`],
       [{ admissionDate: tomorrow }, "admissionDate", "The admission date cannot be in the future"],
       [{ address: undefined }, "address.line1", "Enter the street address"],
       [{ address: undefined }, "address.pincode", "PIN code is 6 digits"],
@@ -761,9 +766,9 @@ describe("changing a student", () => {
 
     const tooYoung = await patch(s.token, `/${asha.id}`, { dateOfBirth: "2025-06-01" });
     expect(tooYoung.status).toBe(400);
-    expect(details(tooYoung)).toEqual([{ path: "dateOfBirth", message: "The student must be 2 to 25 years old on the admission date" }]);
+    expect(details(tooYoung)).toEqual([{ path: "dateOfBirth", message: `The student was 1 year old on the admission date (01-06-2026); ${AGE_RULE}` }]);
     const beforeBirth = await patch(s.token, `/${asha.id}`, { admissionDate: "2017-01-01" });
-    expect(details(beforeBirth)).toEqual([{ path: "admissionDate", message: "The student must be 2 to 25 years old on the admission date" }]);
+    expect(details(beforeBirth)).toEqual([{ path: "admissionDate", message: `The student was less than a year old on the admission date (01-01-2017); ${AGE_RULE}` }]);
 
     const address = await patch(s.token, `/${asha.id}`, { address: { line1: "4 Lake View", line2: "Near the park", city: "Indore", state: "Madhya Pradesh", pincode: "452001" } });
     expect(address.body.data.address).toEqual({ line1: "4 Lake View", line2: "Near the park", city: "Indore", state: "Madhya Pradesh", pincode: "452001" });

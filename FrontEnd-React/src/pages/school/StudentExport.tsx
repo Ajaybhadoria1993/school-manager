@@ -6,9 +6,10 @@ import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useDownloadSheetMutation, useGetExportPreviewQuery } from "../../redux/api/studentsApi";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
-import { defaultDraft, missingForUpload } from "../../utils/exportLayout";
+import { defaultColumnsDraft, missingForUpload } from "../../utils/exportLayout";
 import { ExportFieldsCard } from "../../components/students/export/ExportFieldsCard";
 import { ExportPreviewCard } from "../../components/students/export/ExportPreviewCard";
+import { ManageFieldsLink } from "../../components/students/export/ManageFieldsLink";
 import { AskDialog } from "../../components/students/form/AskDialog";
 import { FormActionBar } from "../../components/students/form/FormActionBar";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
@@ -19,12 +20,12 @@ import { Skeleton } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/toast-context";
 
 /**
- * Manage school > Students > Export (`/school/students/export`, with the list's `?q=&class=&section=`): the school's fields, one list
- * for the Add student form and the Excel. A field that is on is asked on Add student and is a column of the file; Mandatory says Add
- * student is not saved without it; ↑ ↓ or a drag set its place in the file, and its heading can be typed over. The school adds fields of
- * its own here. The preview below shows the file before it is made. Saved for the school (one PUT, only on Save or Export), so every
- * export comes out the same. Three reads: the settings, the first students with every column's value (changing the list asks for
- * nothing), and the class names (the list's).
+ * Manage school > Students > Export (`/school/students/export`, with the list's `?q=&class=&section=`): the Excel's columns. A column
+ * is in the file or not (the form is not changed: Add student is arranged in Manage fields); Mandatory is the same setting as on the
+ * form, so a mandatory detail's column cannot be taken out; ↑ ↓ or a drag set its place in the file, and its heading can be typed
+ * over. The preview below shows the file before it is made. Saved for the school (one PUT, only on Save or Export), so every export
+ * comes out the same. Three reads: the settings, the first students with every column's value (changing the list asks for nothing),
+ * and the class names (the list's).
  */
 export default function StudentExportPage() {
   const navigate = useNavigate();
@@ -41,7 +42,7 @@ export default function StudentExportPage() {
   const structure = useGetStructureQuery().data?.data;
   const [download, { isLoading: downloading }] = useDownloadSheetMutation();
   // The school's fields: what is saved, the changes not saved yet, and the one save (shared with the dialog on Add student).
-  const { settings, draft, layout, problems, dirty, isDefault, saving, error, setError, change, saveDraft } = useFieldsEditor();
+  const { settings, draft, layout, problems, dirty, isDefaultColumns, saving, error, setError, change, saveDraft } = useFieldsEditor();
   const [ask, setAsk] = useState<"leave" | "default" | null>(null);
   // The fields start closed: the page opens on the preview; they open to be changed.
   const [fieldsOpen, setFieldsOpen] = useState(false);
@@ -114,6 +115,7 @@ export default function StudentExportPage() {
           onBack={leave}
           actions={
             <>
+              <ManageFieldsLink from="students" />
               {who && (
                 <WithTip tip="Only these students are exported. Press to export everyone of this year instead.">
                   <button
@@ -126,8 +128,8 @@ export default function StudentExportPage() {
                   </button>
                 </WithTip>
               )}
-              {!isDefault && (
-                <WithTip tip="The fields, headings and order a new school starts with (your own fields stay, switched off). Nothing is saved until you press Save.">
+              {!isDefaultColumns && (
+                <WithTip tip="The columns, headings and order a new school's Excel starts with. What Add student asks is not changed. Nothing is saved until you press Save.">
                   <Button variant="outline" onClick={() => setAsk("default")}>
                     <RotateCcw className="size-4" aria-hidden />
                     Back to the default
@@ -160,7 +162,7 @@ export default function StudentExportPage() {
               {!(saving && !downloading) && <Save className="size-4" aria-hidden />}
               Save
             </Button>
-            <Button size="lg" loading={downloading} disabled={busy || total === 0} onClick={() => void onExport()}>
+            <Button size="lg" loading={downloading} disabled={busy || (total === 0 && !previewRes.data?.data.sample)} onClick={() => void onExport()}>
               {!downloading && <Download className="size-4" aria-hidden />}
               {exportLabel}
             </Button>
@@ -174,8 +176,11 @@ export default function StudentExportPage() {
         </AskDialog>
       )}
       {ask === "default" && (
-        <AskDialog title="Back to the default?" icon={RotateCcw} confirmLabel="Use the default" onClose={() => setAsk(null)} onConfirm={() => change(defaultDraft(draft.custom))}>
-          <p>The fields, their headings and their order go back to how a new school starts; your own fields stay, switched off. Nothing is saved until you press Save.</p>
+        <AskDialog title="Back to the default?" icon={RotateCcw} confirmLabel="Use the default" onClose={() => setAsk(null)} onConfirm={() => change(defaultColumnsDraft(draft))}>
+          <p>
+            The Excel's columns, their headings and their order go back to how a new school starts (the columns of mandatory details stay, and your own fields are taken out of the file). What Add
+            student asks is not changed. Nothing is saved until you press Save.
+          </p>
         </AskDialog>
       )}
     </>

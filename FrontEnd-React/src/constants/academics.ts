@@ -5,6 +5,8 @@ export const MAX_SECTIONS_PER_CLASS = 30;
 /** The most sections one "Add class" may start with. */
 export const MAX_NEW_SECTIONS = 10;
 export const MAX_SECTION_CAPACITY = 200;
+/** The most seats one class can have; its sections together fit inside it. */
+export const MAX_CLASS_CAPACITY = 2000;
 
 /** The usual wings of an Indian school. A school can rename them or add its own. */
 export const DEPARTMENT_NAMES = ["Pre-Primary", "Primary", "Middle", "Secondary", "Senior Secondary"] as const;

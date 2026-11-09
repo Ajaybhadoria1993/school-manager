@@ -37,9 +37,18 @@ export interface GuardianDraft {
   /** The mobile number that was looked up last (so the same number is never asked twice). */
   lookedUp: string | null;
   choice: "use" | "update";
-  /** Details typed without a mobile number (a second guardian whose number is not known). */
-  manual: boolean;
+  /** The boxes as they were typed when the lookup found a parent (which fills them): they come back if the number is changed. */
+  typed?: GuardianBoxes;
 }
+
+/** The boxes of a guardian that a parent the school has fills in. */
+export type GuardianBoxes = Pick<GuardianDraft, "name" | "alternateMobile" | "email" | "occupation">;
+
+/** What a guardian's boxes hold when nothing is typed. */
+export const EMPTY_GUARDIAN_BOXES: GuardianBoxes = { name: "", alternateMobile: "", email: "", occupation: "" };
+
+/** The boxes of a guardian alone (what the lookup would fill in or give back). */
+export const boxesOf = (g: GuardianBoxes): GuardianBoxes => ({ name: g.name, alternateMobile: g.alternateMobile, email: g.email, occupation: g.occupation });
 
 /** The student's records a school may keep, as their boxes hold them (the text ones). */
 export const RECORD_TEXT_KEYS = [
@@ -98,7 +107,6 @@ export const emptyGuardian = (isPrimary: boolean, relation: Relation | "" = ""):
   match: null,
   lookedUp: null,
   choice: "use",
-  manual: false,
 });
 
 /** What a second father or mother is told (the server says the same). */
@@ -135,7 +143,7 @@ export const emptyStudentForm = (rules?: FieldRules): StudentFormValues => ({
   classId: "",
   sectionId: "",
   rollNumber: "",
-  guardians: rules?.secondParent === "required" ? [emptyGuardian(true, "Father"), { ...emptyGuardian(false, "Mother"), manual: true }] : [emptyGuardian(true, "Father")],
+  guardians: rules?.secondParent === "required" ? [emptyGuardian(true, "Father"), emptyGuardian(false, "Mother")] : [emptyGuardian(true, "Father")],
   address: { line1: "", line2: "", city: "", state: "", pincode: "" },
   bloodGroup: "",
   category: "",
@@ -166,7 +174,6 @@ export function formFromStudent(s: StudentDetail): StudentFormValues {
       alternateMobile: g.alternateMobile ?? "",
       email: g.email ?? "",
       occupation: g.occupation ?? "",
-      manual: true,
     })),
     address: {
       line1: s.address.line1 ?? "",
@@ -257,16 +264,21 @@ const VERHOEFF_P = [
   [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 5, 7, 6, 2, 8, 3, 0, 9, 4], [5, 8, 0, 3, 7, 9, 6, 1, 4, 2], [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
   [9, 4, 5, 3, 1, 2, 6, 8, 7, 0], [4, 2, 8, 6, 5, 7, 3, 9, 0, 1], [2, 7, 9, 3, 8, 0, 6, 4, 1, 5], [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
 ];
-/** 12 digits, not starting with 0 or 1, with the right check digit (spaces and dashes are allowed between them). */
-export function isAadhaar(value: string): boolean {
+/**
+ * What is wrong with an Aadhaar number (12 digits, not starting with 0 or 1, with the right check digit; spaces and dashes are allowed
+ * between the digits), said by what is wrong: the number of digits, the first digit, or the last (check) digit. Nothing when it is right.
+ */
+export function aadhaarProblem(value: string): string | undefined {
   const digits = value.replace(/[\s-]/g, "");
-  return /^[2-9]\d{11}$/.test(digits) && [...digits].reverse().reduce((c, digit, i) => VERHOEFF_D[c][VERHOEFF_P[i % 8][Number(digit)]], 0) === 0;
+  if (!/^\d{12}$/.test(digits)) return MESSAGES.aadhaarLength;
+  if (/^[01]/.test(digits)) return MESSAGES.aadhaarStart;
+  return [...digits].reverse().reduce((c, digit, i) => VERHOEFF_D[c][VERHOEFF_P[i % 8][Number(digit)]], 0) === 0 ? undefined : MESSAGES.aadhaarCheck;
 }
 const onlyDigits = (value: string) => value.replace(/[\s-]/g, "");
 
 /** The format of each record a school may keep (nothing to say when it is empty: whether it is needed is the school's choice). */
 const RECORD_CHECKS: Partial<Record<RecordTextKey, (value: string) => string | undefined>> = {
-  aadhaarNumber: (v) => (isAadhaar(v) ? undefined : MESSAGES.aadhaar),
+  aadhaarNumber: aadhaarProblem,
   samagraId: (v) => (/^\d{8,9}$/.test(onlyDigits(v)) ? undefined : MESSAGES.samagra),
   apaarId: (v) => (/^\d{12}$/.test(onlyDigits(v)) ? undefined : MESSAGES.apaar),
   pen: (v) => (/^\d{11}$/.test(onlyDigits(v)) ? undefined : MESSAGES.pen),
@@ -331,7 +343,7 @@ export function checkStudentForm(
   put("admissionDate", dayProblem(v.admissionDate, "admission date", MESSAGES.admittedInFuture, today, options.admissionDateRequired || needs("admissionDate")));
   if (!errors.dateOfBirth && !errors.admissionDate) {
     const age = ageOn(v.dateOfBirth, v.admissionDate || today);
-    if (age < MIN_AGE || age > MAX_AGE) put("dateOfBirth", MESSAGES.age);
+    if (age < MIN_AGE || age > MAX_AGE) put("dateOfBirth", MESSAGES.age(age, v.admissionDate || today));
   }
 
   if (!v.classId) put("classId", MESSAGES.className);
@@ -576,6 +588,33 @@ export function mobileDigits(typed: string): string {
   if (digits.length > 10 && digits.startsWith("91")) digits = digits.slice(2);
   else if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
   return digits.slice(0, 10);
+}
+
+/**
+ * The admission form, opened with the class (and section) already chosen: from a class's page or from the list filtered by a class, so
+ * the person fills in only the child. A class or section that is not the school's is ignored by the form.
+ */
+export function admitLink({ classId, sectionId }: { classId?: string; sectionId?: string } = {}): string {
+  const search = new URLSearchParams({ ...(classId ? { class: classId } : {}), ...(classId && sectionId ? { section: sectionId } : {}) }).toString();
+  return `/school/students/new${search ? `?${search}` : ""}`;
+}
+
+/** The calendar day in India of a moment ("2026-09-02"), for a day shown without the time. */
+export function istDay(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+}
+
+/** A moment as the school reads it, in Indian time: "25 Oct 2026, 4:00 pm". */
+export function formatMoment(iso: string): string {
+  return new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }).format(new Date(iso));
+}
+
+/** Up to five names in a sentence, then how many more: "Asha Verma, Kabir Rao and 3 more". */
+export function namesPreview(names: string[], show = 5): string {
+  const shown = names.slice(0, show);
+  const rest = names.length - shown.length;
+  if (rest > 0) return `${shown.join(", ")} and ${rest} more`;
+  return shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}` : (shown[0] ?? "");
 }
 
 /**

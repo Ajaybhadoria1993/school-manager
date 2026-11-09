@@ -98,9 +98,12 @@ export function SameValueOffer({ heading, from, to, rows, onApply, onDismiss }: 
   );
 }
 
-export type RowFilter = "all" | "bad" | "good";
+export type RowFilter = "all" | "bad" | "good" | "already";
 
-/** Above the table: which rows to show (all, the ones to fix, the ready ones) and the rows to fix as a file. */
+/**
+ * Above the table: which rows to show (all, the ones to fix, the ready ones, and, when there are some, the students the school already
+ * has) and the rows to fix as a file.
+ */
 export function PreviewToolbar({
   filter,
   onFilter,
@@ -110,7 +113,7 @@ export function PreviewToolbar({
 }: {
   filter: RowFilter;
   onFilter: (filter: RowFilter) => void;
-  counts: Record<RowFilter, number>;
+  counts: Record<Exclude<RowFilter, "already">, number> & { already?: number };
   onDownloadProblems: () => void;
   /** Only for a table that is typed here: 10 more empty rows. */
   onAddRows?: () => void;
@@ -119,6 +122,7 @@ export function PreviewToolbar({
     { key: "all", label: "All rows", tone: "bg-surface-muted text-foreground-muted" },
     { key: "bad", label: "Need a fix", tone: counts.bad > 0 ? "bg-danger-soft text-danger" : "bg-surface-muted text-foreground-muted" },
     { key: "good", label: "Ready", tone: "bg-success-soft text-success" },
+    ...((counts.already ?? 0) > 0 ? [{ key: "already" as const, label: "Already in school", tone: "bg-primary-soft text-primary-deep" }] : []),
   ];
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -137,7 +141,7 @@ export function PreviewToolbar({
           >
             {/* The space keeps the name read out as "Need a fix 7", not "Need a fix7". */}
             {tab.label}{" "}
-            <span className={cn("rounded-full px-1.5 text-xs", tab.tone)}>{counts[tab.key]}</span>
+            <span className={cn("rounded-full px-1.5 text-xs", tab.tone)}>{counts[tab.key] ?? 0}</span>
           </button>
         ))}
       </div>
