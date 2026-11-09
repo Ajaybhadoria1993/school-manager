@@ -18,6 +18,10 @@ import { BellSchedule } from "../main/timetable/models/BellSchedule";
 import { Allotment } from "../main/subjects/models/Allotment";
 import { Subject } from "../main/subjects/models/Subject";
 import { HiddenHoliday } from "../main/classroom/models/HiddenHoliday";
+import { TeacherAttendance } from "../main/attendance/models/TeacherAttendance";
+import { Exam } from "../main/exams/models/Exam";
+import { ExamMark } from "../main/exams/models/ExamMark";
+import { ExamPaper } from "../main/exams/models/ExamPaper";
 import { Notification } from "../main/notifications/models/Notification";
 import { NotificationService } from "../main/notifications/services/notification.service";
 
@@ -46,6 +50,10 @@ beforeAll(async () => {
     Teacher.syncIndexes(),
     BellSchedule.syncIndexes(),
     HiddenHoliday.syncIndexes(),
+    Exam.syncIndexes(),
+    ExamPaper.syncIndexes(),
+    ExamMark.syncIndexes(),
+    TeacherAttendance.syncIndexes(),
     Notification.syncIndexes(),
   ]);
 });

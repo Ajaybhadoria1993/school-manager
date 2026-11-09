@@ -26,7 +26,7 @@ export interface AttendanceSheetDto {
   saved: boolean;
   markedBy: { name: string; role: string } | null;
   counts: Record<AttendanceStatus, number>;
-  students: { id: string; name: string; admissionNumber: string; rollNumber: number | null; status: AttendanceStatus }[];
+  students: { id: string; name: string; admissionNumber: string; rollNumber: number | null; status: AttendanceStatus; reason: string | null }[];
 }
 
 export type AttendanceTally = Record<AttendanceStatus, number> & { days: number; percent: number | null };
@@ -71,8 +71,12 @@ export class AttendanceService {
         l.studentId.toString()
       )
     );
-    const marks = new Map((saved?.marks ?? []).map((m) => [m.studentId.toString(), m.status]));
-    const students = children.map((c) => ({ ...c, status: marks.get(c.id) ?? (onLeave.has(c.id) ? ("leave" as const) : ("present" as const)) }));
+    const marks = new Map((saved?.marks ?? []).map((m) => [m.studentId.toString(), m]));
+    const students = children.map((c) => ({
+      ...c,
+      status: marks.get(c.id)?.status ?? (onLeave.has(c.id) ? ("leave" as const) : ("present" as const)),
+      reason: marks.get(c.id)?.reason ?? null,
+    }));
     return {
       classId: unit.classId,
       sectionId: unit.sectionId,
@@ -98,7 +102,7 @@ export class AttendanceService {
     const children = await childrenOf(tenantId, unit);
     const known = new Set(children.map((c) => c.id));
     if (input.marks.some((m) => !known.has(m.studentId))) throw ApiError.badRequest("A child in this list is not in this class.", "NOT_IN_CLASS");
-    const given = new Map(input.marks.map((m) => [m.studentId, m.status]));
+    const given = new Map(input.marks.map((m) => [m.studentId, m]));
     const user = await User.findById(caller.userId).select("name").lean();
     const where = { tenantId: school, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null, date: fromDay(input.date) };
     // What the day said before, so a parent hears of a child marked absent or late once, not every time the day is saved again.
@@ -108,14 +112,19 @@ export class AttendanceService {
       {
         $set: {
           academicYearId: unit.yearId,
-          marks: children.map((c) => ({ studentId: new Types.ObjectId(c.id), status: given.get(c.id) ?? "present" })),
+          // A reason belongs to an absence, a late coming or a leave; a child who came keeps none.
+          marks: children.map((c) => {
+            const mark = given.get(c.id);
+            const status = mark?.status ?? "present";
+            return { studentId: new Types.ObjectId(c.id), status, reason: status === "present" ? null : (mark?.reason ?? null) };
+          }),
           markedBy: { name: user?.name ?? "The school", role: caller.role },
         },
       },
       { upsert: true, new: true }
     );
     const sheet = await AttendanceService.sheet(tenantId, caller, { classId: unit.classId, sectionId: unit.sectionId ?? "none", date: input.date });
-    const marked = sheet.students.flatMap((c) => ((c.status === "absent" || c.status === "late") && before.get(c.id) !== c.status ? [{ id: c.id, name: c.name, status: c.status }] : []));
+    const marked = sheet.students.flatMap((c) => ((c.status === "absent" || c.status === "late") && before.get(c.id) !== c.status ? [{ id: c.id, name: c.name, status: c.status, reason: c.reason }] : []));
     Notify.attendanceSaved(tenantId, caller.userId, { unit, date: input.date, counts: sheet.counts, by: user?.name ?? "The school", marked });
     return sheet;
   }
@@ -134,7 +143,7 @@ export class AttendanceService {
       yearId ? AttendanceDay.find({ tenantId: school, academicYearId: yearId, "marks.studentId": student._id }).select("marks").lean() : Promise.resolve([]),
     ]);
     const statusIn = (d: { marks: { studentId: Types.ObjectId; status: AttendanceStatus }[] }) => d.marks.find((m) => m.studentId.equals(student._id))?.status ?? "present";
-    const days = monthDays.map((d) => ({ date: toDay(d.date), status: statusIn(d) }));
+    const days = monthDays.map((d) => ({ date: toDay(d.date), status: statusIn(d), reason: d.marks.find((m) => m.studentId.equals(student._id))?.reason ?? null }));
     return { month, days, monthTally: tally(days.map((d) => d.status)), year: tally(yearDays.map(statusIn)) };
   }
 }

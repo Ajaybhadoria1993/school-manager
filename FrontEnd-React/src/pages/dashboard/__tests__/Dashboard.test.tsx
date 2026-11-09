@@ -17,14 +17,15 @@ const user = (role: UserRole, over: Partial<AuthUser> = {}): AuthUser => ({
   email: role === "teacher" ? null : "m@school.example",
   username: role === "teacher" ? "meena.singh" : null,
   role,
+  roleLabel: null,
   tenantId: "t1",
   emailVerifiedAt: null,
   ...over,
 });
 const tenant = { id: "t1", name: "Sunrise Public School", approvalStatus: "approved", isActive: true } as never;
 
-function openPage(role: UserRole, handlers: Record<string, () => unknown> = {}) {
-  store.dispatch(sessionStarted({ user: user(role), tenant }));
+function openPage(role: UserRole, handlers: Record<string, () => unknown> = {}, over: Partial<AuthUser> = {}) {
+  store.dispatch(sessionStarted({ user: user(role, over), tenant }));
   store.dispatch(authChecked());
   const calls = fakeApi(handlers);
   const router = createMemoryRouter([{ path: "/dashboard", element: <DashboardPage /> }], { initialEntries: ["/dashboard"] });
@@ -109,17 +110,46 @@ describe("The school's dashboard", () => {
 });
 
 describe("The home of a receptionist or a member of the management (Staff > Add staff)", () => {
+  // Staff sign in with the username and the password their school made; the email is only a contact and may be missing.
   it.each([
     ["receptionist", "Receptionist"],
     ["management", "Management"],
-  ] as const)("greets the %s and shows who they are signed in as, and asks the server for nothing", async (role, label) => {
-    const calls = openPage(role);
+  ] as const)("greets the %s and shows who they are signed in as (the username, no email), and asks the server for nothing", async (role, label) => {
+    const calls = openPage(role, {}, { email: null, username: "meena.singh_41" });
     expect(await screen.findByRole("heading", { name: /Good (morning|afternoon|evening), Meena/ })).toBeInTheDocument();
     const about = await screen.findByRole("region", { name: "About you" });
     expect(about).toHaveTextContent("Meena Singh");
     expect(about).toHaveTextContent(label);
-    expect(about).toHaveTextContent("m@school.example");
+    expect(about).toHaveTextContent("Username");
+    expect(about).toHaveTextContent("meena.singh_41");
+    expect(about).not.toHaveTextContent("Email");
     expect(about).toHaveTextContent("Sunrise Public School");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("shows the email too when the person has one", async () => {
+    openPage("receptionist", {}, { email: "m@school.example", username: "meena.singh_41" });
+    const about = await screen.findByRole("region", { name: "About you" });
+    expect(about).toHaveTextContent("meena.singh_41");
+    expect(about).toHaveTextContent("m@school.example");
+  });
+
+  it("a staff member of any other kind (a librarian, a role the school wrote) has the same home, with the title they were given", async () => {
+    store.dispatch(sessionStarted({ user: user("staff", { roleLabel: "Lab technician", email: null, username: "lata.das_52" }), tenant }));
+    store.dispatch(authChecked());
+    const calls = fakeApi({});
+    const router = createMemoryRouter([{ path: "/dashboard", element: <DashboardPage /> }], { initialEntries: ["/dashboard"] });
+    render(
+      <Provider store={store}>
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
+      </Provider>
+    );
+    const about = await screen.findByRole("region", { name: "About you" });
+    expect(about).toHaveTextContent("Lab technician");
+    expect(about).not.toHaveTextContent("Staff member");
+    expect(screen.queryByText("My classes")).not.toBeInTheDocument();
     expect(calls).toHaveLength(0);
   });
 

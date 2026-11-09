@@ -3,7 +3,7 @@ import { ApiError } from "../../../utils/ApiError";
 import { hashPassword } from "../../../utils/authUtils";
 import { isDuplicateKey } from "../../academics/services/shared";
 import { TokenService } from "../../auth/services/token.service";
-import { User } from "../../users/models/User";
+import { User, type UserRole } from "../../users/models/User";
 import type { LoginAccountInput } from "../schemas/staff.schemas";
 import { suggestUsernames } from "./usernames.service";
 
@@ -41,7 +41,10 @@ async function explain(err: unknown, username: string, path?: string): Promise<u
 
 /** Who a login is for, and where a refused username is said ("login.username" in Add teacher, "username" in a login of its own). */
 export interface LoginOptions {
-  role?: "teacher" | "parent";
+  /** The login's role: a teacher's (the default), a parent's, or a staff member's (Staff > Add staff, 2026-11-08). */
+  role?: UserRole;
+  /** A staff member's own title ("Librarian"), shown instead of the role's name. */
+  roleLabel?: string | null;
   path?: string;
 }
 
@@ -64,7 +67,7 @@ export class TeacherLogin {
     tenantId: string,
     person: { name: string; mobile: string | null; email: string | null; isActive: boolean },
     login: LoginAccountInput,
-    { role = "teacher", path }: LoginOptions = {}
+    { role = "teacher", roleLabel, path }: LoginOptions = {}
   ): Promise<Types.ObjectId> {
     const passwordHash = await hashPassword(login.password);
     try {
@@ -75,6 +78,7 @@ export class TeacherLogin {
         ...(person.mobile ? { phone: person.mobile } : {}),
         passwordHash,
         role,
+        ...(roleLabel ? { roleLabel } : {}),
         tenantId,
         isActive: person.isActive,
       });

@@ -100,12 +100,14 @@ describe("the school gives a parent a login", () => {
     expect((await signIn("ravi.verma_12")).status).toBe(401);
     expect((await signIn("ravi.v")).status).toBe(200);
 
+    // A session is over when it was started in an earlier second than the password change (the token's issue time is in whole seconds), so the
+    // old token must be at least a second old. (Slow password hashing used to guarantee it; the tests hash cheaply now.)
+    await new Promise((r) => setTimeout(r, 1100));
     const reset = await request(app).post(`/api/v1/students/guardians/${s.fatherId}/reset-password`).set(auth(s.token)).send({ password: "Sch00l@New22" });
     expect(reset.status).toBe(200);
     expect((await signIn("ravi.v")).status).toBe(401);
     expect((await signIn("ravi.v", "Sch00l@New22")).status).toBe(200);
     // The sessions of the old password are over.
-    await new Promise((r) => setTimeout(r, 1100));
     expect((await request(app).get("/api/v1/parent/children").set(auth(old))).status).toBe(401);
   });
 

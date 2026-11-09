@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../../../../middleware/auth";
+import { yearView } from "../../../../middleware/yearView";
 import { validate } from "../../../../middleware/validate";
 import { teacherExists } from "../../../staff/controllers/staff.controller";
 import { unitQuerySchema } from "../../../subjects/schemas/subjects.schemas";
@@ -40,8 +41,8 @@ import {
 
 const router = Router();
 
-// Strict auth: the school must be approved.
-router.use(requireAuth);
+// Strict auth: the school must be approved. yearView: a school admin may look at a past year (X-Academic-Year); reads answer for it, changes are refused.
+router.use(requireAuth, yearView);
 
 router.get("/schedules", requireRole(...TIMETABLE_READERS), listSchedules);
 // One class's (or section's) weekly timetable; a teacher sees only published ones.

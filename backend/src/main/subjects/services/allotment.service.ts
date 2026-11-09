@@ -2,7 +2,9 @@ import { Types } from "mongoose";
 import { Notify } from "../../notifications/services/events";
 import { ApiError } from "../../../utils/ApiError";
 import { Section } from "../../academics/models/Section";
+import { ClassTeacher } from "../../staff/models/ClassTeacher";
 import { Teacher } from "../../staff/models/Teacher";
+import { ClassTeacherService } from "../../staff/services/classTeacher.service";
 import { nameKeyOf } from "../../tenants/services/tenantFactory";
 import { analyse, type AllotmentInfo } from "../../timetable/services/checker";
 import { clashError } from "../../timetable/services/grid.service";
@@ -12,7 +14,8 @@ import { resolveUnit, type Unit } from "../../timetable/services/unit";
 import { busyFrom, loadWorld, unitDays, unitKey, type World } from "../../timetable/services/world";
 import { Allotment } from "../models/Allotment";
 import { Subject } from "../models/Subject";
-import type { AllotmentRowInput, AssignTeacherInput, SaveAllotmentsInput } from "../schemas/subjects.schemas";
+import { MAX_BACKUP_TEACHERS } from "../constants";
+import type { AllotmentRowInput, AssignTeacherInput, SaveAllotmentsInput, SaveUnitTeachersInput } from "../schemas/subjects.schemas";
 
 export interface AllotmentRowDto {
   subjectId: string;
@@ -24,6 +27,8 @@ export interface AllotmentRowDto {
   blockSize: number;
   teacherId: string | null;
   teacherName: string | null;
+  /** The backup teachers in order (priority 2, 3...). */
+  backups: { id: string; name: string }[];
   group: string | null;
 }
 
@@ -123,19 +128,26 @@ export class AllotmentService {
       periodsPerWeek: r.periodsPerWeek,
       blockSize: r.blockSize,
       teacherId: r.teacherId ? r.teacherId.toString() : null,
+      backupTeacherIds: (r.backupTeacherIds ?? []).map((id) => id.toString()),
       group: r.group ?? null,
     }));
     let at = rows.findIndex((r) => r.subjectId === input.subjectId);
     const before = at >= 0 ? rows[at].teacherId : null;
+    const backupsBefore = at >= 0 ? (rows[at].backupTeacherIds ?? []) : [];
     if (at >= 0) {
-      rows[at] = { ...rows[at], teacherId: input.teacherId, ...(input.periodsPerWeek ? { periodsPerWeek: input.periodsPerWeek } : {}) };
+      rows[at] = {
+        ...rows[at],
+        teacherId: input.teacherId,
+        ...(input.backupTeacherIds !== undefined ? { backupTeacherIds: input.backupTeacherIds } : {}),
+        ...(input.periodsPerWeek ? { periodsPerWeek: input.periodsPerWeek } : {}),
+      };
     } else {
       const subject = await Subject.findOne({ _id: input.subjectId, tenantId: school }).select("name").lean();
       if (!subject) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "subjectId", message: "Choose a subject from your school's list" }]);
       if (!input.periodsPerWeek) {
         throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "periodsPerWeek", message: `Enter the periods a week: ${unit.label} does not study ${subject.name} yet` }]);
       }
-      rows.push({ subjectId: input.subjectId, periodsPerWeek: input.periodsPerWeek, blockSize: 1, teacherId: input.teacherId, group: null });
+      rows.push({ subjectId: input.subjectId, periodsPerWeek: input.periodsPerWeek, blockSize: 1, teacherId: input.teacherId, backupTeacherIds: input.backupTeacherIds ?? [], group: null });
       at = rows.length - 1;
     }
     try {
@@ -152,6 +164,11 @@ export class AllotmentService {
           before,
         });
       }
+      const newBackups = (input.backupTeacherIds ?? []).filter((id) => !backupsBefore.includes(id));
+      if (actorId && newBackups.length > 0) {
+        const subject = await Subject.findOne({ _id: input.subjectId, tenantId: school }).select("name").lean();
+        Notify.backupTeachersAdded(tenantId, actorId, { unit, subjectName: subject?.name ?? "A subject", teacherIds: newBackups });
+      }
       return view;
     } catch (err) {
       // The whole list's words point at a row (`rows.2.teacherId`); this request has one box of each.
@@ -161,6 +178,90 @@ export class AllotmentService {
       }
       throw err;
     }
+  }
+
+  /**
+   * The class's page saves with one button (2026-11-06): the class teacher and, for the subjects named, the main and the backup teachers. All
+   * or nothing: the teachers are checked first, the subjects are saved by the same checks as the whole list (a main teacher busy at a period
+   * the subject is taught is refused, the timetable stays as it was), then the class teacher. A subject not named keeps its teachers.
+   */
+  static async saveTeachers(tenantId: string, input: SaveUnitTeachersInput, actorId: string | null = null): Promise<AllotmentView & { classTeacher: { id: string; name: string } | null }> {
+    const unit = await resolveUnit(tenantId, input.classId, input.sectionId);
+    const school = new Types.ObjectId(tenantId);
+    if (input.classTeacherId) {
+      const head = await Teacher.findOne({ _id: input.classTeacherId, tenantId: school }).select("name isActive").lean();
+      if (!head) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "classTeacherId", message: "Choose a teacher from your school's list" }]);
+      if (!head.isActive) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "classTeacherId", message: `${head.name} is no longer teaching here` }]);
+    }
+    const where = { tenantId: school, academicYearId: unit.yearId, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null };
+    const stored = await Allotment.find(where).sort({ position: 1, _id: 1 }).lean();
+    const rows: AllotmentRowInput[] = stored.map((r) => ({
+      subjectId: r.subjectId.toString(),
+      periodsPerWeek: r.periodsPerWeek,
+      blockSize: r.blockSize,
+      teacherId: r.teacherId ? r.teacherId.toString() : null,
+      backupTeacherIds: (r.backupTeacherIds ?? []).map((id) => id.toString()),
+      group: r.group ?? null,
+    }));
+    const before = new Map(rows.map((r) => [r.subjectId, { teacherId: r.teacherId, backups: r.backupTeacherIds ?? [] }]));
+    const inputIndexOfRow = new Map<number, number>();
+    const problems: Problem[] = [];
+    const named = new Set<string>();
+    input.subjects.forEach((s, i) => {
+      const at = rows.findIndex((r) => r.subjectId === s.subjectId);
+      if (named.has(s.subjectId)) problems.push({ path: `subjects.${i}.subjectId`, message: "This subject is in the list twice" });
+      else if (at < 0) problems.push({ path: `subjects.${i}.subjectId`, message: `${unit.label} does not study this subject` });
+      else {
+        rows[at] = { ...rows[at], teacherId: s.teacherId, backupTeacherIds: s.teacherId ? s.backupTeacherIds : [] };
+        inputIndexOfRow.set(at, i);
+      }
+      named.add(s.subjectId);
+    });
+    if (problems.length > 0) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", problems);
+
+    let view: AllotmentView;
+    try {
+      view = await AllotmentService.save(tenantId, { classId: input.classId, sectionId: input.sectionId, rows, alsoSections: [], withTeachers: false });
+    } catch (err) {
+      // The whole list's words point at a row of it (`rows.2.teacherId`); this request's are of its own subjects.
+      if (err instanceof ApiError && Array.isArray(err.details)) {
+        err.details = (err.details as Problem[]).map((d) => {
+          const m = typeof d.path === "string" ? /^rows\.(\d+)\.(.*)$/.exec(d.path) : null;
+          const i = m ? inputIndexOfRow.get(Number(m[1])) : undefined;
+          return m && i !== undefined ? { ...d, path: `subjects.${i}.${m[2]}` } : d;
+        });
+      }
+      throw err;
+    }
+
+    // The class teacher last: everything above was checked, so this is the one write left.
+    let head: { id: string; name: string } | null;
+    if (input.classTeacherId !== undefined) head = (await ClassTeacherService.set(tenantId, { classId: input.classId, sectionId: input.sectionId, teacherId: input.classTeacherId }, actorId)).teacher;
+    else {
+      const post = await ClassTeacher.findOne(where).select("teacherId").lean();
+      const teacher = post ? await Teacher.findOne({ _id: post.teacherId, tenantId: school }).select("name").lean() : null;
+      head = teacher ? { id: teacher._id.toString(), name: teacher.name } : null;
+    }
+
+    if (actorId) {
+      const subjectNames = new Map(view.rows.map((r) => [r.subjectId, r.subjectName]));
+      const teacherNames = new Map(view.rows.flatMap((r) => [...(r.teacherId ? [[r.teacherId, r.teacherName ?? "A teacher"] as const] : []), ...r.backups.map((b) => [b.id, b.name] as const)]));
+      for (const s of input.subjects) {
+        const was = before.get(s.subjectId);
+        if (!was) continue;
+        if ((s.teacherId ?? null) !== (was.teacherId ?? null)) {
+          Notify.subjectTeacherChanged(tenantId, actorId, {
+            unit,
+            subjectName: subjectNames.get(s.subjectId) ?? "A subject",
+            now: s.teacherId ? { id: s.teacherId, name: teacherNames.get(s.teacherId) ?? "A teacher" } : null,
+            before: was.teacherId,
+          });
+        }
+        const added = (s.teacherId ? s.backupTeacherIds : []).filter((id) => !was.backups.includes(id));
+        if (added.length > 0) Notify.backupTeachersAdded(tenantId, actorId, { unit, subjectName: subjectNames.get(s.subjectId) ?? "A subject", teacherIds: added });
+      }
+    }
+    return { ...view, classTeacher: head };
   }
 
   /**
@@ -219,7 +320,7 @@ export class AllotmentService {
     const rows = await Allotment.find(unitFilter).sort({ position: 1, _id: 1 }).lean();
     const [subjects, teachers, siblings, available] = await Promise.all([
       Subject.find({ tenantId: school, _id: { $in: rows.map((r) => r.subjectId) } }).lean(),
-      Teacher.find({ tenantId: school, _id: { $in: rows.map((r) => r.teacherId).filter((t): t is Types.ObjectId => !!t) } }).select("name").lean(),
+      Teacher.find({ tenantId: school, _id: { $in: rows.flatMap((r) => [...(r.teacherId ? [r.teacherId] : []), ...(r.backupTeacherIds ?? [])]) } }).select("name").lean(),
       unit.sectionId
         ? Section.find({ tenantId: school, classId: new Types.ObjectId(unit.classId), academicYearId: unit.yearId, _id: { $ne: new Types.ObjectId(unit.sectionId) } }).select("name").lean()
         : Promise.resolve([]),
@@ -241,6 +342,10 @@ export class AllotmentService {
           blockSize: r.blockSize,
           teacherId: r.teacherId ? r.teacherId.toString() : null,
           teacherName: r.teacherId ? (teacherById.get(r.teacherId.toString())?.name ?? null) : null,
+          backups: (r.backupTeacherIds ?? []).flatMap((id) => {
+            const teacher = teacherById.get(id.toString());
+            return teacher ? [{ id: id.toString(), name: teacher.name }] : [];
+          }),
           group: r.group ?? null,
         },
       ];
@@ -267,7 +372,7 @@ export class AllotmentService {
     const problems: Problem[] = [];
     const [subjects, teachers] = await Promise.all([
       Subject.find({ tenantId: school, _id: { $in: rows.map((r) => new Types.ObjectId(r.subjectId)) } }).select("name isActive").lean(),
-      Teacher.find({ tenantId: school, _id: { $in: rows.flatMap((r) => (r.teacherId ? [new Types.ObjectId(r.teacherId)] : [])) } }).select("name isActive").lean(),
+      Teacher.find({ tenantId: school, _id: { $in: rows.flatMap((r) => [...(r.teacherId ? [r.teacherId] : []), ...(r.backupTeacherIds ?? [])].map((id) => new Types.ObjectId(id))) } }).select("name isActive").lean(),
     ]);
     const subjectById = new Map(subjects.map((s) => [s._id.toString(), s]));
     const teacherById = new Map(teachers.map((t) => [t._id.toString(), t]));
@@ -285,6 +390,19 @@ export class AllotmentService {
         if (!teacher) problems.push({ path: `rows.${i}.teacherId`, message: "Choose a teacher from your school's list" });
         else if (!teacher.isActive) problems.push({ path: `rows.${i}.teacherId`, message: `${teacher.name} is no longer teaching here` });
       }
+      const backups = row.backupTeacherIds ?? [];
+      if (backups.length > MAX_BACKUP_TEACHERS) problems.push({ path: `rows.${i}.backupTeacherIds`, message: `Up to ${MAX_BACKUP_TEACHERS} backup teachers` });
+      if (backups.length > 0 && !row.teacherId) problems.push({ path: `rows.${i}.backupTeacherIds`, message: "Choose the main teacher first" });
+      const listed = new Set<string>();
+      backups.forEach((id, j) => {
+        const path = `rows.${i}.backupTeacherIds.${j}`;
+        const teacher = teacherById.get(id);
+        if (!teacher) problems.push({ path, message: "Choose a teacher from your school's list" });
+        else if (id === row.teacherId) problems.push({ path, message: `${teacher.name} is the main teacher already` });
+        else if (listed.has(id)) problems.push({ path, message: `${teacher.name} is in the list twice` });
+        else if (!teacher.isActive) problems.push({ path, message: `${teacher.name} is no longer teaching here` });
+        listed.add(id);
+      });
       if (row.blockSize > 1 && row.periodsPerWeek % row.blockSize !== 0) {
         problems.push({ path: `rows.${i}.periodsPerWeek`, message: `${row.periodsPerWeek} periods cannot be given in blocks of ${row.blockSize}: use a multiple of ${row.blockSize}` });
       }
@@ -328,8 +446,9 @@ export class AllotmentService {
   private static async write(tenantId: string, unit: Unit, rows: AllotmentRowInput[], withTeachers: boolean): Promise<void> {
     const school = new Types.ObjectId(tenantId);
     const base = { tenantId: school, academicYearId: unit.yearId, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null };
-    const existing = withTeachers ? [] : await Allotment.find(base).select("subjectId teacherId").lean();
+    const existing = withTeachers ? [] : await Allotment.find(base).select("subjectId teacherId backupTeacherIds").lean();
     const keptTeacher = new Map(existing.map((e) => [e.subjectId.toString(), e.teacherId ?? null]));
+    const keptBackups = new Map(existing.map((e) => [e.subjectId.toString(), e.backupTeacherIds ?? []]));
 
     await Allotment.deleteMany({ ...base, subjectId: { $nin: rows.map((r) => new Types.ObjectId(r.subjectId)) } });
     if (rows.length === 0) return;
@@ -342,6 +461,13 @@ export class AllotmentService {
               periodsPerWeek: row.periodsPerWeek,
               blockSize: row.blockSize,
               teacherId: withTeachers ? (row.teacherId ? new Types.ObjectId(row.teacherId) : null) : (keptTeacher.get(row.subjectId) ?? null),
+              // Backups: the ones sent; with none sent the unit's own stay (a whole list saved from elsewhere does not wipe them); a section that is only
+              // given the subjects (not the teachers) keeps its own.
+              ...(withTeachers
+                ? row.backupTeacherIds !== undefined
+                  ? { backupTeacherIds: row.teacherId ? row.backupTeacherIds.map((id) => new Types.ObjectId(id)) : [] }
+                  : {}
+                : { backupTeacherIds: keptBackups.get(row.subjectId) ?? [] }),
               group: row.group,
               groupKey: groupKeyOf(row.group),
               position,

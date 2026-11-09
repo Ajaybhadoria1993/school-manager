@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { AtSign, BookOpen, Briefcase, CalendarDays, KeyRound, ListPlus, LogOut, Pencil, Repeat2, RotateCcw, UserRound, UserRoundCog } from "lucide-react";
 import { employmentLabel } from "../../constants/teachers";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useTeacherBase } from "../../hooks/useTeacherBase";
 import { DAY_SHORT } from "../../constants/timetable";
 import { useGetSubjectsQuery, useGetTeacherQuery, useGetTeacherSettingsQuery, useUpdateTeacherMutation } from "../../redux/api/timetableApi";
@@ -36,6 +37,8 @@ const addressText = (a: Teacher["address"]) => [a.line1, a.city, a.state, a.pinc
  * whether it works; the password is never shown, only made again (New password, Make a login).
  */
 export default function TeacherDetailPage() {
+  // A year that is over is only looked at: no Change, Give classes, Has left, login changes (the server refuses them too).
+  const readOnly = useReadOnlyYear();
   const { id = "" } = useParams();
   const { base, label } = useTeacherBase();
   const res = useGetTeacherQuery(id);
@@ -95,23 +98,27 @@ export default function TeacherDetailPage() {
                   <CalendarDays className="size-4" aria-hidden />
                   Week
                 </Link>
-                <Link to={`${base}/${t.id}/edit`} className={linkClass}>
-                  <Pencil className="size-4" aria-hidden />
-                  Change
-                </Link>
-                {t.load.sections > 0 ? (
-                  <Button variant="outline" onClick={() => setDialog("replace")}>
-                    <Repeat2 className="size-4" aria-hidden />
-                    Give classes
-                  </Button>
-                ) : (
-                  <Button variant="outline" onClick={() => setDialog("leave")}>
-                    <LogOut className="size-4" aria-hidden />
-                    Has left
-                  </Button>
+                {!readOnly && (
+                  <>
+                    <Link to={`${base}/${t.id}/edit`} className={linkClass}>
+                      <Pencil className="size-4" aria-hidden />
+                      Change
+                    </Link>
+                    {t.load.sections > 0 ? (
+                      <Button variant="outline" onClick={() => setDialog("replace")}>
+                        <Repeat2 className="size-4" aria-hidden />
+                        Give classes
+                      </Button>
+                    ) : (
+                      <Button variant="outline" onClick={() => setDialog("leave")}>
+                        <LogOut className="size-4" aria-hidden />
+                        Has left
+                      </Button>
+                    )}
+                  </>
                 )}
               </>
-            ) : (
+            ) : readOnly ? null : (
               <Button onClick={bringBack}>
                 <RotateCcw className="size-4" aria-hidden />
                 Bring back
@@ -176,7 +183,7 @@ export default function TeacherDetailPage() {
                 <span className="font-mono">{t.login.username}</span>
               </Row>
               <Row label="Status">{t.login.isActive ? <Badge tone="success">Active</Badge> : <Badge tone="warning">Closed</Badge>}</Row>
-              <div className="flex flex-wrap gap-2 pt-3">
+              <div className={readOnly ? "hidden" : "flex flex-wrap gap-2 pt-3"}>
                 <Button variant="outline" onClick={() => setDialog("username")}>
                   <AtSign className="size-4" aria-hidden />
                   Change username
@@ -190,10 +197,12 @@ export default function TeacherDetailPage() {
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-foreground-muted">No login yet</p>
-              <Button variant="outline" onClick={() => setDialog("login")}>
-                <UserRoundCog className="size-4" aria-hidden />
-                Make a login
-              </Button>
+              {!readOnly && (
+                <Button variant="outline" onClick={() => setDialog("login")}>
+                  <UserRoundCog className="size-4" aria-hidden />
+                  Make a login
+                </Button>
+              )}
             </div>
           )}
         </Block>

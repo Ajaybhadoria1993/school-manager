@@ -3,6 +3,8 @@ import { ApiError } from "../../../utils/ApiError";
 import { AcademicYear } from "../../academics/models/AcademicYear";
 import { SchoolClass } from "../../academics/models/SchoolClass";
 import { Section } from "../../academics/models/Section";
+import { AcademicYearService } from "../../academics/services/academicYear.service";
+import { isViewing } from "../../academics/services/viewedYear";
 
 /**
  * What a class studies and when it is taught is kept per UNIT: one section, or the class itself when it has no sections. A unit belongs to
@@ -39,11 +41,13 @@ export async function resolveUnit(tenantId: string, classId: string, sectionId: 
     if (!section) throw ApiError.notFound("Section not found", "SECTION_NOT_FOUND");
     const year = section.academicYearId ? await AcademicYear.findOne({ _id: section.academicYearId, tenantId: school }).select("name status").lean() : null;
     if (!year) throw ApiError.conflict("Your school has no running academic year yet.", "NO_ACTIVE_YEAR");
-    if (year.status === "closed") throw ApiError.conflict("This section belongs to a year that is over. Its timetable cannot be changed.", "UNIT_YEAR_CLOSED");
+    // A year that is over is history: only read, and only by someone who asked to look at that year (academics/services/viewedYear.ts).
+    if (year.status === "closed" && !isViewing(year._id)) throw ApiError.conflict("This section belongs to a year that is over. Its timetable cannot be changed.", "UNIT_YEAR_CLOSED");
     return { classId, className: klass.name, sectionId, sectionName: section.name, label: unitLabel(klass.name, section.name), yearId: year._id, yearName: year.name, classOrder: klass.order };
   }
 
-  const year = await AcademicYear.findOne({ tenantId: school, status: "active" }).select("name").lean();
+  // A class that is not split belongs to the year being read: the running one, or a past one being looked at.
+  const year = await AcademicYearService.shownYear(school);
   if (!year) throw ApiError.conflict("Your school has no running academic year yet.", "NO_ACTIVE_YEAR");
   if (await Section.exists({ tenantId: school, classId: klass._id, academicYearId: year._id })) {
     throw ApiError.conflict(`${klass.name} has sections. Choose one of them.`, "UNIT_NEEDS_SECTION");
@@ -54,7 +58,16 @@ export async function resolveUnit(tenantId: string, classId: string, sectionId: 
 /** Every unit of the school's running year, in teaching order: each section, and each class that has none. */
 export async function activeUnits(tenantId: string): Promise<Unit[]> {
   const school = new Types.ObjectId(tenantId);
-  const year = await AcademicYear.findOne({ tenantId: school, status: "active" }).select("name").lean();
+  return unitsOf(school, await AcademicYear.findOne({ tenantId: school, status: "active" }).select("name").lean());
+}
+
+/** The same for the year a screen is about: the running year, or a past one the school is looking at (academics/services/viewedYear.ts). */
+export async function shownUnits(tenantId: string): Promise<Unit[]> {
+  const school = new Types.ObjectId(tenantId);
+  return unitsOf(school, await AcademicYearService.shownYear(school));
+}
+
+async function unitsOf(school: Types.ObjectId, year: { _id: Types.ObjectId; name: string } | null): Promise<Unit[]> {
   if (!year) return [];
   const [classes, sections] = await Promise.all([
     SchoolClass.find({ tenantId: school }).sort({ order: 1, _id: 1 }).select("name order").lean(),

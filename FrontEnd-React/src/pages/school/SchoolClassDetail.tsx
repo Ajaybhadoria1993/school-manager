@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { ArrowLeft, ArrowRight, CalendarDays, Download, FolderTree, MousePointerClick, NotebookPen, Search, SearchX, UserPlus, UserRound, UsersRound } from "lucide-react";
 import { STUDENT_PAGE_SIZES } from "../../constants/students";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetClassOverviewQuery, useGetStudentsQuery } from "../../redux/api/studentsApi";
 import { plural, toneOf } from "../../utils/academics";
@@ -36,6 +37,8 @@ const arrowLink =
  * that was on this page moved there).
  */
 export default function SchoolClassDetailPage() {
+  // A year that is over is only looked at: no Add student (the server refuses it too).
+  const readOnly = useReadOnlyYear();
   const { classId = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const structureRes = useGetStructureQuery();
@@ -192,10 +195,12 @@ export default function SchoolClassDetailPage() {
               <Download className="size-4" aria-hidden />
               Export
             </Link>
-            <Link to={admitLink({ classId, sectionId: section?.id })} className={plainLink}>
-              <UserPlus className="size-4" aria-hidden />
-              Add student
-            </Link>
+            {!readOnly && (
+              <Link to={admitLink({ classId, sectionId: section?.id })} className={plainLink}>
+                <UserPlus className="size-4" aria-hidden />
+                Add student
+              </Link>
+            )}
           </>
         }
       />
@@ -272,10 +277,12 @@ export default function SchoolClassDetailPage() {
                 tone={tone}
                 title={`No students in ${where} yet`}
                 actions={
-                  <Link to={admitLink({ classId, sectionId: section?.id })} className={plainLink}>
-                    <UserPlus className="size-4" aria-hidden />
-                    Add a student
-                  </Link>
+                  readOnly ? undefined : (
+                    <Link to={admitLink({ classId, sectionId: section?.id })} className={plainLink}>
+                      <UserPlus className="size-4" aria-hidden />
+                      Add a student
+                    </Link>
+                  )
                 }
               >
                 <p>Admit a student into this {section ? "section" : "class"} and they will be listed here.</p>

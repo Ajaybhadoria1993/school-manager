@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { BookX, FileUp, FilterX, ListPlus, Pencil, Plus, Search, SearchX, UserRoundCheck, UserRoundMinus, UsersRound } from "lucide-react";
 import { DESIGNATIONS } from "../../constants/teachers";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetSubjectsQuery, useGetTeacherSummaryQuery, useGetTeachersQuery } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
@@ -89,6 +90,7 @@ function Classes({ teacher: t }: { teacher: Teacher }) {
  */
 function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName: Map<string, string> }) {
   const navigate = useNavigate();
+  const readOnly = useReadOnlyYear();
   const about = [t.designation, t.employeeCode].filter(Boolean).join(" · ");
   return (
     <tr
@@ -145,6 +147,7 @@ function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName
         <StatusPill active={t.isActive} />
       </td>
       <td className="hidden py-3 pl-2 pr-4 text-right align-middle sm:table-cell">
+        {!readOnly && (
         <Link
           to={`/teachers/${t.id}/edit`}
           aria-label={`Edit ${t.name}`}
@@ -152,6 +155,7 @@ function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName
         >
           <Pencil className="size-4" aria-hidden />
         </Link>
+        )}
       </td>
     </tr>
   );
@@ -166,6 +170,8 @@ function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName
  * still takes them.)
  */
 export default function TeacherDirectoryPage() {
+  // A year that is over is only looked at: no adding, uploading or changing teachers (the server refuses them too).
+  const readOnly = useReadOnlyYear();
   const [params, setParams] = useSearchParams();
   const status = oneOf(params.get("status"), ["active", "inactive", "all"] as const) ?? "active";
   const q = params.get("q") ?? "";
@@ -225,19 +231,25 @@ export default function TeacherDirectoryPage() {
         actions={
           <>
             {/* Like the students' header: Export (the list as Excel), Bulk upload (the teachers a school already has, from Excel), Add teacher. */}
-            <Link to="/teachers/fields" className={outlineLink}>
-              <ListPlus className="size-4" aria-hidden />
-              Fields
-            </Link>
+            {!readOnly && (
+              <Link to="/teachers/fields" className={outlineLink}>
+                <ListPlus className="size-4" aria-hidden />
+                Fields
+              </Link>
+            )}
             <ExportTeachersButton query={query} empty={teachers.length === 0} />
-            <Link to="/teachers/import" className={outlineLink}>
-              <FileUp className="size-4" aria-hidden />
-              Bulk upload
-            </Link>
-            <Link to="/teachers/new" className={primaryLink}>
-              <Plus className="size-4" aria-hidden />
-              Add teacher
-            </Link>
+            {!readOnly && (
+              <Link to="/teachers/import" className={outlineLink}>
+                <FileUp className="size-4" aria-hidden />
+                Bulk upload
+              </Link>
+            )}
+            {!readOnly && (
+              <Link to="/teachers/new" className={primaryLink}>
+                <Plus className="size-4" aria-hidden />
+                Add teacher
+              </Link>
+            )}
           </>
         }
       />

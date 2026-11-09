@@ -8,6 +8,7 @@ export type UserRole =
   | "teacher"
   | "receptionist"
   | "management"
+  | "staff"
   | "parent"
   | "student";
 
@@ -19,6 +20,8 @@ export interface AuthUser {
   email: string | null;
   username: string | null;
   role: UserRole;
+  /** A staff member's own title ("Librarian", a role the school wrote); shown instead of the role's name. null for everyone else. */
+  roleLabel?: string | null;
   tenantId: string | null;
   emailVerifiedAt: string | null;
 }
@@ -44,10 +47,7 @@ export interface InviteInfo {
   schoolName: string;
   expiresAt: string;
   /** "invite": the platform team invited this school. "signup": the visitor registered from the login page. */
-  kind: "invite" | "signup" | "staff";
-  /** A staff invitation: who is invited and as what (the page greets them by it). */
-  name?: string;
-  roleLabel?: string;
+  kind: "invite" | "signup";
 }
 
 /** Why a session was ended for the user (shown on the sign-in page). */

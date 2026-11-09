@@ -48,6 +48,15 @@ describe("the school's calendar", () => {
     expect((await request(app).get(api).set(auth(s.token))).body.data.items).toEqual([]);
   });
 
+  it("a change that does not mention the note keeps it; an empty note clears it", async () => {
+    const s = await classroomSchool();
+    const id = (await request(app).post(api).set(auth(s.token)).send({ title: "Sports day", kind: "event", startDate: "2026-12-05", note: "Wear the house t-shirt" })).body.data.id;
+    const renamed = await request(app).patch(`${api}/${id}`).set(auth(s.token)).send({ title: "Sports week" });
+    expect(renamed.body.data).toMatchObject({ title: "Sports week", note: "Wear the house t-shirt" });
+    const cleared = await request(app).patch(`${api}/${id}`).set(auth(s.token)).send({ note: "" });
+    expect(cleared.body.data.note).toBeNull();
+  });
+
   it("refuses what cannot be, in words", async () => {
     const s = await classroomSchool();
     const backwards = await request(app).post(api).set(auth(s.token)).send({ title: "Diwali", kind: "holiday", startDate: "2026-11-10", endDate: "2026-11-08" });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  MAX_BACKUP_TEACHERS,
   MAX_BLOCK_SIZE,
   MAX_GROUP_NAME,
   MAX_NEW_SUBJECTS,
@@ -69,6 +70,8 @@ export const assignTeacherSchema = z.object({
   sectionId: objectId.nullable(),
   subjectId: objectId,
   teacherId: objectId.nullable(),
+  /** The backup teachers in order (priority 2, 3...); left out = as they are, [] = none. */
+  backupTeacherIds: z.array(objectId).max(MAX_BACKUP_TEACHERS, `Up to ${MAX_BACKUP_TEACHERS} backup teachers`).optional(),
   periodsPerWeek: z
     .number({ invalid_type_error: "Enter the periods a week as a number" })
     .int("Enter whole periods")
@@ -108,6 +111,8 @@ export const allotmentRowSchema = z.object({
   periodsPerWeek,
   blockSize: blockSize.default(1),
   teacherId: objectId.nullable().default(null),
+  /** The backup teachers in order; left out = the unit's own stay as they are. */
+  backupTeacherIds: z.array(objectId).max(MAX_BACKUP_TEACHERS, `Up to ${MAX_BACKUP_TEACHERS} backup teachers`).optional(),
   group: groupName.nullable().default(null),
 });
 export type AllotmentRowInput = z.infer<typeof allotmentRowSchema>;
@@ -131,3 +136,24 @@ export const saveAllotmentsSchema = z.object({
   withTeachers: z.boolean().default(false),
 });
 export type SaveAllotmentsInput = z.infer<typeof saveAllotmentsSchema>;
+
+/**
+ * `PUT /subjects/allotments/teachers` (2026-11-06): what a class's page saves with its one Save button: the class teacher (left out =
+ * as it is, null = none) and, for the subjects named, the main teacher and the backup teachers in order. A subject not named keeps its
+ * teachers. All or nothing.
+ */
+export const saveUnitTeachersSchema = z.object({
+  classId: objectId,
+  sectionId: objectId.nullable(),
+  classTeacherId: objectId.nullable().optional(),
+  subjects: z
+    .array(
+      z.object({
+        subjectId: objectId,
+        teacherId: objectId.nullable(),
+        backupTeacherIds: z.array(objectId).max(MAX_BACKUP_TEACHERS, `Up to ${MAX_BACKUP_TEACHERS} backup teachers`).default([]),
+      })
+    )
+    .max(40, "Up to 40 subjects for a class"),
+});
+export type SaveUnitTeachersInput = z.infer<typeof saveUnitTeachersSchema>;

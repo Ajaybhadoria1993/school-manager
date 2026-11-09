@@ -6,6 +6,9 @@ export const USER_ROLES = [
   "principal",
   "accountant",
   "teacher",
+  "receptionist",
+  "management",
+  "staff",
   "parent",
   "student",
 ] as const;
@@ -28,6 +31,11 @@ export interface IUser {
   designation?: string;
   /** What they wrote in when their role is "Other". */
   designationOther?: string;
+  /**
+   * The title a staff member is shown with ("Librarian", a name the school wrote): their login role says what they may open, this says
+   * who they are. Only set for people added in Staff.
+   */
+  roleLabel?: string;
   passwordHash: string;
   role: UserRole;
   /** null for the platform super admin; set for everyone who belongs to a school. */
@@ -52,6 +60,7 @@ const userSchema = new Schema<IUser>(
     alternatePhone: { type: String, trim: true },
     designation: { type: String, trim: true, maxlength: 50 },
     designationOther: { type: String, trim: true, maxlength: 50 },
+    roleLabel: { type: String, trim: true, maxlength: 60 },
     passwordHash: { type: String, required: true },
     role: { type: String, enum: USER_ROLES, required: true },
     tenantId: { type: Schema.Types.ObjectId, ref: "Tenant", default: null, index: true },
@@ -76,17 +85,20 @@ export interface PublicUser {
   email: string | null;
   username: string | null;
   role: UserRole;
+  /** A staff member's own title (see IUser.roleLabel); null for everyone else. */
+  roleLabel: string | null;
   tenantId: string | null;
   emailVerifiedAt: string | null;
 }
 
-export function toPublicUser(user: Pick<IUser, "_id" | "name" | "email" | "username" | "role" | "tenantId" | "emailVerifiedAt">): PublicUser {
+export function toPublicUser(user: Pick<IUser, "_id" | "name" | "email" | "username" | "role" | "tenantId" | "emailVerifiedAt"> & { roleLabel?: string | null }): PublicUser {
   return {
     id: user._id.toString(),
     name: user.name,
     email: user.email ?? null,
     username: user.username ?? null,
     role: user.role,
+    roleLabel: user.roleLabel ?? null,
     tenantId: user.tenantId ? user.tenantId.toString() : null,
     emailVerifiedAt: user.emailVerifiedAt ? user.emailVerifiedAt.toISOString() : null,
   };

@@ -4,7 +4,9 @@ import { Backpack, CalendarX2, ClockAlert, Percent } from "lucide-react";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetStudentsAttendanceQuery, useGetStudentsTodayQuery } from "../../redux/api/attendanceApi";
 import { getApiError } from "../../utils/apiErrors";
-import { dayCount, isLowPercent, percentText, rangePresets, showsEveryDay, weekdayLetter } from "../../utils/attendance";
+import { dayCount, isLowPercent, percentText, showsEveryDay, startRange, weekdayLetter } from "../../utils/attendance";
+import { useYearView } from "../../hooks/useYearView";
+import { useAppSelector } from "../../redux/hooks";
 import { shortDay } from "../../utils/calendar";
 import { cn } from "../../utils/helpers";
 import { todayInIndia } from "../../utils/students";
@@ -56,7 +58,8 @@ export function StudentAttendanceTab() {
   const structure = useGetStructureQuery();
   const classes = structure.data?.data.classes ?? [];
   const today = todayInIndia();
-  const month = rangePresets(today).find((p) => p.id === "month")!;
+  const { viewing } = useYearView();
+  const month = startRange(today, viewing);
 
   const klass = classes.find((c) => c.id === params.get("class")) ?? classes[0];
   const section = klass?.sections.find((s) => s.id === params.get("section"));
@@ -65,8 +68,10 @@ export function StudentAttendanceTab() {
   const res = useGetStudentsAttendanceQuery({ classId: klass?.id ?? "", sectionId: section?.id ?? "all", ...range }, { skip: !klass });
   const data = res.data?.data;
   const [open, setOpen] = useState<StudentRangeRow | null>(null);
-  // The classes that have not taken today's attendance (a warning above the list; a failed read leaves it out).
-  const pending = useGetStudentsTodayQuery().data?.data.pending ?? [];
+  // The classes that have not taken today's attendance (a warning above the list; a failed read leaves it out). Not asked while a year
+  // that is over is open: today is not in it.
+  const looking = useAppSelector((state) => state.yearView.yearId !== null);
+  const pending = useGetStudentsTodayQuery(undefined, { skip: looking }).data?.data.pending ?? [];
 
   function change(patch: Record<string, string>) {
     setParams(

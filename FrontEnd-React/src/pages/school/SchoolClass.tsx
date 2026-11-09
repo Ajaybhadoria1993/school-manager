@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useLocation, useSearchParams } from "react-router";
 import { Building2, CalendarX2, FilterX, FolderTree, GraduationCap, LayoutGrid, Search, SearchX, UserPlus, UsersRound } from "lucide-react";
 import { STUDENT_PAGE_SIZES } from "../../constants/students";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetCapacityQuery, useGetClassOverviewQuery, useGetStudentsQuery } from "../../redux/api/studentsApi";
 import { departmentTone } from "../../utils/academics";
@@ -67,6 +68,8 @@ export default function SchoolClassPage() {
 }
 
 function SchoolClassView({ view }: { view: View }) {
+  // A year that is over is only looked at: no Add student, no Manage classes (the server refuses them too).
+  const readOnly = useReadOnlyYear();
   const [params, setParams] = useSearchParams();
   const structureRes = useGetStructureQuery();
   const structure = structureRes.data?.data;
@@ -163,7 +166,7 @@ function SchoolClassView({ view }: { view: View }) {
         info={year ? <Badge tone="primary">{year}</Badge> : undefined}
         actions={
           // One button, in the primary colour: Manage classes on Classes, Add student on Students (it carries the chosen class and section).
-          ready ? (
+          ready && !readOnly ? (
             view === "students" ? (
               <Link to={admitLink({ classId, sectionId })} className={plainLink}>
                 <UserPlus className="size-4" aria-hidden />
@@ -337,7 +340,7 @@ function SchoolClassView({ view }: { view: View }) {
                   <Button variant="outline" onClick={clearAll}>
                     Clear filters
                   </Button>
-                ) : (
+                ) : readOnly ? undefined : (
                   <Link to="/school/students/new" className={plainLink}>
                     <UserPlus className="size-4" aria-hidden />
                     Add the first student

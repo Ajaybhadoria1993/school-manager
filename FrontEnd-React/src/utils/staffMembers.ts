@@ -1,18 +1,28 @@
 import type { StaffMember, StaffMemberInput, TeacherGender } from "../types";
+import { MAX_ROLE_OTHER } from "../constants/staffMembers";
 import { STATES } from "../constants/schoolOptions";
 import { TEACHER_LIMITS } from "../constants/teachers";
 import { ageOn, todayInIndia } from "./students";
-import { nationalNumber } from "./teachers";
-import { isEmail, isIndianMobile } from "./validators";
+import { MESSAGES, nationalNumber } from "./teachers";
+import { isEmail, isIndianMobile, isPasswordValid, isUsername } from "./validators";
 
 /**
  * The boxes of Add staff and Change staff and the rules they follow (the server says the same and has the last word). The role, the
- * name and the email are needed; everything else may be left empty, but what is filled must be right.
+ * name, and (when a person is added) the username and the password the school makes for them are needed (and a name for the role Other);
+ * the email is only a contact, so it may be left empty; everything else may be left empty too, but what is filled must be right.
  */
 export interface StaffFormValues {
   name: string;
   role: string;
+  /** The role's name, for Other. */
+  roleOther: string;
+  /** Also a teacher, and the subjects they teach. */
+  alsoTeacher: boolean;
+  subjectIds: string[];
   email: string;
+  /** The login the school makes with the person (Add staff only; never filled when a person is changed). */
+  username: string;
+  password: string;
   mobile: string;
   gender: TeacherGender | "";
   dateOfBirth: string;
@@ -32,7 +42,12 @@ export const staffFieldId = (key: StaffFormKey) => `staff-${key}`;
 export const emptyStaffForm = (): StaffFormValues => ({
   name: "",
   role: "",
+  roleOther: "",
+  alsoTeacher: false,
+  subjectIds: [],
   email: "",
+  username: "",
+  password: "",
   mobile: "",
   gender: "",
   dateOfBirth: "",
@@ -48,14 +63,20 @@ export const emptyStaffForm = (): StaffFormValues => ({
 const isRealDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value && Number(value.slice(0, 4)) >= 1900;
 const daysFromNow = (days: number) => new Date(new Date(`${todayInIndia()}T00:00:00.000Z`).getTime() + days * 86400000).toISOString().slice(0, 10);
 
-/** What is wrong with the form, by box, in the server's words. `editing`: the email is not asked (it cannot change). */
+/** What is wrong with the form, by box, in the server's words. `editing`: the login is not asked (the Staff list changes it). */
 export function staffProblems(v: StaffFormValues, options: { editing?: boolean } = {}): StaffProblems {
   const problems: StaffProblems = {};
   if (v.name.trim() === "") problems.name = "Enter the name";
   if (v.role === "") problems.role = "Choose the role";
+  if (v.role === "other") {
+    const written = v.roleOther.trim().replace(/\s+/g, " ");
+    if (written === "") problems.roleOther = "Enter the role's name";
+    else if (written.length > MAX_ROLE_OTHER) problems.roleOther = `Keep the role's name under ${MAX_ROLE_OTHER} characters`;
+  }
+  if (v.email.trim() !== "" && (!isEmail(v.email) || v.email.trim().length > 254)) problems.email = "Enter a valid email address";
   if (!options.editing) {
-    if (v.email.trim() === "") problems.email = "Enter the email address";
-    else if (!isEmail(v.email) || v.email.trim().length > 254) problems.email = "Enter a valid email address";
+    if (!isUsername(v.username)) problems.username = MESSAGES.username;
+    if (!isPasswordValid(v.password)) problems.password = MESSAGES.password;
   }
   if (v.mobile.trim() !== "" && !isIndianMobile(nationalNumber(v.mobile))) problems.mobile = "Enter a 10-digit mobile number starting with 6, 7, 8 or 9";
   if (v.dateOfBirth !== "") {
@@ -79,12 +100,17 @@ export function staffProblems(v: StaffFormValues, options: { editing?: boolean }
 
 const orNull = (text: string) => (text.trim() === "" ? null : text.trim());
 
-/** What is sent: an empty box is null (the server clears it); the email only when the person is added (it cannot change). */
-export function toStaffInput(v: StaffFormValues, options: { editing?: boolean } = {}): Omit<StaffMemberInput, "email"> & { email?: string } {
+/** What is sent: an empty box is null (the server clears it); the login only when the person is added (the Staff list changes it after). */
+export function toStaffInput(v: StaffFormValues, options: { editing?: boolean } = {}): StaffMemberInput {
   return {
     name: v.name.trim(),
-    role: v.role as StaffMemberInput["role"],
-    ...(options.editing ? {} : { email: v.email.trim().toLowerCase() }),
+    role: v.role,
+    // The role's name only for Other; the subjects only for someone who also teaches.
+    roleOther: v.role === "other" ? orNull(v.roleOther.replace(/\s+/g, " ")) : null,
+    alsoTeacher: v.alsoTeacher,
+    subjectIds: v.alsoTeacher ? v.subjectIds : [],
+    email: orNull(v.email.toLowerCase()),
+    ...(options.editing ? {} : { login: { username: v.username.trim().toLowerCase(), password: v.password } }),
     mobile: v.mobile.trim() === "" ? null : nationalNumber(v.mobile),
     gender: v.gender === "" ? null : v.gender,
     dateOfBirth: orNull(v.dateOfBirth),
@@ -98,7 +124,12 @@ export function toStaffInput(v: StaffFormValues, options: { editing?: boolean } 
 export const formFromStaff = (m: StaffMember): StaffFormValues => ({
   name: m.name,
   role: m.role,
-  email: m.email,
+  roleOther: m.roleOther ?? "",
+  alsoTeacher: m.alsoTeacher,
+  subjectIds: m.subjectIds,
+  email: m.email ?? "",
+  username: "",
+  password: "",
   mobile: m.mobile ?? "",
   gender: m.gender ?? "",
   dateOfBirth: m.dateOfBirth ?? "",
@@ -113,7 +144,7 @@ export const formFromStaff = (m: StaffMember): StaffFormValues => ({
 
 /** The box a server message points at (`details[].path`). */
 export function staffKeyOfPath(path: string): StaffFormKey | null {
-  const named: Record<string, StaffFormKey> = { "address.line1": "addressLine1", "address.city": "city", "address.state": "state", "address.pincode": "pincode" };
+  const named: Record<string, StaffFormKey> = { "address.line1": "addressLine1", "address.city": "city", "address.state": "state", "address.pincode": "pincode", "login.username": "username", "login.password": "password" };
   if (named[path]) return named[path];
   return path in emptyStaffForm() ? (path as StaffFormKey) : null;
 }

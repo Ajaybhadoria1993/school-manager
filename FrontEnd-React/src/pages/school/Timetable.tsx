@@ -1,5 +1,6 @@
 import { useSearchParams } from "react-router";
 import { CalendarDays, Clock3 } from "lucide-react";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useGetOverviewQuery } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
@@ -29,8 +30,10 @@ export default function TimetablePage() {
   // The same read the class list starts with (same arguments), so it is asked once.
   const res = useGetOverviewQuery({ status: "all" });
   const overview = res.data?.data;
+  // A year that is over is only looked at: the classes' timetables of that year, not the school's timings (they are set for the school as it is).
+  const readOnly = useReadOnlyYear();
   const asked = params.get("tab");
-  const tab: Tab = asked === "timings" || asked === "classes" ? asked : overview && overview.counts.timings === 0 ? "timings" : "classes";
+  const tab: Tab = readOnly ? "classes" : asked === "timings" || asked === "classes" ? asked : overview && overview.counts.timings === 0 ? "timings" : "classes";
 
   const go = (next: Tab) =>
     setParams((prev) => {
@@ -47,7 +50,7 @@ export default function TimetablePage() {
         actions={
           overview ? (
             <div role="tablist" aria-label="Timetable" className="inline-flex gap-1 rounded-xl bg-surface-muted p-1">
-              {TABS.map((t) => (
+              {TABS.filter((t) => !readOnly || t.value === "classes").map((t) => (
                 <button
                   key={t.value}
                   type="button"

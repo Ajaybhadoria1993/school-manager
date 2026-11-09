@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import { ApiError } from "../../../utils/ApiError";
 import { asyncHandler } from "../../../utils/asyncHandler";
 import { sendCreated, sendOk } from "../../../utils/response";
-import type { AssignTeacherInput, CreateSubjectInput, ListSubjectsQuery, QuickAddInput, SaveAllotmentsInput, UnitQuery, UpdateSubjectInput } from "../schemas/subjects.schemas";
+import type { AssignTeacherInput, CreateSubjectInput, ListSubjectsQuery, QuickAddInput, SaveAllotmentsInput, SaveUnitTeachersInput, UnitQuery, UpdateSubjectInput } from "../schemas/subjects.schemas";
 import { AllotmentService } from "../services/allotment.service";
 import { SubjectService } from "../services/subject.service";
 
@@ -50,4 +50,9 @@ export const updateSubject = asyncHandler(async (req: Request, res: Response) =>
 /** The teacher of one subject of one unit (a teacher's page, a class's page). */
 export const assignAllotmentTeacher = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, await AllotmentService.assignTeacher(tenantOf(req), req.validatedBody as AssignTeacherInput, req.user!.userId), "Teacher saved");
+});
+
+/** The class teacher and every subject's main and backup teachers of one unit, in one request (a class's page, its Save button). */
+export const saveUnitTeachers = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await AllotmentService.saveTeachers(tenantOf(req), req.validatedBody as SaveUnitTeachersInput, req.user!.userId), "Teachers saved");
 });

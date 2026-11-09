@@ -9,6 +9,8 @@ import { timingGroups, unitPath } from "../../utils/timetable";
 import { StatTile } from "../../components/dashboard/school/StatTile";
 import { ClassWeekView } from "../../components/schoolClass/ClassWeekView";
 import { UnitTeachers } from "../../components/schoolClass/UnitTeachers";
+import { UnitTeachersView } from "../../components/schoolClass/UnitTeachersView";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
 import { Badge } from "../../components/ui/Badge";
@@ -28,6 +30,8 @@ const outlineLink =
  * and its timing, kind of day by kind of day. One read for the week (`/timetable/grid`), besides what the class page already read.
  */
 export default function SchoolClassTimetablePage() {
+  // A year that is over is only looked at: the teachers and the week are shown, not changed (the server refuses it too).
+  const readOnly = useReadOnlyYear();
   const { classId = "" } = useParams();
   const [params] = useSearchParams();
   const overviewRes = useGetClassOverviewQuery({ classId });
@@ -117,7 +121,11 @@ export default function SchoolClassTimetablePage() {
         <StatTile label="School day" value={grid ? (main ? `${main.start} to ${main.end}` : "Not set") : null} icon={Clock3} tone="warning" />
       </section>
 
-      <UnitTeachers key={`${classId}-${section?.id ?? "class"}`} classId={classId} sectionId={section?.id ?? null} label={label} classTeacher={headTeacher} />
+      {readOnly ? (
+        <UnitTeachersView classId={classId} sectionId={section?.id ?? null} classTeacher={headTeacher} />
+      ) : (
+        <UnitTeachers key={`${classId}-${section?.id ?? "class"}`} classId={classId} sectionId={section?.id ?? null} label={label} classTeacher={headTeacher} />
+      )}
 
       {gridRes.error && !grid ? (
         <Card className="flex flex-col items-center gap-3 py-10 text-center">
@@ -134,9 +142,11 @@ export default function SchoolClassTimetablePage() {
           tone="warning"
           title="No school timing yet"
           actions={
-            <Link to="/school/timetable?tab=timings" className={outlineLink}>
-              Set the school timing
-            </Link>
+            readOnly ? undefined : (
+              <Link to="/school/timetable?tab=timings" className={outlineLink}>
+                Set the school timing
+              </Link>
+            )
           }
         />
       ) : (
@@ -147,10 +157,12 @@ export default function SchoolClassTimetablePage() {
                 <h2 className="text-lg font-bold tracking-tight text-foreground">Week</h2>
                 {grid.exists ? <Badge tone={grid.status === "published" ? "success" : "warning"}>{grid.status === "published" ? "Published" : "Draft"}</Badge> : <Badge>Not made yet</Badge>}
               </div>
-              <Link to={unitPath(unit)} className={outlineLink}>
-                <Pencil className="size-4" aria-hidden />
-                Edit timetable
-              </Link>
+              {!readOnly && (
+                <Link to={unitPath(unit)} className={outlineLink}>
+                  <Pencil className="size-4" aria-hidden />
+                  Edit timetable
+                </Link>
+              )}
             </div>
             <ClassWeekView view={grid} label={label} examDays={examsRes.data?.data.week.days} />
           </section>

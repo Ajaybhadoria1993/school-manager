@@ -3,7 +3,9 @@ import { ApiError } from "../../../utils/ApiError";
 import { AcademicYear } from "../../academics/models/AcademicYear";
 import { SchoolClass } from "../../academics/models/SchoolClass";
 import { Section } from "../../academics/models/Section";
+import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { isDuplicateKey } from "../../academics/services/shared";
+import { seatedIn } from "../../academics/services/viewedYear";
 import type { Relation } from "../constants";
 import { Enrolment, type IEnrolment } from "../models/Enrolment";
 import { EnrolmentChange, type IPlaceSnapshot } from "../models/EnrolmentChange";
@@ -52,8 +54,11 @@ export interface StudentPage {
   totalPages: number;
 }
 
+/** The running year: what a change is made in. */
 const activeYear = (school: Types.ObjectId) =>
   AcademicYear.findOne({ tenantId: school, status: "active" }).select("_id name startDate").lean();
+/** The year a read is about: the running one, or a past one being looked at (academics/services/viewedYear.ts). */
+const shownYear = (school: Types.ObjectId) => AcademicYearService.shownYear(school);
 
 /** What every row and the detail share. */
 const summaryOf = (s: IStudent) => ({
@@ -99,7 +104,7 @@ export class StudentService {
 
     const guardianIds = student.guardians.map((g) => g.guardianId);
     const [year, guardians, enrolments, siblings, changes] = await Promise.all([
-      activeYear(school),
+      shownYear(school),
       Guardian.find({ tenantId: school, _id: { $in: guardianIds } }).lean(),
       Enrolment.find({ tenantId: school, studentId: student._id }).lean(),
       Student.find({ tenantId: school, status: "active", _id: { $ne: student._id }, "guardians.guardianId": { $in: guardianIds } })
@@ -207,16 +212,17 @@ export class StudentService {
   }
 
   /**
-   * The students of the current academic year, searched (part of the name or of the admission number), filtered by class and
-   * section, sorted and cut into pages by the database: one aggregation over the year's enrolments, so a screen never downloads
-   * every student to filter them. Each row carries the class and section names and the primary guardian.
+   * The students of the current academic year (or of a past one being looked at: then everyone who sat in it, even those who left
+   * later), searched (part of the name or of the admission number), filtered by class and section, sorted and cut into pages by the
+   * database: one aggregation over the year's enrolments, so a screen never downloads every student to filter them. Each row carries
+   * the class and section names and the primary guardian.
    */
   static async list(tenantId: string, query: ListStudentsQuery): Promise<StudentPage> {
     const school = new Types.ObjectId(tenantId);
-    const year = await activeYear(school);
+    const year = await shownYear(school);
     if (!year) return { academicYear: null, items: [], page: query.page, limit: query.limit, total: 0, totalPages: 1 };
 
-    const match: Record<string, unknown> = { tenantId: school, academicYearId: year._id, status: "active" };
+    const match: Record<string, unknown> = { tenantId: school, academicYearId: year._id, ...seatedIn(year._id) };
     if (query.departmentId) {
       // The classes of the department (or of none): a class asked for must be one of them, else nobody is listed.
       const inDepartment = await SchoolClass.find({ tenantId: school, departmentId: query.departmentId === "none" ? null : new Types.ObjectId(query.departmentId) })

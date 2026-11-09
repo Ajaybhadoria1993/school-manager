@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AtSign, KeyRound, UserRoundCog } from "lucide-react";
+import { useReadOnlyYear } from "../../../hooks/useReadOnlyYear";
 import { useChangeGuardianUsernameMutation, useCreateGuardianLoginMutation, useResetGuardianPasswordMutation } from "../../../redux/api/studentsApi";
 import type { StudentGuardian } from "../../../types";
 import { ChangeUsernameDialog, MakeLoginDialog, NewPasswordDialog } from "../../logins/LoginDialogs";
@@ -16,6 +17,7 @@ export function GuardianLogin({ guardian }: { guardian: StudentGuardian }) {
   const [reset] = useResetGuardianPasswordMutation();
   const [rename] = useChangeGuardianUsernameMutation();
   const { push } = useToast();
+  const readOnly = useReadOnlyYear();
   const login = guardian.login ?? null;
 
   return (
@@ -24,7 +26,8 @@ export function GuardianLogin({ guardian }: { guardian: StudentGuardian }) {
         <span className="mr-2 text-xs font-semibold uppercase tracking-wide text-foreground-muted">Login</span>
         {login ? <span className={login.isActive ? "font-mono font-semibold text-foreground" : "font-mono text-foreground-muted line-through"}>{login.username}</span> : <span className="text-foreground-muted">No login yet</span>}
       </p>
-      <div className="flex flex-wrap gap-1.5">
+      {/* A year that is over is only looked at: the login is read, not changed. */}
+      <div className={readOnly ? "hidden" : "flex flex-wrap gap-1.5"}>
         {login ? (
           <>
             <Button variant="outline" size="sm" aria-label={`Change the username of ${guardian.name}`} onClick={() => setDialog("username")}>

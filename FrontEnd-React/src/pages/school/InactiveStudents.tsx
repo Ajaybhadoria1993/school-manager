@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { ChevronLeft, ChevronRight, Search, UserCheck, UserX, X } from "lucide-react";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useGetInactiveQuery, useReactivateStudentsMutation } from "../../redux/api/studentsApi";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
@@ -33,6 +34,7 @@ const where = (s: InactiveStudent) => (s.className ? placeLabel({ className: s.c
  */
 export default function InactiveStudentsPage() {
   const { push } = useToast();
+  const readOnly = useReadOnlyYear();
   const [text, setText] = useState("");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
@@ -142,18 +144,20 @@ export default function InactiveStudentsPage() {
               <table className="w-full border-collapse text-sm" aria-label="Inactive students">
                 <thead className="border-b border-border bg-background">
                   <tr>
-                    <th scope="col" className="w-10 pl-4">
-                      <input
-                        type="checkbox"
-                        aria-label="Select all students on this page"
-                        checked={chosen.length > 0 && chosen.length === items.length}
-                        ref={(el) => {
-                          if (el) el.indeterminate = chosen.length > 0 && chosen.length < items.length;
-                        }}
-                        onChange={(e) => setTicked(e.target.checked ? new Set(items.map((s) => s.id)) : new Set())}
-                        className="size-4 cursor-pointer accent-primary"
-                      />
-                    </th>
+                    {!readOnly && (
+                      <th scope="col" className="w-10 pl-4">
+                        <input
+                          type="checkbox"
+                          aria-label="Select all students on this page"
+                          checked={chosen.length > 0 && chosen.length === items.length}
+                          ref={(el) => {
+                            if (el) el.indeterminate = chosen.length > 0 && chosen.length < items.length;
+                          }}
+                          onChange={(e) => setTicked(e.target.checked ? new Set(items.map((s) => s.id)) : new Set())}
+                          className="size-4 cursor-pointer accent-primary"
+                        />
+                      </th>
+                    )}
                     <th scope="col" className={TH}>
                       Student
                     </th>
@@ -166,17 +170,21 @@ export default function InactiveStudentsPage() {
                     <th scope="col" className={cn(TH, "hidden md:table-cell")}>
                       Inactive since
                     </th>
-                    <th scope="col" className={cn(TH, "text-right")}>
-                      <span className="sr-only">Actions</span>
-                    </th>
+                    {!readOnly && (
+                      <th scope="col" className={cn(TH, "text-right")}>
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((s) => (
                     <tr key={s.id} className={cn("border-t border-surface-muted first:border-t-0", ticked.has(s.id) && "bg-primary-soft/40")}>
-                      <td className="w-10 pl-4 align-middle">
-                        <input type="checkbox" aria-label={`Select ${s.name}`} checked={ticked.has(s.id)} onChange={() => toggle(s.id)} className="size-4 cursor-pointer accent-primary" />
-                      </td>
+                      {!readOnly && (
+                        <td className="w-10 pl-4 align-middle">
+                          <input type="checkbox" aria-label={`Select ${s.name}`} checked={ticked.has(s.id)} onChange={() => toggle(s.id)} className="size-4 cursor-pointer accent-primary" />
+                        </td>
+                      )}
                       <td className="px-4 py-3 align-middle">
                         <div className="flex items-center gap-3">
                           <StudentAvatar name={s.name} seed={s.admissionNumber} size="sm" />
@@ -209,12 +217,14 @@ export default function InactiveStudentsPage() {
                           {s.reason ? ` · ${s.reason}` : ""}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right align-middle">
-                        <Button variant="outline" size="sm" disabled={working} aria-label={`Make ${s.name} active`} onClick={() => void makeActive([s])}>
-                          <UserCheck className="size-4" aria-hidden />
-                          Make active
-                        </Button>
-                      </td>
+                      {!readOnly && (
+                        <td className="px-4 py-3 text-right align-middle">
+                          <Button variant="outline" size="sm" disabled={working} aria-label={`Make ${s.name} active`} onClick={() => void makeActive([s])}>
+                            <UserCheck className="size-4" aria-hidden />
+                            Make active
+                          </Button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

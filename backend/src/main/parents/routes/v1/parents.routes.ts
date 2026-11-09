@@ -2,7 +2,8 @@ import { Router } from "express";
 import { requireAuth, requireRole } from "../../../../middleware/auth";
 import { validate } from "../../../../middleware/validate";
 import { applyLeaveSchema, childAttendanceQuerySchema, childDiaryQuerySchema, childLeaveParamsSchema } from "../../../classroom/schemas/classroom.schemas";
-import { applyLeave, cancelLeave, getChild, getChildAttendance, getChildDiary, getChildTests, getChildTimetable, listChildLeaves, listChildren } from "../../controllers/parents.controller";
+import { childExamsQuerySchema } from "../../../exams/schemas/exams.schemas";
+import { applyLeave, cancelLeave, getChild, getChildAttendance, getChildDiary, getChildExams, getChildTests, getChildTimetable, listChildLeaves, listChildren } from "../../controllers/parents.controller";
 
 /**
  * `/api/v1/parent`: what a signed-in parent reads and sends (their children, one child's record, its published timetable, its leave).
@@ -25,5 +26,7 @@ router.get("/children/:id/attendance", validate(childAttendanceQuerySchema, "que
 // The diary of a day and the tests (phases 4 and 5).
 router.get("/children/:id/diary", validate(childDiaryQuerySchema, "query"), getChildDiary);
 router.get("/children/:id/tests", getChildTests);
+// The exams of the child's class, the child's own results, and this week's exam days (2026-11-06).
+router.get("/children/:id/exams", validate(childExamsQuerySchema, "query"), getChildExams);
 
 export default router;

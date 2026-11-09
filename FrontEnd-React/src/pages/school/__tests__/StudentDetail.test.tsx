@@ -6,6 +6,7 @@ import { RouterProvider, createMemoryRouter } from "react-router";
 import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
+import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
 import type { StudentDetail } from "../../../types";
 import { fakeApi, type Handler } from "../../../test/fakeApi";
 import StudentDetailPage from "../StudentDetail";
@@ -123,5 +124,19 @@ describe("the page of an inactive student", () => {
     expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
     expect(calls.find((c) => c.method === "POST")?.body).toEqual({ ids: ["s1"] });
     expect(screen.queryByText(/made inactive by/)).not.toBeInTheDocument();
+  });
+});
+
+describe("a student's page while a year that is over is open (read only)", () => {
+  afterEach(() => {
+    store.dispatch(yearViewChanged(null));
+  });
+
+  it("is only looked at: no Edit, Transfer, Make inactive or Add a sibling, and the parent's login has no buttons", async () => {
+    store.dispatch(yearViewChanged("y26"));
+    openPage();
+    expect(await screen.findByRole("heading", { name: ASHA.name, level: 1 })).toBeInTheDocument();
+    for (const name of ["Edit", "Transfer", "Make inactive", "Add a sibling"]) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Make a login for|New password for|Change the username of/ })).not.toBeInTheDocument();
   });
 });

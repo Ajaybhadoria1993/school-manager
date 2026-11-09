@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import { StructureService } from "../../academics/services/structure.service";
+import { seatedIn } from "../../academics/services/viewedYear";
 import { ClassTeacherService, unitKeyOf } from "../../staff/services/classTeacher.service";
 import { Enrolment } from "../models/Enrolment";
 import type { ClassOverviewQuery } from "../schemas/students.schemas";
@@ -73,8 +74,9 @@ export class ClassOverviewService {
     const empty = { classes: [], summary: { classes: 0, sections: 0, students: 0, seats: 0, seatsLeft: 0, fullSections: 0 } };
     if (!structure.academicYear) return { academicYear: null, departments, ...empty };
 
+    const yearId = new Types.ObjectId(structure.academicYear.id);
     const counts = await Enrolment.aggregate<{ _id: { classId: Types.ObjectId; sectionId: Types.ObjectId | null }; n: number }>([
-      { $match: { tenantId: school, academicYearId: new Types.ObjectId(structure.academicYear.id), status: "active" } },
+      { $match: { tenantId: school, academicYearId: yearId, ...seatedIn(yearId) } },
       { $group: { _id: { classId: "$classId", sectionId: "$sectionId" }, n: { $sum: 1 } } },
     ]);
     const inSection = new Map<string, number>();

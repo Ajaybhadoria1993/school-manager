@@ -2,7 +2,7 @@ import { z } from "zod";
 import { INDIAN_MOBILE, nationalNumber } from "../../../utils/formFields";
 import { passwordSchema, usernameSchema } from "../../auth/schemas/auth.schemas";
 import { idParamSchema, label, objectId } from "../../subjects/schemas/subjects.schemas";
-import { ageOn, todayInIndia } from "../../students/schemas/students.schemas";
+import { ageOn, customFieldListSchema, todayInIndia } from "../../students/schemas/students.schemas";
 import { INDIAN_STATES } from "../../tenants/constants";
 import {
   EMPLOYMENT_TYPES,
@@ -13,11 +13,15 @@ import {
   MAX_PERIODS_PER_DAY,
   MAX_PERIODS_PER_WEEK,
   MAX_QUALIFICATION,
+  MAX_ROLE_OTHER,
+  MAX_TEACHER_IMPORT_ROWS_PER_REQUEST,
+  STAFF_MEMBER_ROLE_KEYS,
   MAX_TEACHER_AGE,
   MAX_TEACHER_NAME,
   MAX_TEACHER_SUBJECTS,
   MIN_TEACHER_AGE,
   MOBILE_MESSAGE,
+  TEACHER_FIELD_NAMES,
   TEACHER_GENDERS,
 } from "../constants";
 
@@ -119,6 +123,12 @@ const address = z.object({
   pincode: z.preprocess(blankToNull, z.string({ invalid_type_error: "PIN code is 6 digits" }).trim().regex(/^\d{6}$/, "PIN code is 6 digits").nullable()),
 }).partial();
 
+/**
+ * The answers to the school's own fields, by their `c_` key (a change: null clears one). Only the shape is checked here; each answer is
+ * checked against the school's field (`TeacherSettingsService.check`), which only the school's settings know.
+ */
+const customAnswers = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]), { invalid_type_error: "Answer your school's own fields" });
+
 const fields = {
   name: label("teacher's name", MAX_TEACHER_NAME),
   mobile,
@@ -136,6 +146,7 @@ const fields = {
   experienceYears,
   joiningDate,
   employmentType,
+  custom: customAnswers,
 };
 
 // ---- The login ------------------------------------------------------------------------------------------------------------------------
@@ -171,6 +182,7 @@ export const createTeacherSchema = z
     experienceYears: fields.experienceYears.optional(),
     joiningDate: fields.joiningDate.optional(),
     employmentType: fields.employmentType.optional(),
+    custom: fields.custom.optional(),
     /** Gives the teacher a login in the same step. */
     login: loginAccountSchema.optional(),
   })
@@ -222,3 +234,110 @@ export type SetClassTeacherInput = z.infer<typeof setClassTeacherSchema>;
 /** `PATCH /staff/teachers/:id/login`: another username for a teacher's login (the password stays). */
 export const changeUsernameSchema = z.object({ username: usernameSchema });
 export type ChangeUsernameInput = z.infer<typeof changeUsernameSchema>;
+
+// ---- Bringing many teachers in from a file -----------------------------------------------------------------------------------------------
+
+/**
+ * `POST /staff/teachers/import`: a part of a file (up to MAX_TEACHER_IMPORT_ROWS_PER_REQUEST rows). Each row is a teacher as Add teacher
+ * takes one (its boxes, kept loose here: a wrong box refuses that row, never the whole part), the subjects by their names, and the
+ * username and password when the file gives them (left out, they are made up). The boxes are judged row by row by the same schema as
+ * Add teacher (TeacherImportService), so a refusal says the same words.
+ */
+export const importTeachersSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        /** The row's number in the file, to say which row is meant in the answer. */
+        row: z.number().int().min(1),
+        teacher: z.record(z.string(), z.unknown()),
+        subjectNames: z.array(z.string().max(300)).max(200).default([]),
+        username: z.string().max(100).optional(),
+        password: z.string().max(200).optional(),
+      })
+    )
+    .min(1, "Send at least one teacher")
+    .max(MAX_TEACHER_IMPORT_ROWS_PER_REQUEST, `Send up to ${MAX_TEACHER_IMPORT_ROWS_PER_REQUEST} teachers at a time`),
+});
+export type ImportTeachersInput = z.infer<typeof importTeachersSchema>;
+
+/**
+ * `PUT /staff/teachers/settings`: the school's own fields for its teachers, the whole list as it should be (a field left out is deleted).
+ * Each entry is judged on its own, as the students' own fields are; a name may not be one of the usual details'.
+ */
+export const updateTeacherSettingsSchema = z.object({
+  customFields: customFieldListSchema(new Map(TEACHER_FIELD_NAMES.map((n) => [n.toLowerCase(), n] as [string, string])), (listed) => `There is already a field called ${listed}`),
+});
+export type UpdateTeacherSettingsInput = z.infer<typeof updateTeacherSettingsSchema>;
+
+// ---- Staff: the people who work for the school without teaching ---------------------------------------------------------------------------
+
+const staffRole = z.enum(STAFF_MEMBER_ROLE_KEYS, { errorMap: () => ({ message: "Choose the role" }) });
+const STAFF_AGE_MESSAGE = `A staff member must be ${MIN_TEACHER_AGE} to ${MAX_TEACHER_AGE} years old`;
+const staffBirthday = day("date of birth").refine((value) => {
+  if (!(value instanceof Date)) return true;
+  const age = ageOn(value, new Date(`${todayInIndia()}T00:00:00.000Z`));
+  return age >= MIN_TEACHER_AGE && age <= MAX_TEACHER_AGE;
+}, STAFF_AGE_MESSAGE);
+
+/** The role's name the school writes for Other (kept only for Other: the service drops it for any other role). */
+const roleOther = textOrNull("role's name", MAX_ROLE_OTHER);
+export const ROLE_OTHER_MESSAGE = "Enter the role's name";
+
+/**
+ * `POST /staff/members`: a name, the role and the **login** the school makes (username and password, like a teacher's); an email and the rest
+ * of the details may be left out. `roleOther` is needed for the role Other. `alsoTeacher` makes the person a teacher of the school too
+ * (with `subjectIds`, what they can teach).
+ */
+export const createStaffMemberSchema = z
+  .object({
+    name: label("name", MAX_TEACHER_NAME),
+    role: staffRole,
+    roleOther: roleOther.optional(),
+    email: fields.email.optional(),
+    login: loginAccountSchema,
+    mobile: fields.mobile.optional(),
+    gender: fields.gender.optional(),
+    dateOfBirth: staffBirthday.optional(),
+    address: fields.address.optional(),
+    designation: fields.designation.optional(),
+    employeeCode: fields.employeeCode.optional(),
+    joiningDate: fields.joiningDate.optional(),
+    alsoTeacher: z.boolean().optional(),
+    subjectIds: fields.subjectIds.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.role === "other" && !value.roleOther) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["roleOther"], message: ROLE_OTHER_MESSAGE });
+  });
+export type CreateStaffMemberInput = z.infer<typeof createStaffMemberSchema>;
+
+/**
+ * `PATCH /staff/members/:id`: some details (the email too: it is only a contact and a second way in), the role, who also teaches, and (for a
+ * person with a login) on or off. Whether Other has a name is judged by the service, which knows the role the person has now.
+ */
+export const updateStaffMemberSchema = z
+  .object({
+    name: label("name", MAX_TEACHER_NAME),
+    role: staffRole,
+    roleOther,
+    email: fields.email,
+    mobile: fields.mobile,
+    gender: fields.gender,
+    dateOfBirth: staffBirthday,
+    address: fields.address,
+    designation: fields.designation,
+    employeeCode: fields.employeeCode,
+    joiningDate: fields.joiningDate,
+    alsoTeacher: z.boolean(),
+    subjectIds: fields.subjectIds,
+    isActive: z.boolean(),
+  })
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, { message: "Nothing to change" });
+export type UpdateStaffMemberInput = z.infer<typeof updateStaffMemberSchema>;
+
+export const listStaffMembersQuerySchema = z.object({
+  status: z.enum(["active", "invited", "inactive", "all"]).default("all"),
+  role: staffRole.optional(),
+  search: optionalText(40),
+});
+export type ListStaffMembersQuery = z.infer<typeof listStaffMembersQuerySchema>;

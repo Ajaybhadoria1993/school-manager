@@ -49,6 +49,7 @@ export const NAV_ITEMS: NavItem[] = [
       "teacher",
       "receptionist",
       "management",
+      "staff",
       "parent",
       "student",
     ],
@@ -102,7 +103,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Calendar",
     href: "/calendar",
     icon: CalendarDays,
-    roles: ["school_admin", "principal", "accountant", "teacher", "receptionist", "management", "parent"],
+    roles: ["school_admin", "principal", "accountant", "teacher", "receptionist", "management", "staff", "parent"],
     group: "Overview",
   },
   {
@@ -208,6 +209,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   teacher: "Teacher",
   receptionist: "Receptionist",
   management: "Management",
+  staff: "Staff",
   parent: "Parent",
   student: "Student",
 };

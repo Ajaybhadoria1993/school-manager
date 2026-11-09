@@ -25,7 +25,8 @@ import { ageOn, todayInIndia } from "../schemas/students.schemas";
 import { CapacityService } from "./capacity.service";
 import { escapeRegex, NO_ACTIVE_YEAR } from "./shared";
 import { StudentSettingsService } from "./settings.service";
-import { AcademicYear } from "../../academics/models/AcademicYear";
+import { AcademicYearService } from "../../academics/services/academicYear.service";
+import { seatedIn } from "../../academics/services/viewedYear";
 
 /** A file to send: its bytes and the name the browser saves it under. */
 export interface SheetFile {
@@ -296,10 +297,10 @@ export class SpreadsheetService {
    */
   static async rows(tenantId: string, query: ExportStudentsQuery, limit?: number): Promise<{ total: number; rows: ExportRow[]; sample?: true }> {
     const school = new Types.ObjectId(tenantId);
-    const year = await AcademicYear.findOne({ tenantId: school, status: "active" }).select("_id name").lean();
+    const year = await AcademicYearService.shownYear(school);
     if (!year) throw NO_ACTIVE_YEAR();
 
-    const match: Record<string, unknown> = { tenantId: school, academicYearId: year._id, status: "active" };
+    const match: Record<string, unknown> = { tenantId: school, academicYearId: year._id, ...seatedIn(year._id) };
     if (query.classId) match.classId = new Types.ObjectId(query.classId);
     if (query.sectionId) match.sectionId = query.sectionId === "none" ? null : new Types.ObjectId(query.sectionId);
     const enrolments = await Enrolment.find(match).lean();

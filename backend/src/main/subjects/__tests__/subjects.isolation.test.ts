@@ -48,5 +48,11 @@ itKeepsSchoolsApart("subjects", {
       path: () => `${api}/allotments/teacher`,
       body: (c) => ({ classId: c.classId, sectionId: c.sectionId, subjectId: c.subjectId, teacherId: null }),
     },
+    {
+      name: "saving the class teacher and the teachers of its section in one go (2026-11-06)",
+      method: "put",
+      path: () => `${api}/allotments/teachers`,
+      body: (c) => ({ classId: c.classId, sectionId: c.sectionId, classTeacherId: null, subjects: [{ subjectId: c.subjectId, teacherId: null, backupTeacherIds: [] }] }),
+    },
   ],
 });

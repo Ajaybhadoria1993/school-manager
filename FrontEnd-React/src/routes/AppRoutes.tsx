@@ -60,21 +60,9 @@ const routes: RouteObject[] = [
               // Attendance (under Teacher in the menu): the students' of any class and the teachers', in tabs.
               { path: "attendance", ...lazyRoute(() => import("../pages/attendance/AttendancePage")) },
               { path: "school-class/:classId/timetable", ...lazyRoute(() => import("../pages/school/SchoolClassTimetable")) },
-              { path: "teachers/new", ...lazyRoute(() => import("../pages/school/TeacherAdd")) },
               // Staff: the people who work for the school without teaching (a role each, invited by email).
               { path: "staff", ...lazyRoute(() => import("../pages/staff/StaffDirectory")) },
-              { path: "staff/new", ...lazyRoute(() => import("../pages/staff/StaffAdd")) },
-              { path: "staff/:id/edit", ...lazyRoute(() => import("../pages/staff/StaffEdit")) },
-              { path: "teachers/import", ...lazyRoute(() => import("../pages/school/TeacherImport")) },
-              { path: "teachers/fields", ...lazyRoute(() => import("../pages/school/TeacherFields")) },
               { path: "teachers/:id", ...lazyRoute(() => import("../pages/school/TeacherDetail")) },
-              { path: "teachers/:id/edit", ...lazyRoute(() => import("../pages/school/TeacherEdit")) },
-              { path: "school/classes", ...lazyRoute(() => import("../pages/school/Classes")) },
-              // The school's years (the next one is made and switched on here) and the promotion of its students into the next year.
-              { path: "school/academic-years", ...lazyRoute(() => import("../pages/school/AcademicYears")) },
-              { path: "school/promotion", ...lazyRoute(() => import("../pages/school/Promotion")) },
-              // A department's own screen; "none" instead of an id is the classes that are in no department.
-              { path: "school/classes/departments/:departmentId", ...lazyRoute(() => import("../pages/school/DepartmentManage")) },
               // Timetable: one page with two tabs (School timings, Class timetables); the school's subjects and teachers are their own pages.
               // The old one-page-per-step addresses lead to the right tab (fixed paths before the ids).
               { path: "school/timetable", ...lazyRoute(() => import("../pages/school/Timetable")) },
@@ -87,22 +75,41 @@ const routes: RouteObject[] = [
               { path: "school/timetable/teacher/:teacherId", ...lazyRoute(() => import("../pages/school/TimetableTeacherWeek")) },
               // Teachers: the list, the Add teacher steps, one teacher's page and the change form (fixed paths before ":id").
               { path: "school/teachers", ...lazyRoute(() => import("../pages/school/Teachers")) },
-              { path: "school/teachers/new", ...lazyRoute(() => import("../pages/school/TeacherAdd")) },
-              { path: "school/teachers/import", ...lazyRoute(() => import("../pages/school/TeacherImport")) },
-              { path: "school/teachers/fields", ...lazyRoute(() => import("../pages/school/TeacherFields")) },
               { path: "school/teachers/:id", ...lazyRoute(() => import("../pages/school/TeacherDetail")) },
-              { path: "school/teachers/:id/edit", ...lazyRoute(() => import("../pages/school/TeacherEdit")) },
               // Test & Exam: the year's exams and tests, and one exam's timetable (which classes write what, when, for how long).
               { path: "school/exams", ...lazyRoute(() => import("../pages/school/Exams")) },
               { path: "school/exams/:id", ...lazyRoute(() => import("../pages/school/ExamDetail")) },
               // Students: the list, the admission form, the bulk upload, the export (the school's fields and Excel layout), one student's page (fixed paths before ":id").
               { path: "school/students", ...lazyRoute(() => import("../pages/school/Students")) },
-              { path: "school/students/new", ...lazyRoute(() => import("../pages/school/StudentAdmit")) },
-              { path: "school/students/import", ...lazyRoute(() => import("../pages/school/StudentImport")) },
               { path: "school/students/export", ...lazyRoute(() => import("../pages/school/StudentExport")) },
-              // The school's fields on a page of their own: reachable with no student yet (the Export button needs students).
-              { path: "school/students/fields", ...lazyRoute(() => import("../pages/school/ManageFields")) },
               { path: "school/students/inactive", ...lazyRoute(() => import("../pages/school/InactiveStudents")) },
+              // Pages that only make sense in the running year (adding, changing, uploading, the year's own work): while a year that is over
+              // is open they say so and offer the way back (RunningYearRoute), instead of a form the server would refuse at the end. They are:
+              // the admission form and the bulk upload, the school's fields, Classes & Sections and a department's own screen ("none" instead of
+              // an id is the classes that are in no department), the school's years and the promotion into the next one, and Add / change /
+              // upload / fields of the teachers and the staff.
+              {
+                ...lazyRoute(() => import("./RunningYearRoute")),
+                children: [
+                  { path: "school/students/new", ...lazyRoute(() => import("../pages/school/StudentAdmit")) },
+                  { path: "school/students/import", ...lazyRoute(() => import("../pages/school/StudentImport")) },
+                  { path: "teachers/new", ...lazyRoute(() => import("../pages/school/TeacherAdd")) },
+                  { path: "teachers/import", ...lazyRoute(() => import("../pages/school/TeacherImport")) },
+                  { path: "teachers/fields", ...lazyRoute(() => import("../pages/school/TeacherFields")) },
+                  { path: "teachers/:id/edit", ...lazyRoute(() => import("../pages/school/TeacherEdit")) },
+                  { path: "staff/new", ...lazyRoute(() => import("../pages/staff/StaffAdd")) },
+                  { path: "staff/:id/edit", ...lazyRoute(() => import("../pages/staff/StaffEdit")) },
+                  { path: "school/classes", ...lazyRoute(() => import("../pages/school/Classes")) },
+                  { path: "school/classes/departments/:departmentId", ...lazyRoute(() => import("../pages/school/DepartmentManage")) },
+                  { path: "school/academic-years", ...lazyRoute(() => import("../pages/school/AcademicYears")) },
+                  { path: "school/promotion", ...lazyRoute(() => import("../pages/school/Promotion")) },
+                  { path: "school/teachers/new", ...lazyRoute(() => import("../pages/school/TeacherAdd")) },
+                  { path: "school/teachers/import", ...lazyRoute(() => import("../pages/school/TeacherImport")) },
+                  { path: "school/teachers/fields", ...lazyRoute(() => import("../pages/school/TeacherFields")) },
+                  { path: "school/teachers/:id/edit", ...lazyRoute(() => import("../pages/school/TeacherEdit")) },
+                  { path: "school/students/fields", ...lazyRoute(() => import("../pages/school/ManageFields")) },
+                ],
+              },
               { path: "school/students/:id",...lazyRoute(() => import("../pages/school/StudentDetail")) },
             ],
           },

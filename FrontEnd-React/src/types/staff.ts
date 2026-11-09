@@ -1,6 +1,5 @@
 /** The shapes of the Staff (teachers) API (backend/src/main/staff). */
 import type { CustomFieldDef } from "../constants/studentFields";
-import type { UserRole } from "./auth";
 
 export type TeacherGender = "Male" | "Female" | "Other";
 export type EmploymentType = "full_time" | "part_time" | "contract";
@@ -201,15 +200,26 @@ export interface TeacherSettings {
   customFields: CustomFieldDef[];
 }
 
-/** A person who works for the school without teaching (`/staff/members`): invited by email, then active. */
+/**
+ * A person who works for the school without teaching (`/staff/members`): added by the school with a username and a password it makes
+ * (active, or inactive while the login is closed). *invited* is only a person added before that: they have no login until the school makes one.
+ */
 export type StaffMemberStatus = "invited" | "active" | "inactive";
 
 export interface StaffMember {
   id: string;
   name: string;
-  role: UserRole;
+  /** The kind of staff (the key of constants/staffMembers.ts), not a login role: "other" is a role the school wrote. */
+  role: string;
+  /** The role's name: for Other, the one the school wrote. */
   roleLabel: string;
-  email: string;
+  roleOther: string | null;
+  /** Also teaches. `isTeacher`: they have accepted and are a Teacher of the school now (the switch is locked then). */
+  alsoTeacher: boolean;
+  isTeacher: boolean;
+  subjectIds: string[];
+  /** Only a contact (and a second way to sign in): optional. */
+  email: string | null;
   mobile: string | null;
   gender: TeacherGender | null;
   dateOfBirth: string | null;
@@ -218,23 +228,19 @@ export interface StaffMember {
   employeeCode: string | null;
   joiningDate: string | null;
   status: StaffMemberStatus;
-  invitedAt: string;
-  acceptedAt: string | null;
-}
-
-/** What the server says about an invitation it just made (or made again). */
-export interface StaffInviteDelivery {
-  /** False when the mail server did not take the email: the school uses Resend invite. */
-  emailSent: boolean;
-  inviteExpiresAt: string;
-  /** Development only, with no mail server: the link itself. */
-  devInviteLink?: string;
+  /** The username they sign in with (the password is never sent back); null: no login yet. */
+  login: TeacherLogin | null;
 }
 
 export interface StaffMemberInput {
   name: string;
-  role: UserRole;
-  email: string;
+  role: string;
+  roleOther?: string | null;
+  alsoTeacher?: boolean;
+  subjectIds?: string[];
+  email?: string | null;
+  /** What they sign in with: made with the person (Add staff only). */
+  login?: LoginAccount;
   mobile?: string | null;
   gender?: TeacherGender | null;
   dateOfBirth?: string | null;
@@ -246,7 +252,7 @@ export interface StaffMemberInput {
 
 export interface StaffMemberQuery {
   status: StaffMemberStatus | "all";
-  role?: UserRole;
+  role?: string;
   search?: string;
 }
 

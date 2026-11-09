@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ArrowRightLeft, CircleCheck, HeartHandshake, Pencil, UserCheck, UserPlus, UserX } from "lucide-react";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetCapacityQuery, useGetStudentQuery, useGetStudentSettingsQuery, useReactivateStudentsMutation } from "../../redux/api/studentsApi";
 import { getApiError } from "../../utils/apiErrors";
@@ -135,6 +136,8 @@ function StudentView({
   const [problem, setProblem] = useState<string | null>(null);
   const [reactivate] = useReactivateStudentsMutation();
   const { push } = useToast();
+  // A year that is over is only looked at: no Edit, Transfer, Make inactive or Add a sibling (the server refuses them too).
+  const readOnly = useReadOnlyYear();
   const inactive = student.status === "inactive";
   const family: SiblingOf = {
     name: student.name,
@@ -167,7 +170,7 @@ function StudentView({
         title={student.name}
         subtitle={[student.admissionNumber, inactive ? "Inactive" : placeLabel(student.place), !inactive && student.place?.rollNumber != null ? `Roll ${student.place.rollNumber}` : null].filter(Boolean).join(" · ")}
         actions={
-          inactive ? (
+          readOnly ? undefined : inactive ? (
             <WithTip tip="Puts the student back in their class and section, in the list, the seats and the Excel.">
               <Button type="button" loading={working} onClick={() => void makeActive()}>
                 <UserCheck className="size-4" aria-hidden />

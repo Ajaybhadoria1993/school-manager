@@ -4,6 +4,8 @@ import app from "../../../app";
 import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { classroomSchool } from "../../../test/classroom";
 import { auth } from "../../../test/timetable";
+import { Notification } from "../../notifications/models/Notification";
+import { NotificationService } from "../../notifications/services/notification.service";
 import { todayInIndia } from "../../students/schemas/students.schemas";
 
 /**
@@ -119,5 +121,53 @@ describe("a teacher's own classes", () => {
     ]);
     expect((await mine(s.tokens.kiran)).body.data.items).toEqual([]);
     expect((await mine(s.tokens.ravi)).status).toBe(403);
+  });
+});
+
+describe("the reason of an absence (2026-11-06)", () => {
+  it("a mark can carry a reason; it is kept, comes back on the sheet and the child's month, and a present child keeps none", async () => {
+    const s = await classroomSchool();
+    const saved = await save(s.tokens.meena, s.a, today, [
+      { studentId: s.asha.id, status: "present", reason: "ignored for a child who came" },
+      { studentId: s.kabir.id, status: "absent", reason: "  Fever, doctor's advice  " },
+    ]);
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    const byName = Object.fromEntries(saved.body.data.students.map((st: { name: string }) => [st.name, st]));
+    expect(byName["Kabir Rao"]).toMatchObject({ status: "absent", reason: "Fever, doctor's advice" });
+    expect(byName["Asha Verma"]).toMatchObject({ status: "present", reason: null });
+    // Opening the day again (as the school) shows the same.
+    expect((await sheet(s.token, s.a, today)).body.data.students.find((st: { name: string }) => st.name === "Kabir Rao").reason).toBe("Fever, doctor's advice");
+    // The child's parent sees the reason on that day.
+    const month = await request(app).get(`/api/v1/parent/children/${s.kabir.id}/attendance`).set(auth(s.tokens.sita));
+    expect(month.body.data.days).toEqual([{ date: today, status: "absent", reason: "Fever, doctor's advice" }]);
+  });
+
+  it("late and leave may give a reason too; a reason left empty is none; saving the day again without it clears it", async () => {
+    const s = await classroomSchool();
+    await save(s.tokens.meena, s.a, today, [{ studentId: s.asha.id, status: "late", reason: "Bus was late" }, { studentId: s.kabir.id, status: "leave", reason: "" }]);
+    let now = (await sheet(s.token, s.a, today)).body.data.students;
+    expect(now.map((st: { reason: string | null }) => st.reason)).toEqual(["Bus was late", null]);
+    await save(s.tokens.meena, s.a, today, [{ studentId: s.asha.id, status: "late" }, { studentId: s.kabir.id, status: "leave" }]);
+    now = (await sheet(s.token, s.a, today)).body.data.students;
+    expect(now.map((st: { reason: string | null }) => st.reason)).toEqual([null, null]);
+  });
+
+  it("a reason of more than 200 letters is refused; a reason that is not text is refused", async () => {
+    const s = await classroomSchool();
+    const long = await save(s.tokens.meena, s.a, today, [{ studentId: s.asha.id, status: "absent", reason: "x".repeat(201) }]);
+    expect(long.status).toBe(400);
+    expect((long.body.details as { message: string }[]).map((d) => d.message)).toContain("The reason is up to 200 letters");
+    expect((await save(s.tokens.meena, s.a, today, [{ studentId: s.asha.id, status: "absent", reason: 12 }])).status).toBe(400);
+  });
+
+  it("the parent is told the reason with the absence", async () => {
+    const s = await classroomSchool();
+    await NotificationService.idle();
+    await Notification.deleteMany({ tenantId: s.tenantId });
+    await save(s.tokens.meena, s.a, today, [{ studentId: s.asha.id, status: "absent", reason: "Family function" }, { studentId: s.kabir.id, status: "present" }]);
+    await NotificationService.idle();
+    const items = (await request(app).get("/api/v1/notifications").set(auth(s.tokens.ravi))).body.data.items as { kind: string; title: string; body: string }[];
+    expect(items.find((i) => i.kind === "attendance.saved")).toMatchObject({ title: "Asha Verma was absent" });
+    expect(items.find((i) => i.kind === "attendance.saved")!.body).toContain("Family function");
   });
 });

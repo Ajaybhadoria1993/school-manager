@@ -5,6 +5,7 @@ import { useDismiss } from "../../hooks/useDismiss";
 import { cn, initials } from "../../utils/helpers";
 import { ROLE_LABELS } from "./nav-config";
 import { NotificationsBell } from "./NotificationsBell";
+import { YearSwitcher } from "./YearSwitcher";
 
 function UserMenu() {
   const { user, logout } = useAuth();
@@ -31,7 +32,7 @@ function UserMenu() {
             {user.name}
           </span>
           <span className="block text-[11px] text-foreground-muted">
-            {ROLE_LABELS[user.role]}
+            {user.roleLabel ?? ROLE_LABELS[user.role]}
           </span>
         </span>
         <ChevronDown
@@ -104,6 +105,7 @@ export function Topbar({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        <YearSwitcher />
         <span className="hidden items-center gap-2 rounded-full bg-primary-soft px-3.5 py-1.5 text-xs font-semibold text-primary-deep md:inline-flex">
           <CalendarDays className="size-3.5" aria-hidden />
           {new Intl.DateTimeFormat("en-IN", {

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Pencil, UserRoundCheck } from "lucide-react";
 import { Button as HeroButton } from "@heroui/react";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useSetTeacherDayMutation } from "../../redux/api/attendanceApi";
 import { getApiError } from "../../utils/apiErrors";
 import { lateText, teacherLook } from "../../utils/attendance";
@@ -107,6 +108,9 @@ export function TeacherDaysDialog({ teacher, title, canChange = false, onClose }
   const days = teacher.records.filter((r) => ["present", "late", "absent", "leave", "no_login", "pending"].includes(r.status));
   const [changing, setChanging] = useState<string | null>(null);
   const result = useResultModal();
+  // A year that is over is only looked at: no day of a teacher is changed from there.
+  const readOnly = useReadOnlyYear();
+  const mayChange = canChange && !readOnly;
   return (
     <AppModal
       title={title ?? teacher.name}
@@ -133,7 +137,7 @@ export function TeacherDaysDialog({ teacher, title, canChange = false, onClose }
                   <Badge tone={TONE[r.status]}>{teacherLook(r.status).label}</Badge>
                   {r.checkedInTime && <span className="font-semibold text-foreground">{clock12(r.checkedInTime)}</span>}
                   {r.status === "late" && <span className="text-warning">{lateText(r.lateByMinutes)}</span>}
-                  {canChange && (
+                  {mayChange && (
                     <Button size="sm" variant="ghost" aria-label={`Change ${shortDay(r.date)}`} onClick={() => setChanging(changing === r.date ? null : r.date)}>
                       <Pencil className="size-4" aria-hidden />
                     </Button>
@@ -145,7 +149,7 @@ export function TeacherDaysDialog({ teacher, title, canChange = false, onClose }
                   {logText(l)}
                 </p>
               ))}
-              {canChange && changing === r.date && (
+              {mayChange && changing === r.date && (
                 <ChangeDayForm
                   teacher={teacher}
                   record={r}

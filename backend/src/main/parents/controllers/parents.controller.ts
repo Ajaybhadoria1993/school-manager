@@ -6,6 +6,8 @@ import type { ApplyLeaveInput, ChildAttendanceQuery } from "../../classroom/sche
 import { AttendanceService } from "../../classroom/services/attendance.service";
 import { LeaveService } from "../../classroom/services/leave.service";
 import { WorkService } from "../../classroom/services/work.service";
+import type { ChildExamsQuery } from "../../exams/schemas/exams.schemas";
+import { ChildExamsService } from "../../exams/services/view.service";
 import { ParentService } from "../services/parent.service";
 
 function who(req: Request): { tenantId: string; userId: string } {
@@ -61,4 +63,10 @@ export const getChildDiary = asyncHandler(async (req: Request, res: Response) =>
 export const getChildTests = asyncHandler(async (req: Request, res: Response) => {
   const { tenantId, userId } = who(req);
   return sendOk(res, await WorkService.childTests(tenantId, userId, idOf(req)));
+});
+
+// ---- Exams (2026-11-06) ---------------------------------------------------------------------------------------------------------------
+export const getChildExams = asyncHandler(async (req: Request, res: Response) => {
+  const { tenantId, userId } = who(req);
+  return sendOk(res, await ChildExamsService.get(tenantId, userId, idOf(req), req.validatedQuery as ChildExamsQuery));
 });

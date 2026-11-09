@@ -1,9 +1,9 @@
-import { NextFunction, Request, Response, Router } from "express";
-import multer from "multer";
+import { Router } from "express";
 import { requireAuth, requireRole } from "../../../../middleware/auth";
+import { importFile } from "../../../../middleware/uploadSheet";
 import { validate } from "../../../../middleware/validate";
-import { ApiError } from "../../../../utils/ApiError";
-import { MAX_IMPORT_FILE_BYTES, STUDENT_APPROVERS, STUDENT_READERS, STUDENT_WRITERS } from "../../constants";
+import { yearView } from "../../../../middleware/yearView";
+import { STUDENT_APPROVERS, STUDENT_READERS, STUDENT_WRITERS } from "../../constants";
 import { changeUsernameSchema, loginAccountSchema, resetPasswordSchema } from "../../../staff/schemas/staff.schemas";
 import {
   admitStudent,
@@ -68,31 +68,13 @@ import {
 const router = Router();
 
 // Strict auth: the school must be approved. The platform owner has no school, so none of this is for them.
-router.use(requireAuth);
+// yearView: a school admin may look at a past year (X-Academic-Year); reads answer for it, changes are refused.
+router.use(requireAuth, yearView);
 
 // Who may look and who may admit or change: one list each, in ../../constants.ts (a "reception" role is added there).
 const readers = requireRole(...STUDENT_READERS);
 const writers = requireRole(...STUDENT_WRITERS);
 const approvers = requireRole(...STUDENT_APPROVERS);
-
-/**
- * One spreadsheet in the "file" field, kept in memory only while it is read (it is never stored), up to 5 MB. A file that is too big or
- * sent another way is refused with a message for the person, like any other wrong field.
- */
-const spreadsheet = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_IMPORT_FILE_BYTES, files: 1, fields: 5 } });
-function importFile(req: Request, res: Response, next: NextFunction) {
-  spreadsheet.single("file")(req, res, (err: unknown) => {
-    if (!err) return next();
-    if (err instanceof multer.MulterError) {
-      const message =
-        err.code === "LIMIT_FILE_SIZE"
-          ? `The file is bigger than ${MAX_IMPORT_FILE_BYTES / 1024 / 1024} MB. Split it into smaller files.`
-          : "Upload one spreadsheet file.";
-      return next(ApiError.badRequest(message, err.code === "LIMIT_FILE_SIZE" ? "IMPORT_FILE_TOO_BIG" : "IMPORT_FILE_MISSING", [{ path: "file", message }]));
-    }
-    next(err);
-  });
-}
 
 // Fixed paths before "/:id".
 router.get("/", readers, validate(listStudentsQuerySchema, "query"), listStudents);

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Archive, BookOpen, Check, Pencil, Plus, RotateCcw } from "lucide-react";
 import { Button as HeroButton } from "@heroui/react";
 import { SUBJECT_PRESETS } from "../../constants/timetable";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useCreateSubjectMutation, useGetSubjectsQuery, useQuickAddSubjectsMutation, useUpdateSubjectMutation } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
@@ -196,6 +197,8 @@ function OwnSubject() {
  */
 export default function TimetableSubjectsPage() {
   const { push } = useToast();
+  // A year that is over is only looked at: the school's subjects are shown, not added, changed or archived (the server refuses it too).
+  const readOnly = useReadOnlyYear();
   const [view, setView] = useState<"active" | "archived">("active");
   const res = useGetSubjectsQuery("all");
   const [update] = useUpdateSubjectMutation();
@@ -215,8 +218,8 @@ export default function TimetableSubjectsPage() {
         crumbs={[{ label: "Dashboard", to: "/dashboard" }, { label: "Timetable", to: "/school/timetable" }]}
       />
 
-      <UsualSubjects have={have} />
-      <OwnSubject />
+      {!readOnly && <UsualSubjects have={have} />}
+      {!readOnly && <OwnSubject />}
 
       <section aria-label="Your subjects" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -274,7 +277,7 @@ export default function TimetableSubjectsPage() {
                     <td className="px-4 py-3 text-foreground-muted">{kindLabel(s.category)}</td>
                     <td className="px-4 py-3 text-foreground-muted">{s.sections === 0 ? "No class yet" : `${s.sections} class${s.sections === 1 ? "" : "es"}`}</td>
                     <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
+                      <div className={readOnly ? "hidden" : "flex justify-end gap-2"}>
                         <Button variant="outline" size="sm" onClick={() => setEditing(s)} aria-label={`Change ${s.name}`}>
                           <Pencil className="size-4" aria-hidden />
                           Change

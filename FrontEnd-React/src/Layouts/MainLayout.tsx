@@ -6,6 +6,7 @@ import { useLiveNotifications } from "../hooks/useLiveNotifications";
 import { postLoginPath } from "../utils/postLoginPath";
 import { Sidebar } from "../components/layout/Sidebar";
 import { Topbar } from "../components/layout/Topbar";
+import { YearViewBanner } from "../components/layout/YearViewBanner";
 import { activeNavItem } from "../components/layout/nav-config";
 
 /** The signed-in app shell. Everything inside it requires a session and an approved school. */
@@ -46,6 +47,8 @@ export default function MainLayout() {
             title={active?.label ?? "Dashboard"}
           />
         </div>
+        {/* Only while a year that is over is open (read only): which year it is, and the way back. */}
+        <YearViewBanner />
         {/* Full width, like Infinity Medisetu: no empty bands at the left and right of a wide screen. */}
         <main className="w-full flex-1 p-4 lg:p-8 print:p-0">
           {/* A new key on every page, so each page eases in instead of snapping. */}

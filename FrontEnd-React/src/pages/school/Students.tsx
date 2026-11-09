@@ -15,6 +15,7 @@ import {
   UsersRound,
   X,
 } from "lucide-react";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useStudentFilters } from "../../hooks/useStudentFilters";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetCapacityQuery, useGetStudentsQuery } from "../../redux/api/studentsApi";
@@ -108,6 +109,8 @@ export default function StudentsPage() {
     onToggleAll: (on: boolean) => setTicked(on ? new Set((page?.items ?? []).map((s) => s.id)) : new Set()),
   };
 
+  // A year that is over is only looked at: no admitting, uploading or making inactive (the server refuses them too).
+  const readOnly = useReadOnlyYear();
   const classesWithStudents = capacity?.classes.filter((c) => c.enrolled > 0).length ?? 0;
   const year = capacity?.academicYear?.name ?? page?.academicYear?.name ?? null;
 
@@ -149,7 +152,7 @@ export default function StudentsPage() {
               </Link>
             </WithTip>
           )}
-          {!noYear && (
+          {!noYear && !readOnly && (
             <WithTip tip="Bring in many students at once from Excel: the sample file or your school's own sheet.">
               <Link to="/school/students/import" className={outlineLink}>
                 <FileUp className="size-4" aria-hidden />
@@ -157,7 +160,7 @@ export default function StudentsPage() {
               </Link>
             </WithTip>
           )}
-          {!noYear && (
+          {!noYear && !readOnly && (
             <WithTip tip="Opens the admission form: the student, the class and section (the one chosen in the list, if any), a parent and the address.">
               <Link to={admitLink({ classId: filters.classId, sectionId: filters.sectionId })} className={plainLink}>
                 <UserPlus className="size-4" aria-hidden />
@@ -254,10 +257,12 @@ export default function StudentsPage() {
               title="No students yet"
               actions={
                 <>
-                  <Link to="/school/students/new" className={plainLink}>
-                    <UserPlus className="size-4" aria-hidden />
-                    Add your first student
-                  </Link>
+                  {!readOnly && (
+                    <Link to="/school/students/new" className={plainLink}>
+                      <UserPlus className="size-4" aria-hidden />
+                      Add your first student
+                    </Link>
+                  )}
                   <Link to="/school/classes" className={outlineLink}>
                     <FolderTree className="size-4" aria-hidden />
                     Check your classes and sections
@@ -299,7 +304,7 @@ export default function StudentsPage() {
                       </div>
                     </div>
                   )}
-                  <StudentTable students={page.items} loading={listRes.isFetching} selection={selection} />
+                  <StudentTable students={page.items} loading={listRes.isFetching} selection={readOnly ? undefined : selection} />
                 </>
               ) : (
                 <ul

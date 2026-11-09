@@ -21,6 +21,15 @@ export function rangePresets(today: string): RangePreset[] {
   ];
 }
 
+/**
+ * The days an attendance page opens on: this month, or, while a year that is over is open, the last month of that year (this month is
+ * after it, so it would show nothing). A year that has not reached its end date yet opens on the month of today.
+ */
+export function startRange(today: string, over: { endDate: string } | null): { from: string; to: string } {
+  if (!over) return monthBounds(today.slice(0, 7));
+  return monthBounds((over.endDate < today ? over.endDate : today).slice(0, 7));
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** How many days a range holds, both ends counted (0 when it is the wrong way round). */

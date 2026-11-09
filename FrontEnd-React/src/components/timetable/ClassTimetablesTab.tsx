@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router";
 import { CalendarClock, Clock3, FolderTree, MousePointerClick, Search } from "lucide-react";
 import { useGetOverviewQuery } from "../../redux/api/timetableApi";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
 import type { OverviewQuery, OverviewUnit, UnitRef } from "../../types";
@@ -37,6 +38,8 @@ const keyOf = (u: { classId: string; sectionId: string | null }) => `${u.classId
  * the list opens.
  */
 export function ClassTimetablesTab({ onGoTimings }: { onGoTimings: () => void }) {
+  // A year that is over is only looked at: the school's timings are not set from there.
+  const readOnly = useReadOnlyYear();
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<Status>("all");
@@ -84,9 +87,11 @@ export function ClassTimetablesTab({ onGoTimings }: { onGoTimings: () => void })
         tone="primary"
         title="Set the school timings first"
         actions={
-          <Button onClick={onGoTimings}>
-            Set the school timings
-          </Button>
+          readOnly ? undefined : (
+            <Button onClick={onGoTimings}>
+              Set the school timings
+            </Button>
+          )
         }
       >
         <p>When school starts, how long a period is and the lunch. Then every class gets its periods, and you can make its timetable here.</p>

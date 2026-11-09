@@ -1,5 +1,6 @@
 import { Pencil, Trash2 } from "lucide-react";
 import type { Exam, ExamPaper } from "../../types";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { clock12, durationText, weekdayDay, type ClassGroup } from "../../utils/exams";
 import { cn } from "../../utils/helpers";
 import { Badge } from "../ui/Badge";
@@ -12,6 +13,8 @@ interface Actions {
 
 /** A paper's pencil (change it) and bin (take it away). */
 function PaperButtons({ paper, onEdit, onRemove }: Actions & { paper: ExamPaper }) {
+  // A year that is over is only looked at: a paper is not changed or taken away.
+  if (useReadOnlyYear()) return null;
   return (
     <span className="flex shrink-0 gap-1">
       <Button variant="ghost" size="sm" aria-label={`Change ${paper.subject.name}`} onClick={() => onEdit(paper)}>

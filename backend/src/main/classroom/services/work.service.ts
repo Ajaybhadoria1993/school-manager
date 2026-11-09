@@ -4,45 +4,19 @@ import { AcademicYearService } from "../../academics/services/academicYear.servi
 import { ParentService } from "../../parents/services/parent.service";
 import { todayInIndia } from "../../students/schemas/students.schemas";
 import { placesOf } from "../../students/services/shared";
-import { Allotment } from "../../subjects/models/Allotment";
 import { Subject } from "../../subjects/models/Subject";
 import { resolveUnit } from "../../timetable/services/unit";
 import { Notify } from "../../notifications/services/events";
 import { User } from "../../users/models/User";
 import { ClassTest, DiaryEntry, type IClassTest } from "../models/ClassWork";
 import type { AddTestInput, SaveDiaryInput, SaveMarksInput, UnitDayQuery, UnitQuery } from "../schemas/classroom.schemas";
-import { classTeacherUnits, RUNNER_ROLES, sameUnit, teacherOfUser } from "./access";
+import { accessTo, unitFilter } from "./access";
 import { childrenOf } from "./children";
 import { fromDay, toDay } from "./calendar.service";
 import type { Caller } from "./leave.service";
 
-type ResolvedUnit = Awaited<ReturnType<typeof resolveUnit>>;
-
-const unitFilter = (tenantId: string, unit: ResolvedUnit) => ({
-  tenantId: new Types.ObjectId(tenantId),
-  classId: new Types.ObjectId(unit.classId),
-  sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null,
-});
-
 const NOT_THEIRS = () => ApiError.forbidden("Only this subject's teacher, the class teacher or the school writes it.", "NOT_THEIR_SUBJECT");
-const NO_ACCESS = () => ApiError.forbidden("This is not one of your classes.", "NOT_YOUR_CLASS");
 const TEST_NOT_FOUND = () => ApiError.notFound("Test not found", "TEST_NOT_FOUND");
-
-/**
- * Who may do what in a class: the people who run the school everything; a teacher reads a class they are the class teacher of or teach a
- * subject in, and writes the subjects they teach there (the class teacher every subject).
- */
-async function accessTo(tenantId: string, caller: Caller, unit: ResolvedUnit) {
-  const school = new Types.ObjectId(tenantId);
-  const allotments = await Allotment.find({ ...unitFilter(tenantId, unit), academicYearId: unit.yearId }).select("subjectId teacherId").lean();
-  if (RUNNER_ROLES.includes(caller.role)) return { all: true, subjects: new Set(allotments.map((a) => a.subjectId.toString())), allotments, school };
-  const teacher = caller.role === "teacher" ? await teacherOfUser(tenantId, caller.userId) : null;
-  if (!teacher) throw NO_ACCESS();
-  const isClassTeacher = (await classTeacherUnits(tenantId, teacher._id)).some((u) => sameUnit(u, unit));
-  const own = allotments.filter((a) => a.teacherId?.equals(teacher._id)).map((a) => a.subjectId.toString());
-  if (!isClassTeacher && own.length === 0) throw NO_ACCESS();
-  return { all: isClassTeacher, subjects: new Set(isClassTeacher ? allotments.map((a) => a.subjectId.toString()) : own), allotments, school };
-}
 
 async function subjectNames(tenantId: string, ids: (Types.ObjectId | string)[]) {
   const subjects = await Subject.find({ tenantId: new Types.ObjectId(tenantId), _id: { $in: ids.map((id) => new Types.ObjectId(String(id))) } }).select("name").lean();

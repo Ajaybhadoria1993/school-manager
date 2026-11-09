@@ -17,8 +17,11 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 
 const inFlight = new Set<Promise<void>>();
 
-/** The people whose password only their school sets (a new one from the teacher's or the student's page), never by themselves. */
-const SCHOOL_SET_PASSWORD: ReadonlySet<string> = new Set(["teacher", "parent"]);
+/**
+ * The people whose password only their school sets (a new one from the teacher's, the student's or the staff member's page), never by
+ * themselves: the logins the school makes. Staff too since 2026-11-08 (the user: the email system stays for the school admin only).
+ */
+const SCHOOL_SET_PASSWORD: ReadonlySet<string> = new Set(["teacher", "parent", "principal", "accountant", "receptionist", "management", "staff"]);
 
 export class PasswordService {
   /**
@@ -42,7 +45,7 @@ export class PasswordService {
     const user = await User.findOne({ email, isActive: true });
     // A person who signs in with a username and has no email has no link to be sent to: their school resets the password.
     if (!user || !user.email) return;
-    // A teacher's or a parent's password is the one the school gives (2026-11-04, the user): only the school changes it.
+    // A teacher's, a parent's or a staff member's password is the one the school gives (2026-11-04 and 2026-11-08, the user): only the school changes it.
     if (SCHOOL_SET_PASSWORD.has(user.role)) return;
 
     const recent = await AuthToken.exists({

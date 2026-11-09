@@ -26,6 +26,8 @@ export const MAX_NEW_SUBJECTS = 40;
 export const MAX_PERIODS_PER_WEEK = 20;
 export const MAX_BLOCK_SIZE = 3;
 export const MAX_GROUP_NAME = 30;
+/** A subject has one main teacher and up to this many backup teachers (2026-11-06), in the order the school gave them. */
+export const MAX_BACKUP_TEACHERS = 4;
 
 /** The subjects an Indian school usually has, to add in one click. The category is the one a subject added by its name gets. */
 export const SUBJECT_PRESETS: readonly { name: string; category: SubjectCategory }[] = [

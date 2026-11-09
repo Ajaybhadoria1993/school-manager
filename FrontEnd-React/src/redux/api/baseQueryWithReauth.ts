@@ -8,6 +8,7 @@ import {
 import { clearTokens, getRefreshToken, getRememberMe, getToken, setTokens } from "../../utils/auth";
 import type { ApiResponse, SessionEndReason } from "../../types";
 import { sessionEnded } from "../slices/authSlice";
+import { yearViewChanged } from "../slices/yearViewSlice";
 
 /** "/api/v1" in development (the Vite dev server forwards it to the backend); a full URL in production. */
 export const API_URL: string = (import.meta.env.VITE_API_BASE_URL ?? "/api/v1").replace(/\/+$/, "");
@@ -110,12 +111,40 @@ const rawBaseQuery = fetchBaseQuery({
   },
 });
 
+// ---------------------------------------------------------------------------
+// Looking at a past academic year
+// ---------------------------------------------------------------------------
+
+/**
+ * What the API reads for one academic year when asked to (backend: academics/services/viewedYear.ts). While a year that is over is open
+ * every change is refused on these, and the reads that belong to a year (students, classes, attendance, exams, the timetable, what a class
+ * studies, a teacher's classes) answer for it; the people (teachers, staff), the subjects and the calendar are the same for every year.
+ */
+const YEAR_AWARE = ["/academics", "/students", "/attendance", "/exams", "/timetable", "/subjects", "/staff", "/classroom"];
+/** The year's own work (the years themselves, the promotion list) is always about the running year, whatever year is open. */
+const YEAR_WORKFLOWS = ["/academics/academic-years", "/students/promotions"];
+/** What the server answers when the year sent is not one it can open (the screen then goes back to the running year). */
+const YEAR_REFUSED = ["YEAR_NOT_FOUND", "INVALID_YEAR", "YEAR_NOT_STARTED"];
+
+const sendsYear = (url: string) => YEAR_AWARE.some((p) => url.startsWith(p)) && !YEAR_WORKFLOWS.some((p) => url.startsWith(p));
+
+/** The request with the year being looked at, when there is one and the request is about a year. */
+function withYear(args: string | FetchArgs, yearId: string | null): { args: string | FetchArgs; sentYear: boolean } {
+  const url = typeof args === "string" ? args : args.url;
+  if (!yearId || !sendsYear(url)) return { args, sentYear: false };
+  const request: FetchArgs = typeof args === "string" ? { url: args } : { ...args };
+  const headers = new Headers(request.headers as HeadersInit | undefined);
+  headers.set("X-Academic-Year", yearId);
+  return { args: { ...request, headers }, sentYear: true };
+}
+
 export const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError, AuthExtraOptions> = async (
-  args,
+  plainArgs,
   api,
   extraOptions,
 ) => {
   const skipAuthRefresh = extraOptions?.skipAuthRefresh === true;
+  const { args, sentYear } = withYear(plainArgs, (api.getState() as { yearView?: { yearId: string | null } }).yearView?.yearId ?? null);
 
   // A refresh is under way: wait for it, so this request goes out with the new token instead of failing first.
   if (!skipAuthRefresh && inFlightRefresh) await inFlightRefresh;
@@ -139,6 +168,12 @@ export const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, Fetch
     if (code === "ACCOUNT_DISABLED" || code === "TENANT_INACTIVE") {
       endSession(api, code === "TENANT_INACTIVE" ? "suspended" : "disabled");
     }
+  }
+
+  // The year that was open is not one the server can show (not this school's, not started): back to the running year, and the screens
+  // that show a year ask again. After this request has finished, so the one that failed is asked for again too.
+  if (sentYear && result.error && YEAR_REFUSED.includes((result.error.data as { code?: string } | undefined)?.code ?? "")) {
+    setTimeout(() => api.dispatch(yearViewChanged(null)), 0);
   }
 
   // The API answers failures with an error status; a 2xx that says `success: false` is treated as one too.

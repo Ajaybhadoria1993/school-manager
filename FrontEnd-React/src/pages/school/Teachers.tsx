@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { CalendarDays, FileUp, ListPlus, LogOut, Pencil, Plus, Repeat2, RotateCcw, Search, UsersRound } from "lucide-react";
 import { DAY_SHORT } from "../../constants/timetable";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useGetSubjectsQuery, useGetTeachersQuery, useUpdateTeacherMutation } from "../../redux/api/timetableApi";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { getApiError } from "../../utils/apiErrors";
@@ -31,6 +32,8 @@ const primaryLink =
  * can be given to another teacher in one step.
  */
 export default function TeachersPage() {
+  // A year that is over is only looked at: no adding, changing or giving classes away (the server refuses them too).
+  const readOnly = useReadOnlyYear();
   const { push } = useToast();
   const [status, setStatus] = useState<"active" | "inactive">("active");
   const [search, setSearch] = useState("");
@@ -61,13 +64,15 @@ export default function TeachersPage() {
       <StudentFormHeader title="Manage Teacher" crumbs={[{ label: "Dashboard", to: "/dashboard" }]}
         actions={
           <>
-            <Link to="/school/teachers/fields" className={cn(linkClass, "h-10 gap-2 px-4")}>
-              <ListPlus className="size-4" aria-hidden />
-              Fields
-            </Link>
+            {!readOnly && (
+              <Link to="/school/teachers/fields" className={cn(linkClass, "h-10 gap-2 px-4")}>
+                <ListPlus className="size-4" aria-hidden />
+                Fields
+              </Link>
+            )}
             <ExportTeachersButton query={{ status, ...(typed ? { search: typed } : {}) }} empty={teachers.length === 0} />
-            {bulkLink}
-            {addLink}
+            {!readOnly && bulkLink}
+            {!readOnly && addLink}
           </>
         }
       />
@@ -111,10 +116,12 @@ export default function TeachersPage() {
             tone="primary"
             title="No teachers yet"
             actions={
-              <>
-                {bulkLink}
-                {addLink}
-              </>
+              readOnly ? undefined : (
+                <>
+                  {bulkLink}
+                  {addLink}
+                </>
+              )
             }
           >
             <p>With your teachers added, no teacher is put in two classes at the same time, and each teacher can sign in.</p>
@@ -163,23 +170,27 @@ export default function TeachersPage() {
                             <CalendarDays className="size-4" aria-hidden />
                             Week
                           </Link>
-                          <Link to={`/school/teachers/${t.id}/edit`} className={linkClass} aria-label={`Change ${t.name}`}>
-                            <Pencil className="size-4" aria-hidden />
-                            Change
-                          </Link>
-                          {t.load.sections > 0 ? (
-                            <Button variant="ghost" size="sm" onClick={() => setReplacing(t)} aria-label={`Give ${t.name}'s classes to another teacher`}>
-                              <Repeat2 className="size-4" aria-hidden />
-                              Give classes
-                            </Button>
-                          ) : (
-                            <Button variant="ghost" size="sm" onClick={() => setLeaving(t)} aria-label={`${t.name} has left`}>
-                              <LogOut className="size-4" aria-hidden />
-                              Has left
-                            </Button>
+                          {!readOnly && (
+                            <>
+                              <Link to={`/school/teachers/${t.id}/edit`} className={linkClass} aria-label={`Change ${t.name}`}>
+                                <Pencil className="size-4" aria-hidden />
+                                Change
+                              </Link>
+                              {t.load.sections > 0 ? (
+                                <Button variant="ghost" size="sm" onClick={() => setReplacing(t)} aria-label={`Give ${t.name}'s classes to another teacher`}>
+                                  <Repeat2 className="size-4" aria-hidden />
+                                  Give classes
+                                </Button>
+                              ) : (
+                                <Button variant="ghost" size="sm" onClick={() => setLeaving(t)} aria-label={`${t.name} has left`}>
+                                  <LogOut className="size-4" aria-hidden />
+                                  Has left
+                                </Button>
+                              )}
+                            </>
                           )}
                         </>
-                      ) : (
+                      ) : readOnly ? null : (
                         <Button
                           variant="outline"
                           size="sm"

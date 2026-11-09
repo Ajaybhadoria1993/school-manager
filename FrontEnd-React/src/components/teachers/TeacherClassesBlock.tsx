@@ -1,4 +1,5 @@
 import { School, X } from "lucide-react";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { TONES } from "../../constants/tones";
 import { useAssignTeacherMutation, useGetTeacherClassesQuery, useSetClassTeacherMutation } from "../../redux/api/timetableApi";
 import type { Teacher } from "../../types";
@@ -22,6 +23,8 @@ export function TeacherClassesBlock({ teacher, onAssign, index = 0 }: { teacher:
   const [assign] = useAssignTeacherMutation();
   const [setClassTeacher] = useSetClassTeacherMutation();
   const { push } = useToast();
+  // A year that is over is only looked at: nothing is given or taken away.
+  const readOnly = useReadOnlyYear();
   const classes = res.data?.data;
   const t = TONES.info;
 
@@ -37,7 +40,7 @@ export function TeacherClassesBlock({ teacher, onAssign, index = 0 }: { teacher:
           </span>
           Classes
         </h2>
-        {teacher.isActive && (
+        {teacher.isActive && !readOnly && (
           <Button variant="outline" size="sm" onClick={onAssign}>
             <School className="size-4" aria-hidden />
             Assign class
@@ -65,6 +68,7 @@ export function TeacherClassesBlock({ teacher, onAssign, index = 0 }: { teacher:
                 {classes.classTeacherOf.map((u) => (
                   <li key={`${u.classId}:${u.sectionId}`} aria-label={`Class teacher of ${u.label}`} className="inline-flex h-8 items-center gap-1 rounded-lg bg-primary-soft pl-2.5 pr-1 text-sm font-semibold text-primary-deep ring-1 ring-inset ring-primary/20">
                     {u.label}
+                    {!readOnly && (
                     <button
                       type="button"
                       aria-label={`${teacher.name} is no longer the class teacher of ${u.label}`}
@@ -78,6 +82,7 @@ export function TeacherClassesBlock({ teacher, onAssign, index = 0 }: { teacher:
                     >
                       <X className="size-3.5" aria-hidden />
                     </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -92,7 +97,7 @@ export function TeacherClassesBlock({ teacher, onAssign, index = 0 }: { teacher:
                 {classes.subjects.map((s) => (
                   <li key={`${s.classId}:${s.sectionId}:${s.subjectId}`} className="flex items-center justify-between gap-3 px-3 py-2">
                     <span className="min-w-0 text-sm font-semibold text-foreground">{`${s.label} · ${s.subjectName} · ${s.periodsPerWeek} period${s.periodsPerWeek === 1 ? "" : "s"} a week`}</span>
-                    {teacher.isActive && (
+                    {teacher.isActive && !readOnly && (
                       <button
                         type="button"
                         aria-label={`Take ${s.subjectName} of ${s.label} away from ${teacher.name}`}

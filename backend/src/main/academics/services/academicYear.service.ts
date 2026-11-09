@@ -7,6 +7,7 @@ import { AcademicYear, type AcademicYearStatus, type IAcademicYear } from "../mo
 import { Section } from "../models/Section";
 import type { AcademicYearInput, NextAcademicYearInput } from "../schemas/academicYear.schemas";
 import { isDuplicateKey } from "./shared";
+import { viewedYear } from "./viewedYear";
 
 /** An academic year as it leaves the API. The days are calendar days, "2026-04-01", the way the school typed them. */
 export interface AcademicYearDto {
@@ -144,10 +145,30 @@ export class AcademicYearService {
     }
   }
 
-  /** The id of the school's active year, or null (a school approved before academic years existed, until it sets one up). */
+  /**
+   * The id of the school's RUNNING year, or null (a school approved before academic years existed, until it sets one up). What a change
+   * is made in, and what the year-end work (promotion, switching a year on) is about: never a year that is only being looked at.
+   */
   static async activeYearId(tenantId: string | Types.ObjectId): Promise<Types.ObjectId | null> {
     const active = await AcademicYear.findOne({ tenantId: new Types.ObjectId(tenantId), status: "active" }).select("_id").lean();
     return active?._id ?? null;
+  }
+
+  /**
+   * The year a READ is about: the closed year the caller is looking at (see viewedYear.ts), otherwise the running year. Every screen that
+   * can show a past year (students, classes, attendance, exams) reads its year here; a change keeps using `activeYearId`.
+   */
+  static async shownYearId(tenantId: string | Types.ObjectId): Promise<Types.ObjectId | null> {
+    return viewedYear()?.yearId ?? AcademicYearService.activeYearId(tenantId);
+  }
+
+  /** The same as `shownYearId`, as the year's record (its name and days). */
+  static async shownYear(tenantId: string | Types.ObjectId): Promise<Pick<IAcademicYear, "_id" | "name" | "startDate" | "endDate" | "status"> | null> {
+    const school = new Types.ObjectId(tenantId);
+    const view = viewedYear();
+    return AcademicYear.findOne(view ? { _id: view.yearId, tenantId: school } : { tenantId: school, status: "active" })
+      .select("_id name startDate endDate status")
+      .lean();
   }
 
   /**

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../../../../middleware/auth";
 import { validate } from "../../../../middleware/validate";
+import { yearView } from "../../../../middleware/yearView";
 import {
   academicSettings,
   activateAcademicYear,
@@ -43,7 +44,8 @@ import { academicYearInputSchema, nextAcademicYearSchema } from "../../schemas/a
 const router = Router();
 
 // Strict auth: the school must be approved. The platform owner has no school, so none of this is for them.
-router.use(requireAuth);
+// yearView: a school admin may look at a past year (X-Academic-Year); reads answer for it, changes are refused.
+router.use(requireAuth, yearView);
 
 // Anyone who works at the school may look at the layout (teachers will need it for attendance and marks).
 const readers = requireRole("school_admin", "principal", "accountant", "teacher");

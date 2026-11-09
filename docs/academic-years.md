@@ -134,8 +134,45 @@ Rules to follow, all already supported by what is built:
 3. `tenantScope` still applies: the year is not a substitute for the school; every query names both.
 4. A record never moves between years. Promotion creates a new enrolment in the next year and leaves the old one as it was.
 5. Counts that guard a delete (`studentCountsBySection`, a class count) cover all years, as above.
-6. The class screens show only the current year's sections today; a "view another year" screen needs an `academicYearId` filter on the
-   same endpoints, not a new model.
+6. A screen that can show a past year reads its year with `AcademicYearService.shownYearId` / `shownYear` (the year being looked at, else
+   the running year); a change, and the year-end work (promotion, switching a year on), keep using `activeYearId`. See the next section.
+
+## Looking at a past year (2026-11-09)
+
+A school admin or principal opens a year that is over (`closed`) and the screens show what the school was then, **read only**. Nothing
+about the data changes: it is the same endpoints with the year named in a header.
+
+- **How the year travels.** `X-Academic-Year: <id of a closed year of the school>`, checked by `middleware/yearView.ts` (placed right after
+  `requireAuth` on the academics, students, attendance and exams routes) and kept for that one request in an `AsyncLocalStorage`
+  (`academics/services/viewedYear.ts`). No header, or the id of the running year: nothing changes.
+- **What is refused.** A year id that is not an id: `400 INVALID_YEAR`. Not this school's, or none: `404 YEAR_NOT_FOUND` (the same answer, so
+  another school's year is never confirmed). A year that has not started: `409 YEAR_NOT_STARTED`. **Anything that would change something
+  while a past year is open: `409 YEAR_READ_ONLY`**, whichever route, so no write can land in a closed year.
+- **What answers for the year.** Students (list, one student's "this year", seat counts, class overview, the export), classes (layout, class
+  list, one class: the old year's sections), attendance (a section of a closed year, the whole class), exams (the list). Everyone who sat in
+  the year is counted: a student who left later has every enrolment made inactive, so a past year does not filter on `status: "active"`
+  (`seatedIn(yearId)` in viewedYear.ts is that rule). Also the timetable (overview, a class's week, a teacher's week), what a class studies
+  and who teaches it (`/subjects/allotments`), and a teacher's classes and class-teacher posts (`openYearIds` answers with the year being
+  looked at). The routers that take the header are academics, students, attendance, exams, timetable, subjects, staff and classroom;
+  notifications, parents and auth never do. The people (teachers, staff), the subjects' list, the school's timings and the calendar are the same
+  for every year, so they answer as usual (but are read only too: a change to them is refused while a past year is open).
+- **What never follows the header.** The list of years, the current-year banner, the promotion list and switching a year on are always about
+  the real years (the frontend does not send the header to them).
+- **Frontend.** `yearView` slice (kept in `sessionStorage`, forgotten at sign-out), the header added in `redux/api/baseQueryWithReauth.ts`
+  to the year-aware reads only, `yearViewMiddleware` asks the screens that show a year again when it changes, a year the server refuses sends
+  the screen back to the running year. The picker is in the top bar (`YearSwitcher`, only when the school has a year that is over, only for
+  the school admin and the principal) and `YearViewBanner` says "Viewing 2025-2026 · Read only" with the way back. Attendance pages open on
+  the last month of the year being looked at.
+- **Nothing to press.** `useReadOnlyYear()` / `<WriteOnly>` hide the buttons that would change something: Add student, Bulk upload, ticking
+  students, Edit / Transfer / Make inactive / Add a sibling and a parent's login on a student, Add / change teacher, Give classes, Has left,
+  teacher logins and Assign class, Add staff and the staff row buttons, Schedule exam and an exam's change / delete / papers, a section's
+  teachers box (a read-only list instead: `UnitTeachersView`) and Edit timetable, the Subjects page's add / change / archive, Make active on
+  the inactive list, deciding a leave, changing a teacher's day, calendar add / change, and the School timings tab. The pages that are only forms
+  or year work (the admission form, bulk uploads, the school's fields, Classes & Sections, a department, the school's years, the promotion, add /
+  change of a teacher or a staff member) are wrapped in `routes/RunningYearRoute.tsx`: while a past year is open they say "2025-2026 is over"
+  with the way back. A button this list misses is still refused by the server with the `YEAR_READ_ONLY` message.
+- **Tests.** `backend/src/main/academics/__tests__/yearView.test.ts`, `FrontEnd-React/src/redux/__tests__/yearView.test.ts`,
+  `components/layout/__tests__/YearSwitcher.test.tsx`, `WriteOnly.test.tsx`, `routes/__tests__/RunningYearRoute.test.tsx`, `components/schoolClass/__tests__/UnitTeachersView.test.tsx`, the year cases of `AttendancePage`, `Students`, `StudentDetail`, `Exams`, `ExamDetail` and `Teachers` tests.
 
 ## Later phases
 

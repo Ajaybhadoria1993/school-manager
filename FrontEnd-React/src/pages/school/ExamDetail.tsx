@@ -4,6 +4,7 @@ import { CalendarDays, CalendarPlus, ClipboardList, Clock3, Pencil, Trash2 } fro
 import { Button as HeroButton } from "@heroui/react";
 import { useDeleteExamMutation, useDeletePaperMutation, useGetExamQuery } from "../../redux/api/examsApi";
 import type { ExamPaper } from "../../types";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { getApiError } from "../../utils/apiErrors";
 import { clock12, examDays, groupByDate, groupByTimetable } from "../../utils/exams";
 import { cn } from "../../utils/helpers";
@@ -31,6 +32,8 @@ const VIEWS: { value: View; label: string }[] = [
  * pencil and bin change or take it away; the exam itself is changed or deleted from the top. Every action ends in a window that says so.
  */
 export default function ExamDetailPage() {
+  // A year that is over is only looked at: the exam and its timetable are not changed (the server refuses it too).
+  const readOnly = useReadOnlyYear();
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const res = useGetExamQuery(id);
@@ -75,7 +78,7 @@ export default function ExamDetailPage() {
       Add timetable
     </Button>
   );
-  const actions = exam ? (
+  const actions = exam && !readOnly ? (
     <>
       {addTimetable}
       <Button variant="secondary" aria-label="Change exam" onClick={() => setChangingExam(true)}>
@@ -133,7 +136,7 @@ export default function ExamDetailPage() {
           {exam.papers.length === 0 ? (
             <Card className="flex flex-col items-center gap-3 px-5 py-14 text-center">
               <p className="text-base font-bold text-foreground">No timetable yet</p>
-              {addTimetable}
+              {!readOnly && addTimetable}
             </Card>
           ) : (
             <>

@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { CalendarDays, CalendarPlus, ClipboardList, Clock3 } from "lucide-react";
 import { useGetExamsQuery } from "../../redux/api/examsApi";
 import type { Exam, ExamStatus } from "../../types";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { getApiError } from "../../utils/apiErrors";
 import { clock12, examDays } from "../../utils/exams";
 import { cn } from "../../utils/helpers";
@@ -60,6 +61,8 @@ function ExamCard({ exam: e }: { exam: Exam }) {
  * serves the filter, so choosing a status asks for nothing.
  */
 export default function ExamsPage() {
+  // A year that is over is only looked at: no Schedule exam (the server refuses it too).
+  const readOnly = useReadOnlyYear();
   const navigate = useNavigate();
   const res = useGetExamsQuery();
   const [show, setShow] = useState<Show>("all");
@@ -75,7 +78,7 @@ export default function ExamsPage() {
 
   return (
     <div className="space-y-6">
-      <StudentFormHeader title="Test & Exam" crumbs={[{ label: "Dashboard", to: "/dashboard" }]} actions={items && items.length > 0 ? schedule : undefined} />
+      <StudentFormHeader title="Test & Exam" crumbs={[{ label: "Dashboard", to: "/dashboard" }]} actions={items && items.length > 0 && !readOnly ? schedule : undefined} />
 
       {res.isLoading ? (
         <Skeleton className="h-64 rounded-2xl" />
@@ -87,7 +90,7 @@ export default function ExamsPage() {
             <ClipboardList className="size-6" aria-hidden />
           </span>
           <p className="text-base font-bold text-foreground">No exams or tests yet</p>
-          {schedule}
+          {!readOnly && schedule}
         </Card>
       ) : (
         <>

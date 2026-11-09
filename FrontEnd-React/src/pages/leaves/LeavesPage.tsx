@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Check, MailCheck, X } from "lucide-react";
 import { Button as HeroButton } from "@heroui/react";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useDecideLeaveMutation, useGetLeavesQuery } from "../../redux/api/classroomApi";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
@@ -32,6 +33,8 @@ export default function LeavesPage() {
   const [tab, setTab] = useState<"pending" | "all">("pending");
   const res = useGetLeavesQuery(tab);
   const [decide, { isLoading: deciding }] = useDecideLeaveMutation();
+  // A year that is over is only looked at: a leave is not answered from there (the server refuses it too).
+  const readOnly = useReadOnlyYear();
   const [declining, setDeclining] = useState<Leave | null>(null);
   const [note, setNote] = useState("");
   const result = useResultModal();
@@ -93,7 +96,7 @@ export default function LeavesPage() {
               <p className="text-sm font-semibold text-foreground">{leaveDays(l)}</p>
               <p className="rounded-lg bg-background px-3 py-2 text-sm text-foreground">{l.reason}</p>
               {answerLine(l) && <p className="text-xs font-semibold text-foreground-muted">{answerLine(l)}</p>}
-              {l.status === "pending" && (
+              {l.status === "pending" && !readOnly && (
                 <div className="flex gap-2">
                   <Button size="sm" disabled={deciding} onClick={() => void answer(l, "approved")}>
                     <Check className="size-4" aria-hidden />

@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
-import { AcademicYear } from "../../academics/models/AcademicYear";
 import { Section } from "../../academics/models/Section";
+import { AcademicYearService } from "../../academics/services/academicYear.service";
+import { seatedIn } from "../../academics/services/viewedYear";
 import { MAX_ROLL_NUMBER } from "../constants";
 import { Enrolment } from "../models/Enrolment";
 
@@ -43,14 +44,14 @@ const nextRoll = (highest: number | null) => {
 export class CapacityService {
   static async summary(tenantId: string): Promise<CapacityDto> {
     const school = new Types.ObjectId(tenantId);
-    const year = await AcademicYear.findOne({ tenantId: school, status: "active" }).select("_id name").lean();
+    const year = await AcademicYearService.shownYear(school);
     if (!year) return { academicYear: null, sections: [], classes: [], totals: { students: 0, seats: 0, seatsLeft: 0, fullSections: 0 } };
 
     const [sections, counts] = await Promise.all([
       Section.find({ tenantId: school, academicYearId: year._id }).select("classId capacity").lean(),
       // One pass: how many sit in each section (or class as a whole) and the highest roll number given there ($max skips "none").
       Enrolment.aggregate<{ _id: { classId: Types.ObjectId; sectionId: Types.ObjectId | null }; n: number; maxRoll: number | null }>([
-        { $match: { tenantId: school, academicYearId: year._id, status: "active" } },
+        { $match: { tenantId: school, academicYearId: year._id, ...seatedIn(year._id) } },
         { $group: { _id: { classId: "$classId", sectionId: "$sectionId" }, n: { $sum: 1 }, maxRoll: { $max: "$rollNumber" } } },
       ]),
     ]);

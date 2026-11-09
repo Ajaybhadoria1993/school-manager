@@ -1,5 +1,5 @@
 import { Types } from "mongoose";
-import { AcademicYear } from "../../academics/models/AcademicYear";
+import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { SchoolClass } from "../../academics/models/SchoolClass";
 import { Teacher } from "../../staff/models/Teacher";
 import { Subject } from "../../subjects/models/Subject";
@@ -8,7 +8,7 @@ import { BellSchedule } from "../models/BellSchedule";
 import { minutesToClock } from "../time";
 import { analyse } from "./checker";
 import { periodsOf, type ScheduleRule } from "./scheduleRules";
-import { activeUnits } from "./unit";
+import { shownUnits } from "./unit";
 import { busyFrom, loadWorld, unitDays, unitKey, type World } from "./world";
 
 export interface OverviewUnit {
@@ -74,7 +74,7 @@ export class OverviewService {
   /** The school's timetable set-up in one read: the timings, and every class or section with where it stands. */
   static async get(tenantId: string, filter: OverviewFilter = {}): Promise<Overview> {
     const school = new Types.ObjectId(tenantId);
-    const year = await AcademicYear.findOne({ tenantId: school, status: "active" }).select("name").lean();
+    const year = await AcademicYearService.shownYear(school);
     const [subjects, teachers, schedules, classNames] = await Promise.all([
       Subject.countDocuments({ tenantId: school, isActive: true }),
       Teacher.countDocuments({ tenantId: school, isActive: true }),
@@ -94,7 +94,7 @@ export class OverviewService {
     if (!year) return { academicYear: null, counts: { subjects, teachers, timings: schedules.length }, summary: empty, timings, units: [] };
 
     const world = await loadWorld(tenantId, year._id);
-    const all = (await activeUnits(tenantId)).map((unit) => OverviewService.unit(world, unit));
+    const all = (await shownUnits(tenantId)).map((unit) => OverviewService.unit(world, unit));
     const summary: OverviewSummary = {
       units: all.length,
       withSubjects: all.filter((u) => u.subjects > 0).length,
@@ -110,9 +110,9 @@ export class OverviewService {
 
   /** The classes whose timetable is published: what a teacher may open. */
   static async published(tenantId: string): Promise<{ units: { classId: string; sectionId: string | null; label: string }[] }> {
-    const year = await AcademicYear.findOne({ tenantId: new Types.ObjectId(tenantId), status: "active" }).select("_id").lean();
+    const year = await AcademicYearService.shownYear(tenantId);
     if (!year) return { units: [] };
-    const units = await activeUnits(tenantId);
+    const units = await shownUnits(tenantId);
     const world = await loadWorld(tenantId, year._id);
     return {
       units: units
@@ -121,7 +121,7 @@ export class OverviewService {
     };
   }
 
-  private static unit(world: World, unit: Awaited<ReturnType<typeof activeUnits>>[number]): OverviewUnit {
+  private static unit(world: World, unit: Awaited<ReturnType<typeof shownUnits>>[number]): OverviewUnit {
     const key = unitKey(unit.classId, unit.sectionId);
     const allotments = world.allotments.get(key) ?? new Map();
     const days = unitDays(world, unit.classId);

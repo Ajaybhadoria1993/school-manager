@@ -312,8 +312,8 @@ describe("forgot and reset password", () => {
   });
 
   it("sends no link to a disabled account", async () => {
-    // A principal: a teacher gets no link in any case (their school sets their password, 2026-11-04).
-    await createTeacher({ isActive: false, role: "principal" });
+    // The school admin: a login the school makes (teacher, parent, staff) gets no link in any case (their school sets their password).
+    await createTeacher({ isActive: false, role: "school_admin" });
     expect((await forgot("teacher@example.com")).status).toBe(200);
     expect(sent).toHaveLength(0);
     expect(await AuthToken.countDocuments()).toBe(0);
@@ -381,8 +381,8 @@ describe("forgot and reset password", () => {
       approvalStatus: "approved",
       isActive: false,
     });
-    // A principal of the school (a teacher's password is set by the school only, so a teacher gets no link at all).
-    await createTeacher({ tenantId: tenant._id, role: "principal" });
+    // The admin of the school (a teacher's or a staff member's password is set by the school only, so they get no link at all).
+    await createTeacher({ tenantId: tenant._id, role: "school_admin" });
     await forgot("teacher@example.com");
     const res = await reset(resetTokenFromMail(), "New@Pass123");
     expect(res.status).toBe(403);

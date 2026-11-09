@@ -1,7 +1,10 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { AcademicYear } from "../../academics/models/AcademicYear";
+import { viewedYear } from "../../academics/services/viewedYear";
 import { isDuplicateKey } from "../../academics/services/shared";
+import { ExamPaper } from "../../exams/models/ExamPaper";
+import { todayInIndia } from "../../students/schemas/students.schemas";
 import { nameKeyOf } from "../../tenants/services/tenantFactory";
 import { MAX_SUBJECTS, SUBJECT_PRESETS, type SubjectCategory } from "../constants";
 import { Allotment } from "../models/Allotment";
@@ -43,8 +46,13 @@ const CODE_EXISTS = (existing: string) =>
     { path: "code", message: `The code ${existing} is already used by another subject` },
   ]);
 
-/** The years a class's subjects can still change in: the running one and the next one that waits. */
+/**
+ * The years a class's subjects can still change in: the running one and the next one that waits. While a past year is being looked at
+ * (academics/services/viewedYear.ts) it is the year that is open on screen, so a teacher's classes and a subject's use are that year's.
+ */
 export async function openYearIds(tenantId: string): Promise<Types.ObjectId[]> {
+  const viewed = viewedYear();
+  if (viewed) return [viewed.yearId];
   const years = await AcademicYear.find({ tenantId: new Types.ObjectId(tenantId), status: { $in: ["active", "pending"] } }).select("_id").lean();
   return years.map((y) => y._id);
 }
@@ -117,11 +125,29 @@ export class SubjectService {
     return { created, skipped };
   }
 
+  /**
+   * The ids of the subjects with these names, in the same order: a name the school has (any capitals, spaces round it) is that
+   * subject, a name it has not is added first (an academic subject, or the usual list's category). A bulk upload of teachers names
+   * the subjects each teacher can teach in words, and a school may not have made them yet. Names are the caller's, already tidy.
+   */
+  static async idsByNames(tenantId: string, names: string[]): Promise<string[]> {
+    await SubjectService.quickAdd(tenantId, names);
+    const keys = names.map(nameKeyOf);
+    const found = await Subject.find({ tenantId, nameKey: { $in: keys } }).select("nameKey").lean();
+    const idOf = new Map(found.map((s) => [s.nameKey, s._id.toString()]));
+    return keys.map((key) => idOf.get(key)!);
+  }
+
   static async update(tenantId: string, id: string, input: UpdateSubjectInput): Promise<SubjectDto> {
     const current = await Subject.findOne({ _id: id, tenantId }).lean();
     if (!current) throw NOT_FOUND();
 
     if (input.isActive === false && current.isActive) {
+      // Papers of exams still to come: an exam page cannot be left with a subject the school no longer has (past papers keep their subject).
+      const coming = await ExamPaper.countDocuments({ tenantId: new Types.ObjectId(tenantId), subjectId: current._id, date: { $gte: new Date(`${todayInIndia()}T00:00:00.000Z`) } });
+      if (coming > 0) {
+        throw ApiError.conflict(`${current.name} has ${coming} paper${coming === 1 ? "" : "s"} still to come in exams. Take ${coming === 1 ? "it" : "them"} out first.`, "SUBJECT_IN_USE");
+      }
       const used = (await sectionCounts(tenantId)).get(id) ?? 0;
       if (used > 0) {
         throw ApiError.conflict(

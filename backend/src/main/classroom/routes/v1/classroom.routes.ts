@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../../../../middleware/auth";
+import { yearView } from "../../../../middleware/yearView";
 import { validate } from "../../../../middleware/validate";
 import {
   addTest,
@@ -45,10 +46,11 @@ import {
 const router = Router();
 
 // Strict auth: the school must be approved.
-router.use(requireAuth);
+// yearView: a school admin may look at a past year (X-Academic-Year); reads answer for it, changes are refused.
+router.use(requireAuth, yearView);
 
 /** Everyone of the school reads; the people who run it write. */
-const SCHOOL_PEOPLE = requireRole("school_admin", "principal", "accountant", "teacher", "parent");
+const SCHOOL_PEOPLE = requireRole("school_admin", "principal", "accountant", "teacher", "receptionist", "management", "staff", "parent");
 const RUNNERS = requireRole("school_admin", "principal");
 
 // ---- Calendar: holidays and events ----------------------------------------------------------------------------------------------------

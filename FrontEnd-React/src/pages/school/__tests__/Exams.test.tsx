@@ -7,6 +7,7 @@ import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { sessionStarted, signedOut } from "../../../redux/slices/authSlice";
+import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
 import type { Exam } from "../../../types";
 import ExamsPage from "../Exams";
@@ -189,5 +190,21 @@ describe("scheduling an exam", () => {
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
     expect(await within(dialog).findByText("There is already an exam called Half-Yearly Exam this year")).toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Schedule exam" })).toBeInTheDocument();
+  });
+});
+
+describe("a year that is over is open (read only)", () => {
+  it("lists the year's exams, with no Schedule exam (the server would refuse it)", async () => {
+    store.dispatch(yearViewChanged("y26"));
+    openPage();
+    expect(await screen.findByText("Half-Yearly Exam")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Schedule exam" })).not.toBeInTheDocument();
+  });
+
+  it("an empty year says so and offers nothing to add", async () => {
+    store.dispatch(yearViewChanged("y26"));
+    openPage([]);
+    expect(await screen.findByText("No exams or tests yet")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Schedule exam" })).not.toBeInTheDocument();
   });
 });

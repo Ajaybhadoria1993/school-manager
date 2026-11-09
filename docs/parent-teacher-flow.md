@@ -96,5 +96,11 @@ Progress is written at the end of this file.
   the class average, Take away); parent `ChildTests`; the school reaches a class's work from its School Class page (*Class work*).
   The child's page puts the day first (diary, tests, attendance, leave, timetable), the child's details after.
   Checked in real Chrome (`flow-r9.mjs`, 18/18).
+* **Exams (2026-11-06)**: the school's own exams (Half-yearly, Annual, unit tests...) are a separate module with their own page, marks and
+  results, shown to the teachers in the **Exams tab** of a class's work and to the parents on the child's page, with bell notifications, and
+  the class's week gives way on exam days: docs/exams.md. The teacher's own `ClassTest` above is a different thing (a teacher's quick test
+  for one class).
+* **Attendance page for the school (2026-11-06)**: the school reads the students' attendance of any class for any days (with the **reason** a teacher may give for an
+  absence) and the teachers' own attendance (self-marked, with the time): docs/attendance.md.
 * **Not built**: the school's own *Add a test* (it has no subjects of its own on the Tests tab); a teacher setting a test for a
   subject they do not teach. Live notifications for all of this: docs/notifications.md (2026-11-04).

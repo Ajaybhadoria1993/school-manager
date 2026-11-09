@@ -1,6 +1,6 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
-import { AcademicYear } from "../../academics/models/AcademicYear";
+import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { Teacher } from "../../staff/models/Teacher";
 import { ClassTeacherService } from "../../staff/services/classTeacher.service";
 import { TeacherLogin } from "../../staff/services/teacherLogin.service";
@@ -40,7 +40,7 @@ export class TeacherTimetableService {
   static async get(tenantId: string, role: UserRole, teacherId: string): Promise<TeacherWeek> {
     const teacher = await Teacher.findOne({ _id: teacherId, tenantId }).lean();
     if (!teacher) throw ApiError.notFound("Teacher not found", "TEACHER_NOT_FOUND");
-    const year = await AcademicYear.findOne({ tenantId: new Types.ObjectId(tenantId), status: "active" }).select("_id").lean();
+    const year = await AcademicYearService.shownYear(tenantId);
     const dto: TeacherWeek["teacher"] = { id: teacherId, name: teacher.name, isActive: teacher.isActive, offDays: [...(teacher.offDays ?? [])].sort((a, b) => a - b), maxPerDay: teacher.maxPeriodsPerDay ?? null, maxPerWeek: teacher.maxPeriodsPerWeek ?? null };
     if (!year) return { teacher: dto, lessons: [], teaches: [], perDay: {}, week: 0 };
 

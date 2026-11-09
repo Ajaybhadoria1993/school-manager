@@ -13,6 +13,6 @@ export default function DashboardPage() {
   if (user.role === "parent") return <ParentDashboard />;
   if (user.role === "teacher") return <TeacherDashboard />;
   // Staff who work for the school without teaching (Staff > Add staff): their own home until their role is given the school's pages.
-  if (user.role === "receptionist" || user.role === "management") return <StaffHome />;
+  if (user.role === "receptionist" || user.role === "management" || user.role === "staff") return <StaffHome />;
   return <SchoolDashboard />;
 }

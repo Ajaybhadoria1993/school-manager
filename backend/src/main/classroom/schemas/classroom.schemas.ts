@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ATTENDANCE_STATUSES } from "../models/AttendanceDay";
+import { ATTENDANCE_STATUSES, MAX_REASON } from "../models/AttendanceDay";
 import { CALENDAR_KINDS } from "../models/CalendarEvent";
 
 /** The request shapes of the daily flow of parents and teachers (docs/parent-teacher-flow.md). */
@@ -17,13 +17,14 @@ export const dayText = (what: string) =>
       return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === v;
     }, `Write the ${what} as a real day, YYYY-MM-DD`);
 
+/** Left out stays left out (a change that does not mention it keeps it); an empty one, or null, clears it. */
 const optionalNote = z
   .string()
   .trim()
   .max(300, "The note is up to 300 letters")
   .nullable()
   .optional()
-  .transform((v) => (v ? v : null));
+  .transform((v) => (v === undefined ? undefined : v ? v : null));
 
 const title = z.string({ required_error: "Enter the name" }).trim().min(1, "Enter the name").max(80, "The name is up to 80 letters");
 const kind = z.enum(CALENDAR_KINDS, { errorMap: () => ({ message: "Choose Holiday or Event" }) });
@@ -86,7 +87,20 @@ export const saveAttendanceSchema = z.object({
   sectionId: objectId.nullable().optional(),
   date: dayText("day"),
   marks: z
-    .array(z.object({ studentId: objectId, status: z.enum(ATTENDANCE_STATUSES, { errorMap: () => ({ message: "Present, absent, late or leave" }) }) }))
+    .array(
+      z.object({
+        studentId: objectId,
+        status: z.enum(ATTENDANCE_STATUSES, { errorMap: () => ({ message: "Present, absent, late or leave" }) }),
+        // Why the child was absent or late (optional); empty is none.
+        reason: z
+          .string({ invalid_type_error: "The reason must be text" })
+          .trim()
+          .max(MAX_REASON, `The reason is up to ${MAX_REASON} letters`)
+          .nullable()
+          .optional()
+          .transform((v) => (v ? v : null)),
+      })
+    )
     .max(500, "Too many children"),
 });
 export type SaveAttendanceInput = z.infer<typeof saveAttendanceSchema>;

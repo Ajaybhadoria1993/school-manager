@@ -7,11 +7,13 @@ import { openYearIds } from "../../subjects/services/subject.service";
 import { nameKeyOf } from "../../tenants/services/tenantFactory";
 import { Timetable } from "../../timetable/models/Timetable";
 import { MAX_TEACHERS, type EmploymentType } from "../constants";
+import { StaffMember } from "../models/StaffMember";
 import { Teacher, type ITeacher } from "../models/Teacher";
 import { User } from "../../users/models/User";
 import { NEEDS_MOBILE_MESSAGE, type CreateTeacherInput, type ListTeachersQuery, type LoginAccountInput, type UpdateTeacherInput } from "../schemas/staff.schemas";
 import { ClassTeacherService, describeUnits, type UnitRefDto } from "./classTeacher.service";
 import { TeacherLogin, type TeacherLoginDto } from "./teacherLogin.service";
+import { TeacherSettingsService } from "./teacherSettings.service";
 
 /** What a teacher has been given in the running (and the next) year: in how many sections, and how many periods a week. */
 export interface TeacherLoad {
@@ -40,6 +42,8 @@ export interface TeacherDto {
   experienceYears: number | null;
   joiningDate: string | null;
   employmentType: EmploymentType | null;
+  /** The answers to the school's own fields, by their `c_` key (the screen shows the ones the school has now). */
+  custom: Record<string, string | number | boolean>;
   /** null: the teacher has no login. */
   login: TeacherLoginDto | null;
   /** The units they are the class teacher of, this year and the next ("Class 5 - A"). */
@@ -80,7 +84,7 @@ type TeacherLike = Pick<
   ITeacher,
   "_id" | "name" | "mobile" | "email" | "employeeCode" | "subjectIds" | "maxPeriodsPerDay" | "maxPeriodsPerWeek" | "offDays" | "isActive"
 > &
-  Partial<Pick<ITeacher, "gender" | "dateOfBirth" | "address" | "designation" | "qualification" | "experienceYears" | "joiningDate" | "employmentType">>;
+  Partial<Pick<ITeacher, "gender" | "dateOfBirth" | "address" | "designation" | "qualification" | "experienceYears" | "joiningDate" | "employmentType" | "custom">>;
 
 const dayOf = (date: Date | null | undefined): string | null => (date ? date.toISOString().slice(0, 10) : null);
 
@@ -104,6 +108,7 @@ export const toTeacherDto = (t: TeacherLike, load: TeacherLoad = { sections: 0, 
   experienceYears: t.experienceYears ?? null,
   joiningDate: dayOf(t.joiningDate),
   employmentType: t.employmentType ?? null,
+  custom: { ...(t.custom ?? {}) },
   login,
   classTeacherOf,
 });
@@ -284,8 +289,13 @@ export class TeacherService {
     return TeacherService.get(tenantId, teacher._id.toString());
   }
 
-  static async create(tenantId: string, input: CreateTeacherInput): Promise<TeacherDto> {
+  /**
+   * `options.custom`: how the answers to the school's own fields are held: `admit` (the default: a needed field must be answered, as in Add
+   * teacher) or `format` (a bulk upload row: only what it gives is checked).
+   */
+  static async create(tenantId: string, input: CreateTeacherInput, options: { custom?: "admit" | "format" } = {}): Promise<TeacherDto> {
     if ((await Teacher.countDocuments({ tenantId })) >= MAX_TEACHERS) throw LIMIT();
+    const answers = await TeacherSettingsService.check(tenantId, input.custom, options.custom ?? "admit");
     await TeacherService.assertSubjects(tenantId, input.subjectIds);
     await TeacherService.assertFree(tenantId, input.mobile ?? null, input.employeeCode ?? null, null);
     // Everything that can be checked is checked before anything is made: a refusal leaves nothing behind.
@@ -312,6 +322,7 @@ export class TeacherService {
         experienceYears: input.experienceYears ?? null,
         joiningDate: input.joiningDate ?? null,
         employmentType: input.employmentType ?? null,
+        custom: answers.set,
       });
     } catch (err) {
       throw TeacherService.explainDuplicate(err);
@@ -360,9 +371,13 @@ export class TeacherService {
 
     const changes = detailsOf(input);
     if (input.isActive !== undefined) changes.isActive = input.isActive;
+    // The school's own fields: an answer given is set, an empty one (null) clears it.
+    const answers = input.custom !== undefined ? await TeacherSettingsService.check(tenantId, input.custom, "change") : null;
+    for (const [key, value] of Object.entries(answers?.set ?? {})) changes[`custom.${key}`] = value;
+    const cleared = Object.fromEntries((answers?.clear ?? []).map((key) => [`custom.${key}`, ""]));
     let teacher;
     try {
-      teacher = await Teacher.findOneAndUpdate({ _id: id, tenantId }, { $set: changes }, { new: true });
+      teacher = await Teacher.findOneAndUpdate({ _id: id, tenantId }, { ...(Object.keys(changes).length > 0 ? { $set: changes } : {}), ...(Object.keys(cleared).length > 0 ? { $unset: cleared } : {}) }, { new: true });
     } catch (err) {
       throw TeacherService.explainDuplicate(err);
     }
@@ -378,6 +393,8 @@ export class TeacherService {
     }
     // A teacher who has left is nobody's class teacher any more (the classes show no class teacher until the school picks one).
     if (input.isActive === false && current.isActive) await ClassTeacherService.release(tenantId, id);
+    // A staff member who also teaches (Staff > Add staff) is on and off with their teacher record, on both lists.
+    if (input.isActive !== undefined) await StaffMember.updateOne({ tenantId, teacherId: current._id, status: { $ne: "invited" } }, { $set: { status: input.isActive ? "active" : "inactive" } });
     return TeacherService.get(tenantId, id);
   }
 
@@ -412,7 +429,7 @@ export class TeacherService {
   }
 
   /** Every subject named is a subject of this school. */
-  private static async assertSubjects(tenantId: string, subjectIds: string[]): Promise<void> {
+  static async assertSubjects(tenantId: string, subjectIds: string[]): Promise<void> {
     if (subjectIds.length === 0) return;
     const found = await Subject.countDocuments({ tenantId, _id: { $in: subjectIds.map((s) => new Types.ObjectId(s)) } });
     if (found !== subjectIds.length) {
@@ -420,8 +437,13 @@ export class TeacherService {
     }
   }
 
+  /** The school has room for one more teacher. */
+  static async assertRoom(tenantId: string): Promise<void> {
+    if ((await Teacher.countDocuments({ tenantId })) >= MAX_TEACHERS) throw LIMIT();
+  }
+
   /** The mobile number and the employee code are not another teacher's. `except` is the teacher being changed. */
-  private static async assertFree(tenantId: string, mobile: string | null, code: string | null, except: string | null): Promise<void> {
+  static async assertFree(tenantId: string, mobile: string | null, code: string | null, except: string | null): Promise<void> {
     const other = except ? { _id: { $ne: new Types.ObjectId(except) } } : {};
     if (mobile) {
       const clash = await Teacher.findOne({ tenantId, mobile, ...other }).select("name").lean();

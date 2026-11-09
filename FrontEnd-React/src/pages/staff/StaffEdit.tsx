@@ -18,9 +18,11 @@ const outlineLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:border-[#cbd5e1] hover:bg-background focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 
 /**
- * Staff > a person > Change (`/staff/:id/edit`): the boxes of Add staff on one page with one Save. The email is shown and fixed (the
- * login is made from it); a new role applies at the person's next sign-in (their sessions end now). Making them inactive or active, and
- * the invitation (send again, take back), are on the Staff list.
+ * Staff > a person > Change (`/staff/:id/edit`): the boxes of Add staff on one page with one Save, without the Login (the username and the
+ * password are changed from the Staff list). The email is only a contact: it can be changed or emptied. A new role applies at the
+ * person's next sign-in (their sessions end now). *Also a teacher* can be switched on (they become a teacher at once); a person who
+ * teaches here already has it locked on (they stop as a teacher on the Teacher page). Making them inactive or active, a new password,
+ * a new username and removing a person with no login are on the Staff list.
  */
 export default function StaffEditPage() {
   const { id = "" } = useParams();
@@ -107,7 +109,7 @@ function EditForm({ member }: { member: StaffMember }) {
     <form onSubmit={save} noValidate className="space-y-6">
       <StudentFormHeader title="Change staff" subtitle={member.name} crumbs={[{ label: "Staff", to: "/staff" }]} />
       {formError && <ModalError message={formError} />}
-      <StaffForm values={values} errors={errors} onChange={change} onReveal={(key) => setRevealed((now) => new Set([...now, key]))} editing />
+      <StaffForm values={values} errors={errors} onChange={change} onReveal={(key) => setRevealed((now) => new Set([...now, key]))} editing teachingLocked={member.isTeacher} />
       <FormActionBar>
         <span />
         <Button type="submit" size="lg" loading={saving} disabled={!changed}>

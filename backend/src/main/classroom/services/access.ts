@@ -1,5 +1,7 @@
 import { Types } from "mongoose";
+import { ApiError } from "../../../utils/ApiError";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
+import { resolveUnit } from "../../timetable/services/unit";
 import { ClassTeacher } from "../../staff/models/ClassTeacher";
 import { Teacher } from "../../staff/models/Teacher";
 import { describeUnits } from "../../staff/services/classTeacher.service";
@@ -15,6 +17,31 @@ export interface Unit {
 export const RUNNER_ROLES: readonly string[] = ["school_admin", "principal"];
 export const sameUnit = (a: { classId: Types.ObjectId | string | null; sectionId: Types.ObjectId | string | null }, b: { classId: Types.ObjectId | string | null; sectionId: Types.ObjectId | string | null }) =>
   String(a.classId) === String(b.classId) && String(a.sectionId ?? "") === String(b.sectionId ?? "");
+
+const NO_ACCESS = () => ApiError.forbidden("This is not one of your classes.", "NOT_YOUR_CLASS");
+
+/** The filter of one class or section of the school. */
+export const unitFilter = (tenantId: string, unit: { classId: string; sectionId: string | null }) => ({
+  tenantId: new Types.ObjectId(tenantId),
+  classId: new Types.ObjectId(unit.classId),
+  sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null,
+});
+
+/**
+ * Who may do what in a class: the people who run the school everything; a teacher reads a class they are the class teacher of or teach a
+ * subject in, and writes the subjects they teach there (the class teacher every subject). Used by the diary, the tests and the exam marks.
+ */
+export async function accessTo(tenantId: string, caller: { userId: string; role: string }, unit: Awaited<ReturnType<typeof resolveUnit>>) {
+  const school = new Types.ObjectId(tenantId);
+  const allotments = await Allotment.find({ ...unitFilter(tenantId, unit), academicYearId: unit.yearId }).select("subjectId teacherId").lean();
+  if (RUNNER_ROLES.includes(caller.role)) return { all: true, subjects: new Set(allotments.map((a) => a.subjectId.toString())), allotments, school };
+  const teacher = caller.role === "teacher" ? await teacherOfUser(tenantId, caller.userId) : null;
+  if (!teacher) throw NO_ACCESS();
+  const isClassTeacher = (await classTeacherUnits(tenantId, teacher._id)).some((u) => sameUnit(u, unit));
+  const own = allotments.filter((a) => a.teacherId?.equals(teacher._id)).map((a) => a.subjectId.toString());
+  if (!isClassTeacher && own.length === 0) throw NO_ACCESS();
+  return { all: isClassTeacher, subjects: new Set(isClassTeacher ? allotments.map((a) => a.subjectId.toString()) : own), allotments, school };
+}
 
 /** The teacher whose login this is (a teacher who left has no say), or null. */
 export async function teacherOfUser(tenantId: string, userId: string) {

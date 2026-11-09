@@ -38,6 +38,8 @@ export interface ITeacher {
   experienceYears: number | null;
   joiningDate: Date | null;
   employmentType: EmploymentType | null;
+  /** The answers to the school's own fields (`TeacherSettings.customFields`), by their `c_` key. */
+  custom: Record<string, string | number | boolean>;
   isActive: boolean;
   userId: Types.ObjectId | null;
   createdAt: Date;
@@ -68,6 +70,7 @@ const teacherSchema = new Schema<ITeacher>(
     experienceYears: { type: Number, default: null, min: 0 },
     joiningDate: { type: Date, default: null },
     employmentType: { type: String, enum: EMPLOYMENT_TYPES, default: null },
+    custom: { type: Schema.Types.Mixed, default: {} },
     isActive: { type: Boolean, default: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", default: null },
   },

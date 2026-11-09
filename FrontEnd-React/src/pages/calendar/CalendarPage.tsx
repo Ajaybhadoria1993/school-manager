@@ -10,6 +10,7 @@ import { todayInIndia } from "../../utils/students";
 import type { CalendarEvent } from "../../types";
 import { CalendarToolbar, type CalendarView } from "../../components/calendar/CalendarToolbar";
 import { DayDialog } from "../../components/calendar/DayDialog";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { EventDialog } from "../../components/calendar/EventDialog";
 import { EventList } from "../../components/calendar/EventList";
 import { MonthGrid } from "../../components/calendar/MonthGrid";
@@ -30,7 +31,9 @@ import { Skeleton } from "../../components/ui/Skeleton";
  */
 export default function CalendarPage() {
   const { user } = useAuth();
-  const canEdit = user?.role === "school_admin" || user?.role === "principal";
+  // A year that is over is only looked at: no adding or changing of holidays and events (the server refuses it too).
+  const readOnly = useReadOnlyYear();
+  const canEdit = (user?.role === "school_admin" || user?.role === "principal") && !readOnly;
   const today = useMemo(() => todayInIndia(), []);
   const [view, setView] = useState<CalendarView>("month");
   const [month, setMonth] = useState(today.slice(0, 7));

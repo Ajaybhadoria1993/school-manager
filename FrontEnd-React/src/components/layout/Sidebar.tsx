@@ -257,7 +257,7 @@ export function Sidebar({
                   {user.name}
                 </p>
                 <p className="truncate text-xs text-slate-400">
-                  {ROLE_LABELS[user.role]}
+                  {user.roleLabel ?? ROLE_LABELS[user.role]}
                 </p>
               </div>
               <button

@@ -6,6 +6,7 @@ import { RouterProvider, createMemoryRouter } from "react-router";
 import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
+import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
 import type { StudentPage, StudentRow, StudentSettings } from "../../../types";
 import { fakeApi, type Handler } from "../../../test/fakeApi";
 import { CAPACITY, SETTINGS, STRUCTURE } from "../../../test/fixtures";
@@ -175,5 +176,28 @@ describe("Students, a school that has students", () => {
     expect(screen.queryByText("No students yet")).not.toBeInTheDocument();
     expect(headerButtons()).toEqual(["Guide", "Export", "Bulk upload", "Add student"]);
     expect(screen.getByRole("link", { name: "Bulk upload" })).toHaveAttribute("href", "/school/students/import");
+  });
+});
+
+describe("Students while a year that is over is open (read only)", () => {
+  afterEach(() => {
+    store.dispatch(yearViewChanged(null));
+  });
+
+  it("is only looked at: Guide and Export stay; no Bulk upload, no Add student, no ticking of students to make them inactive", async () => {
+    school([ASHA]);
+    store.dispatch(yearViewChanged("y26"));
+    openPage();
+    expect(await screen.findByText("Asha Verma")).toBeInTheDocument();
+    expect(headerButtons()).toEqual(["Guide", "Export"]);
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("the running year still has all four buttons and the tick boxes", async () => {
+    school([ASHA]);
+    openPage();
+    expect(await screen.findByText("Asha Verma")).toBeInTheDocument();
+    expect(headerButtons()).toEqual(["Guide", "Export", "Bulk upload", "Add student"]);
+    expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
   });
 });

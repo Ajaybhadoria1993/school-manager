@@ -7,6 +7,7 @@ import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { sessionStarted, signedOut } from "../../../redux/slices/authSlice";
+import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
 import { STRUCTURE } from "../../../test/schoolClass";
 import type { StudentRange, StudentRangeDay, StudentRangeRow, TeacherSheet, TeacherRecord } from "../../../types";
@@ -527,5 +528,33 @@ describe("the school marks a teacher's day (2026-11-06)", () => {
     const dialog = await screen.findByRole("dialog", { name: "Dev Patel" });
     expect(within(dialog).getByRole("button", { name: "Change 2 Nov" })).toBeInTheDocument();
     expect(dialog).toHaveTextContent("No login");
+  });
+});
+
+describe("a year that is over is open (the school admin looks at the past)", () => {
+  const OVER = { id: "y26", name: "2025-2026", startDate: "2025-04-01", endDate: "2026-03-31", status: "closed", activatedAt: null };
+  const RUNNING = { id: "y27", name: "2026-2027", startDate: "2026-04-01", endDate: "2027-03-31", status: "active", activatedAt: null };
+  const YEARS = { "GET /academics/academic-years": () => [RUNNING, OVER] };
+  afterEach(() => {
+    store.dispatch(yearViewChanged(null));
+  });
+
+  it("starts on the last month of that year (this month would be empty), and does not ask who has not taken today's attendance", async () => {
+    store.dispatch(yearViewChanged("y26"));
+    const { calls } = open("/attendance", YEARS);
+    await waitFor(() => expect(Object.fromEntries(lastQuery(calls, "/attendance/students"))).toMatchObject({ from: "2026-03-01", to: "2026-03-31" }));
+    expect(reads(calls, "/attendance/students/today")).toHaveLength(0);
+  });
+
+  it("the Teacher tab starts on the same month", async () => {
+    store.dispatch(yearViewChanged("y26"));
+    const { calls } = open("/attendance?tab=teacher", YEARS);
+    await waitFor(() => expect(Object.fromEntries(lastQuery(calls, "/attendance/teachers"))).toMatchObject({ from: "2026-03-01", to: "2026-03-31" }));
+  });
+
+  it("a range the school picked is kept, whatever year is open", async () => {
+    store.dispatch(yearViewChanged("y26"));
+    const { calls } = open("/attendance?from=2026-11-01&to=2026-11-30", YEARS);
+    await waitFor(() => expect(Object.fromEntries(lastQuery(calls, "/attendance/students"))).toMatchObject({ from: "2026-11-01", to: "2026-11-30" }));
   });
 });

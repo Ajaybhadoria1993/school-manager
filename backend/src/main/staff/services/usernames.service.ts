@@ -43,6 +43,35 @@ export async function suggestUsernames(wanted: string, count = SUGGESTIONS): Pro
   return found.slice(0, count);
 }
 
+const TITLES = new Set(["mr", "mrs", "ms", "miss", "dr", "smt", "shri", "sri", "prof", "sir", "madam"]);
+
+/**
+ * The username a name suggests: `first.last` in lower case, titles dropped, accents and symbols removed, a middle name left out (the same
+ * as Add teacher's `suggestUsername` in the browser). A name with no letters a-z (typed in Hindi) gives nothing; one too short to be a
+ * username is made longer.
+ */
+export function usernameBase(name: string): string {
+  const words = name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word) => word.replace(/[^a-z0-9]/g, ""))
+    .filter((word) => word !== "" && !TITLES.has(word));
+  const letters = words.filter((word) => /[a-z]/.test(word));
+  if (letters.length === 0) return "";
+  const joined = letters.length === 1 ? letters[0] : `${letters[0]}.${letters[letters.length - 1]}`;
+  const username = (/^[a-z]/.test(joined) ? joined : `t${joined}`).slice(0, MAX_USERNAME).replace(/\.$/, "");
+  return username.length >= 3 ? username : `${username}.teacher`;
+}
+
+/** A free username made from a name (`meena.singh_41`), or null when the name has no letters to make one from. */
+export async function freeUsernameFor(name: string): Promise<string | null> {
+  const base = usernameBase(name);
+  if (base === "") return null;
+  return (await suggestUsernames(base, 1))[0] ?? null;
+}
+
 /** Free or taken, on the whole platform (the login box has no school). A taken one comes with free ones; a free one needs none. */
 export async function checkUsername(username: string): Promise<UsernameCheck> {
   if (!(await User.exists({ username }))) return { available: true, suggestions: [] };

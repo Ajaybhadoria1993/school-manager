@@ -24,7 +24,7 @@ describe("the menu of the people who run a school", () => {
   });
 
   it("gives the staff who work for the school without teaching (2026-11-07) the Dashboard and the Calendar, and nothing of the school's setup; Staff is for the people who run the school", () => {
-    for (const role of ["receptionist", "management"] as const) {
+    for (const role of ["receptionist", "management", "staff"] as const) {
       expect(NAV_ITEMS.filter((i) => i.roles.includes(role)).map((i) => i.label)).toEqual(["Dashboard", "Calendar"]);
     }
     expect(NAV_ITEMS.find((i) => i.label === "Staff")?.roles).toEqual(["school_admin", "principal"]);

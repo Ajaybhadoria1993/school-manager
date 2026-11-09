@@ -3,6 +3,7 @@ import { ApiError } from "../../../utils/ApiError";
 import { nameKeyOf } from "../../tenants/services/tenantFactory";
 import { CLASS_LEVELS } from "../../tenants/constants";
 import { TimetableCleanup } from "../../timetable/services/cleanup";
+import { ExamCleanup } from "../../exams/services/cleanup";
 import { MAX_CLASSES, levelToClass, sectionLetters } from "../constants";
 import { Department } from "../models/Department";
 import { SchoolClass, type ISchoolClass } from "../models/SchoolClass";
@@ -49,7 +50,7 @@ export class ClassService {
   static async get(tenantId: string, id: string): Promise<ClassDto> {
     const found = await SchoolClass.findOne({ _id: id, tenantId }).lean();
     if (!found) throw NOT_FOUND();
-    const academicYearId = await AcademicYearService.activeYearId(tenantId);
+    const academicYearId = await AcademicYearService.shownYearId(tenantId);
     return toClassDto(found, await Section.find({ tenantId, classId: found._id, academicYearId }).lean());
   }
 
@@ -60,8 +61,8 @@ export class ClassService {
    */
   static async list(tenantId: string, query: ListClassesQuery): Promise<ClassPage> {
     const school = new Types.ObjectId(tenantId);
-    // A class's sections (and so its seats) are those of the current session.
-    const academicYearId = await AcademicYearService.activeYearId(tenantId);
+    // A class's sections (and so its seats) are those of the session shown (the running one, or a past one being looked at).
+    const academicYearId = await AcademicYearService.shownYearId(tenantId);
     const match: Record<string, unknown> = { tenantId: school };
     if (query.departmentId) match.departmentId = query.departmentId === "none" ? null : new Types.ObjectId(query.departmentId);
     if (query.search) match.nameKey = { $regex: escapeRegex(nameKeyOf(query.search)) };
@@ -242,6 +243,8 @@ export class ClassService {
     await SchoolClass.deleteOne({ _id: id, tenantId });
     // What the class studied, its timetables and its place in the school's timings go with it.
     await TimetableCleanup.forClass(tenantId, id);
+    // ...and so does its place in the exam papers (a paper left for nobody is taken away).
+    await ExamCleanup.forClass(tenantId, id);
     return { removedSections: sections.length };
   }
 }

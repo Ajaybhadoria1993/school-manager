@@ -1,14 +1,23 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { Mail, Pencil, Plus, Power, RotateCcw, Search, Send, Undo2, UserCog } from "lucide-react";
+import { AtSign, KeyRound, Pencil, Plus, Power, RotateCcw, Search, Trash2, UserCog, UserRoundCog } from "lucide-react";
 import { STAFF_ROLES, staffRoleLabel } from "../../constants/staffMembers";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
-import { useCancelStaffInviteMutation, useGetStaffMembersQuery, useResendStaffInviteMutation, useUpdateStaffMemberMutation } from "../../redux/api/staffApi";
+import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
+import {
+  useChangeStaffUsernameMutation,
+  useGetStaffMembersQuery,
+  useMakeStaffLoginMutation,
+  useRemoveStaffMemberMutation,
+  useResetStaffPasswordMutation,
+  useUpdateStaffMemberMutation,
+} from "../../redux/api/staffApi";
 import type { StaffMember, StaffMemberQuery, StaffMemberStatus } from "../../types";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
 import { formatMobile } from "../../utils/students";
 import { ConfirmModal } from "../../components/classes/ConfirmModal";
+import { ChangeUsernameDialog, MakeLoginDialog, NewPasswordDialog } from "../../components/logins/LoginDialogs";
 import { StudentAvatar } from "../../components/students/StudentAvatar";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
@@ -19,17 +28,19 @@ import { Input } from "../../components/ui/Input";
 import { useResultModal } from "../../components/ui/ResultModal";
 import { Select } from "../../components/ui/Select";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { useToast } from "../../components/ui/toast-context";
 
 const ALL_ROLES = "all";
+/** "invited" is a person added before the school made logins itself: they have no login until the school makes one. */
 const TABS: { value: StaffMemberStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "active", label: "Active" },
-  { value: "invited", label: "Invited" },
+  { value: "invited", label: "No login" },
   { value: "inactive", label: "Inactive" },
 ];
 const PILL: Record<StaffMemberStatus, { tone: "success" | "warning" | "neutral"; label: string }> = {
   active: { tone: "success", label: "Active" },
-  invited: { tone: "warning", label: "Invited" },
+  invited: { tone: "warning", label: "No login" },
   inactive: { tone: "neutral", label: "Inactive" },
 };
 const primaryLink =
@@ -38,57 +49,54 @@ const TH = "whitespace-nowrap px-4 py-3 text-left text-xs font-bold uppercase tr
 
 /**
  * Staff (`/staff`, the menu's Staff): the people who work for the school without teaching, each with a role (Principal, Accountant,
- * Receptionist, Management...). The school adds a person with their details, a role and an email (Add staff): an invitation goes to
- * the email, the person opens it, sets a password and signs in with the email and the password. Here: everyone, by status (Active,
- * Invited, Inactive) with the count of each, a role and a search (one request each, answered by the server), and for each person what
- * can be done: change them, send the invitation again or take it back (while they have not accepted), make them inactive (their login
- * closes) or active again. Every action ends in a window that says what happened.
+ * Receptionist, Management...). The school adds a person with their details, a role and the username and password it makes for them
+ * (Add staff): they sign in with those (there is no invitation email for staff). Here: everyone, by status (Active, No login, Inactive)
+ * with the count of each, a role and a search (one request each, answered by the server), the username each signs in with, and for
+ * each person what can be done: change them, change their username, give a new password, make them inactive (their login closes) or
+ * active again; a person with no login yet (added before the school made logins itself) gets Make a login or is removed. The No login
+ * tab is there only while somebody has none. Every action ends in a window that says what happened.
  */
 export default function StaffDirectoryPage() {
+  // A year that is over is only looked at: no adding, changing, logins or making inactive (the server refuses them too).
+  const readOnly = useReadOnlyYear();
   const [status, setStatus] = useState<StaffMemberStatus | "all">("all");
   const [role, setRole] = useState(ALL_ROLES);
   const [search, setSearch] = useState("");
   const typed = useDebouncedValue(search.trim(), 300);
   const query: StaffMemberQuery = { status, ...(role !== ALL_ROLES ? { role: role as StaffMemberQuery["role"] } : {}), ...(typed ? { search: typed } : {}) };
   const res = useGetStaffMembersQuery(query);
-  const [resend] = useResendStaffInviteMutation();
-  const [cancel] = useCancelStaffInviteMutation();
+  const [removeMember] = useRemoveStaffMemberMutation();
   const [update] = useUpdateStaffMemberMutation();
+  const [makeLogin] = useMakeStaffLoginMutation();
+  const [resetPassword] = useResetStaffPasswordMutation();
+  const [rename] = useChangeStaffUsernameMutation();
   const result = useResultModal();
-  const [asking, setAsking] = useState<{ kind: "cancel" | "off"; member: StaffMember } | null>(null);
+  const { push } = useToast();
+  const [asking, setAsking] = useState<{ kind: "remove" | "off"; member: StaffMember } | null>(null);
+  const [dialog, setDialog] = useState<{ kind: "make" | "password" | "username"; member: StaffMember } | null>(null);
 
   const items = res.data?.data.items ?? [];
   const counts = res.data?.data.counts;
   const total = counts ? counts.active + counts.invited + counts.inactive : null;
   const filtered = status !== "all" || role !== ALL_ROLES || typed !== "";
-
-  async function resendTo(m: StaffMember) {
-    try {
-      const sent = (await resend(m.id).unwrap()).data;
-      result.done(
-        sent.emailSent ? "Invitation sent again" : "The email could not be sent",
-        sent.emailSent ? `A new invitation was emailed to ${m.email}. The link before it no longer works.` : `${m.name} is still invited, but the email did not go out. Try Resend invite again in a while.${sent.devInviteLink ? ` Link (development only): ${sent.devInviteLink}` : ""}`
-      );
-    } catch (err) {
-      result.failed("Invitation not sent", getApiError(err)?.message ?? "Could not send the invitation. Please try again.");
-    }
-  }
+  // The No login tab is for the few added before logins were made with the person: it is there while there are any (or it is the one open).
+  const tabs = TABS.filter((t) => t.value !== "invited" || (counts?.invited ?? 0) > 0 || status === "invited");
 
   async function turn(m: StaffMember, on: boolean) {
     try {
       await update({ id: m.id, isActive: on }).unwrap();
-      result.done(on ? `${m.name} is active again` : `${m.name} is inactive`, on ? "They can sign in again with their email and password." : "Their login is closed: they cannot sign in until they are made active again.");
+      result.done(on ? `${m.name} is active again` : `${m.name} is inactive`, on ? "They can sign in again with their username and password." : "Their login is closed: they cannot sign in until they are made active again.");
     } catch (err) {
       result.failed(on ? "Not made active" : "Not made inactive", getApiError(err)?.message ?? "Could not save. Please try again.");
     }
   }
 
-  async function takeBack(m: StaffMember) {
+  async function remove(m: StaffMember) {
     try {
-      await cancel(m.id).unwrap();
-      result.done("Invitation taken back", `${m.name} is removed and the link in their email no longer works.`);
+      await removeMember(m.id).unwrap();
+      result.done(`${m.name} is removed`, `${m.name} had no login and is taken off the list. You can add them again later.`);
     } catch (err) {
-      result.failed("Invitation not taken back", getApiError(err)?.message ?? "Could not take it back. Please try again.");
+      result.failed("Not removed", getApiError(err)?.message ?? "Could not remove them. Please try again.");
     }
   }
 
@@ -101,11 +109,11 @@ export default function StaffDirectoryPage() {
 
   return (
     <div className="space-y-6">
-      <StudentFormHeader title="Staff" crumbs={[{ label: "Dashboard", to: "/dashboard" }]} actions={add} />
+      <StudentFormHeader title="Staff" crumbs={[{ label: "Dashboard", to: "/dashboard" }]} actions={readOnly ? undefined : add} />
 
       <div className="flex flex-wrap items-center gap-3">
         <div role="tablist" aria-label="Which staff to show" className="flex gap-1 rounded-xl border border-border bg-surface p-1 shadow-sm">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <button
               key={t.value}
               type="button"
@@ -114,7 +122,7 @@ export default function StaffDirectoryPage() {
               onClick={() => setStatus(t.value)}
               className={cn("inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors", status === t.value ? "bg-primary-soft text-primary-deep" : "text-foreground-muted hover:text-foreground")}
             >
-              {/* The space keeps the name read out as "Invited 2", not "Invited2". */}
+              {/* The space keeps the name read out as "No login 2", not "No login2". */}
               {t.label}{" "}
               <span className="rounded-full bg-surface-muted px-1.5 text-xs text-foreground-muted">{counts ? (t.value === "all" ? total : counts[t.value]) : 0}</span>
             </button>
@@ -128,7 +136,7 @@ export default function StaffDirectoryPage() {
         </div>
         <div className="relative min-w-56 flex-1 sm:max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-foreground-muted" aria-hidden />
-          <Input aria-label="Search staff" placeholder="Search by name, email or mobile" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input aria-label="Search staff" placeholder="Search by name, username or mobile" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
       </div>
 
@@ -145,13 +153,13 @@ export default function StaffDirectoryPage() {
         filtered ? (
           <p className="rounded-2xl border border-border bg-surface px-4 py-10 text-center text-sm text-foreground-muted">No staff matches.</p>
         ) : (
-          <StudentsNotice icon={UserCog} tone="primary" title="No staff yet" actions={add}>
-            <p>Add the people who work for your school without teaching, such as a receptionist or the management. Each gets an email to set a password and sign in.</p>
+          <StudentsNotice icon={UserCog} tone="primary" title="No staff yet" actions={readOnly ? undefined : add}>
+            <p>Add the people who work for your school without teaching, such as a receptionist or the management. You make a username and a password for each.</p>
           </StudentsNotice>
         )
       ) : (
-        <Card className="overflow-x-auto">
-          <table aria-label="Staff" className="w-full min-w-[52rem] border-collapse text-sm">
+        <Card className="relative overflow-x-auto">
+          <table aria-label="Staff" className="w-full min-w-[60rem] border-collapse text-sm">
             <thead className="border-b border-border bg-background">
               <tr>
                 <th scope="col" className={TH}>
@@ -181,26 +189,31 @@ export default function StaffDirectoryPage() {
                         <Link to={`/staff/${m.id}/edit`} className="block truncate font-bold text-foreground hover:text-primary-deep focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20">
                           {m.name}
                         </Link>
-                        <span className="flex items-center gap-1 text-xs text-foreground-muted">
-                          <Mail className="size-3" aria-hidden />
-                          {m.email}
-                        </span>
+                        {m.login && (
+                          <span className="flex items-center gap-1 text-xs text-foreground-muted">
+                            <KeyRound className="size-3" aria-hidden />
+                            <span className="font-mono">{m.login.username}</span>
+                          </span>
+                        )}
                       </div>
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <Badge tone="primary">{staffRoleLabel(m.role)}</Badge>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge tone="primary">{staffRoleLabel(m.role, m.roleOther)}</Badge>
+                      {m.alsoTeacher && <Badge tone="success">Teaches</Badge>}
+                    </div>
                     {m.designation && <span className="mt-0.5 block text-xs text-foreground-muted">{m.designation}</span>}
                   </td>
                   <td className="px-4 py-3 text-foreground-muted">{m.mobile ? formatMobile(m.mobile) : "—"}</td>
                   <td className="px-4 py-3">
-                    <Badge tone={PILL[m.status].tone} className="gap-1.5">
+                    <Badge tone={PILL[m.status].tone} className="gap-1.5 whitespace-nowrap">
                       <span aria-hidden className="size-1.5 rounded-full bg-current" />
                       {PILL[m.status].label}
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap justify-end gap-1.5">
+                    <div className={readOnly ? "hidden" : "flex flex-wrap justify-end gap-1.5"}>
                       <Link
                         to={`/staff/${m.id}/edit`}
                         aria-label={`Change ${m.name}`}
@@ -208,25 +221,36 @@ export default function StaffDirectoryPage() {
                       >
                         <Pencil className="size-4" aria-hidden />
                       </Link>
-                      {m.status === "invited" && (
+                      {m.login ? (
                         <>
-                          <Button variant="outline" size="sm" aria-label={`Resend invite to ${m.name}`} onClick={() => void resendTo(m)}>
-                            <Send className="size-4" aria-hidden />
-                            Resend invite
+                          <Button variant="outline" size="sm" aria-label={`Change the username of ${m.name}`} onClick={() => setDialog({ kind: "username", member: m })}>
+                            <AtSign className="size-4" aria-hidden />
+                            Username
                           </Button>
-                          <Button variant="ghost" size="sm" aria-label={`Take back the invitation of ${m.name}`} onClick={() => setAsking({ kind: "cancel", member: m })}>
-                            <Undo2 className="size-4" aria-hidden />
-                            Take back
+                          <Button variant="outline" size="sm" aria-label={`New password for ${m.name}`} onClick={() => setDialog({ kind: "password", member: m })}>
+                            <KeyRound className="size-4" aria-hidden />
+                            New password
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button variant="outline" size="sm" aria-label={`Make a login for ${m.name}`} onClick={() => setDialog({ kind: "make", member: m })}>
+                            <UserRoundCog className="size-4" aria-hidden />
+                            Make a login
+                          </Button>
+                          <Button variant="ghost" size="sm" aria-label={`Remove ${m.name}`} onClick={() => setAsking({ kind: "remove", member: m })}>
+                            <Trash2 className="size-4" aria-hidden />
+                            Remove
                           </Button>
                         </>
                       )}
-                      {m.status === "active" && (
+                      {m.login && m.status === "active" && (
                         <Button variant="outline" size="sm" aria-label={`Make ${m.name} inactive`} onClick={() => setAsking({ kind: "off", member: m })}>
                           <Power className="size-4" aria-hidden />
                           Make inactive
                         </Button>
                       )}
-                      {m.status === "inactive" && (
+                      {m.login && m.status === "inactive" && (
                         <Button variant="outline" size="sm" aria-label={`Make ${m.name} active`} onClick={() => void turn(m, true)}>
                           <RotateCcw className="size-4" aria-hidden />
                           Make active
@@ -243,21 +267,47 @@ export default function StaffDirectoryPage() {
 
       {asking && (
         <ConfirmModal
-          title={asking.kind === "cancel" ? "Take back the invitation?" : `Make ${asking.member.name} inactive?`}
-          confirmLabel={asking.kind === "cancel" ? "Take it back" : "Make inactive"}
+          title={asking.kind === "remove" ? `Remove ${asking.member.name}?` : `Make ${asking.member.name} inactive?`}
+          confirmLabel={asking.kind === "remove" ? "Remove" : "Make inactive"}
           onClose={() => setAsking(null)}
           onConfirm={async () => {
             const { kind, member } = asking;
             setAsking(null);
-            await (kind === "cancel" ? takeBack(member) : turn(member, false));
+            await (kind === "remove" ? remove(member) : turn(member, false));
           }}
         >
           <p>
-            {asking.kind === "cancel"
-              ? `${asking.member.name} is removed and the link in their email stops working. You can add them again later.`
+            {asking.kind === "remove"
+              ? `${asking.member.name} has no login. They are taken off the list; you can add them again later.`
               : "Their login is closed at once: they cannot sign in until you make them active again. Nothing they did is lost."}
           </p>
         </ConfirmModal>
+      )}
+      {dialog?.kind === "make" && (
+        <MakeLoginDialog
+          name={dialog.member.name}
+          onCreate={async (username, password) => (await makeLogin({ id: dialog.member.id, username, password }).unwrap()).data.login?.username ?? username}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "password" && dialog.member.login && (
+        <NewPasswordDialog
+          name={dialog.member.name}
+          username={dialog.member.login.username}
+          onSave={async (password) => void (await resetPassword({ id: dialog.member.id, password }).unwrap())}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "username" && dialog.member.login && (
+        <ChangeUsernameDialog
+          name={dialog.member.name}
+          current={dialog.member.login.username}
+          onSave={async (username) => {
+            await rename({ id: dialog.member.id, username }).unwrap();
+            push("success", `${dialog.member.name}'s username is ${username}`);
+          }}
+          onClose={() => setDialog(null)}
+        />
       )}
       {result.modal}
     </div>

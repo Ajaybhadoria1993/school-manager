@@ -894,7 +894,8 @@ const tidyText = (v: unknown) => (typeof v === "string" ? v.trim().replace(/\s+/
  * entry never hides another's message: a name (2 to 40 characters, not one of the list's, once), a kind, the choices of a list (1 to
  * 30, each once), and needed / optional / not asked (a yes / no is never needed). The service refuses a changed kind.
  */
-const customFieldsSchema = z
+export function customFieldListSchema(listNames: ReadonlyMap<string, string>, taken: (listed: string) => string) {
+  return z
   .array(z.object({ key: z.unknown(), label: z.unknown(), type: z.unknown(), options: z.unknown().optional(), mode: z.unknown() }), {
     invalid_type_error: "Choose your school's own fields",
   })
@@ -909,7 +910,7 @@ const customFieldsSchema = z
       const label = tidyText(f.label);
       if (label.length < 2 || label.length > MAX_CUSTOM_LABEL) say([i, "label"], `The name is 2 to ${MAX_CUSTOM_LABEL} characters`);
       else if (!NO_ANGLE_BRACKETS.test(label)) say([i, "label"], "The name cannot contain < or >");
-      else if (LIST_NAMES.has(label.toLowerCase())) say([i, "label"], `There is already a field called ${LIST_NAMES.get(label.toLowerCase())}: switch it on in the list`);
+      else if (listNames.has(label.toLowerCase())) say([i, "label"], taken(listNames.get(label.toLowerCase())!));
       else if (labels.has(label.toLowerCase())) say([i, "label"], "Two fields cannot have the same name");
       labels.add(label.toLowerCase());
       if (!(CUSTOM_FIELD_TYPES as readonly unknown[]).includes(f.type)) say([i, "type"], "Choose what kind of answer it takes");
@@ -934,6 +935,9 @@ const customFieldsSchema = z
       mode: f.mode as FieldMode,
     }))
   );
+}
+/** The students' own fields: a name may not be one of the list's. */
+const customFieldsSchema = customFieldListSchema(LIST_NAMES, (listed) => `There is already a field called ${listed}: switch it on in the list`);
 const YES_NO_KEYS = new Set<string>(STUDENT_FORM_FIELDS.filter((f) => "yesNo" in f && f.yesNo).map((f) => f.key));
 /** "A, B and C": the columns that are in every export, as a sentence. */
 const LOCKED_HEADINGS = (() => {

@@ -6,6 +6,7 @@ import { RouterProvider, createMemoryRouter } from "react-router";
 import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
+import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
 import { fakeApi, spreadsheet, type Call, type Handler } from "../../../test/fakeApi";
 import { DEV, ENGLISH, MATHS, MEENA } from "../../../test/timetableFixtures";
 import type { Teacher } from "../../../types";
@@ -222,5 +223,28 @@ describe("Teachers: one who leaves", () => {
     await pick(user, "replace-with", "Dev Patel");
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Give them over" }));
     expect(await screen.findByText("Class 5 - A: Dev Patel is teaching Class 5 - C (English) at the same time")).toBeInTheDocument();
+  });
+});
+
+describe("Teachers while a year that is over is open (read only)", () => {
+  afterEach(() => {
+    store.dispatch(yearViewChanged(null));
+  });
+
+  it("lists the teachers and their week; nothing to add, upload, change, give away or mark as left", async () => {
+    store.dispatch(yearViewChanged("y26"));
+    openPage([MEENA]);
+    expect(await screen.findByText(MEENA.name)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: `${MEENA.name}'s week` })).toBeInTheDocument();
+    for (const name of ["Add teacher", "Bulk upload", "Fields"]) expect(screen.queryByRole("link", { name })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: `Change ${MEENA.name}` })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /classes to another teacher|has left/ })).not.toBeInTheDocument();
+  });
+
+  it("an empty list offers nothing to add", async () => {
+    store.dispatch(yearViewChanged("y26"));
+    openPage([]);
+    await screen.findByText("No teachers yet");
+    expect(screen.queryByRole("link", { name: "Add teacher" })).not.toBeInTheDocument();
   });
 });

@@ -3,7 +3,8 @@ import { useSearchParams } from "react-router";
 import { CalendarX2, ClockAlert, UserRoundCheck, UsersRound } from "lucide-react";
 import { useGetTeachersAttendanceQuery } from "../../redux/api/attendanceApi";
 import { getApiError } from "../../utils/apiErrors";
-import { dayCount, isLowPercent, lateText, percentText, rangePresets, showsEveryDay, teacherLook, weekdayLetter } from "../../utils/attendance";
+import { dayCount, isLowPercent, lateText, percentText, showsEveryDay, startRange, teacherLook, weekdayLetter } from "../../utils/attendance";
+import { useYearView } from "../../hooks/useYearView";
 import { shortDay } from "../../utils/calendar";
 import { clock12 } from "../../utils/exams";
 import { cn } from "../../utils/helpers";
@@ -27,7 +28,8 @@ const TH = "whitespace-nowrap px-2.5 py-3 text-left text-xs font-bold uppercase 
 export function TeacherAttendanceTab() {
   const [params, setParams] = useSearchParams();
   const today = todayInIndia();
-  const month = rangePresets(today).find((p) => p.id === "month")!;
+  const { viewing } = useYearView();
+  const month = startRange(today, viewing);
   const range = { from: params.get("from") ?? month.from, to: params.get("to") ?? month.to };
   const res = useGetTeachersAttendanceQuery(range);
   const data = res.data?.data;

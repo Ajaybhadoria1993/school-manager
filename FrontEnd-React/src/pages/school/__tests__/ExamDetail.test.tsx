@@ -7,6 +7,7 @@ import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { sessionStarted, signedOut } from "../../../redux/slices/authSlice";
+import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
 import { STRUCTURE } from "../../../test/fixtures";
 import type { AcademicStructure, ExamDetail, ExamPaper } from "../../../types";
@@ -340,5 +341,18 @@ describe("changing the exam and its papers", () => {
     await waitFor(() => expect(writes(calls)).toHaveLength(1));
     expect(writes(calls)[0]).toMatchObject({ method: "DELETE", path: "/exams/e1" });
     await waitFor(() => expect(router.state.location.pathname).toBe("/school/exams"));
+  });
+});
+
+describe("a year that is over is open (read only)", () => {
+  it("shows the exam and its papers, with nothing to add, change or take away", async () => {
+    store.dispatch(yearViewChanged("y26"));
+    openPage();
+    expect(await screen.findByRole("heading", { name: EXAM.name })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add timetable" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Change exam" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete exam" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Change / })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /away$/ })).not.toBeInTheDocument();
   });
 });

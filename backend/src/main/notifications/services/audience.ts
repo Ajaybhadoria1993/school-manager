@@ -2,9 +2,12 @@ import { Types } from "mongoose";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { childrenOf } from "../../classroom/services/children";
 import { ClassTeacher } from "../../staff/models/ClassTeacher";
+import { Allotment } from "../../subjects/models/Allotment";
+import { Enrolment } from "../../students/models/Enrolment";
 import { Teacher } from "../../staff/models/Teacher";
 import { Guardian } from "../../students/models/Guardian";
 import { Student } from "../../students/models/Student";
+import { fullName } from "../../students/services/shared";
 import { User } from "../../users/models/User";
 
 /** A class without sections, or one section of a class. */
@@ -36,6 +39,46 @@ export class Audience {
     const children = await childrenOf(tenantId, unit);
     const parents = await Audience.parentsOf(tenantId, children.map((c) => c.id));
     return children.map((c) => ({ id: c.id, name: c.name, parents: parents.get(c.id) ?? [] }));
+  }
+
+  /** The active children of these classes (every section) in this year, each with the class they are in and their parents' logins. */
+  static async childrenOfClasses(tenantId: string, yearId: Types.ObjectId, classIds: string[]): Promise<{ id: string; name: string; classId: string; parents: string[] }[]> {
+    const school = new Types.ObjectId(tenantId);
+    const enrolments = await Enrolment.find({ tenantId: school, academicYearId: yearId, classId: { $in: classIds.map((c) => new Types.ObjectId(c)) }, status: "active" }).select("studentId classId").lean();
+    if (enrolments.length === 0) return [];
+    const [students, parents] = await Promise.all([
+      Student.find({ tenantId: school, _id: { $in: enrolments.map((e) => e.studentId) }, status: "active" }).select("firstName lastName").lean(),
+      Audience.parentsOf(tenantId, enrolments.map((e) => e.studentId.toString())),
+    ]);
+    const classOf = new Map(enrolments.map((e) => [e.studentId.toString(), e.classId.toString()]));
+    return students.map((s) => ({ id: s._id.toString(), name: fullName(s), classId: classOf.get(s._id.toString())!, parents: parents.get(s._id.toString()) ?? [] }));
+  }
+
+  /**
+   * The teachers of these classes this year: the class teacher of any of their sections and whoever teaches any subject in them. Each
+   * login with the classes (and sections) of theirs among these, so a message can name them and open the right class page.
+   */
+  static async teachersOfClasses(tenantId: string, yearId: Types.ObjectId, classIds: string[]): Promise<Map<string, UnitRef[]>> {
+    const school = new Types.ObjectId(tenantId);
+    const classes = classIds.map((c) => new Types.ObjectId(c));
+    const [heads, taught] = await Promise.all([
+      ClassTeacher.find({ tenantId: school, academicYearId: yearId, classId: { $in: classes } }).select("teacherId classId sectionId").lean(),
+      Allotment.find({ tenantId: school, academicYearId: yearId, classId: { $in: classes }, teacherId: { $type: "objectId" } }).select("teacherId classId sectionId").lean(),
+    ]);
+    const rows = [...heads, ...taught].map((r) => ({ teacherId: r.teacherId as Types.ObjectId, unit: { classId: r.classId.toString(), sectionId: r.sectionId ? r.sectionId.toString() : null } }));
+    const teachers = await Teacher.find({ tenantId: school, _id: { $in: [...new Set(rows.map((r) => r.teacherId.toString()))].map((id) => new Types.ObjectId(id)) }, isActive: true, userId: { $type: "objectId" } })
+      .select("userId")
+      .lean();
+    const loginOf = new Map(teachers.map((t) => [t._id.toString(), t.userId!.toString()]));
+    const result = new Map<string, UnitRef[]>();
+    for (const r of rows) {
+      const login = loginOf.get(r.teacherId.toString());
+      if (!login) continue;
+      const units = result.get(login) ?? [];
+      if (!units.some((u) => u.classId === r.unit.classId && u.sectionId === r.unit.sectionId)) units.push(r.unit);
+      result.set(login, units);
+    }
+    return result;
   }
 
   /** The login of the class teacher of this class or section this year (none, or one who left: nobody). */
