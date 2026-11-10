@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_FIELD_RULES } from "../../constants/studentFields";
 import type { Relation } from "../../types";
-import { checkStudentForm, emptyGuardian, emptyStudentForm, admitLink, formatMoment, istDay, freeRelation, namesPreview, takenRelations, type StudentFormValues } from "../students";
+import { checkStudentForm, emptyGuardian, emptyStudentForm, admitLink, manageStudentsLink, formatMoment, istDay, freeRelation, namesPreview, takenRelations, type StudentFormValues } from "../students";
 
 /** An admission with every detail a new school needs by default, and these parents. */
 function admission(parents: { relation: Relation | ""; mobile?: string; name?: string; isPrimary?: boolean }[]): StudentFormValues {
@@ -97,6 +97,16 @@ describe("the admission form opened for a class", () => {
     expect(admitLink({ classId: "c5", sectionId: "c5-A" })).toBe("/school/students/new?class=c5&section=c5-A");
     expect(admitLink({ sectionId: "c5-A" })).toBe("/school/students/new");
     expect(admitLink({ classId: "", sectionId: "" })).toBe("/school/students/new");
+  });
+});
+
+describe("the Manage Students page opened for a class", () => {
+  it("carries the class, and the section only with a class", () => {
+    expect(manageStudentsLink()).toBe("/school/students");
+    expect(manageStudentsLink({ classId: "c5" })).toBe("/school/students?class=c5");
+    expect(manageStudentsLink({ classId: "c5", sectionId: "c5-A" })).toBe("/school/students?class=c5&section=c5-A");
+    expect(manageStudentsLink({ sectionId: "c5-A" })).toBe("/school/students");
+    expect(manageStudentsLink({ classId: "", sectionId: "" })).toBe("/school/students");
   });
 });
 

@@ -1,8 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { Popover } from "@heroui/react";
-import { Check, Plus, Search, Trash2, UserCog } from "lucide-react";
+import { Check, DoorOpen, Plus, Search, Trash2, UserCog } from "lucide-react";
 import { cn } from "../../utils/helpers";
-import { matchChoices, type SubjectChoice } from "../../utils/timetable";
+import { matchChoices, type SubjectChoice, type TeacherChoice } from "../../utils/timetable";
 import { Input } from "../ui/Input";
 
 /** One row of the list: a subject of the choices, or, last, the offer to make what was typed a new subject. */
@@ -19,8 +19,9 @@ function detail(choice: SubjectChoice, teacher: string | null, trouble: string |
 /**
  * The box that opens on a period of the week: type the first letters of a subject, see what fits (the class's own subjects first, how
  * many periods each has in already, and a teacher who cannot take this period in red), and pick it with a click or Enter. Something
- * typed that is in no list can be added as a new subject. For a period that already has a lesson, the same box changes the subject, and
- * below it are the ways to set its teacher and room or to take it out. It only says what was picked: the page puts it in the week.
+ * typed that is in no list can be added as a new subject. For a period that already has a lesson, the same box changes the subject, lists
+ * the teachers to pick from (it says so when the school has none), and below that are the ways to set its room or to take it out. A
+ * period with several subjects (a choice) sets a teacher for each in the window instead. It only says what was picked: the page puts it in the week.
  */
 export function PeriodPicker({
   anchor,
@@ -32,6 +33,9 @@ export function PeriodPicker({
   trouble,
   onChoose,
   onCreate,
+  spread,
+  teachers,
+  onTeacher,
   onEditLesson,
   onTakeOut,
   onClose,
@@ -51,6 +55,11 @@ export function PeriodPicker({
   /** The page puts the subject in and closes the box (it may first have to add the subject to the school). */
   onChoose: (choice: SubjectChoice) => void | Promise<void>;
   onCreate: (name: string) => void | Promise<void>;
+  /** A Pre-Primary class: put the subject in this period all week (the usual way) or in every period of this day. */
+  spread?: { value: "week" | "day"; dayName: string; onChange: (next: "week" | "day") => void };
+  /** Only for a period with one lesson: its teachers (none: the school has no teacher), and what was picked. */
+  teachers?: { subjectName: string; choices: readonly TeacherChoice[] };
+  onTeacher?: (teacherId: string | null) => void;
   /** Only for a period that has a lesson. */
   onEditLesson?: () => void;
   onTakeOut?: () => void;
@@ -124,12 +133,32 @@ export function PeriodPicker({
 
   return (
     <Popover.Content isOpen onOpenChange={(open) => !open && onClose()} triggerRef={anchor} isNonModal={!small} placement="bottom start" offset={6} className="w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-xl border border-border bg-surface p-0 shadow-float">
-      <Popover.Dialog ref={root} aria-label={`${title}: choose the subject`} className="p-0 outline-none">
-        <div className="border-b border-border px-3.5 pb-3 pt-3">
+      <Popover.Dialog ref={root} aria-label={`${title}: choose the subject`} className="flex max-h-[inherit] flex-col p-0 outline-none">
+        <div className="shrink-0 border-b border-border px-3.5 pb-3 pt-3">
           <p className="flex items-baseline justify-between gap-2">
             <span className="text-sm font-bold text-foreground">{title}</span>
             <span className="text-xs text-foreground-muted">{times}</span>
           </p>
+          {spread && (
+            <div role="radiogroup" aria-label="Put the subject in" className="mt-2 grid grid-cols-2 gap-0.5 rounded-lg bg-surface-muted p-0.5">
+              {(["week", "day"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  aria-checked={spread.value === v}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => spread.onChange(v)}
+                  className={cn(
+                    "h-7 cursor-pointer truncate rounded-md px-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                    spread.value === v ? "bg-surface text-primary-deep shadow-sm" : "text-foreground-muted hover:text-foreground"
+                  )}
+                >
+                  {v === "week" ? "This period, all week" : `Whole ${spread.dayName}`}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="mt-2">
             <Input
               autoFocus={!small}
@@ -154,7 +183,7 @@ export function PeriodPicker({
           </div>
         </div>
 
-        <ul id={`${uid}-list`} ref={list} role="listbox" aria-label="Subjects" aria-busy={busy} className={cn("relative max-h-64 overflow-y-auto p-1.5", busy && "pointer-events-none opacity-60")}>
+        <ul id={`${uid}-list`} ref={list} role="listbox" aria-label="Subjects" aria-busy={busy} className={cn("relative overflow-y-auto p-1.5", teachers ? "max-h-40" : "max-h-64", busy && "pointer-events-none opacity-60")}>
           {rows.map((row, i) => {
             const isActive = i === at;
             const common = {
@@ -197,12 +226,43 @@ export function PeriodPicker({
           })}
         </ul>
 
+        {teachers && (
+          <div className="flex min-h-0 flex-col border-t border-border p-1.5">
+            <p className="shrink-0 px-2.5 pb-0.5 pt-1 text-xs font-bold uppercase tracking-wide text-foreground-muted">Teacher</p>
+            {teachers.choices.length === 0 ? (
+              <p className="px-2.5 py-1.5 text-sm font-medium text-foreground-muted">No teacher available in your school</p>
+            ) : (
+              <div role="radiogroup" aria-label={`Teacher for ${teachers.subjectName}`} className="max-h-36 overflow-y-auto">
+                {teachers.choices.map((c) => (
+                  <button
+                    key={c.value ?? "usual"}
+                    type="button"
+                    role="radio"
+                    aria-checked={c.selected}
+                    aria-label={c.label}
+                    disabled={c.disabled}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => onTeacher?.(c.value)}
+                    className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className={cn("block truncate text-sm text-foreground", c.selected ? "font-bold text-primary-deep" : "font-semibold")}>{c.label}</span>
+                      {c.note && <span className={cn("block truncate text-xs", c.bad ? "font-medium text-danger" : "text-foreground-muted")}>{c.note}</span>}
+                    </span>
+                    {c.selected && <Check className="size-4 shrink-0 text-primary" aria-hidden />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {filled && (onEditLesson || onTakeOut) && (
-          <div className="flex items-center gap-1.5 border-t border-border bg-surface-muted/50 p-2">
+          <div className="flex shrink-0 items-center gap-1.5 border-t border-border bg-surface-muted/50 p-2">
             {onEditLesson && (
               <button type="button" onClick={onEditLesson} className="inline-flex h-8 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg text-sm font-semibold text-foreground transition-colors hover:bg-surface focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20">
-                <UserCog className="size-4" aria-hidden />
-                Teacher & room
+                {teachers ? <DoorOpen className="size-4" aria-hidden /> : <UserCog className="size-4" aria-hidden />}
+                {teachers ? "Room" : "Teacher & room"}
               </button>
             )}
             {onTakeOut && (

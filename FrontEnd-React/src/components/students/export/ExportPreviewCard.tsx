@@ -29,7 +29,7 @@ export function ExportPreviewCard({
   return (
     <Card className="p-4 sm:p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="flex items-center gap-2 text-base font-bold text-foreground">
+        <h2 className="text-section-heading flex items-center gap-2">
           <Eye className="size-4.5 text-primary" aria-hidden />
           Preview
         </h2>

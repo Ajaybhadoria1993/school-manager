@@ -1,3 +1,5 @@
+import { recordsOfSchool } from "../../tenants/services/schoolSides";
+import { TeacherMediumService } from "./teacherMedium.service";
 import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { isDuplicateKey } from "../../academics/services/shared";
@@ -175,7 +177,8 @@ export class TeacherService {
       const pattern = new RegExp(escapeRegex(query.search.trim().toLowerCase().replace(/\s+/g, " ")), "i");
       const either: Record<string, unknown>[] = [{ nameKey: pattern }, { mobile: pattern }, { employeeCode: pattern }, { email: pattern }];
       if (!colleague) {
-        const users = await User.find({ tenantId: school, role: "teacher", username: pattern }).select("_id").lean();
+        // A teacher who also works on another medium has their login there.
+        const users = await User.find({ tenantId: { $in: await recordsOfSchool(school) }, role: "teacher", username: pattern }).select("_id").lean();
         if (users.length > 0) either.push({ userId: { $in: users.map((u) => u._id) } });
       }
       and.push({ $or: either });
@@ -299,7 +302,10 @@ export class TeacherService {
     await TeacherService.assertSubjects(tenantId, input.subjectIds);
     await TeacherService.assertFree(tenantId, input.mobile ?? null, input.employeeCode ?? null, null);
     // Everything that can be checked is checked before anything is made: a refusal leaves nothing behind.
-    if (input.login) await TeacherLogin.assertFree(input.login.username, input.email ?? null);
+    if (input.login) {
+      await TeacherLogin.assertFree(input.login.username, input.email ?? null);
+      await TeacherMediumService.assertNoLoginElsewhere(tenantId, input.mobile);
+    }
 
     let teacher;
     try {
@@ -389,7 +395,8 @@ export class TeacherService {
         ...(input.mobile !== undefined ? { phone: input.mobile } : {}),
         ...(input.email !== undefined ? { email: input.email } : {}),
       });
-      if (input.isActive !== undefined) await TeacherLogin.setActive(current.userId, input.isActive);
+      await TeacherMediumService.mirror(tenantId, current.userId, { name: input.name, mobile: input.mobile, email: input.email });
+      if (input.isActive !== undefined) await TeacherMediumService.loginFollows(tenantId, current.userId, input.isActive);
     }
     // A teacher who has left is nobody's class teacher any more (the classes show no class teacher until the school picks one).
     if (input.isActive === false && current.isActive) await ClassTeacherService.release(tenantId, id);
@@ -405,6 +412,7 @@ export class TeacherService {
     if (teacher.userId) throw ApiError.conflict(`${teacher.name} already has a login.`, "TEACHER_HAS_LOGIN");
     if (!teacher.mobile) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "mobile", message: NEEDS_MOBILE_MESSAGE }]);
     await TeacherLogin.assertFree(login.username, teacher.email ?? null);
+    await TeacherMediumService.assertNoLoginElsewhere(tenantId, teacher.mobile);
 
     const userId = await TeacherLogin.create(tenantId, { name: teacher.name, mobile: teacher.mobile, email: teacher.email ?? null, isActive: teacher.isActive }, login);
     const linked = await Teacher.updateOne({ _id: id, tenantId, userId: null }, { $set: { userId } });

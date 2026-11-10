@@ -18,7 +18,7 @@ export function ChildDiary({ childId }: { childId: string }) {
 
   return (
     <section aria-label="Diary" className="space-y-3">
-      <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-foreground">
+      <h2 className="text-section-heading flex items-center gap-2">
         <BookOpenText className="size-5 text-primary" aria-hidden />
         Diary
       </h2>
@@ -75,7 +75,7 @@ export function ChildTests({ childId }: { childId: string }) {
   return (
     <section aria-label="Tests and marks" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-foreground">
+        <h2 className="text-section-heading flex items-center gap-2">
           <ClipboardList className="size-5 text-primary" aria-hidden />
           Tests and marks
         </h2>

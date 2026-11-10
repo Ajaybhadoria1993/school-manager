@@ -3,20 +3,24 @@ import { Outlet, useLocation, useNavigate } from "react-router";
 import { PageSpinner } from "../components/shared/PageSpinner";
 import { useAuth } from "../hooks/useAuth";
 import { useLiveNotifications } from "../hooks/useLiveNotifications";
+import { usePermissionRefresh } from "../hooks/usePermissionRefresh";
 import { postLoginPath } from "../utils/postLoginPath";
 import { Sidebar } from "../components/layout/Sidebar";
 import { Topbar } from "../components/layout/Topbar";
 import { YearViewBanner } from "../components/layout/YearViewBanner";
-import { activeNavItem } from "../components/layout/nav-config";
+import { NAV_ITEMS, activeNavItem, navVisible, pageTitleOf, pathForMenu } from "../components/layout/nav-config";
 
 /** The signed-in app shell. Everything inside it requires a session and an approved school. */
 export default function MainLayout() {
   const { user, tenant, loading, loginPath } = useAuth();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const [mobileOpen, setMobileOpen] = useState(false);
   // New notifications, live on the socket, for the bell in the top bar (docs/notifications.md).
   useLiveNotifications();
+  // What the school allowed this person is read again when the window is opened (the Permissions page).
+  usePermissionRefresh();
 
   // A school admin whose school is still being set up or waiting for approval belongs on /onboarding.
   const needsOnboarding =
@@ -30,7 +34,8 @@ export default function MainLayout() {
 
   if (loading || !user || needsOnboarding) return <PageSpinner />;
 
-  const active = activeNavItem(pathname);
+  // A page opened from another menu entry (Add student from Students) keeps that entry lit and its title.
+  const active = activeNavItem(pathForMenu(location), NAV_ITEMS.filter((item) => navVisible(item, user)));
 
   return (
     <div className="flex min-h-screen bg-background print:block">
@@ -44,7 +49,7 @@ export default function MainLayout() {
         <div className="print:hidden">
           <Topbar
             onMenuClick={() => setMobileOpen(true)}
-            title={active?.label ?? "Dashboard"}
+            title={pageTitleOf(active)}
           />
         </div>
         {/* Only while a year that is over is open (read only): which year it is, and the way back. */}

@@ -6,9 +6,9 @@ import { useGetStructureQuery } from "../../../redux/api/academicsApi";
 import { stepsFor } from "../../../utils/admitSteps";
 import type { FieldsDraft } from "../../../utils/exportLayout";
 import { emptyStudentForm } from "../../../utils/students";
-import { AdmitSidebar } from "../form/AdmitSidebar";
 import { AdmitStepBody } from "../form/AdmitStepBody";
 import { AppModal } from "../../ui/AppModal";
+import { BoxedControls } from "../../ui/Input";
 import { Button } from "../../ui/Button";
 import { Card } from "../../ui/Card";
 import { Steps } from "../../ui/Steps";
@@ -43,21 +43,21 @@ export function AddStudentPreview({ draft, onClose }: { draft: FieldsDraft; onCl
     >
       <div className="space-y-5">
         <header className="flex flex-wrap items-baseline gap-x-3">
-          <h2 className="text-2xl font-extrabold tracking-[-0.02em] text-foreground">Add student</h2>
+          <h2 className="text-page-heading">Add student</h2>
           {year && <p className="text-sm text-foreground-muted">Academic year {year}</p>}
         </header>
 
-        <Card className="px-5 py-4 sm:px-7 sm:py-5">
+        <Card className="px-4 py-3 sm:px-5">
           <Steps steps={stepList} active={at} completed={[]} furthest={stepList.length - 1} onSelect={setPosition} />
-          <p className="mt-3 hidden text-sm text-foreground-muted lg:block">{step.hint}</p>
         </Card>
 
         {/* The boxes are for looking at: nothing can be typed in them. */}
-        <div inert className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]" aria-label={`Preview of ${step.label}`} role="group">
-          <div key={step.key} className="rise-in min-w-0 space-y-6">
-            <AdmitStepBody form={form} stepKey={step.key} placements={draft.placements} steps={draft.steps} structure={structure} capacity={capacity} />
-          </div>
-          {structure ? <AdmitSidebar values={form.values} problems={form.problems} rules={form.rules ?? draft.rules} custom={draft.custom} structure={structure} /> : <div />}
+        <div inert aria-label={`Preview of ${step.label}`} role="group">
+          <BoxedControls>
+            <Card key={step.key} className="rise-in space-y-7 p-4 sm:p-5">
+              <AdmitStepBody form={form} stepKey={step.key} placements={draft.placements} steps={draft.steps} structure={structure} capacity={capacity} />
+            </Card>
+          </BoxedControls>
         </div>
       </div>
     </AppModal>

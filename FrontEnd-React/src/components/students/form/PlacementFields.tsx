@@ -4,11 +4,12 @@ import { Check, CircleCheck, FolderTree, Hash, Info, Users, Wand2 } from "lucide
 import { MAX_ROLL_NUMBER } from "../../../constants/students";
 import { fieldId, type StudentForm } from "../../../hooks/useStudentForm";
 import { plural } from "../../../utils/academics";
+import { classNumber, streamOf } from "../../../utils/classNumber";
 import { cn } from "../../../utils/helpers";
 import type { AcademicStructure, ClassItem, SectionItem, SectionLoad, StudentCapacity } from "../../../types";
 import { Field } from "../../ui/Field";
 import { Input } from "../../ui/Input";
-import { FormCard } from "./FormCard";
+import { FormSection } from "./FormSection";
 
 type SeatState = "open" | "almost" | "full" | "unlimited";
 
@@ -31,6 +32,12 @@ const BADGE: Record<SeatState, { label: string; className: string; bar: string }
 
 /** "Class 5" is shown as 5 among the school's numbered classes; any other name as it is. */
 const shortName = (name: string) => /^class\s*(\d{1,2})$/i.exec(name.trim())?.[1] ?? null;
+
+/** 11 or 12 for a class of the last two years (taught in streams), else null. */
+const seniorOf = (c: ClassItem): 11 | 12 | null => {
+  const number = classNumber(c.name);
+  return number === 11 || number === 12 ? number : null;
+};
 
 const PRE_PRIMARY = /^(pre[-\s]?nursery|nursery|play\s?group|pg|lkg|ukg|kg|kg\s?[12]|jr\.?\s?kg|sr\.?\s?kg|pre[-\s]?primary|prep)$/i;
 
@@ -118,8 +125,14 @@ export function PlacementFields({
   const { values } = form;
   const klass = structure.classes.find((c) => c.id === values.classId);
   const loads = new Map((capacity?.sections ?? []).map((s) => [s.sectionId, s]));
-  const year = structure.academicYear?.name;
   const picked = klass?.sections.find((s) => s.id === values.sectionId);
+
+  // Class 11 and 12 are taught in streams, each its own class ("Class 11 Science"): they show as one chip each, and the stream is asked
+  // before anything else. The class stays empty until a stream is picked, so a student is never put in "Class 11" as a whole.
+  const [asked, setAsked] = useState<11 | 12 | null>(null);
+  const seniorNumber = (klass ? seniorOf(klass) : null) ?? asked;
+  const streamClasses = seniorNumber ? structure.classes.filter((c) => seniorOf(c) === seniorNumber && streamOf(c.name) !== null) : [];
+  const streamMissing = seniorNumber !== null && !values.classId;
 
   // The next free roll number where the student is going: the picked section's, or the whole class's for a class without sections.
   const nextFree = !klass
@@ -132,9 +145,17 @@ export function PlacementFields({
   const roll = values.rollNumber.trim();
   const rollOk = /^\d+$/.test(roll) && Number(roll) >= 1 && Number(roll) <= MAX_ROLL_NUMBER && !form.errorOf("rollNumber");
 
-  function pickClass(id: string) {
+  function pickClass(id: string, fromStream = false) {
+    if (!fromStream) setAsked(null);
     if (id === values.classId) return;
     form.set("classId", id);
+    form.set("sectionId", "");
+  }
+
+  function pickSenior(number: 11 | 12) {
+    if (seniorNumber === number) return;
+    setAsked(number);
+    form.set("classId", "");
     form.set("sectionId", "");
   }
 
@@ -154,6 +175,42 @@ export function PlacementFields({
       ? `${plural(klass.sections.length, "section")} this year. Pick one.`
       : "";
 
+  /** The chips of the groups: a numbered class as its number, Class 11 and 12 once each (their streams are asked next). */
+  const seen = new Set<number>();
+  const chipsOf = (classes: ClassItem[]) =>
+    classes.flatMap((c): ({ kind: "class"; c: ClassItem } | { kind: "senior"; number: 11 | 12 })[] => {
+      const number = seniorOf(c);
+      if (number === null) return [{ kind: "class", c }];
+      if (seen.has(number)) return [];
+      seen.add(number);
+      return [{ kind: "senior", number }];
+    });
+
+  /** One round chip of the class or stream list. */
+  const chip = (key: string, label: string, on: boolean, onPick: () => void, opts: { short?: string | null; title?: string; text?: ReactNode; group?: string } = {}) => (
+    <label key={key} className="relative block" title={opts.title ?? label}>
+      <input type="radio" name={`${name}-${opts.group ?? "class"}`} value={key} checked={on} onChange={onPick} aria-label={label} className="peer sr-only" />
+      <span
+        className={cn(
+          "inline-flex h-10 cursor-pointer select-none items-center justify-center gap-1 rounded-lg border text-sm font-semibold transition-all duration-150",
+          opts.short ? "min-w-11 px-3" : "px-4",
+          "peer-focus-visible:ring-4 peer-focus-visible:ring-primary/20",
+          on ? "border-primary bg-primary text-primary-foreground shadow-card" : "border-border bg-surface text-foreground hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-card"
+        )}
+      >
+        {on && <Check className="size-3.5" aria-hidden />}
+        {opts.short ? (
+          <>
+            <span className="sr-only">Class </span>
+            {opts.short}
+          </>
+        ) : (
+          (opts.text ?? label)
+        )}
+      </span>
+    </label>
+  );
+
   const summary = klass && (
     <p aria-live="polite" className="absolute -top-1 right-0 inline-flex h-7 max-w-[70%] items-center overflow-hidden whitespace-nowrap divide-x divide-emerald-300/70 rounded-full border border-emerald-300/70 bg-success-soft text-xs font-bold text-success">
       <span className="px-2.5">{klass.name}</span>
@@ -164,12 +221,10 @@ export function PlacementFields({
   );
 
   return (
-    <FormCard
+    <FormSection
       index={index}
       icon={FolderTree}
-      tone="success"
       title="Class and section"
-      description={year ? `Where the student sits in ${year}. Only this year's sections are offered.` : "Where the student sits this year."}
       tip="A student has one class (and section) in each academic year. Next year's class is given at promotion; this year's place stays in their history."
     >
       {structure.classes.length === 0 ? (
@@ -183,7 +238,7 @@ export function PlacementFields({
       ) : (
         <div className="space-y-5">
           {/* The live summary sits on the label's line, out of the flow, so it never changes the card's height. */}
-          <Field id={fieldId("classId")} label="Class" error={form.errorOf("classId")} className="relative">
+          <Field id={fieldId("classId")} label="Class" error={streamMissing ? undefined : form.errorOf("classId")} className="relative">
             {summary}
             <div
               id={fieldId("classId")}
@@ -196,40 +251,34 @@ export function PlacementFields({
                 <div key={group.key} className="grid min-w-0 items-center gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-[8.5rem_minmax(0,1fr)]">
                   {group.title && <p className="text-[11px] font-bold uppercase tracking-wider text-foreground-muted sm:col-start-1">{group.title}</p>}
                   <div className={cn("flex flex-wrap gap-2", !group.title && "sm:col-span-2")}>
-                    {group.classes.map((c) => {
-                      const short = shortName(c.name);
-                      const on = c.id === values.classId;
-                      return (
-                        <label key={c.id} className="relative block" title={c.name}>
-                          <input type="radio" name={`${name}-class`} value={c.id} checked={on} onChange={() => pickClass(c.id)} aria-label={c.name} className="peer sr-only" />
-                          <span
-                            className={cn(
-                              "inline-flex h-10 cursor-pointer select-none items-center justify-center gap-1 rounded-lg border text-sm font-semibold transition-all duration-150",
-                              short ? "min-w-11 px-3" : "px-4",
-                              "peer-focus-visible:ring-4 peer-focus-visible:ring-primary/20",
-                              on
-                                ? "border-primary bg-primary text-primary-foreground shadow-card"
-                                : "border-border bg-surface text-foreground hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-card"
-                            )}
-                          >
-                            {on && <Check className="size-3.5" aria-hidden />}
-                            {short ? (
-                              <>
-                                <span className="sr-only">Class </span>
-                                {short}
-                              </>
-                            ) : (
-                              c.name
-                            )}
-                          </span>
-                        </label>
-                      );
-                    })}
+                    {chipsOf(group.classes).map((entry) =>
+                      entry.kind === "senior"
+                        ? chip(`senior-${entry.number}`, `Class ${entry.number}`, seniorNumber === entry.number, () => pickSenior(entry.number), { short: String(entry.number) })
+                        : chip(entry.c.id, entry.c.name, entry.c.id === values.classId, () => pickClass(entry.c.id), { short: shortName(entry.c.name), text: entry.c.name })
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           </Field>
+
+          {seniorNumber !== null && (
+            <Field id={fieldId("stream")} label={`Stream of Class ${seniorNumber}`} error={streamMissing && form.errorOf("classId") ? "Choose the stream" : undefined}>
+              {streamClasses.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-border bg-background px-4 py-4 text-sm text-foreground-muted">
+                  Class {seniorNumber} has no streams yet.{" "}
+                  <Link to="/school/classes" className="font-semibold text-primary-deep underline-offset-2 hover:underline">
+                    Add them in Classes & Sections
+                  </Link>{" "}
+                  first.
+                </p>
+              ) : (
+                <div role="radiogroup" aria-label={`Stream of Class ${seniorNumber}`} className="flex flex-wrap gap-2">
+                  {streamClasses.map((c) => chip(c.id, c.name, c.id === values.classId, () => pickClass(c.id, true), { text: streamOf(c.name), group: "stream" }))}
+                </div>
+              )}
+            </Field>
+          )}
 
           {/* The section (one row whose height never changes), then the roll number under it. */}
           <div className="space-y-5">
@@ -247,7 +296,7 @@ export function PlacementFields({
               </span>
               <div id={fieldId("sectionId")} tabIndex={-1} className="outline-none">
                 {!klass ? (
-                  <p className={emptyBox}>Pick a class to see its sections.</p>
+                  <p className={emptyBox}>{seniorNumber !== null ? "Pick the stream to see its sections." : "Pick a class to see its sections."}</p>
                 ) : klass.sections.length === 0 ? (
                   <div className="flex h-[5.5rem] w-full items-center gap-3 rounded-xl border border-primary/40 bg-primary-soft/50 px-4">
                     <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary-deep">
@@ -278,7 +327,7 @@ export function PlacementFields({
                             )}
                           >
                             <span className="flex items-center justify-between gap-2">
-                              <span className="text-lg font-extrabold leading-none text-foreground">{s.name}</span>
+                              <span className="text-lg font-bold leading-none text-foreground">{s.name}</span>
                               {on ? (
                                 <span className="flex size-5 items-center justify-center rounded-full bg-primary text-white">
                                   <Check className="size-3" aria-hidden />
@@ -309,7 +358,7 @@ export function PlacementFields({
                   <Input {...form.bind("rollNumber", "digits")} icon={Hash} inputMode="numeric" maxLength={3} placeholder="For example 12" className="pr-9" />
                   {rollOk && <CircleCheck className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-success" aria-hidden />}
                 </div>
-                <div className="flex h-10 items-center gap-2">
+                <div className="flex h-12 items-center gap-2">
                 <span className="rounded-md bg-surface-muted px-2 py-1 text-xs font-semibold text-foreground-muted">
                   Next free: <span className="text-foreground">{nextFree ?? "-"}</span>
                 </span>
@@ -332,6 +381,6 @@ export function PlacementFields({
           </div>
         </div>
       )}
-    </FormCard>
+    </FormSection>
   );
 }

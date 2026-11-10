@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETUP, generateDay } from "../timings";
-import { daySummary, readWeek, weekBody, weekProblems, type WeekPlan } from "../schoolWeek";
+import { dayProblem, daySummary, departmentDayBody, readWeek, weekBody, weekProblems, type WeekPlan } from "../schoolWeek";
 import type { Schedule } from "../../types";
 
 const usualSlots = generateDay(DEFAULT_SETUP).slots;
@@ -108,5 +108,23 @@ describe("weekProblems: said before anything is sent", () => {
 
     const badUsual: WeekPlan = { ...plan, usual: { ...plan.usual, periodMinutes: 5 } };
     expect(weekProblems(badUsual)[0]).toEqual({ where: "usual", message: "A period lasts 10 to 120 minutes" });
+  });
+});
+
+describe("Pre-Primary's own day (2026-11-10)", () => {
+  it("is sent for the school's usual days only: a day the school keeps different, and a holiday, follow the school", () => {
+    const { plan } = readWeek([timing({ days: [1, 2, 3, 4, 5] }), timing({ id: "t2", name: "Saturday", days: [6], slots: saturday, periods: 4 })]);
+    const early = { ...DEFAULT_SETUP, start: "07:30", periods: 5 };
+    const body = departmentDayBody(plan, early, "d1");
+    expect(body.departmentId).toBe("d1");
+    expect(body.days.map((d) => d.day)).toEqual([1, 2, 3, 4, 5]);
+    expect(body.days[0].slots).toEqual(generateDay(early).slots);
+    expect(body.days[0].slots[0].start).toBe("07:30");
+  });
+
+  it("says what is wrong with a day's numbers, or nothing", () => {
+    expect(dayProblem(DEFAULT_SETUP)).toBeUndefined();
+    expect(dayProblem({ ...DEFAULT_SETUP, periods: 0 })).toBe("Add at least one period");
+    expect(dayProblem({ ...DEFAULT_SETUP, lunchStart: "11:00", lunchEnd: "10:30" })).toBe("The lunch must end after it starts");
   });
 });

@@ -18,13 +18,14 @@ const removeButton =
  * teach (the timetable's list). A cross takes one away in one click (the subject stays with the class, without a teacher). **Assign
  * class** opens the window that gives one (`onAssign`).
  */
-export function TeacherClassesBlock({ teacher, onAssign, index = 0 }: { teacher: Teacher; onAssign: () => void; index?: number }) {
+export function TeacherClassesBlock({ teacher, onAssign, index = 0, canChange = true }: { teacher: Teacher; onAssign: () => void; index?: number; canChange?: boolean }) {
   const res = useGetTeacherClassesQuery(teacher.id);
   const [assign] = useAssignTeacherMutation();
   const [setClassTeacher] = useSetClassTeacherMutation();
   const { push } = useToast();
   // A year that is over is only looked at: nothing is given or taken away.
-  const readOnly = useReadOnlyYear();
+  // A person who may see the teacher but not change them (Permissions) only reads what they have been given.
+  const readOnly = useReadOnlyYear() || !canChange;
   const classes = res.data?.data;
   const t = TONES.info;
 
@@ -34,7 +35,7 @@ export function TeacherClassesBlock({ teacher, onAssign, index = 0 }: { teacher:
     <Card role="region" aria-label="Classes" className="stagger-item relative overflow-hidden p-5" style={{ "--i": index } as React.CSSProperties}>
       <div aria-hidden className={cn("pointer-events-none absolute -right-12 -top-12 size-40 rounded-full bg-gradient-to-br to-transparent blur-2xl", t.glow)} />
       <div className="relative flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2.5 text-base font-bold tracking-tight text-foreground">
+        <h2 className="text-section-heading flex items-center gap-2.5">
           <span aria-hidden className={cn("flex size-9 items-center justify-center rounded-xl", t.gradient)}>
             <School className="size-4.5" />
           </span>

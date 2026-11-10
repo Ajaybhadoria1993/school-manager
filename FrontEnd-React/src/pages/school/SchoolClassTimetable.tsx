@@ -143,7 +143,7 @@ export default function SchoolClassTimetablePage() {
           title="No school timing yet"
           actions={
             readOnly ? undefined : (
-              <Link to="/school/timetable?tab=timings" className={outlineLink}>
+              <Link to="/school/timings" className={outlineLink}>
                 Set the school timing
               </Link>
             )
@@ -154,7 +154,7 @@ export default function SchoolClassTimetablePage() {
           <section aria-label="Week" className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2.5">
               <div className="flex items-center gap-2.5">
-                <h2 className="text-lg font-bold tracking-tight text-foreground">Week</h2>
+                <h2 className="text-section-heading">Week</h2>
                 {grid.exists ? <Badge tone={grid.status === "published" ? "success" : "warning"}>{grid.status === "published" ? "Published" : "Draft"}</Badge> : <Badge>Not made yet</Badge>}
               </div>
               {!readOnly && (
@@ -168,7 +168,7 @@ export default function SchoolClassTimetablePage() {
           </section>
 
           <Card role="region" aria-label="Timing" className="space-y-2 p-4 sm:p-5">
-            <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
+            <h2 className="text-section-heading flex items-center gap-2">
               <Clock3 className="size-5 text-primary" aria-hidden />
               Timing
             </h2>

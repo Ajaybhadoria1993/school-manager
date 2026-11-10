@@ -70,7 +70,7 @@ describe("A teacher's week", () => {
   it("leads to the class timetables (where a class's subjects get their teachers) when nothing is given to them", async () => {
     openPage({ ...WEEK, teaches: [], lessons: [], perDay: {}, week: 0 });
     expect(await screen.findByText(/Nothing is given to them yet/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "timetable" })).toHaveAttribute("href", "/school/timetable?tab=classes");
+    expect(screen.getByRole("link", { name: "timetable" })).toHaveAttribute("href", "/school/timetable");
   });
 
   it("says when the teacher has left", async () => {

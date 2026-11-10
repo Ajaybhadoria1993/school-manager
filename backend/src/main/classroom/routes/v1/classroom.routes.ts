@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../../../../middleware/auth";
+import { requirePermission } from "../../../../middleware/permission";
 import { yearView } from "../../../../middleware/yearView";
 import { validate } from "../../../../middleware/validate";
 import {
@@ -49,39 +50,38 @@ const router = Router();
 // yearView: a school admin may look at a past year (X-Academic-Year); reads answer for it, changes are refused.
 router.use(requireAuth, yearView);
 
-/** Everyone of the school reads; the people who run it write. */
-const SCHOOL_PEOPLE = requireRole("school_admin", "principal", "accountant", "teacher", "receptionist", "management", "staff", "parent");
-const RUNNERS = requireRole("school_admin", "principal");
+/** Who may do what follows the school's Permissions (docs/permissions.md). */
+const SEE_CALENDAR = requirePermission("calendar.view");
+const CHANGE_CALENDAR = requirePermission("calendar.manage");
 
 // ---- Calendar: holidays and events ----------------------------------------------------------------------------------------------------
-router.get("/calendar", SCHOOL_PEOPLE, validate(calendarQuerySchema, "query"), listCalendar);
-router.post("/calendar", RUNNERS, validate(createEventSchema), createEvent);
-router.patch("/calendar/:id", RUNNERS, validate(idParamSchema, "params"), validate(updateEventSchema), updateEvent);
-router.delete("/calendar/:id", RUNNERS, validate(idParamSchema, "params"), deleteEvent);
+router.get("/calendar", SEE_CALENDAR, validate(calendarQuerySchema, "query"), listCalendar);
+router.post("/calendar", CHANGE_CALENDAR, validate(createEventSchema), createEvent);
+router.patch("/calendar/:id", CHANGE_CALENDAR, validate(idParamSchema, "params"), validate(updateEventSchema), updateEvent);
+router.delete("/calendar/:id", CHANGE_CALENDAR, validate(idParamSchema, "params"), deleteEvent);
 // The standard holidays (Diwali, Holi...): the school takes a festival off its calendar or brings it back.
-router.put("/calendar/standard/:key", RUNNERS, validate(standardKeyParamSchema, "params"), validate(setStandardShownSchema), setStandardHoliday);
+router.put("/calendar/standard/:key", CHANGE_CALENDAR, validate(standardKeyParamSchema, "params"), validate(setStandardShownSchema), setStandardHoliday);
 
 // ---- Leave: what parents sent; a class teacher sees their classes', the people who run the school every one --------------------------
-const STAFF = requireRole("school_admin", "principal", "teacher");
-router.get("/leaves", STAFF, validate(leaveQuerySchema, "query"), listLeaves);
-router.post("/leaves/:id/decide", STAFF, validate(idParamSchema, "params"), validate(decideLeaveSchema), decideLeave);
+router.get("/leaves", requirePermission("leaves.view"), validate(leaveQuerySchema, "query"), listLeaves);
+router.post("/leaves/:id/decide", requirePermission("leaves.decide"), validate(idParamSchema, "params"), validate(decideLeaveSchema), decideLeave);
 
 // ---- A teacher's own classes (their home): class teacher of, and the classes they teach a subject in ------------------------------------
 router.get("/my-classes", requireRole("teacher"), listMyClasses);
 
 // ---- Attendance: a class's (or section's) day, by its class teacher or the people who run the school ----------------------------------
-router.get("/attendance", STAFF, validate(attendanceQuerySchema, "query"), attendanceSheet);
-router.put("/attendance", STAFF, validate(saveAttendanceSchema), saveAttendance);
+router.get("/attendance", requirePermission("attendance.view"), validate(attendanceQuerySchema, "query"), attendanceSheet);
+router.put("/attendance", requirePermission("attendance.mark"), validate(saveAttendanceSchema), saveAttendance);
 
 // ---- Diary: what was taught and the homework, per subject and day (the subject's teacher, the class teacher, the school) --------------
-router.get("/diary", STAFF, validate(unitDayQuerySchema, "query"), diaryDay);
-router.put("/diary", STAFF, validate(saveDiarySchema), saveDiary);
+router.get("/diary", requirePermission("classwork.view"), validate(unitDayQuerySchema, "query"), diaryDay);
+router.put("/diary", requirePermission("classwork.manage"), validate(saveDiarySchema), saveDiary);
 
 // ---- Tests and marks ------------------------------------------------------------------------------------------------------------------
-router.get("/tests", STAFF, validate(unitQuerySchema, "query"), listTests);
-router.post("/tests", STAFF, validate(addTestSchema), addTest);
-router.get("/tests/:id", STAFF, validate(idParamSchema, "params"), getTest);
-router.put("/tests/:id/marks", STAFF, validate(idParamSchema, "params"), validate(saveMarksSchema), saveMarks);
-router.delete("/tests/:id", STAFF, validate(idParamSchema, "params"), removeTest);
+router.get("/tests", requirePermission("classwork.view"), validate(unitQuerySchema, "query"), listTests);
+router.post("/tests", requirePermission("classwork.manage"), validate(addTestSchema), addTest);
+router.get("/tests/:id", requirePermission("classwork.view"), validate(idParamSchema, "params"), getTest);
+router.put("/tests/:id/marks", requirePermission("classwork.manage"), validate(idParamSchema, "params"), validate(saveMarksSchema), saveMarks);
+router.delete("/tests/:id", requirePermission("classwork.manage"), validate(idParamSchema, "params"), removeTest);
 
 export default router;

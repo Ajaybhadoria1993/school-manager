@@ -6,7 +6,7 @@ import { todayInIndia } from "../../../utils/students";
 import { Field } from "../../ui/Field";
 import { Input } from "../../ui/Input";
 import { FieldBox } from "./FieldBox";
-import { FormCard } from "./FormCard";
+import { FormSection } from "./FormSection";
 import { FORM_GRID } from "./formGrid";
 
 /** One box of a record: shown when the school asks for it, "optional" in its label when it may be left empty. */
@@ -39,12 +39,10 @@ const ID_RULES: MovableKey[] = ["aadhaarNumber", "samagraId", "apaarId", "pen", 
 export function IdFields({ form, index = 0 }: { form: StudentForm; index?: number }) {
   if (!ID_RULES.some((k) => asks(form.rules, k))) return null;
   return (
-    <FormCard
+    <FormSection
       index={index}
       icon={Fingerprint}
-      tone="navy"
       title="IDs and records"
-      description="Aadhaar and the IDs that scholarships, UDISE+ and the state portals ask for."
       tip="Aadhaar is checked as you type (12 digits with its check digit) and is kept once per student: a number already in your school is refused, with whose it is."
     >
       <div className={FORM_GRID}>
@@ -52,7 +50,7 @@ export function IdFields({ form, index = 0 }: { form: StudentForm; index?: numbe
           <FieldBox key={rule} form={form} rule={rule} />
         ))}
       </div>
-    </FormCard>
+    </FormSection>
   );
 }
 
@@ -66,12 +64,10 @@ export function PreviousSchoolFields({ form, index = 0 }: { form: StudentForm; i
   // Needed for a student of Class 1 to 12, and not before it (Nursery, LKG, UKG): the class chosen decides.
   const needed = !mayLeave(r, "previousSchoolName");
   return (
-    <FormCard
+    <FormSection
       index={index}
       icon={School}
-      tone="success"
       title="Previous school"
-      description={needed ? "The school the student comes from, needed from Class 1, and the transfer certificate." : "Only when the student comes from another school (not needed before Class 1)."}
     >
       <div className={FORM_GRID}>
         <RecordBox form={form} rule="previousSchoolName" path="previousSchool.name" label="School name" maxLength={150} />
@@ -89,6 +85,6 @@ export function PreviousSchoolFields({ form, index = 0 }: { form: StudentForm; i
           A student of Class 1 to 12 always has a previous school. Nursery, LKG and UKG do not need one.
         </p>
       )}
-    </FormCard>
+    </FormSection>
   );
 }

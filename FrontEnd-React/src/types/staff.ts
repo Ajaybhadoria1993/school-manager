@@ -18,6 +18,15 @@ export interface TeacherAddress {
   pincode: string | null;
 }
 
+/** A medium of the school, as a teacher's page lists it. */
+export interface TeacherMedium {
+  id: string;
+  label: string;
+  /** The medium whose page this is. */
+  here: boolean;
+  teaches: boolean;
+}
+
 export interface Teacher {
   id: string;
   name: string;

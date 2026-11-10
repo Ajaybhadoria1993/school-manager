@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { requireAuthLoose, requireRole } from "../../../../middleware/auth";
 import { validate } from "../../../../middleware/validate";
-import { getOnboarding, saveStep, submitOnboarding } from "../../controllers/onboarding.controller";
+import { logoFile } from "../../../../middleware/uploadLogo";
+import { getOnboarding, removeLogo, saveLogo, saveStep, submitOnboarding } from "../../controllers/onboarding.controller";
 import { stepParamSchema } from "../../schemas/onboarding.schemas";
 
 const router = Router();
@@ -11,6 +12,8 @@ router.use(requireAuthLoose, requireRole("school_admin"));
 
 router.get("/", getOnboarding);
 router.put("/steps/:step", validate(stepParamSchema, "params"), saveStep);
+router.put("/logo", logoFile, saveLogo);
+router.delete("/logo", removeLogo);
 router.post("/submit", submitOnboarding);
 
 export default router;

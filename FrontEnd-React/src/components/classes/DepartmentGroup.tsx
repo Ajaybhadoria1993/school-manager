@@ -44,7 +44,7 @@ export function DepartmentGroup({
           </span>
           <div className="min-w-[9rem] flex-1">
             <div className="flex items-center gap-2">
-              <h2 className="truncate text-lg font-bold tracking-tight text-foreground">{department?.name ?? "Other classes"}</h2>
+              <h2 className="text-section-heading truncate">{department?.name ?? "Other classes"}</h2>
               {!department && (
                 <InfoTip label="What are other classes?">
                   These classes are not in any department yet. Press Add department to make one and choose which of them go in it.

@@ -15,6 +15,8 @@ export interface AccessTokenPayload {
   userId: string;
   role: UserRole;
   tenantId: string | null;
+  /** Filled once per request by requirePermission (it is not in the token): what this login may do, by the school's Permissions. */
+  permissions?: string[];
 }
 
 export interface RefreshTokenPayload {

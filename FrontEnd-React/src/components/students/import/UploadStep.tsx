@@ -167,7 +167,7 @@ export function UploadStep({
           <span aria-hidden className={cn("relative flex size-10 items-center justify-center rounded-xl", TONES.success.gradient)}>
             <FileSpreadsheet className="size-5" />
           </span>
-          <h2 className="relative mt-3 text-base font-bold text-foreground">Start from the sample file</h2>
+          <h2 className="text-section-heading relative mt-3">Start from the sample file</h2>
           <p className="relative mt-1 text-sm text-foreground-muted">
             An Excel file with the right columns, dropdowns for gender, class and state, and a sheet listing your classes and sections.
           </p>

@@ -13,6 +13,7 @@ import {
 } from "../../tenants/constants";
 import { academicYearInputSchema } from "../../academics/schemas/academicYear.schemas";
 import { INDIAN_MOBILE, optional, phoneNumber } from "../../../utils/formFields";
+import { mediumPlanSchema } from "./mediumPlan.schemas";
 
 const currentYear = new Date().getFullYear();
 
@@ -39,6 +40,8 @@ const boardEntrySchema = z
       })
       .min(1, "Choose at least one medium")
       .transform(inFormOrder(MEDIUMS)),
+    // Each medium's classes and timing. An empty list is said as "fill them in", like a plan that is missing.
+    plans: z.array(mediumPlanSchema).default([]),
   })
   .superRefine((entry, ctx) => {
     if (entry.board === STATE_BOARD_CHOICE && !entry.stateBoard) {
@@ -46,6 +49,11 @@ const boardEntrySchema = z
     }
     if (entry.board === OTHER_CHOICE && !entry.otherBoard) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["otherBoard"], message: "Enter the name of the board" });
+    }
+    // Exactly one plan for each medium the board is taught in.
+    const planned = entry.plans.map((p) => p.medium);
+    if (entry.mediums.length > 0 && (planned.length !== entry.mediums.length || entry.mediums.some((m) => !planned.includes(m)))) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["plans"], message: "Fill in the classes and timing of every medium" });
     }
   })
   // A state board or a board name only means something for its own kind of entry.
@@ -55,39 +63,60 @@ const boardEntrySchema = z
     ...(entry.board === OTHER_CHOICE && entry.otherBoard ? { otherBoard: entry.otherBoard } : {}),
     ...(entry.affiliationNumber ? { affiliationNumber: entry.affiliationNumber } : {}),
     mediums: entry.mediums,
+    plans: entry.mediums.flatMap((medium) => entry.plans.filter((p) => p.medium === medium)),
   }));
 
+/** The school itself: what it is, how big, its numbers. */
+const schoolShape = {
+  schoolName: z.string().trim().min(2, "Enter the school name").max(150),
+  schoolType: z.enum(SCHOOL_TYPES, { message: "Choose the type of school" }),
+  approxStudents: z.coerce
+    .number({ message: "Enter the number of students" })
+    .int("Enter a whole number")
+    .min(1, "Enter the number of students")
+    .max(50000, "That looks too high"),
+  udiseCode: optional(z.string().trim().regex(/^\d{11}$/, "UDISE+ code is 11 digits")),
+  establishedYear: optional(
+    z.coerce
+      .number({ message: "Enter a valid year" })
+      .int("Enter a valid year")
+      .min(1800, "Enter a valid year")
+      .max(currentYear, "The year cannot be in the future")
+  ),
+};
+
+/** Where it is and how to reach it. */
+const addressShape = {
+  addressLine1: z.string().trim().min(3, "Enter the street address").max(200),
+  addressLine2: optional(z.string().trim().max(200)),
+  city: z.string().trim().min(2, "Enter the city").max(80),
+  state: z.enum(INDIAN_STATES, { message: "Choose the state" }),
+  // Not every state has divisions, so it is optional; every place has a district.
+  division: optional(z.string().trim().max(80)),
+  district: z.string().trim().min(2, "Enter the district").max(80),
+  pincode: z.string().trim().regex(/^\d{6}$/, "PIN code is 6 digits"),
+  schoolPhone: phoneNumber("Enter a 10-digit phone number"),
+  schoolEmail: z.string().trim().toLowerCase().email("Enter a valid email address").max(254),
+  website: optional(z.string().trim().url("Enter a full web address, like https://school.in").max(200)),
+};
+
+/** Step 1: the school and where it is: its name, type, size and numbers, its address and how to reach it. */
+export const step1Schema = z.object({ ...schoolShape, ...addressShape });
+
 /**
- * Step 1: the school itself: what it is, what it follows and teaches, which classes, how big, its numbers, and its first
- * academic year (name, first and last day: the school's own dates). The month the session starts in is read from that year's
- * start date, so the two can never disagree.
+ * Step 2: the academic year (name, first and last day: the school's own dates) and what the school runs in it: every board, with the
+ * medium(s) it is taught in, and for each medium its classes, sections, seats and timing. The month the session starts in is read from the
+ * year's start date, and the school's first and last class from its mediums, so none can disagree with what was typed.
  */
-export const step1Schema = z
+export const step2Schema = z
   .object({
-    schoolName: z.string().trim().min(2, "Enter the school name").max(150),
-    schoolType: z.enum(SCHOOL_TYPES, { message: "Choose the type of school" }),
+    academicYear: academicYearInputSchema,
     boards: z
       .array(boardEntrySchema, { required_error: "Add at least one board", invalid_type_error: "Add at least one board" })
       .min(1, "Add at least one board")
       .max(MAX_BOARDS, `A school can list at most ${MAX_BOARDS} boards`),
-    lowestClass: z.enum(CLASS_LEVELS, { message: "Choose the first class" }),
-    highestClass: z.enum(CLASS_LEVELS, { message: "Choose the last class" }),
-    approxStudents: z.coerce
-      .number({ message: "Enter the number of students" })
-      .int("Enter a whole number")
-      .min(1, "Enter the number of students")
-      .max(50000, "That looks too high"),
-    academicYear: academicYearInputSchema,
     // Accepted from older clients but not used: the saved month always comes from the academic year's start date.
     sessionStartMonth: optional(z.coerce.number({ message: "Choose a month" }).int().min(1, "Choose a month").max(12, "Choose a month")),
-    udiseCode: optional(z.string().trim().regex(/^\d{11}$/, "UDISE+ code is 11 digits")),
-    establishedYear: optional(
-      z.coerce
-        .number({ message: "Enter a valid year" })
-        .int("Enter a valid year")
-        .min(1800, "Enter a valid year")
-        .max(currentYear, "The year cannot be in the future")
-    ),
   })
   .superRefine((d, ctx) => {
     // The same board (the same state board, the same "Other" board) twice is a slip, not a second answer.
@@ -105,30 +134,18 @@ export const step1Schema = z
       }
       seen.add(key);
     });
-    if (classIndex(d.lowestClass) > classIndex(d.highestClass)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["highestClass"],
-        message: "The last class cannot be lower than the first class",
-      });
-    }
   })
-  .transform((d) => ({ ...d, sessionStartMonth: d.academicYear.startDate.getUTCMonth() + 1 }));
-
-/** Step 2: where it is and how to reach it. */
-export const step2Schema = z.object({
-  addressLine1: z.string().trim().min(3, "Enter the street address").max(200),
-  addressLine2: optional(z.string().trim().max(200)),
-  city: z.string().trim().min(2, "Enter the city").max(80),
-  state: z.enum(INDIAN_STATES, { message: "Choose the state" }),
-  // Not every state has divisions, so it is optional; every place has a district.
-  division: optional(z.string().trim().max(80)),
-  district: z.string().trim().min(2, "Enter the district").max(80),
-  pincode: z.string().trim().regex(/^\d{6}$/, "PIN code is 6 digits"),
-  schoolPhone: phoneNumber("Enter a 10-digit phone number"),
-  schoolEmail: z.string().trim().toLowerCase().email("Enter a valid email address").max(254),
-  website: optional(z.string().trim().url("Enter a full web address, like https://school.in").max(200)),
-});
+  .transform((d) => {
+    const plans = d.boards.flatMap((entry) => entry.plans);
+    const lows = plans.map((p) => classIndex(p.lowestClass));
+    const highs = plans.map((p) => classIndex(p.highestClass));
+    return {
+      ...d,
+      sessionStartMonth: d.academicYear.startDate.getUTCMonth() + 1,
+      lowestClass: CLASS_LEVELS[Math.min(...lows)],
+      highestClass: CLASS_LEVELS[Math.max(...highs)],
+    };
+  });
 
 /** Step 3: the person registering. They become the school's administrator; "role" is only what they are called in the school. */
 export const step3Schema = z

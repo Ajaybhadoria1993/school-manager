@@ -246,7 +246,7 @@ export function ClassDetail({
     <form onSubmit={submit} noValidate className="fade-in">
       <div className={cn("bg-gradient-to-r to-transparent px-5 py-5", t.wash)}>
         <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-          <span aria-hidden className={cn("flex size-14 shrink-0 items-center justify-center rounded-2xl text-xl font-extrabold tracking-tight", t.gradient)}>
+          <span aria-hidden className={cn("flex size-14 shrink-0 items-center justify-center rounded-2xl text-xl font-bold", t.gradient)}>
             {classMark(classItem.name)}
           </span>
           <ClassNameField
@@ -313,7 +313,7 @@ export function ClassDetail({
       <div className="space-y-4 px-5 py-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-base font-bold tracking-tight text-foreground">Sections</h2>
+            <h2 className="text-section-heading">Sections</h2>
             {/* Sections belong to one session; next year's may differ. */}
             <p className="text-xs text-foreground-muted">
               {sections.length > 0 && plural(sections.length, "section")}

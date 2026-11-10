@@ -18,12 +18,42 @@ export type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number];
 
 export type TenantSource = "invite" | "signup";
 
+/** A row of a day's timing, as the school filled it in at sign-up. Times are minutes after midnight. */
+export interface IPlanSlot {
+  kind: "period" | "lunch" | "break";
+  label: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * One medium of a board as the school described it at sign-up: its classes (with sections and seats, and a class per stream in 11 and 12)
+ * and its timing. Approval builds that side of the school from this (MediumService.setUp).
+ */
+export interface IMediumPlan {
+  medium: (typeof MEDIUMS)[number];
+  lowestClass: (typeof CLASS_LEVELS)[number];
+  highestClass: (typeof CLASS_LEVELS)[number];
+  /** The streams of Class 11 and 12: the usual ones (Science, Commerce, Arts, Maths) and any the school named itself. */
+  seniorStreams: string[];
+  classes: { name: string; sections: number; seats: number }[];
+  week: { days: number[]; usual: IPlanSlot[]; saturday?: IPlanSlot[] | null };
+}
+
 export interface ITenant {
   _id: Types.ObjectId;
   name: string;
   /** Lower-cased, trimmed name: makes "Sunrise School" and "sunrise  school" the same school. */
   nameKey: string;
   slug: string;
+  /**
+   * A school that teaches in more than one medium runs each as its own side: English Medium and Hindi Medium have their own classes, students
+   * and timetable. The first medium lives in the school's own record; each other one is a record of its own that points here. People see
+   * one school, and its administrator moves between the sides from the top bar. Null for a school, and every school that has one medium.
+   */
+  parentTenantId?: Types.ObjectId | null;
+  /** Which side this is, when the school has more than one: `key` tells them apart ("cbse|english"), `label` is what the top bar says. */
+  medium?: { key: string; label: string };
   subscriptionTier: SubscriptionTier;
   isActive: boolean;
   approvalStatus: ApprovalStatus;
@@ -64,6 +94,8 @@ export interface ITenant {
       /** This board's own affiliation / recognition number. */
       affiliationNumber?: string;
       mediums: (typeof MEDIUMS)[number][];
+      /** One for each of `mediums`. Missing on a school that signed up before plans existed. */
+      plans?: IMediumPlan[];
     }[];
     udiseCode?: string;
     establishedYear?: number;
@@ -71,6 +103,8 @@ export interface ITenant {
     highestClass?: (typeof CLASS_LEVELS)[number];
     approxStudents?: number;
     sessionStartMonth?: number;
+    /** When the logo was last changed: there is one (kept in SchoolLogo), and its address changes with it. */
+    logoUpdatedAt?: Date;
   };
 
   /**
@@ -118,11 +152,42 @@ export interface ITenant {
   updatedAt: Date;
 }
 
+const planSlotSchema = new Schema<IPlanSlot>(
+  {
+    kind: { type: String, enum: ["period", "lunch", "break"], required: true },
+    label: { type: String, default: "", trim: true },
+    start: { type: Number, required: true },
+    end: { type: Number, required: true },
+  },
+  { _id: false }
+);
+
+const mediumPlanSchema = new Schema<IMediumPlan>(
+  {
+    medium: { type: String, enum: MEDIUMS, required: true },
+    lowestClass: { type: String, enum: CLASS_LEVELS, required: true },
+    highestClass: { type: String, enum: CLASS_LEVELS, required: true },
+    seniorStreams: { type: [{ type: String, trim: true, maxlength: 30 }], default: [] },
+    classes: {
+      type: [new Schema({ name: { type: String, required: true, trim: true, maxlength: 40 }, sections: { type: Number, required: true }, seats: { type: Number, required: true } }, { _id: false })],
+      default: [],
+    },
+    week: {
+      days: { type: [Number], default: [] },
+      usual: { type: [planSlotSchema], default: [] },
+      saturday: { type: [planSlotSchema], default: undefined },
+    },
+  },
+  { _id: false }
+);
+
 const tenantSchema = new Schema<ITenant>(
   {
     name: { type: String, required: true, trim: true, maxlength: 150 },
     nameKey: { type: String, required: true, unique: true },
     slug: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    parentTenantId: { type: Schema.Types.ObjectId, ref: "Tenant", default: null },
+    medium: { type: new Schema({ key: { type: String, required: true }, label: { type: String, required: true, maxlength: 120 } }, { _id: false }), default: undefined },
     subscriptionTier: { type: String, enum: SUBSCRIPTION_TIERS, default: "basic" },
     isActive: { type: Boolean, default: true },
     approvalStatus: { type: String, enum: APPROVAL_STATUSES, required: true, default: "invited" },
@@ -154,6 +219,7 @@ const tenantSchema = new Schema<ITenant>(
               otherBoard: { type: String, trim: true, maxlength: 80 },
               affiliationNumber: { type: String, trim: true, maxlength: 50 },
               mediums: { type: [{ type: String, enum: MEDIUMS }] },
+              plans: { type: [mediumPlanSchema], default: undefined },
             },
             { _id: false }
           ),
@@ -165,6 +231,7 @@ const tenantSchema = new Schema<ITenant>(
       highestClass: { type: String, enum: CLASS_LEVELS },
       approxStudents: { type: Number },
       sessionStartMonth: { type: Number },
+      logoUpdatedAt: { type: Date },
     },
 
     settings: {
@@ -201,5 +268,7 @@ const tenantSchema = new Schema<ITenant>(
 );
 
 tenantSchema.index({ approvalStatus: 1, createdAt: -1 });
+// The sides of a school, read on every request made from a side other than the first; one of each medium.
+tenantSchema.index({ parentTenantId: 1, "medium.key": 1 }, { unique: true, partialFilterExpression: { parentTenantId: { $type: "objectId" } }, name: "one_side_per_medium" });
 
 export const Tenant = model<ITenant>("Tenant", tenantSchema);

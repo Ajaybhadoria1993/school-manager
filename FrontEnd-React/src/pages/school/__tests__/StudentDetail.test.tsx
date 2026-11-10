@@ -9,6 +9,7 @@ import store from "../../../redux/store";
 import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
 import type { StudentDetail } from "../../../types";
 import { fakeApi, type Handler } from "../../../test/fakeApi";
+import { signInAs, signOut } from "../../../test/session";
 import StudentDetailPage from "../StudentDetail";
 
 const ASHA: StudentDetail = {
@@ -51,6 +52,7 @@ const ASHA: StudentDetail = {
 };
 
 function openPage(extra: Record<string, Handler> = {}) {
+  signInAs("school_admin");
   const calls = fakeApi({ "GET /students/s1": () => ASHA, ...extra });
   const router = createMemoryRouter(
     [
@@ -72,6 +74,7 @@ function openPage(extra: Record<string, Handler> = {}) {
 afterEach(() => {
   cleanup();
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
+  signOut();
   vi.unstubAllGlobals();
 });
 

@@ -72,6 +72,16 @@ describe("filling a timetable by itself", () => {
     expect(Math.max(...[1, 2, 3, 4, 5].map((d) => maths.filter((x) => x === String(d)).length))).toBeLessThanOrEqual(2);
   });
 
+  it("packs each day from the first period: no gap, so a class's day ends right after its last lesson (every seed)", () => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const { cells } = autofill(input(FIVE(), { seed }));
+      for (const day of [1, 2, 3, 4, 5]) {
+        const periods = cells.filter((c) => c.day === day).map((c) => c.period).sort((a, b) => a - b);
+        expect(periods, `seed ${seed}, day ${day}`).toEqual(periods.map((_, k) => k + 1));
+      }
+    }
+  });
+
   it("does not put one subject in two periods in a row when it can avoid it", () => {
     const result = autofill(input(FIVE()));
     expect(check(input(FIVE()), result.cells).issues.filter((x) => x.code === "BACK_TO_BACK")).toEqual([]);

@@ -7,9 +7,10 @@ import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { fakeApi, spreadsheet, type Call, type Handler } from "../../../test/fakeApi";
+import { signInAs, signOut } from "../../../test/session";
 import { STRUCTURE } from "../../../test/schoolClass";
 import { DEV, ENGLISH, MATHS, MEENA } from "../../../test/timetableFixtures";
-import type { Teacher } from "../../../types";
+import type { Teacher, UserRole } from "../../../types";
 import TeacherDirectoryPage from "../TeacherDirectory";
 
 const ASHA: Teacher = {
@@ -24,7 +25,9 @@ const ASHA: Teacher = {
   login: { username: "asha.rao_12", isActive: true },
 };
 
-function openPage(path = "/teachers", extra: Record<string, Handler> = {}) {
+function openPage(path = "/teachers", extra: Record<string, Handler> = {}, who: { role?: UserRole; permissions?: string[] } = {}) {
+  // The school admin unless said: the page asks who is looking (what the school allowed them).
+  signInAs(who.role ?? "school_admin", who.permissions);
   const calls = fakeApi({
     "GET /staff/teachers": () => ({ items: [ASHA, DEV, MEENA] }),
     "GET /staff/teachers/summary": () => ({ teaching: 3, classTeachers: 1, withoutClasses: 1, left: 2 }),
@@ -54,6 +57,7 @@ function openPage(path = "/teachers", extra: Record<string, Handler> = {}) {
 }
 
 afterEach(() => {
+  signOut();
   cleanup();
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
   vi.unstubAllGlobals();
@@ -275,5 +279,45 @@ describe("Teacher (the menu entry on top)", () => {
     openPage("/teachers", { "GET /staff/teachers": () => ({ items: [] }), "GET /staff/teachers/summary": () => ({ teaching: 0, classTeachers: 0, withoutClasses: 0, left: 0 }) });
     expect(await screen.findByText("No teachers yet")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Add teacher" }).every((l) => l.getAttribute("href") === "/teachers/new")).toBe(true);
+  });
+});
+
+describe("the Teacher page for a person the school allowed (Permissions)", () => {
+  const person = (permissions: string[]) => ({ role: "receptionist" as const, permissions });
+  const buttons = () => ["Fields", "Export", "Bulk upload", "Add teacher"].filter((name) => screen.queryByRole("link", { name }) || screen.queryByRole("button", { name }));
+
+  it("a person who may only see the teachers reads the list: no Add teacher, Bulk upload, Fields, Export, and no pencil to change one", async () => {
+    openPage("/teachers", {}, person(["teachers.view"]));
+    await screen.findByText("Asha Rao");
+    expect(buttons()).toEqual([]);
+    expect(screen.queryByRole("link", { name: /^Edit / })).not.toBeInTheDocument();
+  });
+
+  it("each button comes with its own permission", async () => {
+    openPage("/teachers", {}, person(["teachers.view", "teachers.add"]));
+    await screen.findByText("Asha Rao");
+    expect(buttons()).toEqual(["Bulk upload", "Add teacher"]);
+    cleanup();
+
+    openPage("/teachers", {}, person(["teachers.view", "teachers.export"]));
+    await screen.findByText("Asha Rao");
+    expect(buttons()).toEqual(["Export"]);
+    cleanup();
+
+    openPage("/teachers", {}, person(["teachers.view", "teachers.settings"]));
+    await screen.findByText("Asha Rao");
+    expect(buttons()).toEqual(["Fields"]);
+    cleanup();
+
+    openPage("/teachers", {}, person(["teachers.view", "teachers.edit"]));
+    await screen.findByText("Asha Rao");
+    expect(buttons()).toEqual([]);
+    expect(screen.getAllByRole("link", { name: /^Edit / }).length).toBeGreaterThan(0);
+  });
+
+  it("the school admin and the principal have everything", async () => {
+    openPage("/teachers", {}, { role: "principal", permissions: [] });
+    await screen.findByText("Asha Rao");
+    expect(buttons()).toEqual(["Fields", "Export", "Bulk upload", "Add teacher"]);
   });
 });

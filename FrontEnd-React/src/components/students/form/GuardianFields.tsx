@@ -83,7 +83,7 @@ export function GuardianFields({
 
         <Field id={fieldId(at("relation"))} label={mode === "edit" ? "Relation to this student" : "Relation"} error={form.errorOf(at("relation"))}>
           {mode === "edit" ? (
-            <p id={fieldId(at("relation"))} tabIndex={-1} className="flex h-10 items-center text-sm font-semibold text-foreground outline-none">
+            <p id={fieldId(at("relation"))} tabIndex={-1} className="flex h-12 items-center text-sm font-semibold text-foreground outline-none">
               {g.relation}
             </p>
           ) : (

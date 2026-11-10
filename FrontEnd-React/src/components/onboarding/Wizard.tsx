@@ -1,18 +1,19 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, ClipboardCheck, MapPin, School, UserRound, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CalendarDays, ClipboardCheck, School, UserRound, type LucideIcon } from "lucide-react";
 import {
   useConfirmOnboardingMutation,
   useSaveOnboardingStepMutation,
   useSubmitOnboardingMutation,
 } from "../../redux/api/onboardingApi";
 import { getApiError } from "../../utils/apiErrors";
-import { STEP_SUBTITLES, STEP_TITLES } from "../../constants/schoolOptions";
+import { STEP_TITLES } from "../../constants/schoolOptions";
 import { Card } from "../ui/Card";
+import { BoxedControls } from "../ui/Input";
 import type { OnboardingState } from "../../types";
 import { Stepper } from "./Stepper";
 import { useReportStage } from "./stage";
 import { StepReview } from "./StepReview";
-import { StepAddress, StepProfile, StepSchool, type SubmitStep } from "./steps";
+import { StepAcademic, StepProfile, StepSchool, type SubmitStep } from "./steps";
 import type { FieldErrors, FormDraft, FormValues } from "./useFormValues";
 
 /** The server answers 400 with `details: [{ path, message }]`; turn that into { path: message }. */
@@ -31,7 +32,7 @@ function toFieldErrors(err: unknown): FieldErrors {
   return { _form: "Something went wrong. Please try again." };
 }
 
-const STEP_ICONS: LucideIcon[] = [School, MapPin, UserRound, ClipboardCheck];
+const STEP_ICONS: LucideIcon[] = [School, CalendarDays, UserRound, ClipboardCheck];
 
 /**
  * The four-step form. Every step is saved on the server as soon as it is completed, so the
@@ -124,7 +125,7 @@ export function Wizard({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {rejected && (
         <div role="alert" className="flex gap-3 rounded-2xl border border-danger/25 bg-danger-soft p-4">
           <AlertTriangle className="mt-0.5 size-5 shrink-0 text-danger" aria-hidden />
@@ -136,25 +137,22 @@ export function Wizard({
         </div>
       )}
 
-      <Card className="px-5 py-4 sm:px-7 sm:py-5">
+      <Card className="px-4 py-3 sm:px-5">
         <Stepper active={active} completed={state.onboarding.completedSteps} maxOpen={maxOpen} onSelect={setActive} />
       </Card>
 
       <Card className="overflow-hidden">
-        <div className="flex items-center gap-4 border-b border-border bg-gradient-to-r from-primary-soft/70 to-surface px-5 py-5 sm:px-8">
-          <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-surface text-primary shadow-card">
-            <StepIcon className="size-6" aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <h2 className="text-xl font-semibold tracking-tight text-foreground">{STEP_TITLES[active - 1]}</h2>
-            <p className="text-sm text-foreground-muted">{STEP_SUBTITLES[active - 1]}</p>
-          </div>
+        <div className="flex items-center gap-2.5 border-b border-border px-4 py-3 sm:px-5">
+          <StepIcon className="size-5 shrink-0 text-gold" aria-hidden />
+          <h2 className="text-section-heading">{STEP_TITLES[active - 1]}</h2>
         </div>
 
         {/* `key` gives each step a fresh form, filled from what the server has saved. */}
-        <div key={active} className="rise-in p-5 sm:p-8">
-          {active === 1 && <StepSchool key="s1" initial={state.steps[1]} draft={draftFor(1)} onSubmit={save(1)} saving={saving} />}
-          {active === 2 && <StepAddress key="s2" initial={state.steps[2]} draft={draftFor(2)} onSubmit={save(2)} onBack={() => setActive(1)} saving={saving} />}
+        <BoxedControls>
+        <div key={active} className="rise-in p-4 sm:p-5">
+          {/* Step 1 is the school and its address, which the server keeps as two topics: both are what the form starts from. */}
+          {active === 1 && <StepSchool key="s1" initial={{ ...state.steps[1], ...state.steps[2] }} draft={draftFor(1)} onSubmit={save(1)} saving={saving} />}
+          {active === 2 && <StepAcademic key="s2" initial={state.steps[1]} draft={draftFor(2)} onSubmit={save(2)} onBack={() => setActive(1)} saving={saving} />}
           {active === 3 && <StepProfile key="s3" initial={state.steps[3]} draft={draftFor(3)} onSubmit={save(3)} onBack={() => setActive(2)} saving={saving} />}
           {active === 4 && (
             <StepReview
@@ -171,6 +169,7 @@ export function Wizard({
             />
           )}
         </div>
+        </BoxedControls>
       </Card>
     </div>
   );

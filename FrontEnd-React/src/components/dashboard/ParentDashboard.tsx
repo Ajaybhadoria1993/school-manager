@@ -32,7 +32,7 @@ export function ParentDashboard() {
         <StudentsNotice icon={UsersRound} tone="navy" title="No child is linked to your login yet" />
       ) : (
         <section className="space-y-3">
-          <h2 className="text-lg font-bold tracking-tight text-foreground">Your children</h2>
+          <h2 className="text-section-heading">Your children</h2>
           <ul aria-label="Your children" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {children.map((c) => (
               <li key={c.id}>

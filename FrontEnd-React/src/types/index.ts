@@ -11,3 +11,5 @@ export * from "./classroom";
 export * from "./exams";
 export * from "./attendance";
 export * from "./notifications";
+export * from "./dashboard";
+export * from "./permissions";

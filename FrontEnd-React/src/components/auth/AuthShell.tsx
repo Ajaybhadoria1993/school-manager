@@ -109,7 +109,7 @@ export function AuthShell({
         </p>
 
         <div className="relative">
-          <h2 className="font-serif text-4xl font-bold leading-tight tracking-tight [text-shadow:0_2px_14px_rgb(0_0_0/0.45)]">
+          <h2 className="font-serif text-4xl font-bold leading-tight [text-shadow:0_2px_14px_rgb(0_0_0/0.45)]">
             One place for your whole <span className="text-sky">school.</span>
           </h2>
           <p className="mt-4 max-w-md text-base leading-relaxed text-slate-200">
@@ -168,7 +168,7 @@ export function AuthShell({
 
         <div className="flex flex-1 flex-col justify-center px-6 py-10 sm:px-12 lg:px-16">
           <div className="rise-in mx-auto w-full max-w-xl">
-            <h1 className="font-serif text-[1.75rem] font-bold leading-tight tracking-tight text-foreground sm:text-3xl">
+            <h1 className="font-serif text-[1.75rem] font-bold leading-tight text-foreground sm:text-3xl">
               {title}
             </h1>
             {subtitle && (

@@ -27,7 +27,7 @@ export function ChildAttendance({ childId }: { childId: string }) {
 
   return (
     <section aria-label="Attendance" className="space-y-3">
-      <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-foreground">
+      <h2 className="text-section-heading flex items-center gap-2">
         <CalendarCheck2 className="size-5 text-primary" aria-hidden />
         Attendance
       </h2>
@@ -36,7 +36,7 @@ export function ChildAttendance({ childId }: { childId: string }) {
       ) : (
         <Card className="space-y-4 p-5">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-            <p className="text-4xl font-extrabold tracking-tight text-foreground">{data.year.percent === null ? "-" : `${data.year.percent}%`}</p>
+            <p className="text-metric-headline">{data.year.percent === null ? "-" : `${data.year.percent}%`}</p>
             <p className="text-sm text-foreground-muted">
               This year: {data.year.present} present · {data.year.absent} absent · {data.year.late} late · {data.year.leave} on leave
             </p>

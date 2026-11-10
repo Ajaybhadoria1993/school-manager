@@ -36,7 +36,7 @@ export function DetailCard({
             <Icon className="size-5" aria-hidden />
           </span>
           <div className="min-w-0">
-            <h2 className="truncate text-base font-semibold tracking-tight text-foreground">{title}</h2>
+            <h2 className="text-section-heading truncate">{title}</h2>
             {subtitle && <p className="truncate text-xs text-foreground-muted">{subtitle}</p>}
           </div>
         </div>

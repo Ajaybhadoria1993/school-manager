@@ -1,3 +1,5 @@
+import type { DaySetup } from "../utils/timings";
+import type { Slot } from "./timetable";
 import type { ApprovalStatus } from "./tenant";
 
 /** The academic year in the sign-up form. `status` is "pending" until the school is approved, then "active"; null before it is saved. */
@@ -29,7 +31,41 @@ export type BoardEntry = {
   /** This board's own affiliation / recognition number; "" when not given. */
   affiliationNumber: string;
   mediums: string[];
+  /** Each medium's classes and timing; empty until the school has filled them in. */
+  plans: MediumPlan[];
 };
+
+/** A class of a medium: the sections it starts with (0 = none) and the seats of each (of the class itself when it has none). */
+export interface PlanClass {
+  name: string;
+  sections: number;
+  seats: number;
+}
+
+/** One medium of a board, as saved: its classes and its timing. */
+export interface MediumPlan {
+  medium: string;
+  lowestClass: string;
+  highestClass: string;
+  seniorStreams: string[];
+  classes: PlanClass[];
+  week: { days: number[]; usual: Slot[]; saturday: Slot[] | null };
+}
+
+/** The same while it is being filled in: a day is still the few numbers a head knows (see utils/timings.ts). */
+export interface MediumPlanDraft {
+  medium: string;
+  lowestClass: string;
+  highestClass: string;
+  seniorStreams: string[];
+  classes: PlanClass[];
+  days: number[];
+  usual: DaySetup;
+  saturday: DaySetup | null;
+}
+
+/** A board while the form is being filled in. */
+export type BoardDraft = Omit<BoardEntry, "plans"> & { plans: MediumPlanDraft[] };
 
 /** The onboarding answers, exactly as the API returns and accepts them. Empty boxes are "" or null. */
 export interface SchoolSteps {
@@ -48,6 +84,8 @@ export interface SchoolSteps {
     academicYear: AcademicYearDraft;
     udiseCode: string;
     establishedYear: number | null;
+    /** Where the school's logo is, under the API's address; "" when it has none. */
+    logoUrl: string;
   };
   2: {
     addressLine1: string;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Schedule, Slot } from "../../types";
-import { classDayBody, classWeek, daySummaryOf, periodCount, referenceDay, resolveSlots, rowsFor, sameRows, withPeriods } from "../classWeek";
+import { classHours, classTimingBody, classWeek, daySummaryOf, periodCount, resolveSlots, rowsBetween, rowsForPeriods } from "../classWeek";
 
 const p = (start: string, end: string, label = ""): Slot => ({ kind: "period", label, start, end });
 const lunch = (start: string, end: string): Slot => ({ kind: "lunch", label: "Lunch", start, end });
@@ -66,117 +66,114 @@ describe("which rows a class follows on each day", () => {
   });
 });
 
-describe("a day with more or fewer periods", () => {
-  it("fewer: keeps the rows up to that period (the lunch stays where it was) and drops what comes after", () => {
-    expect(withPeriods(EIGHT, 5)).toEqual(FIVE);
-    expect(withPeriods(EIGHT, 2)).toEqual([EIGHT[0], EIGHT[1]]);
-    // The lunch after the last period is not kept.
-    expect(withPeriods(EIGHT, 3)).toEqual(EIGHT.slice(0, 3));
+describe("a class that comes at other hours", () => {
+  it("the school's own hours give the school's day, rows and all", () => {
+    expect(rowsBetween("08:30", "14:20", EIGHT)).toEqual(EIGHT);
   });
 
-  it("more: after the last row, as long as the last period", () => {
-    const ten = withPeriods(EIGHT, 10)!;
-    expect(periodCount(ten)).toBe(10);
-    expect(ten.slice(0, 9)).toEqual(EIGHT);
-    expect(ten.slice(9)).toEqual([p("14:20", "15:00"), p("15:00", "15:40")]);
+  it("shorter hours end the day after the last period that fits (the lunch stays where it was)", () => {
+    expect(rowsBetween("08:30", "12:20", EIGHT)).toEqual(FIVE);
   });
 
-  it("as many as it has: the rows as they are, even with a break at the end", () => {
-    const rows = [...FOUR, brk("11:40", "11:50")];
-    expect(withPeriods(rows, 4)).toEqual(rows);
+  it("another start: periods of the school's length from there, the last one cut to end when the class ends", () => {
+    const rows = rowsBetween("09:00", "14:00", EIGHT)!;
+    expect(rows[0]).toEqual(p("09:00", "09:40"));
+    expect(rows[rows.length - 1]).toEqual(p("13:40", "14:00"));
+    expect(rows.find((r) => r.kind === "lunch")).toEqual(lunch("10:30", "11:00"));
+    expect(rows.every((r) => r.start >= "09:00" && r.end <= "14:00")).toBe(true);
   });
 
-  it("none: no rows (no school that day)", () => {
-    expect(withPeriods(EIGHT, 0)).toEqual([]);
+  it("a remainder too short for a period is not a period: the day ends with the last whole one", () => {
+    expect(rowsBetween("08:30", "09:15", EIGHT)).toEqual([p("08:30", "09:10")]);
   });
 
-  it("cannot start from nothing, and cannot run past midnight", () => {
-    expect(withPeriods([], 3)).toBeNull();
-    expect(withPeriods([lunch("12:00", "12:30")], 3)).toBeNull();
-    expect(withPeriods([p("22:00", "23:30")], 2)).toBeNull();
-  });
-});
-
-describe("the rows a day gets for a number of periods", () => {
-  const regular = timing("Regular");
-  const dayOf = (schedules: Schedule[], day: number, classId = "nursery") => classWeek(schedules, classId)[day - 1];
-  const reference = (schedules: Schedule[], classId = "nursery") => referenceDay(classWeek(schedules, classId));
-
-  it("the day as it is when the number is the same", () => {
-    const d = dayOf([regular], 1);
-    expect(rowsFor(d, 8, reference([regular]))).toBe(d.current);
+  it("the lunch is kept only when it falls inside the hours", () => {
+    const rows = rowsBetween("13:00", "16:00", EIGHT)!;
+    expect(rows.some((r) => r.kind !== "period")).toBe(false);
+    expect(rows[0]).toEqual(p("13:00", "13:40"));
+    expect(rows[rows.length - 1]).toEqual(p("15:40", "16:00"));
   });
 
-  it("changes the school's day for this class: fewer from the end, more after it", () => {
-    const d = dayOf([regular], 1);
-    expect(rowsFor(d, 5, reference([regular]))).toEqual(FIVE);
-    expect(periodCount(rowsFor(d, 9, reference([regular]))!)).toBe(9);
+  it("the short break is kept where it falls inside the hours", () => {
+    const school = [p("08:30", "09:10"), p("09:10", "09:50"), brk("09:50", "10:05"), p("10:05", "10:45"), p("10:45", "11:25")];
+    expect(rowsBetween("08:30", "11:25", school)).toEqual(school);
   });
 
-  it("going back up from a trimmed day of its own gives the school's day again, not a copy that differs", () => {
-    const own = timing("Nursery", { days: [1], scope: "only", classIds: ["nursery"], slots: FIVE });
-    const d = dayOf([regular, own], 1);
-    const back = rowsFor(d, 8, reference([regular, own]))!;
-    expect(sameRows(back, d.inherited)).toBe(true);
+  it("there is no assembly: the class starts with its first period", () => {
+    const school: Slot[] = [{ kind: "break", label: "Assembly", start: "08:00", end: "08:15" }, p("08:15", "08:55"), p("08:55", "09:35")];
+    const rows = rowsBetween("08:00", "09:35", school)!;
+    expect(rows.some((r) => r.label === "Assembly")).toBe(false);
+    expect(rows[0]).toEqual(p("08:00", "08:40"));
+    expect(rows[rows.length - 1].end).toBe("09:35");
   });
 
-  it("an own day with times of its own keeps them when the number changes", () => {
-    const own = timing("Nursery", { days: [1], scope: "only", classIds: ["nursery"], slots: FOUR });
-    const d = dayOf([regular, own], 1);
-    expect(rowsFor(d, 3, reference([regular, own]))).toEqual(FOUR.slice(0, 3));
-    expect(rowsFor(d, 5, reference([regular, own]))!.slice(4)).toEqual([p("11:40", "12:20")]);
+  it("nothing when the end is not after the start, a time is missing, or the hours are too short for a period", () => {
+    expect(rowsBetween("14:00", "09:00", EIGHT)).toBeNull();
+    expect(rowsBetween("08:30", "08:35", EIGHT)).toBeNull();
+    expect(rowsBetween("", "09:00", EIGHT)).toBeNull();
   });
 
-  it("a day with no school gets the class's fullest day to start from; a class with no timing at all gets the usual day", () => {
-    const d = dayOf([regular], 7);
-    expect(rowsFor(d, 4, reference([regular]))).toEqual(EIGHT.slice(0, 5));
-    const none = dayOf([], 1);
-    const fresh = rowsFor(none, 5, reference([]))!;
-    expect(periodCount(fresh)).toBe(5);
-    expect(fresh[0].start).toBe("08:30");
-    expect(rowsFor(none, 0, reference([]))).toEqual([]);
+  it("takes the length of a period from the usual day when the school has no rows", () => {
+    expect(rowsBetween("08:30", "09:10", [])).toEqual([p("08:30", "09:10")]);
   });
 });
 
-describe("what is sent", () => {
-  const regular = timing("Regular");
-  const week = (schedules: Schedule[]) => classWeek(schedules, "nursery");
-  const counts = (days: ReturnType<typeof classWeek>) => Object.fromEntries(days.map((d) => [d.day, periodCount(d.current)]));
+describe("what is sent for a class that comes at other hours", () => {
+  const regular = timing("Regular", { days: [1, 2, 3, 4, 5] });
+  const weekOf = (schedules: Schedule[]) => classWeek(schedules, "nursery");
+  const sentDays = (r: ReturnType<typeof classTimingBody>) => r.body.days.map((d) => `${d.day}:${periodCount(d.slots)}`);
 
-  it("only the days that differ from what the class would follow anyway; the rest are left to follow", () => {
-    const days = week([regular]);
-    const sent = classDayBody("nursery", days, { ...counts(days), 1: 5, 7: 0 }, referenceDay(days), false);
+  it("every day the class has school gets the hours; only the days that differ from the school's are sent", () => {
+    const sent = classTimingBody("nursery", weekOf([regular]), "08:30", "12:20", false);
     expect(sent.problem).toBeNull();
-    expect(sent.body.days.map((d) => `${d.day}:${periodCount(d.slots)}`)).toEqual(["1:5"]);
+    expect(sentDays(sent)).toEqual(["1:5", "2:5", "3:5", "4:5", "5:5"]);
     expect(sent.body).toMatchObject({ classId: "nursery", removeLessons: false });
   });
 
-  it("a holiday is a day with no rows, and a day with no school can be given periods", () => {
-    const days = week([regular]);
-    const sent = classDayBody("nursery", days, { ...counts(days), 6: 0, 7: 3 }, referenceDay(days), false);
-    expect(sent.body.days.map((d) => `${d.day}:${periodCount(d.slots)}`)).toEqual(["6:0", "7:3"]);
-  });
-
-  it("days that are already the class's own stay in what is sent, so changing one does not give the others back", () => {
-    const own = timing("Nursery", { days: [1, 2], scope: "only", classIds: ["nursery"], slots: FIVE });
-    const days = week([regular, own]);
-    const sent = classDayBody("nursery", days, { ...counts(days), 3: 6 }, referenceDay(days), false);
-    expect(sent.body.days.map((d) => `${d.day}:${periodCount(d.slots)}`)).toEqual(["1:5", "2:5", "3:6"]);
-  });
-
-  it("every day back to what the school has: no days at all (the class follows the school)", () => {
-    const own = timing("Nursery", { days: [1], scope: "only", classIds: ["nursery"], slots: FIVE });
-    const days = week([regular, own]);
-    const sent = classDayBody("nursery", days, { ...counts(days), 1: 8 }, referenceDay(days), true);
+  it("the school's own hours send nothing: the class follows the school", () => {
+    const sent = classTimingBody("nursery", weekOf([regular]), "08:30", "14:20", false);
     expect(sent.body.days).toEqual([]);
-    expect(sent.body.removeLessons).toBe(true);
+    expect(sent.problem).toBeNull();
   });
 
-  it("says when a day cannot be made (it would run past midnight)", () => {
-    const late = timing("Late", { slots: [p("22:00", "23:30")], days: [1] });
-    const days = week([late]);
-    const sent = classDayBody("nursery", days, { ...counts(days), 1: 3 }, referenceDay(days), false);
-    expect(sent.problem).toBe("Monday cannot have 3 periods: the day would run past midnight.");
+  it("a day with no school stays without, and a day the class has off by itself stays off", () => {
+    const off = timing("Nursery Wednesday", { days: [3], scope: "only", classIds: ["nursery"], slots: [] });
+    const sent = classTimingBody("nursery", weekOf([regular, off]), "08:30", "12:20", false);
+    expect(sentDays(sent)).toEqual(["1:5", "2:5", "3:0", "4:5", "5:5"]);
+  });
+
+  it("a class with no school at all gets Monday to Friday, made from the usual day", () => {
+    const sent = classTimingBody("nursery", weekOf([]), "09:00", "13:00", false);
+    expect(sent.body.days.map((d) => d.day)).toEqual([1, 2, 3, 4, 5]);
+    expect(sent.body.days[0].slots[0].start).toBe("09:00");
+    expect(sent.body.days[0].slots.at(-1)!.end).toBe("13:00");
+  });
+
+  it("says why when the hours make no day, and sends nothing", () => {
+    const short = classTimingBody("nursery", weekOf([regular]), "08:30", "08:35", false);
+    expect(short.problem).toBe("These hours are too short for a period");
+    expect(short.body.days).toEqual([]);
+    expect(classTimingBody("nursery", weekOf([regular]), "12:00", "09:00", false).problem).toBe("The class must end after it starts");
+    expect(classTimingBody("nursery", weekOf([regular]), "", "09:00", false).problem).toBe("Enter when the class starts and ends");
+  });
+
+  it("passes on that the lessons in the periods that go may be taken out", () => {
+    expect(classTimingBody("nursery", weekOf([regular]), "08:30", "12:20", true).body.removeLessons).toBe(true);
+  });
+});
+
+describe("the hours a class has now", () => {
+  it("the school's day for a class that follows it", () => {
+    expect(classHours(classWeek([timing("Regular")], "nursery"))).toEqual({ start: "08:30", end: "14:20" });
+  });
+
+  it("the hours of its own day, when it has one", () => {
+    const own = timing("Nursery", { days: [1, 2, 3, 4, 5, 6], scope: "only", classIds: ["nursery"], slots: FOUR });
+    expect(classHours(classWeek([timing("Regular"), own], "nursery"))).toEqual({ start: "09:00", end: "11:40" });
+  });
+
+  it("the usual day for a class with no school at all", () => {
+    expect(classHours(classWeek([], "nursery"))).toEqual({ start: "08:30", end: "14:20" });
   });
 });
 
@@ -185,5 +182,54 @@ describe("a day in words", () => {
     expect(daySummaryOf(FIVE)).toBe("08:30 to 12:20 · lunch 10:30 to 11:00");
     expect(daySummaryOf(FOUR)).toBe("09:00 to 11:40");
     expect(daySummaryOf([])).toBe("No school");
+  });
+});
+
+describe("a class with a number of periods", () => {
+  it("from the start, that many periods with the school's lunch where it falls after them", () => {
+    expect(rowsForPeriods("08:30", 5, EIGHT)).toEqual(FIVE);
+    // The lunch after the last period is not a row of the day.
+    expect(rowsForPeriods("08:30", 3, EIGHT)).toEqual(EIGHT.slice(0, 3));
+  });
+
+  it("more than the school's day has: after its last period, as long as the others", () => {
+    const nine = rowsForPeriods("08:30", 9, EIGHT)!;
+    expect(periodCount(nine)).toBe(9);
+    expect(nine.at(-1)).toEqual(p("14:20", "15:00"));
+  });
+
+  it("another start moves the whole day (the lunch only if it is still after the start)", () => {
+    expect(rowsForPeriods("09:00", 2, EIGHT)).toEqual([p("09:00", "09:40"), p("09:40", "10:20")]);
+    expect(rowsForPeriods("12:00", 2, EIGHT)).toEqual([p("12:00", "12:40"), p("12:40", "13:20")]);
+  });
+
+  it("nothing for no period, more than a day can have, or a day that would run past midnight", () => {
+    expect(rowsForPeriods("08:30", 0, EIGHT)).toBeNull();
+    expect(rowsForPeriods("08:30", 13, EIGHT)).toBeNull();
+    expect(rowsForPeriods("22:00", 5, EIGHT)).toBeNull();
+    expect(rowsForPeriods("", 5, EIGHT)).toBeNull();
+  });
+
+  it("the end of those rows, taken as the class's end, gives the same rows back (the number and the hours agree)", () => {
+    for (const n of [1, 3, 4, 5, 8, 9]) {
+      const rows = rowsForPeriods("08:30", n, EIGHT)!;
+      expect(rowsBetween("08:30", rows.at(-1)!.end, EIGHT), `${n} periods`).toEqual(rows);
+    }
+  });
+});
+
+describe("a class's hours on a day the school keeps short", () => {
+  const regular = timing("Regular", { days: [1, 2, 3, 4, 5] });
+  const saturday = timing("Saturday", { days: [6], slots: FIVE });
+
+  it("are not given to that day: the class follows the school on it", () => {
+    const sent = classTimingBody("nursery", classWeek([regular, saturday], "nursery"), "08:30", "10:30", false);
+    expect(sent.body.days.map((d) => `${d.day}:${periodCount(d.slots)}`)).toEqual(["1:3", "2:3", "3:3", "4:3", "5:3"]);
+  });
+
+  it("a day of its own on it stays as it was", () => {
+    const own = timing("Nursery Saturday", { days: [6], scope: "only", classIds: ["nursery"], slots: FOUR });
+    const sent = classTimingBody("nursery", classWeek([regular, saturday, own], "nursery"), "08:30", "10:30", false);
+    expect(sent.body.days.map((d) => `${d.day}:${periodCount(d.slots)}`)).toEqual(["1:3", "2:3", "3:3", "4:3", "5:3", "6:4"]);
   });
 });

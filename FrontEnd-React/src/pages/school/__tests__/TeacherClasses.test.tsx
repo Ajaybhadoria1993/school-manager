@@ -7,6 +7,7 @@ import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
+import { signInAs, signOut } from "../../../test/session";
 import { STRUCTURE } from "../../../test/schoolClass";
 import { ALLOTMENT, ART, DEV, ENGLISH, MATHS, MEENA } from "../../../test/timetableFixtures";
 import type { Teacher } from "../../../types";
@@ -26,6 +27,8 @@ const CLASSES = {
 };
 
 function openPage(teacher: Teacher, extra: Record<string, Handler> = {}) {
+  // The school admin: the page asks who is looking (what the school allowed them).
+  signInAs("school_admin");
   const calls = fakeApi({
     [`GET /staff/teachers/${teacher.id}`]: () => teacher,
     [`GET /staff/teachers/${teacher.id}/classes`]: () => CLASSES,
@@ -58,6 +61,7 @@ function openPage(teacher: Teacher, extra: Record<string, Handler> = {}) {
 }
 
 afterEach(() => {
+  signOut();
   cleanup();
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
   vi.unstubAllGlobals();

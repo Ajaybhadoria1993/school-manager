@@ -149,10 +149,10 @@ const DEPARTMENT_ICONS: Record<string, LucideIcon> = {
 };
 export const departmentIcon = (name: string): LucideIcon => DEPARTMENT_ICONS[keyOf(name)] ?? Layers;
 
-/** The big mark on a class card: "5" for Class 5, "LKG" as it is, "PN" for Pre-Nursery. */
+/** The big mark on a class card: "5" for Class 5, "11" for Class 11 Science, "LKG" as it is, "PN" for Pre-Nursery. */
 export function classMark(name: string): string {
   const clean = name.trim();
-  const number = /^class\s*(\d{1,2})$/i.exec(clean)?.[1];
+  const number = /^class\s*(\d{1,2})(\s|$)/i.exec(clean)?.[1];
   if (number) return number;
   if (clean.length <= 3) return clean.toUpperCase();
   const words = clean.split(/[^A-Za-z0-9]+/).filter(Boolean);

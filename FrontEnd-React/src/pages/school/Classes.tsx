@@ -74,7 +74,7 @@ export default function ClassesPage() {
       <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <h1 className="text-2xl font-extrabold tracking-[-0.02em] text-foreground sm:text-3xl">Classes & Sections</h1>
+            <h1 className="text-page-heading">Classes & Sections</h1>
             <InfoTip label="What does this page show?">
               Your school's classes, in teaching order, by department. To change a department, or any class or section in it, press the Manage button of its heading.
             </InfoTip>

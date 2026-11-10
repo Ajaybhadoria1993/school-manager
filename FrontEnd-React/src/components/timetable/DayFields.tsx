@@ -69,9 +69,9 @@ function BreakRow({
       </label>
       {on ? (
         <>
-          <Input aria-label={`${name}: ${what} from`} type="time" className="min-w-0 flex-1 sm:w-36 sm:flex-none" value={from} onChange={(e) => onFrom(e.target.value)} />
+          <Input aria-label={`${name}: ${what} from`} type="time" className="min-w-28 flex-1 sm:w-36 sm:flex-none" value={from} onChange={(e) => onFrom(e.target.value)} />
           <span className="text-sm text-foreground-muted">to</span>
-          <Input aria-label={`${name}: ${what} to`} type="time" className="min-w-0 flex-1 sm:w-36 sm:flex-none" value={to} onChange={(e) => onTo(e.target.value)} />
+          <Input aria-label={`${name}: ${what} to`} type="time" className="min-w-28 flex-1 sm:w-36 sm:flex-none" value={to} onChange={(e) => onTo(e.target.value)} />
           {start !== null && end !== null && end > start && <span className="text-sm font-medium text-foreground-muted">{formatMinutes(end - start)}</span>}
         </>
       ) : (

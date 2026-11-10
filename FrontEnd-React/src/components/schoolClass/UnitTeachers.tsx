@@ -175,7 +175,7 @@ export function UnitTeachers({ classId, sectionId, label, classTeacher }: { clas
   return (
     <Card role="region" aria-label={`Teachers of ${label}`} className="@container space-y-4 p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
+        <h2 className="text-section-heading flex items-center gap-2">
           <UsersRound className="size-5 text-primary" aria-hidden />
           Teachers of {label}
         </h2>

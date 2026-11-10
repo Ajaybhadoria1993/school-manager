@@ -12,7 +12,7 @@ import { User } from "../../users/models/User";
 import { AttendanceDay, type AttendanceStatus } from "../models/AttendanceDay";
 import { LeaveRequest } from "../models/LeaveRequest";
 import type { AttendanceQuery, ChildAttendanceQuery, SaveAttendanceInput } from "../schemas/classroom.schemas";
-import { classTeacherUnits, RUNNER_ROLES, sameUnit, teacherOfUser } from "./access";
+import { classTeacherUnits, sameUnit, teacherOfUser, worksOnAllClasses } from "./access";
 import { CalendarService, fromDay, toDay } from "./calendar.service";
 import { childrenOf } from "./children";
 import type { Caller } from "./leave.service";
@@ -45,7 +45,7 @@ const tally = (statuses: AttendanceStatus[]): AttendanceTally => {
 
 /** The class teacher of this class or section, or the people who run the school. */
 async function assertTakes(tenantId: string, caller: Caller, unit: { classId: string; sectionId: string | null }) {
-  if (RUNNER_ROLES.includes(caller.role)) return;
+  if (worksOnAllClasses(caller.role)) return;
   const teacher = caller.role === "teacher" ? await teacherOfUser(tenantId, caller.userId) : null;
   const units = teacher ? await classTeacherUnits(tenantId, teacher._id) : [];
   if (!units.some((u) => sameUnit(u, unit))) throw ApiError.forbidden("Only the class teacher of this class or the school takes its attendance.", "NOT_CLASS_TEACHER");

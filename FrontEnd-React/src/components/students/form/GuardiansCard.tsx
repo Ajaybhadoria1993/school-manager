@@ -3,7 +3,7 @@ import { MAX_GUARDIANS } from "../../../constants/students";
 import { fieldId, type StudentForm } from "../../../hooks/useStudentForm";
 import { Button } from "../../ui/Button";
 import { WithTip } from "../../ui/Hint";
-import { FormCard } from "./FormCard";
+import { FormSection } from "./FormSection";
 import { GuardianFields } from "./GuardianFields";
 
 /** The parents and guardians: one to four, exactly one the primary contact. Another one is added with the button at the top. */
@@ -12,18 +12,10 @@ export function GuardiansCard({ form, mode, index = 0 }: { form: StudentForm; mo
   const problem = form.errorOf("guardians");
 
   return (
-    <FormCard
+    <FormSection
       index={index}
       icon={UsersRound}
-      tone="warning"
       title="Parents and guardians"
-      description={
-        mode === "admit"
-          ? form.rules?.secondParent === "required"
-            ? "The father and the mother. A parent who already has a child here is found by the mobile number and linked."
-            : "A parent who already has a child here is found by the mobile number and linked, never typed twice."
-          : "Their own details: a change shows on every child of theirs."
-      }
       tip="One parent is one record, however many children they have here: a brother or sister is linked to the same parent. The primary contact's mobile number will be their sign-in to the parent app later."
       action={
         mode === "admit" &&
@@ -47,6 +39,6 @@ export function GuardiansCard({ form, mode, index = 0 }: { form: StudentForm; mo
           <GuardianFields key={g.key} form={form} index={i} mode={mode} canRemove={mode === "admit" && guardians.length > 1} />
         ))}
       </div>
-    </FormCard>
+    </FormSection>
   );
 }

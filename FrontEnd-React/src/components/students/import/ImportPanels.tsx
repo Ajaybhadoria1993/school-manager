@@ -152,7 +152,7 @@ export function DoneCard({
       <span aria-hidden className={cn("relative mx-auto flex size-14 items-center justify-center rounded-2xl", admitted > 0 ? TONES.success.gradient : TONES.warning.gradient)}>
         {admitted > 0 ? <PartyPopper className="size-7" /> : <TriangleAlert className="size-7" />}
       </span>
-      <h2 className="relative mt-4 text-xl font-extrabold tracking-tight text-foreground">
+      <h2 className="text-section-heading relative mt-4">
         {admitted > 0 ? `${admitted} student${admitted === 1 ? "" : "s"} admitted to ${year}` : "No student was admitted"}
       </h2>
       <div className="relative mx-auto mt-2 max-w-xl space-y-1 text-sm text-foreground-muted">

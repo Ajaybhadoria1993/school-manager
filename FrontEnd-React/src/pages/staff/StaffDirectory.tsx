@@ -23,6 +23,7 @@ import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
+import { useCan } from "../../hooks/useCan";
 import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
 import { useResultModal } from "../../components/ui/ResultModal";
@@ -45,7 +46,7 @@ const PILL: Record<StaffMemberStatus, { tone: "success" | "warning" | "neutral";
 };
 const primaryLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_4px_10px_-2px_rgb(37_99_235/0.4)] transition-all duration-150 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
-const TH = "whitespace-nowrap px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-foreground-muted";
+const TH = "whitespace-nowrap px-4 py-3 text-left text-[13.5px] font-semibold text-foreground";
 
 /**
  * Staff (`/staff`, the menu's Staff): the people who work for the school without teaching, each with a role (Principal, Accountant,
@@ -59,6 +60,9 @@ const TH = "whitespace-nowrap px-4 py-3 text-left text-xs font-bold uppercase tr
 export default function StaffDirectoryPage() {
   // A year that is over is only looked at: no adding, changing, logins or making inactive (the server refuses them too).
   const readOnly = useReadOnlyYear();
+  const can = useCan();
+  const mayAdd = can("staff.add");
+  const mayChange = can("staff.edit");
   const [status, setStatus] = useState<StaffMemberStatus | "all">("all");
   const [role, setRole] = useState(ALL_ROLES);
   const [search, setSearch] = useState("");
@@ -109,7 +113,7 @@ export default function StaffDirectoryPage() {
 
   return (
     <div className="space-y-6">
-      <StudentFormHeader title="Staff" crumbs={[{ label: "Dashboard", to: "/dashboard" }]} actions={readOnly ? undefined : add} />
+      <StudentFormHeader title="Staff" crumbs={[{ label: "Dashboard", to: "/dashboard" }]} actions={readOnly || !mayAdd ? undefined : add} />
 
       <div className="flex flex-wrap items-center gap-3">
         <div role="tablist" aria-label="Which staff to show" className="flex gap-1 rounded-xl border border-border bg-surface p-1 shadow-sm">
@@ -153,7 +157,7 @@ export default function StaffDirectoryPage() {
         filtered ? (
           <p className="rounded-2xl border border-border bg-surface px-4 py-10 text-center text-sm text-foreground-muted">No staff matches.</p>
         ) : (
-          <StudentsNotice icon={UserCog} tone="primary" title="No staff yet" actions={readOnly ? undefined : add}>
+          <StudentsNotice icon={UserCog} tone="primary" title="No staff yet" actions={readOnly || !mayAdd ? undefined : add}>
             <p>Add the people who work for your school without teaching, such as a receptionist or the management. You make a username and a password for each.</p>
           </StudentsNotice>
         )
@@ -186,9 +190,13 @@ export default function StaffDirectoryPage() {
                     <div className="flex items-center gap-3">
                       <StudentAvatar name={m.name} seed={m.id} size="sm" className={cn(m.status === "inactive" && "opacity-60 grayscale")} />
                       <div className="min-w-0">
-                        <Link to={`/staff/${m.id}/edit`} className="block truncate font-bold text-foreground hover:text-primary-deep focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20">
-                          {m.name}
-                        </Link>
+                        {mayChange ? (
+                          <Link to={`/staff/${m.id}/edit`} className="block truncate font-bold text-foreground hover:text-primary-deep focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20">
+                            {m.name}
+                          </Link>
+                        ) : (
+                          <span className="block truncate font-bold text-foreground">{m.name}</span>
+                        )}
                         {m.login && (
                           <span className="flex items-center gap-1 text-xs text-foreground-muted">
                             <KeyRound className="size-3" aria-hidden />
@@ -213,7 +221,7 @@ export default function StaffDirectoryPage() {
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
-                    <div className={readOnly ? "hidden" : "flex flex-wrap justify-end gap-1.5"}>
+                    <div hidden={!mayChange} className={readOnly ? "hidden" : "flex flex-wrap justify-end gap-1.5"}>
                       <Link
                         to={`/staff/${m.id}/edit`}
                         aria-label={`Change ${m.name}`}

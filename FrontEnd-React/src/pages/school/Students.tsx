@@ -17,8 +17,10 @@ import {
 } from "lucide-react";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useStudentFilters } from "../../hooks/useStudentFilters";
+import { useToast } from "../../components/ui/toast-context";
+import { useCan } from "../../hooks/useCan";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
-import { useGetCapacityQuery, useGetStudentsQuery } from "../../redux/api/studentsApi";
+import { useDownloadSheetMutation, useGetCapacityQuery, useGetStudentsQuery } from "../../redux/api/studentsApi";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
 import { KpiCard } from "../../components/dashboard/school/KpiCard";
@@ -73,6 +75,12 @@ export default function StudentsPage() {
   const structureRes = useGetStructureQuery();
   const capacityRes = useGetCapacityQuery();
   const listRes = useGetStudentsQuery(query);
+  const can = useCan();
+  // The page where the school chooses its fields and the Excel's columns is for the people allowed students.settings.
+  const choosesFields = can("students.settings");
+  // A person who may export but does not run the school gets the file at once (the Export page is where the school chooses its fields).
+  const [download, { isLoading: exporting }] = useDownloadSheetMutation();
+  const { push } = useToast();
   const [guideChoice, setGuideChoice] = useState<boolean | null>(null);
   // The students ticked to be made inactive (only those of the page on screen count, so a tick on another page is never sent).
   const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
@@ -91,6 +99,16 @@ export default function StudentsPage() {
     rememberGuideClosed(guideOpen);
     setGuideChoice(!guideOpen);
   };
+
+  async function exportNow() {
+    const params = Object.fromEntries(Object.entries({ q: query.q, classId: query.classId, sectionId: query.sectionId }).filter((e): e is [string, string] => !!e[1]));
+    try {
+      await download({ url: "/students/export", params, fallbackName: "students.xlsx" }).unwrap();
+      push("success", "The students file is downloaded");
+    } catch (err) {
+      push("error", getApiError(err)?.message ?? "Could not download the students.");
+    }
+  }
 
   /** The Export page gets the students the list shows (its search, class and section; every page). */
   const exportSearch = new URLSearchParams(
@@ -119,7 +137,7 @@ export default function StudentsPage() {
       <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <h1 className="text-2xl font-extrabold tracking-[-0.02em] text-foreground sm:text-3xl">Students</h1>
+            <h1 className="text-page-heading">Students</h1>
             <InfoTip label="What does this page show?">
               The students of the current academic year, with the class and section they sit in this year. Last year's class stays in the student's own page.
             </InfoTip>
@@ -136,7 +154,7 @@ export default function StudentsPage() {
             </Button>
           </WithTip>
           {/* The same buttons whether the school has students or not: with nobody yet, Export is where its fields are chosen. */}
-          {!noYear && (
+          {!noYear && can("students.export") && (
             <WithTip
               tip={
                 total === 0
@@ -146,13 +164,20 @@ export default function StudentsPage() {
                     : "Every student of this year as an Excel file. Choose your school's fields (on / off, mandatory), their headings and order, and see it first."
               }
             >
-              <Link to={{ pathname: "/school/students/export", search: exportSearch }} className={outlineLink}>
-                <Download className="size-4" aria-hidden />
-                Export
-              </Link>
+              {choosesFields ? (
+                <Link to={{ pathname: "/school/students/export", search: exportSearch }} className={outlineLink}>
+                  <Download className="size-4" aria-hidden />
+                  Export
+                </Link>
+              ) : (
+                <Button variant="outline" onClick={() => void exportNow()} loading={exporting}>
+                  <Download className="size-4" aria-hidden />
+                  Export
+                </Button>
+              )}
             </WithTip>
           )}
-          {!noYear && !readOnly && (
+          {!noYear && !readOnly && can("students.add") && (
             <WithTip tip="Bring in many students at once from Excel: the sample file or your school's own sheet.">
               <Link to="/school/students/import" className={outlineLink}>
                 <FileUp className="size-4" aria-hidden />
@@ -160,7 +185,7 @@ export default function StudentsPage() {
               </Link>
             </WithTip>
           )}
-          {!noYear && !readOnly && (
+          {!noYear && !readOnly && can("students.add") && (
             <WithTip tip="Opens the admission form: the student, the class and section (the one chosen in the list, if any), a parent and the address.">
               <Link to={admitLink({ classId: filters.classId, sectionId: filters.sectionId })} className={plainLink}>
                 <UserPlus className="size-4" aria-hidden />
@@ -171,7 +196,7 @@ export default function StudentsPage() {
         </div>
       </header>
 
-      {!noYear && <StudentStatusTabs />}
+      {!noYear && can("students.status") && <StudentStatusTabs />}
 
       {guideOpen && <StudentsGuide onClose={toggleGuide} />}
 
@@ -257,16 +282,18 @@ export default function StudentsPage() {
               title="No students yet"
               actions={
                 <>
-                  {!readOnly && (
+                  {!readOnly && can("students.add") && (
                     <Link to="/school/students/new" className={plainLink}>
                       <UserPlus className="size-4" aria-hidden />
                       Add your first student
                     </Link>
                   )}
-                  <Link to="/school/classes" className={outlineLink}>
-                    <FolderTree className="size-4" aria-hidden />
-                    Check your classes and sections
-                  </Link>
+                  {can("classes.manage") && (
+                    <Link to="/school/classes" className={outlineLink}>
+                      <FolderTree className="size-4" aria-hidden />
+                      Check your classes and sections
+                    </Link>
+                  )}
                 </>
               }
             />
@@ -304,7 +331,7 @@ export default function StudentsPage() {
                       </div>
                     </div>
                   )}
-                  <StudentTable students={page.items} loading={listRes.isFetching} selection={readOnly ? undefined : selection} />
+                  <StudentTable students={page.items} loading={listRes.isFetching} selection={readOnly || !can("students.status") ? undefined : selection} />
                 </>
               ) : (
                 <ul

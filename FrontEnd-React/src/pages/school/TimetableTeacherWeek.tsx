@@ -18,7 +18,7 @@ export default function TimetableTeacherWeekPage() {
   const { teacherId = "" } = useParams();
   const res = useGetTeacherWeekQuery(teacherId);
   const week = res.currentData?.data;
-  const crumbs = [{ label: "Dashboard", to: "/dashboard" }, { label: "Timetable", to: "/school/timetable" }, { label: "Teachers", to: "/school/teachers" }];
+  const crumbs = [{ label: "Dashboard", to: "/dashboard" }, { label: "Class timetables", to: "/school/timetable" }, { label: "Teachers", to: "/school/teachers" }];
 
   if (res.error && !week) {
     return (
@@ -89,7 +89,7 @@ export default function TimetableTeacherWeekPage() {
         <h2 className="mb-2 text-sm font-bold text-foreground">What they teach this year</h2>
         {week.teaches.length === 0 ? (
           <p className="text-sm text-foreground-muted">
-            Nothing is given to them yet. Choose them as the teacher of a subject in a class's <Link to="/school/timetable?tab=classes" className="font-semibold text-primary-deep underline">timetable</Link> (Edit subjects).
+            Nothing is given to them yet. Choose them as the teacher of a subject in a class's <Link to="/school/timetable" className="font-semibold text-primary-deep underline">timetable</Link> (Edit subjects).
           </p>
         ) : (
           <ul className="flex flex-wrap gap-2">

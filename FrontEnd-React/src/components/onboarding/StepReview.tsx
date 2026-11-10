@@ -1,7 +1,9 @@
-import { ArrowLeft, GraduationCap, MapPin, Pencil, School, Send, UserRound, type LucideIcon } from "lucide-react";
+import { ArrowLeft, CalendarDays, MapPin, Pencil, School, Send, UserRound, type LucideIcon } from "lucide-react";
+import { API_URL } from "../../redux/api/baseQueryWithReauth";
 import { Button } from "../ui/Button";
-import { designationLabel, formatAffiliations, formatBoards, formatClassRange, formatPhone } from "../../constants/schoolOptions";
+import { designationLabel, formatAffiliations, formatBoards, formatPhone } from "../../constants/schoolOptions";
 import { formatDayRange } from "../../utils/academicYear";
+import { planLines } from "../../utils/mediumPlans";
 import type { SchoolSteps } from "../../types";
 
 function Row({ label, value }: { label: string; value?: string | number | null }) {
@@ -36,7 +38,7 @@ function Block({
           <span className="flex size-10 items-center justify-center rounded-xl bg-primary-soft text-primary">
             <Icon className="size-5" aria-hidden />
           </span>
-          <h3 className="text-base font-semibold text-foreground">{title}</h3>
+          <h3 className="text-section-heading">{title}</h3>
         </div>
         <button
           type="button"
@@ -91,14 +93,21 @@ export function StepReview({
         </p>
       </div>
 
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
         <Block title="School" icon={School} step={1} onEdit={onEdit}>
           <Row label="Name" value={s1.schoolName} />
           <Row label="Type" value={s1.schoolType} />
-          <Row label="Board and medium" value={formatBoards(s1.boards)} />
-          <Row label="Affiliation no." value={formatAffiliations(s1.boards)} />
           <Row label="UDISE+ code" value={s1.udiseCode} />
           <Row label="Established" value={s1.establishedYear} />
+          <Row label="Students" value={s1.approxStudents} />
+          {s1.logoUrl && (
+            <div className="flex items-center gap-3 py-2.5 text-sm">
+              <dt className="text-[11px] font-semibold uppercase tracking-wider text-foreground-muted">Logo</dt>
+              <dd>
+                <img src={`${API_URL}${s1.logoUrl}`} alt="School logo" className="size-12 rounded-lg border border-border object-contain" />
+              </dd>
+            </div>
+          )}
         </Block>
         <Block title="Address and contact" icon={MapPin} step={2} onEdit={onEdit}>
           <Row label="Address" value={[s2.addressLine1, s2.addressLine2].filter(Boolean).join(", ")} />
@@ -111,17 +120,20 @@ export function StepReview({
           <Row label="Email" value={s2.schoolEmail} />
           <Row label="Website" value={s2.website} />
         </Block>
+        <Block title="Academic year" icon={CalendarDays} step={2} onEdit={onEdit}>
+          <Row label="Academic year" value={s1.academicYear?.name} />
+          <Row label="Session" value={formatDayRange(s1.academicYear?.startDate ?? "", s1.academicYear?.endDate ?? "")} />
+          <Row label="Board and medium" value={formatBoards(s1.boards)} />
+          <Row label="Affiliation no." value={formatAffiliations(s1.boards)} />
+          {planLines(s1.boards).map((line) => (
+            <Row key={line.label} label={line.label} value={line.summary} />
+          ))}
+        </Block>
         <Block title="You" icon={UserRound} step={3} onEdit={onEdit}>
           <Row label="Name" value={s3.adminName} />
           <Row label="Role" value={designationLabel(s3.designation, s3.designationOther)} />
           <Row label="Mobile" value={formatPhone(s3.mobile)} />
           <Row label="Alternate mobile" value={formatPhone(s3.alternateMobile)} />
-        </Block>
-        <Block title="Classes and size" icon={GraduationCap} step={1} onEdit={onEdit}>
-          <Row label="Classes" value={formatClassRange(s1.lowestClass, s1.highestClass)} />
-          <Row label="Students" value={s1.approxStudents} />
-          <Row label="Academic year" value={s1.academicYear?.name} />
-          <Row label="Session" value={formatDayRange(s1.academicYear?.startDate ?? "", s1.academicYear?.endDate ?? "")} />
         </Block>
       </div>
 

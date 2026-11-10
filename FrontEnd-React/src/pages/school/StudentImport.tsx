@@ -23,6 +23,7 @@ import {
   autoMap,
   columnChoices,
   columnsToAdd,
+  placeInSections,
   emptyMapping,
   crossCheck,
   fieldDef,
@@ -209,19 +210,27 @@ export default function StudentImportPage() {
       return p;
     });
   }, [sheet, rowCache]);
-  // The rows already admitted from this file come first, so a row left that repeats one of them is still "the same student as row 4".
-  const crossed = useMemo(() => crossCheck([...admitted.map((a) => a.source), ...prepared]), [admitted, prepared]);
-  // Inside the file: the same name and birthday with another parent's mobile (a maybe), the admitted rows of this file counted too.
-  const alike = useMemo(() => lookAlikes([...admitted.map((a) => a.source), ...prepared]), [admitted, prepared]);
   // Each row's identity as it is now: an answer of the check is that of the row only while it is the same.
   const sigs = useMemo(() => new Map(matchInputOf(prepared).map((r) => [r.row, JSON.stringify(r)])), [prepared]);
+  // A row of a class that is split into sections, with no section of its own (none given, or one the class does not have), is placed
+  // in one of them: the sections are filled evenly, in the order of the file. A blank row of the typed table and a student the school
+  // already has are not placed and take no seat. A section is never a problem of a row.
+  const placed = useMemo(() => {
+    const empty = new Set((sheet?.rows ?? []).filter((r) => r.cells.every((c) => !c.trim())).map((r) => r.row));
+    const inSchool = (row: number) => met.get(row)?.sig === sigs.get(row) && met.get(row)?.match.kind === "same";
+    return placeInSections(prepared, structure?.classes ?? [], capacity?.sections ?? [], (row) => empty.has(row) || inSchool(row));
+  }, [prepared, sheet, structure, capacity, met, sigs]);
+  // The rows already admitted from this file come first, so a row left that repeats one of them is still "the same student as row 4".
+  const crossed = useMemo(() => crossCheck([...admitted.map((a) => a.source), ...placed]), [admitted, placed]);
+  // Inside the file: the same name and birthday with another parent's mobile (a maybe), the admitted rows of this file counted too.
+  const alike = useMemo(() => lookAlikes([...admitted.map((a) => a.source), ...placed]), [admitted, placed]);
   const wholeName = !!mapping && mapping.firstName === null && mapping.lastName === null && mapping.fullName !== null;
 
   /**
    * Every problem of a row: the form's rules, the file as a whole, and what the server said at the last upload (a full section is no
    * problem any more once the person said to go over the seats).
    */
-  const rows = prepared.map((p, i) => {
+  const rows = placed.map((p, i) => {
     const cells = sheet!.rows[i].cells;
     // An empty row of the typed table (nothing in any cell) is waiting for a student: it is not a problem and is not uploaded.
     const blank = cells.every((c) => !c.trim());
@@ -267,7 +276,16 @@ export default function StudentImportPage() {
   const current = Math.min(page, pages);
   const pageRows: GridRow[] = shown
     .slice((current - 1) * IMPORT_ROWS_PER_PAGE, current * IMPORT_ROWS_PER_PAGE)
-    .map((r) => ({ row: r.p.row, cells: r.cells, blank: r.blank, problems: r.problems, warnings: r.warnings, already: r.already }));
+    .map((r) => ({
+      row: r.p.row,
+      cells: r.cells,
+      blank: r.blank,
+      problems: r.problems,
+      warnings: r.warnings,
+      already: r.already,
+      // Where a student with no section of their own goes (the file names none): said under Ready.
+      placed: r.p.autoSection && !r.p.autoSection.word && r.p.sectionId ? r.p.classLabel : undefined,
+    }));
 
   // The sections the rows to upload would fill past their seats this year: the ready ones, and the ones refused only for the seats.
   const coming = new Map<string, number>();

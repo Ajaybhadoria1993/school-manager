@@ -16,14 +16,17 @@ import { emptyGuardian, emptyStudentForm, formatMobile, placeLabel, toAdmission,
 import { isIndianMobile, isPasswordValid, isUsername } from "../../utils/validators";
 import type { AcademicStructure, GuardianMatch, Relation, SectionItem, SectionLoad, StudentAddress, StudentCapacity } from "../../types";
 import { AdmitStepBody } from "../../components/students/form/AdmitStepBody";
-import { AdmitSidebar } from "../../components/students/form/AdmitSidebar";
 import { ManageFieldsLink } from "../../components/students/export/ManageFieldsLink";
+import { useCan } from "../../hooks/useCan";
 import { CustomFieldDialog } from "../../components/students/export/CustomFieldDialog";
 import { AskDialog } from "../../components/students/form/AskDialog";
 import { FormActionBar } from "../../components/students/form/FormActionBar";
+import { cameFromOf } from "../../components/layout/nav-config";
+import type { Crumb } from "../../components/ui/PageBackNav";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
 import { ModalError } from "../../components/ui/AppModal";
+import { BoxedControls } from "../../components/ui/Input";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Skeleton } from "../../components/ui/Skeleton";
@@ -86,7 +89,11 @@ const plainLink =
  * from what the list page already read (nothing is asked again within a minute).
  */
 export default function StudentAdmitPage() {
-  const family = (useLocation().state as { siblingOf?: SiblingOf } | null)?.siblingOf;
+  const location = useLocation();
+  const family = (location.state as { siblingOf?: SiblingOf } | null)?.siblingOf;
+  // Opened from the Students page or a class's page, the way back leads there; from Manage Students (or a typed address), to its list.
+  const from = cameFromOf(location.state);
+  const crumbs = [{ label: from?.label ?? "Students", to: from?.href ?? "/school/students" }];
   const [params] = useSearchParams();
   const structureRes = useGetStructureQuery();
   const capacityRes = useGetCapacityQuery();
@@ -119,7 +126,7 @@ export default function StudentAdmitPage() {
   if (!capacity.academicYear) {
     return (
       <div className="space-y-6">
-        <StudentFormHeader title="Add student" />
+        <StudentFormHeader title="Add student" crumbs={crumbs} />
         <StudentsNotice
           icon={CalendarX2}
           tone="warning"
@@ -136,7 +143,7 @@ export default function StudentAdmitPage() {
     );
   }
 
-  return <AdmitForm structure={structure} capacity={capacity} rules={rules} custom={custom} placements={placements} steps={steps} family={family} place={placeFromLink(params, structure)} year={capacity.academicYear.name} />;
+  return <AdmitForm structure={structure} capacity={capacity} rules={rules} custom={custom} placements={placements} steps={steps} family={family} crumbs={crumbs} place={placeFromLink(params, structure)} year={capacity.academicYear.name} />;
 }
 
 function AdmitForm({
@@ -147,6 +154,7 @@ function AdmitForm({
   placements,
   steps,
   family,
+  crumbs,
   place,
   year,
 }: {
@@ -159,10 +167,13 @@ function AdmitForm({
   /** The steps after Parents, in order: More details and the school's own. */
   steps: StepDef[];
   family: SiblingOf | undefined;
+  /** The way back, under the title: where the person opened the form from. */
+  crumbs: Crumb[];
   /** Chosen by the link the form was opened from (a class's page): the class and section start filled in. */
   place: { classId: string; sectionId: string } | null;
   year: string;
 }) {
+  const can = useCan();
   const navigate = useNavigate();
   const { push } = useToast();
   const [lookupGuardian] = useLookupGuardianMutation();
@@ -355,11 +366,14 @@ function AdmitForm({
 
   return (
     <>
-      <form onSubmit={submit} noValidate className="space-y-6">
+      <BoxedControls>
+      <form onSubmit={submit} noValidate className="space-y-4 lg:-mx-4 lg:-mt-3">
         <StudentFormHeader
           title="Add student"
+          crumbs={crumbs}
           subtitle={family ? `A brother or sister of ${family.name} · ${year}` : `Academic year ${year}`}
           actions={
+            can("students.settings") && (
             <ManageFieldsLink
               from="admit"
               // What is typed would be cleared by leaving: ask first (nothing typed: go straight there).
@@ -369,19 +383,18 @@ function AdmitForm({
                 return false;
               }}
             />
+            )
           }
         />
 
         {formError && <ModalError message={formError} />}
 
-        <Card className="px-5 py-4 sm:px-7 sm:py-5">
+        <Card className="px-4 py-3 sm:px-5">
           <Steps steps={stepList} active={at} completed={stepList.flatMap((s, i) => (passed.includes(s.key) ? [i] : []))} furthest={furthest} onSelect={openStep} />
-          <p className="mt-3 hidden text-sm text-foreground-muted lg:block">{stepList[at].hint}</p>
         </Card>
 
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          {/* `key` gives each step a fresh start (its animation); the values are the form's, so nothing typed is lost by moving. */}
-          <div key={stepKey} className="rise-in min-w-0 space-y-6">
+        {/* `key` gives each step a fresh start (its animation); the values are the form's, so nothing typed is lost by moving. */}
+        <Card key={stepKey} className="rise-in space-y-7 p-4 sm:p-5">
             <AdmitStepBody
               form={form}
               stepKey={stepKey}
@@ -405,11 +418,9 @@ function AdmitForm({
                 problems={loginProblems}
               />
             )}
-          </div>
-          <AdmitSidebar values={form.values} problems={form.problems} rules={form.rules ?? rules} custom={custom} structure={structure} />
-        </div>
+        </Card>
 
-        <FormActionBar>
+        <FormActionBar wide>
           <Button type="button" variant="ghost" className="text-foreground-muted hover:text-danger" disabled={!form.dirty || sending} onClick={() => setAsk({ kind: "clear" })}>
             <Trash2 className="size-4" aria-hidden />
             Clear all
@@ -438,6 +449,7 @@ function AdmitForm({
           </div>
         </FormActionBar>
       </form>
+      </BoxedControls>
 
       {/* Outside the form: a dialog's buttons must not submit it. */}
       {addingField !== null && (

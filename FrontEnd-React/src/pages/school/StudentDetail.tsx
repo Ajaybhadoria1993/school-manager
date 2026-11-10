@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { ArrowRightLeft, CircleCheck, HeartHandshake, Pencil, UserCheck, UserPlus, UserX } from "lucide-react";
+import { useCan } from "../../hooks/useCan";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetCapacityQuery, useGetStudentQuery, useGetStudentSettingsQuery, useReactivateStudentsMutation } from "../../redux/api/studentsApi";
@@ -138,6 +139,7 @@ function StudentView({
   const { push } = useToast();
   // A year that is over is only looked at: no Edit, Transfer, Make inactive or Add a sibling (the server refuses them too).
   const readOnly = useReadOnlyYear();
+  const can = useCan();
   const inactive = student.status === "inactive";
   const family: SiblingOf = {
     name: student.name,
@@ -171,39 +173,48 @@ function StudentView({
         subtitle={[student.admissionNumber, inactive ? "Inactive" : placeLabel(student.place), !inactive && student.place?.rollNumber != null ? `Roll ${student.place.rollNumber}` : null].filter(Boolean).join(" · ")}
         actions={
           readOnly ? undefined : inactive ? (
-            <WithTip tip="Puts the student back in their class and section, in the list, the seats and the Excel.">
-              <Button type="button" loading={working} onClick={() => void makeActive()}>
-                <UserCheck className="size-4" aria-hidden />
-                Make active
-              </Button>
-            </WithTip>
+            can("students.status") ? (
+              <WithTip tip="Puts the student back in their class and section, in the list, the seats and the Excel.">
+                <Button type="button" loading={working} onClick={() => void makeActive()}>
+                  <UserCheck className="size-4" aria-hidden />
+                  Make active
+                </Button>
+              </WithTip>
+            ) : undefined
           ) : (
             <>
-              <WithTip tip="Admit a brother or sister: the parents are found by their numbers and linked, and the address is filled in.">
-                <Button type="button" variant="outline" onClick={() => onSibling(family)}>
-                  <HeartHandshake className="size-4" aria-hidden />
-                  Add a sibling
-                </Button>
-              </WithTip>
-            
-              <WithTip tip="Move the student to another class or section of this school, or to another school with a transfer certificate. Nothing is deleted: it is written in their history.">
-                <Button type="button" variant="outline" onClick={() => setTransferring(true)}>
-                  <ArrowRightLeft className="size-4" aria-hidden />
-                  Transfer
-                </Button>
-              </WithTip>
-              <WithTip tip="The student left the school: takes them out of the list, the seats and the Excel. Nothing is deleted, and one click makes them active again.">
-                <Button type="button" variant="outline" onClick={() => setAsking(true)}>
-                  <UserX className="size-4" aria-hidden />
-                  Make inactive
-                </Button>
-              </WithTip>
+              {can("students.add") && (
+                <WithTip tip="Admit a brother or sister: the parents are found by their numbers and linked, and the address is filled in.">
+                  <Button type="button" variant="outline" onClick={() => onSibling(family)}>
+                    <HeartHandshake className="size-4" aria-hidden />
+                    Add a sibling
+                  </Button>
+                </WithTip>
+              )}
+              {can("students.edit", "students.status") && (
+                <WithTip tip="Move the student to another class or section of this school, or to another school with a transfer certificate. Nothing is deleted: it is written in their history.">
+                  <Button type="button" variant="outline" onClick={() => setTransferring(true)}>
+                    <ArrowRightLeft className="size-4" aria-hidden />
+                    Transfer
+                  </Button>
+                </WithTip>
+              )}
+              {can("students.status") && (
+                <WithTip tip="The student left the school: takes them out of the list, the seats and the Excel. Nothing is deleted, and one click makes them active again.">
+                  <Button type="button" variant="outline" onClick={() => setAsking(true)}>
+                    <UserX className="size-4" aria-hidden />
+                    Make inactive
+                  </Button>
+                </WithTip>
+              )}
+              {can("students.edit") && (
                 <WithTip tip="Change the details, the class or section this year, or a parent's details. Nothing is saved until you press Save.">
-                <Button type="button" onClick={onEdit}>
-                  <Pencil className="size-4" aria-hidden />
-                  Edit
-                </Button>
-              </WithTip>
+                  <Button type="button" onClick={onEdit}>
+                    <Pencil className="size-4" aria-hidden />
+                    Edit
+                  </Button>
+                </WithTip>
+              )}
             </>
           )
         }
@@ -250,7 +261,7 @@ function StudentView({
       {/* The parent's login Add student made: shown this once, to hand over (only a hash of the password is kept). */}
       {arrived?.parentLogin && (
         <section className="space-y-2">
-          <h2 className="text-base font-bold tracking-tight text-foreground">Login of {arrived.parentLogin.name}</h2>
+          <h2 className="text-section-heading">Login of {arrived.parentLogin.name}</h2>
           <CredentialsCard teacher={arrived.parentLogin.name} username={arrived.parentLogin.username} password={arrived.parentLogin.password} />
         </section>
       )}

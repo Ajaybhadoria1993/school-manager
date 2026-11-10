@@ -38,7 +38,7 @@ function Tile({
       <div className="relative flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-foreground-muted">{label}</p>
-          <p className="mt-1 truncate text-3xl font-extrabold tracking-[-0.03em] text-foreground">
+          <p className="mt-1 truncate text-stat-value">
             <Value value={value} />
           </p>
         </div>

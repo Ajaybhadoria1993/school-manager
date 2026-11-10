@@ -110,6 +110,25 @@ utils/                       auth (cookies), apiErrors, helpers, status, validat
 Imports are relative (no `@/` alias), types live in `src/types/`, and a new API slice must be added to
 `redux/api/apiRoot.ts`: the store builds its reducers and middleware from that list.
 
+## Text: one font, one set of sizes (Medisetu's)
+
+The whole app is set in **Outfit** (`@fontsource/outfit`, weights 400 to 700, loaded in `index.css`). Text sizes are not
+written per page: use the classes from the `@layer utilities` block at the end of `index.css`.
+
+| Class | Where | Size / weight |
+|---|---|---|
+| `text-app-title` | top bar title | 18px / 600 |
+| `text-page-heading` | the page's one `h1` | 18px up to 26px / 600 |
+| `text-section-heading` | card titles | 15px up to 16px / 600 |
+| `text-metric-headline` | the big figure of a chart card | large / 700 |
+| `text-stat-value` | the number on a stat tile | 17px up to 22px / 700 |
+| `text-body-label` | labels, stat captions | 12px up to 13.5px / 500 |
+| `text-caption-subtle` | hints under a figure, small notes | 11px up to 12px |
+| `text-action-link` | links such as "View" | 12px up to 13.5px / 500 |
+
+Table headings are sentence case, 13.5px, semibold (never upper case). Cards have a flat hairline shadow (`--elev-card`).
+Only the typography and the plainness changed: the colours (blue brand, navy sidebar) are the same as before.
+
 ## What differs from the Next.js app
 
 Nothing you can see. Under the hood:
@@ -755,8 +774,8 @@ download, fill and upload), but any sheet opens as an editable table first, beca
    | 9 🗑| [Class]         |             | Meera Joshi        | [Class 9] red       |                     |   field)          |
    |     |                 |             |                    | Your school has no  |                     |                   |
    |     |                 |             |                    | "Class 9": type one |                     |                   |
-   | 17🗑| [Section]       |             | Sara Khan          | 6                   | [ ] red: Class 6 has|                   |
-   |     |                 |             |                    |                     | sections A: type one|                   |
+   | 17🗑| Ready           |             | Sara Khan          | 6                   |                     |                   |
+   |     | Goes to Class 6 - A                                                                                                    |
    +-----+-----------------+-------------+--------------------+---------------------+---------------------+-------------------+
                                                        7 rows need a fix and are not uploaded.  [ Upload 7 students ]
 3  8 students admitted to 2026-2027 . [ Fix the 3 rows ] [ Download them ] [ Upload another file ] [ Go to students ]
@@ -781,7 +800,10 @@ download, fill and upload), but any sheet opens as an editable table first, beca
   (`addColumn`, from the "+", or `addMissing` when a Status label points at a detail with no column), the same change for other rows
   (`SameValueOffer`), a row left out. Each heading is the shared HeroUI `Select` made small with `triggerClassName` (never a native
   `<select>`). When a file opens, `columnsToAdd` appends empty columns for what every student needs and the file lacks (the name, gender,
-  date of birth, class, a parent's name and mobile, the section of a class that has sections: never the address or the previous school), and
+  date of birth, class, a parent's name and mobile: never the address, the previous school or the section), and
+  `placeInSections(rows, classes, loads, skip)` gives a row of a class with sections and none given (no column, an empty box, or a
+  section the class lacks) its section: evenly, the emptier section first, free seats and free roll numbers preferred, so a section is never
+  a problem of a row (the page runs it over the prepared rows and sends the chosen `sectionId`), and
   `ownColumnsOf` finds the school's own fields. `utils/studentImport.ts` does the rest: `autoMap` (titles to details by
   `IMPORT_FIELDS[].synonyms`, the school's export headings first), `matchClass`, and `prepareRow(row, mapping, structure, ownColumns)`,
   which cleans each value (`normaliseDay`, `normaliseGender`, `normaliseMobile`, `normaliseState`...; an own field by its kind), builds
@@ -995,9 +1017,9 @@ names of every field, one father and one mother).
 
 # Manage school: Timetable
 
-Everything is on **one page**, `/school/timetable` (menu: Manage school > Timetable), in **two tabs**; the tab and the class are in the
-address (`?tab=timings|classes&class=&section=`). A school with no timing opens on School timings, otherwise on Class timetables. The two tabs
-are in the header, at the right of the title (the Subjects / Teachers buttons and the line under the title were taken away on 2026-11-03; the
+It is **two pages nested under one Timetable row of the menu** (2026-11-09 pages, 2026-11-10 nested; they were two tabs of one page): **School timings** (`/school/timings`) and **Class timetables**
+(`/school/timetable?class=&section=`), both under Manage school. The old `?tab=` addresses lead to the right page. No tabs, and the header has only the
+title (the Subjects / Teachers buttons and the line under the title were taken away on 2026-11-03; the
 Subjects is still a page of its own, `/school/timetable/subjects`; **Teachers is Manage school > Teachers**, `/school/teachers`, with Add teacher in four
 steps, a teacher's page and a login for each teacher: `../docs/teachers.md`). The full description, the API, the rules the server holds,
 the real cases covered and not covered: `../docs/timetable.md`.
@@ -1024,8 +1046,8 @@ Timing for: (Whole school) (Pre-Primary: own) (Primary: same as school)
 | File | What it does |
 | :--- | :--- |
 | `pages/school/Timetable.tsx` | the page: the title with the two tabs at its right |
-| `components/timetable/SchoolTimingsTab.tsx` + `DayFields.tsx` | **Timing for** Whole school or a department (its own week, made from the school's, or "same as school"); the usual day from a few numbers (start, period length and assembly in minutes with "= 1 hr" in words, periods, a lunch and one short break each from when to when) drawn period by period; each day Usual / Different / Holiday; one Save for the week; changes not saved are asked about before another group, tab or page is opened (`SaveFirstModal`: Save and continue / Don't save / Cancel; the editor tells the tab through a `Draft` ref, and `useBlocker` catches the tab and the page). No timings for a few named classes here any more (the `TimingDialog` is gone): a class's own periods are on its timetable |
-| `components/timetable/ClassTimetablesTab.tsx` | the class list (search and status asked of the server, `GET /timetable/overview`) and the class picked |
+| `components/timetable/SchoolTimings.tsx` (page: `pages/school/SchoolTimings.tsx`) + `DayFields.tsx` | **Timing for** Whole school or a department (its own week, made from the school's, or "same as school"); the usual day from a few numbers (start, period length and assembly in minutes with "= 1 hr" in words, periods, a lunch and one short break each from when to when) drawn period by period; each day Usual / Different / Holiday; one Save for the week; changes not saved are asked about before another group, tab or page is opened (`SaveFirstModal`: Save and continue / Don't save / Cancel; the editor tells the tab through a `Draft` ref, and `useBlocker` catches the tab and the page). No timings for a few named classes here any more (the `TimingDialog` is gone): a class's own periods are on its timetable |
+| `components/timetable/ClassTimetables.tsx` (page: `pages/school/ClassTimetables.tsx`) | the class list (search and status asked of the server, `GET /timetable/overview`) and the class picked |
 | `components/timetable/ClassWeek.tsx` + `GridTable.tsx`, `GridDialogs.tsx` | one class's week: click a period and `PeriodPicker.tsx` opens beside it (type the subject, Enter or click; the class's subjects, the school's others, the usual ones not added yet, or a new one typed; list and matching in `utils/timetable.ts`: `subjectChoices`, `matchChoices`, `teacherTrouble`), fill by the program, save, publish, copy, print; asks before leaving it unsaved (another page, class or tab) |
 | `components/timetable/ClassPeriodsDialog.tsx` + `utils/classWeek.ts` | **Periods per day**: a − n + for each day of the week (0 = no school), "Same on every school day", "Back to the school's periods"; the rows are made from the numbers (`withPeriods`, `rowsFor`) and only the days that differ from what the class follows anyway are sent (`PUT /timetable/class-day`); lessons in periods that go are asked about first (`LESSONS_IN_REMOVED_PERIODS`). The old "Periods & teachers" button is gone: the subjects' periods a week open from the fill when no subject has any |
 | `components/timetable/PeriodPicker.tsx` | the box beside a period: search + list (keys: arrows, Enter, Escape), the period's teacher & room and Take it out when it has a lesson; HeroUI `Popover.Content` used on its own (`isOpen`, `triggerRef`), non-modal on a desktop, modal on a phone |

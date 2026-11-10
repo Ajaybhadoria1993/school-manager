@@ -5,6 +5,7 @@ import { useDismiss } from "../../hooks/useDismiss";
 import { cn, initials } from "../../utils/helpers";
 import { ROLE_LABELS } from "./nav-config";
 import { NotificationsBell } from "./NotificationsBell";
+import { MediumSwitcher } from "./MediumSwitcher";
 import { YearSwitcher } from "./YearSwitcher";
 
 function UserMenu() {
@@ -95,16 +96,17 @@ export function Topbar({
           <Menu className="size-5" />
         </button>
         <div className="min-w-0 leading-tight">
-          <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-foreground-muted">
+          <p className="truncate text-caption-subtle font-medium uppercase tracking-wide">
             {context}
           </p>
-          <p className="truncate text-lg font-bold tracking-tight text-foreground">
+          <p className="truncate text-app-title">
             {title}
           </p>
         </div>
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        <MediumSwitcher />
         <YearSwitcher />
         <span className="hidden items-center gap-2 rounded-full bg-primary-soft px-3.5 py-1.5 text-xs font-semibold text-primary-deep md:inline-flex">
           <CalendarDays className="size-3.5" aria-hidden />

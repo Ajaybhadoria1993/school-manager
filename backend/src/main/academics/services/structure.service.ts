@@ -1,8 +1,8 @@
 import { ApiError } from "../../../utils/ApiError";
 import { CLASS_LEVELS } from "../../tenants/constants";
-import type { ITenant } from "../../tenants/models/Tenant";
+import type { IMediumPlan, ITenant } from "../../tenants/models/Tenant";
 import { nameKeyOf } from "../../tenants/services/tenantFactory";
-import { MAX_CLASSES, MAX_DEPARTMENTS, levelToClass, sectionLetters } from "../constants";
+import { MAX_CLASSES, MAX_DEPARTMENTS, levelToClass, plannedClasses, sectionLetters } from "../constants";
 import { Department } from "../models/Department";
 import { SchoolClass } from "../models/SchoolClass";
 import { Section } from "../models/Section";
@@ -104,8 +104,30 @@ export class StructureService {
   static async quickSetup(tenantId: string, input: QuickSetupInput): Promise<QuickSetupResult> {
     const from = CLASS_LEVELS.indexOf(input.fromClass);
     const to = CLASS_LEVELS.indexOf(input.toClass);
-    const plan = CLASS_LEVELS.slice(from, to + 1).map(levelToClass);
+    return StructureService.build(
+      tenantId,
+      CLASS_LEVELS.slice(from, to + 1).map((level) => ({ ...levelToClass(level), sections: input.sectionsPerClass, capacity: null, seats: null }))
+    );
+  }
 
+  /**
+   * The classes a medium said it has when the school signed up (see onboarding's mediumPlan), each with its sections and seats, made when
+   * the school is approved. A class with sections has their seats added up; one without keeps its own. Safe to run again.
+   */
+  static async startFromPlan(tenantId: string, plan: Pick<IMediumPlan, "lowestClass" | "highestClass" | "seniorStreams" | "classes">): Promise<QuickSetupResult> {
+    const rows = new Map(plan.classes.map((c) => [c.name, c]));
+    return StructureService.build(
+      tenantId,
+      plannedClasses(plan.lowestClass, plan.highestClass, plan.seniorStreams).map((p) => {
+        const row = rows.get(p.name);
+        const sections = row?.sections ?? 0;
+        const seats = row?.seats ?? null;
+        return { ...p, sections, seats, capacity: seats === null ? null : sections > 0 ? sections * seats : seats };
+      })
+    );
+  }
+
+  private static async build(tenantId: string, plan: { name: string; department: string; sections: number; capacity: number | null; seats: number | null }[]): Promise<QuickSetupResult> {
     const wantedClasses = plan.map((p) => nameKeyOf(p.name));
     const wantedDepartments = [...new Set(plan.map((p) => p.department))];
 
@@ -144,13 +166,16 @@ export class StructureService {
           nameKey: nameKeyOf(p.name),
           departmentId: departmentIds.get(nameKeyOf(p.department)) ?? null,
           order: startAt + i,
+          capacity: p.capacity,
         }))
       );
       const academicYearId = await AcademicYearService.activeYearId(tenantId);
+      const planOf = new Map(missingClasses.map((p) => [nameKeyOf(p.name), p]));
       const sections = await Section.insertMany(
-        classes.flatMap((c) =>
-          sectionLetters(input.sectionsPerClass).map((name) => ({ tenantId, classId: c._id, academicYearId, name, nameKey: nameKeyOf(name) }))
-        )
+        classes.flatMap((c) => {
+          const wanted = planOf.get(c.nameKey);
+          return sectionLetters(wanted?.sections ?? 0).map((name) => ({ tenantId, classId: c._id, academicYearId, name, nameKey: nameKeyOf(name), capacity: wanted?.seats ?? null }));
+        })
       );
 
       return {

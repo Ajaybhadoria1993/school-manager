@@ -29,7 +29,7 @@ export function Modal({
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-navy/45 px-4 py-10 backdrop-blur-sm">
       <div className={cn("w-full rounded-2xl border border-border bg-surface shadow-modal", widthClass)}>
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h2 className="text-base font-semibold text-foreground">{title}</h2>
+          <h2 className="text-section-heading">{title}</h2>
           <button
             onClick={onClose}
             className="rounded-lg p-1.5 text-foreground-muted hover:bg-surface-muted hover:text-foreground"

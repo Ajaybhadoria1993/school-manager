@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../../../../middleware/auth";
+import { requirePermission } from "../../../../middleware/permission";
 import { yearView } from "../../../../middleware/yearView";
 import { validate } from "../../../../middleware/validate";
 import { teacherExists } from "../../../staff/controllers/staff.controller";
@@ -44,14 +45,14 @@ const router = Router();
 // Strict auth: the school must be approved. yearView: a school admin may look at a past year (X-Academic-Year); reads answer for it, changes are refused.
 router.use(requireAuth, yearView);
 
-router.get("/schedules", requireRole(...TIMETABLE_READERS), listSchedules);
+router.get("/schedules", requirePermission("timetable.view", "timetable.edit"), listSchedules);
 // One class's (or section's) weekly timetable; a teacher sees only published ones.
-router.get("/grid", requireRole(...TIMETABLE_READERS), validate(unitQuerySchema, "query"), getGrid);
+router.get("/grid", requirePermission("timetable.view", "timetable.edit"), validate(unitQuerySchema, "query"), getGrid);
 // The classes whose timetable is published (what a teacher may open), and one teacher's week across the school.
-router.get("/published", requireRole(...TIMETABLE_READERS), listPublished);
-router.get("/teachers/:id", requireRole(...TIMETABLE_READERS), validate(idParamSchema, "params"), teacherExists, getTeacherWeek);
+router.get("/published", requirePermission("timetable.view", "timetable.edit"), listPublished);
+router.get("/teachers/:id", requirePermission("timetable.view", "timetable.edit"), validate(idParamSchema, "params"), teacherExists, getTeacherWeek);
 
-router.use(requireRole(...TIMETABLE_WRITERS));
+router.use(requirePermission("timetable.edit"));
 // The set-up in one read: the timings, and each class or section with where it stands.
 router.get("/overview", validate(overviewQuerySchema, "query"), getOverview);
 

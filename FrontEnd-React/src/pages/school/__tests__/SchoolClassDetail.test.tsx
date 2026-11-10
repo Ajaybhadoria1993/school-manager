@@ -24,6 +24,7 @@ function openPage(path = "/school-class/c5") {
     [
       { path: "/school-class", element: <p>All classes</p> },
       { path: "/school-class/:classId", element: <SchoolClassDetailPage /> },
+      { path: "/school/students/new", element: <p>The admission form</p> },
     ],
     { initialEntries: [path] }
   );
@@ -45,6 +46,16 @@ afterEach(() => {
 
 const lists = (calls: Call[]) => calls.filter((c) => c.method === "GET" && c.path === "/students");
 const sections = () => screen.getByRole("navigation", { name: "Sections of Class 5" });
+
+describe("Add student on a class's page", () => {
+  it("opens the form and says it came from this class, so the menu stays on Classes and the way back leads to this class", async () => {
+    const { router, user } = openPage();
+    await screen.findByRole("heading", { name: "Class 5", level: 1 });
+    await user.click(screen.getByRole("link", { name: "Add student" }));
+    expect(await screen.findByText("The admission form")).toBeInTheDocument();
+    expect(router.state.location.state).toEqual({ cameFrom: { href: "/school-class/c5", label: "Class 5" } });
+  });
+});
 
 describe("one class of School Class", () => {
   it("has a plain header with the numbers of the class, the classes before and after it, and the page's buttons", async () => {

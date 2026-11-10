@@ -86,7 +86,7 @@ export default function DepartmentManagePage() {
   if (!known) {
     return (
       <Card className="flex flex-col items-center gap-3 px-6 py-12 text-center">
-        <h1 className="text-lg font-bold text-foreground">This department is not in your school</h1>
+        <h1 className="text-page-heading">This department is not in your school</h1>
         <p className="max-w-md text-sm text-foreground-muted">It may have been deleted, or the address is not right.</p>
         <Link
           to="/school/classes"

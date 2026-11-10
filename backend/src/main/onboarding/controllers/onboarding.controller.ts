@@ -19,6 +19,14 @@ export const saveStep = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, await OnboardingService.saveStep(caller(req), step, req.body), "Saved");
 });
 
+export const saveLogo = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await OnboardingService.saveLogo(caller(req), req.file?.buffer), "Saved");
+});
+
+export const removeLogo = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await OnboardingService.removeLogo(caller(req)), "Removed");
+});
+
 export const submitOnboarding = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, await OnboardingService.submit(caller(req)), "Submitted for approval");
 });

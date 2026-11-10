@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker } from "react-router";
-import { BookOpen, CircleAlert, Clock3, Copy, ListOrdered, Printer, Send, Sparkles, TriangleAlert, Undo2 } from "lucide-react";
+import { BookOpen, CircleAlert, Clock3, Copy, HeartHandshake, ListOrdered, Printer, Send, Sparkles, TriangleAlert, Undo2 } from "lucide-react";
 import { DAY_NAMES, SUBJECT_PRESETS } from "../../constants/timetable";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import {
@@ -10,33 +10,20 @@ import {
   usePublishGridMutation,
   useQuickAddSubjectsMutation,
   useSaveGridMutation,
+  useSetClassTeacherMutation,
   useUnpublishGridMutation,
 } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
-import {
-  PRESET_PREFIX,
-  buildModel,
-  cellAt,
-  cellKey,
-  changeLesson,
-  clearCell,
-  localProblems,
-  placeSubject,
-  placedCounts,
-  sameGrid,
-  subjectChoices,
-  subjectColors,
-  teacherTrouble,
-  type SubjectChoice,
-} from "../../utils/timetable";
+import { PRESET_PREFIX, applyMotherTeacher, buildModel, cellAt, cellKey, changeLesson, clearCell, isPrePrimaryName, localProblems, placeAcrossWeek, placeWholeDay, placedCounts, sameGrid, subjectChoices, subjectColors, teacherChoices, teacherOf, teacherTrouble, type SubjectChoice } from "../../utils/timetable";
 import type { AutofillAnswer, GridAllotment, GridCell, GridView, Issue, Lesson, UnitRef } from "../../types";
 import { ConfirmModal } from "../classes/ConfirmModal";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
+import { Select } from "../ui/Select";
 import { Skeleton } from "../ui/Skeleton";
 import { useToast } from "../ui/toast-context";
-import { ClassPeriodsDialog } from "./ClassPeriodsDialog";
+import { ClassTimingDialog } from "./ClassTimingDialog";
 import { ClassSubjectsEditor } from "./ClassSubjectsEditor";
 import { CopyDialog, LessonDialog } from "./GridDialogs";
 import { GridTable } from "./GridTable";
@@ -62,6 +49,7 @@ function Workspace({ view: saved, unit, onReload, onGoTimings }: { view: GridVie
   const [unpublish, { isLoading: unpublishing }] = useUnpublishGridMutation();
   const [autofill, { isLoading: filling }] = useAutofillGridMutation();
   const [quickAdd] = useQuickAddSubjectsMutation();
+  const [setClassTeacher, { isLoading: choosingMother }] = useSetClassTeacherMutation();
 
   // Subjects picked here that the class does not study yet: they work in the grid at once, and the server adds them to the class's list
   // when the timetable is saved (with the periods they were given).
@@ -98,6 +86,16 @@ function Workspace({ view: saved, unit, onReload, onGoTimings }: { view: GridVie
   }
 
   const model = useMemo(() => buildModel(view), [view]);
+
+  // A Pre-Primary class (2026-11-10): one mother teacher takes it (she is kept as its class teacher), and a subject may fill a whole day.
+  const klass = structure?.classes.find((c) => c.id === unit.classId);
+  const prePrimary = !!structure?.departments.some((d) => d.id === klass?.departmentId && isPrePrimaryName(d.name));
+  // The mother teacher chosen here, until the page reads the week again (the server then says the same).
+  const [motherChosen, setMotherChosen] = useState<string | null | undefined>(undefined);
+  const mother = prePrimary ? (motherChosen !== undefined ? motherChosen : (saved.classTeacher?.id ?? null)) : null;
+  const motherName = mother ? (model.teachers.get(mother)?.name ?? saved.classTeacher?.name ?? null) : null;
+  const [spread, setSpread] = useState<"week" | "day">("week");
+  const activeTeachers = view.teachers.filter((t) => t.isActive);
   const colors = useMemo(() => subjectColors(view), [view]);
   const dirty = !sameGrid(cells, view.cells);
   const counts = useMemo(() => placedCounts(cells), [cells]);
@@ -143,14 +141,17 @@ function Workspace({ view: saved, unit, onReload, onGoTimings }: { view: GridVie
   }
 
   /**
-   * Puts a subject in a period: a double period takes the next one too, a choice puts all its subjects. One the class does not study yet
+   * Puts a subject in a period and, when the period was empty, in that period of the other days that are empty too (`placeAcrossWeek`): a
+   * double period takes the next one too, a choice puts all its subjects. One the class does not study yet
    * joins the grid's subjects at once (not saved until Save). A period that already has the subject is left as it is.
    */
   function put(subject: GridAllotment, day: number, period: number) {
-    if (cellAt(cells, day, period)?.lessons.some((l) => l.subjectId === subject.subjectId)) return;
+    const wholeDay = prePrimary && spread === "day";
+    if (!wholeDay && cellAt(cells, day, period)?.lessons.some((l) => l.subjectId === subject.subjectId)) return;
     const known = view.allotments.some((a) => a.subjectId === subject.subjectId);
     if (!known) setExtras((all) => [...all, subject]);
-    const placing = placeSubject(known ? model : buildModel({ ...view, allotments: [...view.allotments, subject] }), cells, subject.subjectId, day, period);
+    const using = known ? model : buildModel({ ...view, allotments: [...view.allotments, subject] });
+    const placing = wholeDay ? placeWholeDay(using, cells, subject.subjectId, day, mother) : placeAcrossWeek(using, cells, subject.subjectId, day, period, mother);
     setNote(placing.note);
     edit(placing.cells);
   }
@@ -169,7 +170,7 @@ function Workspace({ view: saved, unit, onReload, onGoTimings }: { view: GridVie
     const seed = (next?.seed ?? 0) + 1;
     try {
       const { data } = await autofill({ ...unit, cells: base, seed }).unwrap();
-      setCells(data.cells);
+      setCells(mother ? applyMotherTeacher(model, data.cells, mother, null) : data.cells);
       setFill({ base, seed, answer: data });
       setClashes(new Map());
     } catch (err) {
@@ -191,6 +192,25 @@ function Workspace({ view: saved, unit, onReload, onGoTimings }: { view: GridVie
       }
       setClashes(found);
       setFailure(e?.message ?? "Could not save. Please try again.");
+    }
+  }
+
+  /** The mother teacher of a Pre-Primary class: kept at once as its class teacher, and put on the periods with no teacher (saved with the week). */
+  async function chooseMother(next: string | null) {
+    if (next === mother) return;
+    setFailure(null);
+    try {
+      await setClassTeacher({ classId: unit.classId, sectionId: unit.sectionId, teacherId: next }).unwrap();
+      setMotherChosen(next);
+      const name = next ? (model.teachers.get(next)?.name ?? "The mother teacher") : null;
+      const changed = applyMotherTeacher(model, cells, next, mother);
+      if (!sameGrid(changed, cells)) {
+        edit(changed);
+        setNote(name ? `${name} is put on the periods that had no teacher. Press Save the timetable to keep them.` : "The periods that had the mother teacher have no teacher now. Press Save the timetable to keep them.");
+      }
+      push("success", name ? `${name} is the mother teacher of ${view.unit.label}` : `${view.unit.label} has no mother teacher now`);
+    } catch (err) {
+      setFailure(getApiError(err)?.message ?? "Could not keep the mother teacher. Please try again.");
     }
   }
 
@@ -266,12 +286,16 @@ function Workspace({ view: saved, unit, onReload, onGoTimings }: { view: GridVie
   const choices = useMemo(() => subjectChoices({ allotments: view.allotments, school: allSubjects ?? [], presets: SUBJECT_PRESETS, placed: counts }), [view.allotments, allSubjects, counts]);
   const pickingSlot = picking ? view.days.find((d) => d.day === picking.day)?.slots.find((x) => x.period === picking.period) : undefined;
   const pickingCell = picking ? cellAt(cells, picking.day, picking.period) : undefined;
+  // The lessons nobody teaches yet (no teacher of their own, none usual for the subject).
+  const untaught = cells.reduce((n, c) => n + c.lessons.filter((l) => !teacherOf(model, l)).length, 0);
+  // One lesson: its teacher is picked in the box. Several (a choice): each has a teacher, so that stays in the window.
+  const pickingLesson = pickingCell?.lessons.length === 1 ? pickingCell.lessons[0] : undefined;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-xl font-extrabold tracking-tight text-foreground">{view.unit.label}</h2>
+          <h2 className="text-section-heading">{view.unit.label}</h2>
           <p className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-foreground-muted">
             {view.unit.academicYear.name}
             {view.status === "published" ? <Badge tone="success">Published</Badge> : <Badge tone="warning">Draft</Badge>}
@@ -317,7 +341,7 @@ function Workspace({ view: saved, unit, onReload, onGoTimings }: { view: GridVie
           <div className="flex flex-wrap items-center justify-center gap-2">
             <Button onClick={() => setEditingPeriods(true)}>
               <ListOrdered className="size-4" aria-hidden />
-              Set the periods of this class
+              Set periods & time
             </Button>
             <Button variant="outline" onClick={onGoTimings}>
               Set the school timings
@@ -331,7 +355,7 @@ function Workspace({ view: saved, unit, onReload, onGoTimings }: { view: GridVie
               <BookOpen className="size-5" />
             </span>
             <div>
-              <h3 className="text-base font-bold text-foreground">{view.unit.label}: periods a week and teachers</h3>
+              <h3 className="text-section-heading">{view.unit.label}: periods a week and teachers</h3>
               <p className="text-sm text-foreground-muted">How many periods a week each subject gets (the program fills the week from these) and who teaches it.</p>
             </div>
           </div>
@@ -359,8 +383,31 @@ function Workspace({ view: saved, unit, onReload, onGoTimings }: { view: GridVie
             )}
             <Button variant="outline" onClick={() => setEditingPeriods(true)} disabled={dirty} title={dirty ? "Save the timetable first" : undefined}>
               <ListOrdered className="size-4" aria-hidden />
-              Periods per day
+              Periods & time
             </Button>
+            {prePrimary &&
+              (activeTeachers.length === 0 && !mother ? (
+                <span className="text-sm font-medium text-foreground-muted">No teacher available in your school</span>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <HeartHandshake className="size-4 shrink-0 text-primary" aria-hidden />
+                  <span className="whitespace-nowrap text-sm font-semibold text-foreground">Mother teacher</span>
+                  <div className="w-48">
+                    <Select
+                      aria-label="Mother teacher"
+                      value={mother ?? ""}
+                      disabled={choosingMother}
+                      options={[{ value: "", label: "No mother teacher" }, ...activeTeachers.map((t) => ({ value: t.id, label: t.name }))]}
+                      onChange={(v) => void chooseMother(v || null)}
+                    />
+                  </div>
+                </div>
+              ))}
+            {prePrimary && mother && motherName && untaught > 0 && (
+              <Button variant="ghost" onClick={() => edit(applyMotherTeacher(model, cells, mother, null))}>
+                Put {motherName} on {untaught} period{untaught === 1 ? "" : "s"} with no teacher
+              </Button>
+            )}
             {cells.length > 0 && (
               <Button variant="ghost" onClick={() => setClearing(true)}>
                 Empty the whole week
@@ -459,6 +506,13 @@ function Workspace({ view: saved, unit, onReload, onGoTimings }: { view: GridVie
           trouble={(choice) => teacherTrouble(model, choice.teacherId, picking.day, picking.period)}
           onChoose={choose}
           onCreate={createSubject}
+          spread={prePrimary ? { value: spread, dayName: DAY_NAMES[picking.day], onChange: setSpread } : undefined}
+          teachers={pickingLesson ? { subjectName: model.allotments.get(pickingLesson.subjectId)?.subjectName ?? "this subject", choices: teacherChoices(model, pickingLesson.subjectId, picking.day, picking.period, pickingLesson.teacherId, mother) } : undefined}
+          onTeacher={(teacherId) => {
+            if (!pickingLesson) return;
+            edit(changeLesson(cells, picking.day, picking.period, pickingLesson.subjectId, { teacherId }));
+            setPicking(null);
+          }}
           onEditLesson={
             pickingCell
               ? () => {
@@ -499,7 +553,7 @@ function Workspace({ view: saved, unit, onReload, onGoTimings }: { view: GridVie
         />
       )}
       {editingPeriods && (
-        <ClassPeriodsDialog
+        <ClassTimingDialog
           classId={unit.classId}
           className={view.unit.className}
           allSections={unit.sectionId !== null}

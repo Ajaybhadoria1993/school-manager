@@ -5,13 +5,14 @@ import { cn, initials } from "../../utils/helpers";
 import { useAuth } from "../../hooks/useAuth";
 import { useSidebarCollapsed } from "../../hooks/useSidebarCollapsed";
 import { BrandMark } from "../brand/BrandMark";
-import { FOLDING_GROUPS, NAV_ITEMS, ROLE_LABELS, activeNavItem, groupLabel, type NavItem } from "./nav-config";
+import { FOLDING_GROUPS, NAV_ITEMS, ROLE_LABELS, SUBMENUS, activeNavItem, groupLabel, navVisible, pathForMenu, type NavItem } from "./nav-config";
 import { usePending } from "../../hooks/usePending";
 
 /**
  * The navy menu. On a laptop it can fold down to icons (remembered on this device); on a phone it slides in as a drawer.
  * Items are grouped under small headings, and planned modules carry a "Soon" tag. A group listed in FOLDING_GROUPS
- * ("Manage school") is one row that opens its pages when clicked, and is already open on one of its pages.
+ * ("Manage school") is one row that opens its pages when clicked, and is already open on one of its pages. Pages with a `submenu` are
+ * nested under a row of their own that opens the same way: Timetable inside Manage school, Attendance at the first level.
  */
 export function Sidebar({
   mobileOpen,
@@ -20,13 +21,13 @@ export function Sidebar({
   mobileOpen: boolean;
   onClose: () => void;
 }) {
-  const { pathname } = useLocation();
+  const location = useLocation();
   const { user, tenant, logout } = useAuth();
   const { pending } = usePending();
   const [folded, setFolded] = useSidebarCollapsed();
 
-  const items = user ? NAV_ITEMS.filter((item) => item.roles.includes(user.role)) : [];
-  const current = activeNavItem(pathname, items);
+  const items = user ? NAV_ITEMS.filter((item) => navVisible(item, user)) : [];
+  const current = activeNavItem(pathForMenu(location), items);
 
   // What the person opened or closed by hand; until then a folding group is open exactly when one of its pages is showing.
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
@@ -34,7 +35,7 @@ export function Sidebar({
   const [seenHref, setSeenHref] = useState(current?.href);
   if (seenHref !== current?.href) {
     setSeenHref(current?.href);
-    if (current && FOLDING_GROUPS[current.group]) setChosen((c) => ({ ...c, [current.group]: true }));
+    if (current) setChosen((c) => ({ ...c, ...(FOLDING_GROUPS[current.group] ? { [current.group]: true } : {}), ...(current.submenu ? { [`sub:${current.submenu}`]: true } : {}) }));
   }
 
   if (!user) return null;
@@ -49,6 +50,18 @@ export function Sidebar({
     else groups.push({ name, items: [item] });
   }
 
+  /** The rows of a group in order: a page, or a submenu row with the pages that sit next to each other under it. */
+  const entriesOf = (groupItems: NavItem[]) => {
+    const entries: ({ link: NavItem } | { sub: string; items: NavItem[] })[] = [];
+    for (const item of groupItems) {
+      const last = entries[entries.length - 1];
+      if (!item.submenu) entries.push({ link: item });
+      else if (last && "sub" in last && last.sub === item.submenu) last.items.push(item);
+      else entries.push({ sub: item.submenu, items: [item] });
+    }
+    return entries;
+  };
+
   /** One page of the menu. `nested` is a page inside a folding group (smaller, indented). */
   const renderLink = (item: NavItem, compact: boolean, nested = false) => {
     const active = item === current;
@@ -60,9 +73,9 @@ export function Sidebar({
           to={item.href}
           onClick={onClose}
           aria-current={active ? "page" : undefined}
-          title={compact ? item.label : undefined}
+          title={compact ? (item.title ?? item.label) : undefined}
           className={cn(
-            "group relative flex items-center gap-3 rounded-xl text-sm font-semibold transition-all duration-200",
+            "group relative flex items-center gap-3 rounded-xl text-[15px] font-medium transition-all duration-200",
             nested && !compact ? "py-1.5 pl-2.5 pr-2" : "py-1.5",
             compact ? "justify-center px-1.5" : !nested && "px-2",
             active
@@ -118,6 +131,60 @@ export function Sidebar({
     );
   };
 
+  /**
+   * A row that opens its own pages, one step further in: Attendance (Student, Teacher, Staff) at the first level of the menu (`topLevel`, as
+   * big as the entries around it), Timetable (School timings, Class timetables) inside Manage school. In the folded (icons only) menu there
+   * is no room for a row of its own: its pages are shown as plain icons.
+   */
+  const renderSub = (name: string, subItems: NavItem[], compact: boolean, topLevel = false) => {
+    if (compact) return subItems.map((item) => renderLink(item, true, !topLevel));
+    const Icon = SUBMENUS[name].icon;
+    const hasCurrent = subItems.includes(current as NavItem);
+    const key = `sub:${name}`;
+    const open = chosen[key] ?? hasCurrent;
+    const panelId = `fold-sub-${name.toLowerCase().replace(/\W+/g, "-")}`;
+    return (
+      <li key={key}>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={panelId}
+          onClick={() => setChosen((c) => ({ ...c, [key]: !open }))}
+          className={cn(
+            "group flex w-full items-center gap-3 rounded-xl py-1.5 text-[15px] font-medium transition-all duration-200",
+            topLevel ? "px-2" : "pl-2.5 pr-2",
+            hasCurrent || open ? "bg-white/5 text-white" : "text-slate-300 hover:bg-white/5 hover:text-white",
+          )}
+        >
+          <span
+            className={cn(
+              "flex shrink-0 items-center justify-center rounded-lg transition-all duration-200",
+              topLevel ? "size-8" : "size-7",
+              hasCurrent
+                ? "bg-primary text-white shadow-[0_6px_14px_-4px_rgb(37_99_235/0.8)]"
+                : "bg-white/5 text-slate-400 group-hover:scale-110 group-hover:bg-white/10 group-hover:text-white",
+            )}
+          >
+            <Icon className={topLevel ? "size-[17px]" : "size-[15px]"} aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-left">{name}</span>
+          <ChevronDown className={cn(topLevel ? "size-4" : "size-3.5", "text-slate-400 transition-transform duration-300", open && "rotate-180")} aria-hidden />
+        </button>
+        <div
+          id={panelId}
+          className={cn(
+            "grid transition-[grid-template-rows,opacity,visibility] duration-300 ease-out",
+            open ? "visible grid-rows-[1fr] opacity-100" : "invisible grid-rows-[0fr] opacity-0",
+          )}
+        >
+          <ul inert={!open} className="ml-[1.1rem] mt-0.5 min-h-0 space-y-0.5 overflow-hidden border-l border-white/10 pl-3">
+            {subItems.map((item) => renderLink(item, false, true))}
+          </ul>
+        </div>
+      </li>
+    );
+  };
+
   /** A folding group: one row ("Manage school") that opens its pages underneath when it is clicked. */
   const renderFold = (name: string, groupItems: NavItem[], compact: boolean) => {
     const Icon = FOLDING_GROUPS[name].icon;
@@ -133,7 +200,7 @@ export function Sidebar({
           title={compact ? name : undefined}
           onClick={() => setChosen((c) => ({ ...c, [name]: !open }))}
           className={cn(
-            "group flex w-full items-center gap-3 rounded-xl py-1.5 text-sm font-semibold transition-all duration-200",
+            "group flex w-full items-center gap-3 rounded-xl py-1.5 text-[15px] font-medium transition-all duration-200",
             compact ? "justify-center px-1.5" : "px-2",
             hasCurrent || open
               ? "bg-white/5 text-white"
@@ -177,7 +244,7 @@ export function Sidebar({
               compact ? "mt-0.5" : "ml-[1.15rem] mt-0.5 border-l border-white/10 pl-3",
             )}
           >
-            {groupItems.map((item) => renderLink(item, compact, true))}
+            {entriesOf(groupItems).map((entry) => ("link" in entry ? renderLink(entry.link, compact, true) : renderSub(entry.sub, entry.items, compact)))}
           </ul>
         </div>
       </>
@@ -231,7 +298,7 @@ export function Sidebar({
                       {group.name}
                     </p>
                   )}
-                  <ul className="space-y-0.5">{group.items.map((item) => renderLink(item, compact))}</ul>
+                  <ul className="space-y-0.5">{entriesOf(group.items).map((entry) => ("link" in entry ? renderLink(entry.link, compact) : renderSub(entry.sub, entry.items, compact, true)))}</ul>
                 </>
               )}
             </div>
@@ -253,7 +320,7 @@ export function Sidebar({
           {!compact && (
             <>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-white">
+                <p className="truncate text-[15px] font-medium text-white">
                   {user.name}
                 </p>
                 <p className="truncate text-xs text-slate-400">

@@ -15,6 +15,11 @@ export interface Unit {
 }
 
 export const RUNNER_ROLES: readonly string[] = ["school_admin", "principal"];
+/**
+ * Whether a caller works on every class of the school: the people who run it, and any staff the school gave the permission (a receptionist
+ * who takes attendance). Only a teacher is held to their own classes; a parent never reaches these routes.
+ */
+export const worksOnAllClasses = (role: string) => role !== "teacher" && role !== "parent" && role !== "student";
 export const sameUnit = (a: { classId: Types.ObjectId | string | null; sectionId: Types.ObjectId | string | null }, b: { classId: Types.ObjectId | string | null; sectionId: Types.ObjectId | string | null }) =>
   String(a.classId) === String(b.classId) && String(a.sectionId ?? "") === String(b.sectionId ?? "");
 
@@ -34,7 +39,7 @@ export const unitFilter = (tenantId: string, unit: { classId: string; sectionId:
 export async function accessTo(tenantId: string, caller: { userId: string; role: string }, unit: Awaited<ReturnType<typeof resolveUnit>>) {
   const school = new Types.ObjectId(tenantId);
   const allotments = await Allotment.find({ ...unitFilter(tenantId, unit), academicYearId: unit.yearId }).select("subjectId teacherId").lean();
-  if (RUNNER_ROLES.includes(caller.role)) return { all: true, subjects: new Set(allotments.map((a) => a.subjectId.toString())), allotments, school };
+  if (worksOnAllClasses(caller.role)) return { all: true, subjects: new Set(allotments.map((a) => a.subjectId.toString())), allotments, school };
   const teacher = caller.role === "teacher" ? await teacherOfUser(tenantId, caller.userId) : null;
   if (!teacher) throw NO_ACCESS();
   const isClassTeacher = (await classTeacherUnits(tenantId, teacher._id)).some((u) => sameUnit(u, unit));

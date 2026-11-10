@@ -27,6 +27,9 @@ import {
 
 export { idParamSchema };
 
+/** Which medium of the school to add a teacher to. */
+export const addTeacherMediumSchema = z.object({ mediumId: objectId });
+
 /** An empty box means "not given". */
 const blankToNull = (value: unknown) => (typeof value === "string" && value.trim() === "" ? null : value);
 

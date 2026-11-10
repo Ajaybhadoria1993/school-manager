@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useParams } from "react-router";
 import { CalendarDays, ClipboardList, FolderTree, MapPin, UserRound, UsersRound } from "lucide-react";
+import { useCan } from "../../hooks/useCan";
 import { useGetChildExamsQuery, useGetMyChildQuery, useGetMyChildTimetableQuery } from "../../redux/api/parentApi";
 import { formatDay } from "../../utils/academicYear";
 import { getApiError } from "../../utils/apiErrors";
@@ -60,10 +61,12 @@ function asGridView(week: ChildTimetable): GridView {
  */
 export default function ChildPage() {
   const { id = "" } = useParams();
+  const can = useCan();
   const childRes = useGetMyChildQuery(id);
-  const weekRes = useGetMyChildTimetableQuery(id);
+  // Each part of the child's day is what the school allowed the parents (Permissions): a part not allowed is not shown and not asked for.
+  const weekRes = useGetMyChildTimetableQuery(id, { skip: !can("child.timetable") });
   // The same read as the Exams section below (one request): the days of this week the timetable gives way on.
-  const examsRes = useGetChildExamsQuery(id);
+  const examsRes = useGetChildExamsQuery(id, { skip: !can("child.exams") });
   const child = childRes.data?.data;
   const week = weekRes.data?.data;
   const view = useMemo(() => (week ? asGridView(week) : null), [week]);
@@ -97,18 +100,18 @@ export default function ChildPage() {
       />
 
       {/* The child's day first (what a parent opens the page for), their details after. */}
-      <ChildDiary childId={child.id} />
+      {can("child.diary") && <ChildDiary childId={child.id} />}
 
-      <ChildTests childId={child.id} />
+      {can("child.diary") && <ChildTests childId={child.id} />}
 
-      <ChildExamsSection childId={child.id} />
+      {can("child.exams") && <ChildExamsSection childId={child.id} />}
 
-      <ChildAttendance childId={child.id} />
+      {can("child.attendance") && <ChildAttendance childId={child.id} />}
 
-      <ChildLeaves childId={child.id} childName={child.name} />
+      {can("child.leave") && <ChildLeaves childId={child.id} childName={child.name} />}
 
-      <section aria-label="Timetable" className="space-y-3">
-        <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-foreground">
+      {can("child.timetable") && <section aria-label="Timetable" className="space-y-3">
+        <h2 className="text-section-heading flex items-center gap-2">
           <CalendarDays className="size-5 text-primary" aria-hidden />
           Timetable
         </h2>
@@ -119,7 +122,7 @@ export default function ChildPage() {
         ) : (
           <Card className="px-5 py-8 text-center text-sm text-foreground-muted">The timetable is not published yet</Card>
         )}
-      </section>
+      </section>}
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Block icon={FolderTree} tone="primary" title="Class" index={0}>

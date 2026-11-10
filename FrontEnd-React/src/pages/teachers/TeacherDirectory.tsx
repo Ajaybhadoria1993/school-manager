@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { useCan } from "../../hooks/useCan";
 import { BookX, FileUp, FilterX, ListPlus, Pencil, Plus, Search, SearchX, UserRoundCheck, UserRoundMinus, UsersRound } from "lucide-react";
 import { DESIGNATIONS } from "../../constants/teachers";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
@@ -31,7 +32,7 @@ const STATUSES = [
 /** The words of the address for each filter, in the order of the dropdowns (the user kept these three on 2026-11-03). */
 const FILTER_KEYS = ["subject", "class", "designation"] as const;
 
-const TH = "whitespace-nowrap px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-foreground-muted";
+const TH = "whitespace-nowrap px-4 py-3 text-left text-[13.5px] font-semibold text-foreground";
 const outlineLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:border-[#cbd5e1] hover:bg-background focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 const primaryLink =
@@ -89,6 +90,7 @@ function Classes({ teacher: t }: { teacher: Teacher }) {
  * who has left says so under the name).
  */
 function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName: Map<string, string> }) {
+  const can = useCan();
   const navigate = useNavigate();
   const readOnly = useReadOnlyYear();
   const about = [t.designation, t.employeeCode].filter(Boolean).join(" · ");
@@ -147,7 +149,7 @@ function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName
         <StatusPill active={t.isActive} />
       </td>
       <td className="hidden py-3 pl-2 pr-4 text-right align-middle sm:table-cell">
-        {!readOnly && (
+        {!readOnly && can("teachers.edit") && (
         <Link
           to={`/teachers/${t.id}/edit`}
           aria-label={`Edit ${t.name}`}
@@ -170,6 +172,7 @@ function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName
  * still takes them.)
  */
 export default function TeacherDirectoryPage() {
+  const can = useCan();
   // A year that is over is only looked at: no adding, uploading or changing teachers (the server refuses them too).
   const readOnly = useReadOnlyYear();
   const [params, setParams] = useSearchParams();
@@ -231,20 +234,20 @@ export default function TeacherDirectoryPage() {
         actions={
           <>
             {/* Like the students' header: Export (the list as Excel), Bulk upload (the teachers a school already has, from Excel), Add teacher. */}
-            {!readOnly && (
+            {!readOnly && can("teachers.settings") && (
               <Link to="/teachers/fields" className={outlineLink}>
                 <ListPlus className="size-4" aria-hidden />
                 Fields
               </Link>
             )}
-            <ExportTeachersButton query={query} empty={teachers.length === 0} />
-            {!readOnly && (
+            {can("teachers.export") && <ExportTeachersButton query={query} empty={teachers.length === 0} />}
+            {!readOnly && can("teachers.add") && (
               <Link to="/teachers/import" className={outlineLink}>
                 <FileUp className="size-4" aria-hidden />
                 Bulk upload
               </Link>
             )}
-            {!readOnly && (
+            {!readOnly && can("teachers.add") && (
               <Link to="/teachers/new" className={primaryLink}>
                 <Plus className="size-4" aria-hidden />
                 Add teacher

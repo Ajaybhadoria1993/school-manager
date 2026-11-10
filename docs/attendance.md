@@ -7,17 +7,20 @@ was present and who was absent. When a child does not come, the teacher takes th
 it: the teacher **marks themselves present in the app**, so the sheet says Present; a teacher who does not is **Absent when school time ends**; as soon as
 they mark, the details come to the school's sheet: **when, at what time, a log**: not only Present or Absent, **the time matters**.
 
-## The page (`/attendance`, `pages/attendance/AttendancePage.tsx`)
+## The pages (`/attendance/students`, `/attendance/teachers`, `/attendance/staff`; `pages/attendance/`)
 
-Menu: **Attendance** right under **Teacher** (school admin, principal; `nav-config.ts`). Tabs in the address (`?tab=student|teacher|staff`).
+Menu: one **Attendance** row right under **Teacher** (school admin, principal; `nav-config.ts`, `submenu: "Attendance"`) that opens **Student**, **Teacher** and **Staff** nested
+under it. They are three pages, no tabs (2026-11-10, user: "yaha attendance me bhi karo, click karne par 3 tab rahen", the same as Timetable; until then they were the three tabs
+of one page). The top bar and each page's title say *Student / Teacher / Staff attendance*, because the menu's short words repeat the Teacher and Staff entries. `/attendance` and
+the old `?tab=` addresses go to the right page with their filters (`AttendanceRedirect.tsx`), so old notifications and bookmarks still work.
 
-* **Student** (`components/attendance/StudentAttendanceTab.tsx`): chips with every class by name (the first is picked to start with); a class with sections
+* **Student** (`components/attendance/StudentAttendance.tsx`): chips with every class by name (the first is picked to start with); a class with sections
   shows **All sections, A, B...** under them. Then the **From / To** boxes and **Today, This month (default), Last month, Last 3 months**
   (`RangeFilter`; `utils/attendance.ts rangePresets`). Four numbers (Students, Attendance %, Absent, Late), then the table: roll, student, **a column for each
   day up to a month** (P present, A absent, L late, Lv leave; a dot on a mark that has a **reason**; a day nobody took is empty and its heading says
   "attendance not taken"; a holiday's heading says which), then the child's counts and %. **A longer range shows the counts only.** A child's name opens a window
   with their counts and each day they were not Present with the **reason**. Everything picked is kept in the address (`class`, `section`, `from`, `to`).
-* **Teacher** (`TeacherAttendanceTab.tsx`): the same range filter and four numbers (Teachers, Present, Late, Absent). **Today** (one day) = each teacher's
+* **Teacher** (`TeacherAttendance.tsx`): the same range filter and four numbers (Teachers, Present, Late, Absent). **Today** (one day) = each teacher's
   status, **the time they came** and **how late**, and when school starts; more days = a column for each day (P, L, A, H holiday, – off, ? no login) and the
   counts. A teacher's name opens a window: each working day with its status, **time**, how late, and the **log** ("Marked present at 8:42 AM by Meena Singh").
   The sheet **reads again by itself** when a teacher marks (socket event `attendance:teacher`, a quiet push to the school's admins: no bell line, no toast).
@@ -47,7 +50,7 @@ start and the latest end of the timings that run that weekday. A day marked is k
 
 ## The school marks or corrects a teacher's day (added the same day, "any scenario I am missing")
 
-A teacher forgot, the phone was dead, the teacher has no login, or is on leave: the school sets the day. In a teacher's window (the Teacher tab, a name) each day has a
+A teacher forgot, the phone was dead, the teacher has no login, or is on leave: the school sets the day. In a teacher's window (the Teacher page, a name) each day has a
 pencil: **Present** (with the time they came; left out = now for today, the start of school for a day gone by), **Absent** or **Leave**, and a **note**.
 `PUT /api/v1/attendance/teachers/:teacherId/day { date, status, time?, note? }` (school admin, principal; 404 before 400). Rules: not a day to come; **Absent and Leave need a
 day the teacher was asked to come** (not a holiday, not a day the school does not run, not their own off day: 409 `NOT_A_WORKING_DAY`); a teacher who came on a holiday can be
@@ -65,7 +68,7 @@ The card's **My days** button opens the month (read only: each day that counts, 
 ## Which classes have not taken today's attendance
 
 `GET /api/v1/attendance/students/today` (school admin, principal): the classes or sections **with children** that have no attendance for today, in the school's order. Only on a
-day the school runs (not a holiday) and **once school has started**; nothing before. The Student tab shows them as a warning above the classes ("Not taken today": Class 5 - A,
+day the school runs (not a holiday) and **once school has started**; nothing before. The Student page shows them as a warning above the classes ("Not taken today": Class 5 - A,
 Class 1); a click opens that class for today. A failed read shows no warning.
 
 ## 75%
@@ -89,7 +92,7 @@ absent: ... Family function") and in this page. The teacher's page (`AttendanceP
 * **A teacher cannot mark after school has ended** (that day is Absent).
 * A teacher with **no login** is "No login", not absent, until the school marks their days.
 * The school's sheet needs no publish step: it reads the marks as they are.
-* The teacher tab opens on **This month** like the student tab; **Today** is one click away and shows the times.
+* The Teacher page opens on **This month** like the Student page; **Today** is one click away and shows the times.
 * Staff (non-teaching) attendance is not built.
 
 ## Not built (ask when wanted)
@@ -98,7 +101,7 @@ absent: ... Family function") and in this page. The teacher's page (`AttendanceP
   have not marked by a time (needs a background job; none exists), substitutes.
 * Leave **requests** for teachers (the school sets Leave by hand for now).
 * A quick-pick list of reasons for an absence (it is free text).
-* Staff attendance (the tab says so); export of a range to Excel / printing.
+* Staff attendance (its page says so); export of a range to Excel / printing.
 
 Tests: `backend/src/main/attendance/__tests__/` (`teacherAttendance`, `teacherCorrections`, `studentAttendance`, `studentToday`, `teacherAttendance.realtime`, `attendance.isolation`),
 `backend/src/main/classroom/__tests__/attendance.test.ts` (reasons), `backend/src/utils/__tests__/clock.test.ts`, `FrontEnd-React/src/utils/__tests__/attendance.test.ts`,

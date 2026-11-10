@@ -107,7 +107,12 @@ export class Audience {
 
   /** Every open login of the school (the calendar is everyone's). */
   static async everyone(tenantId: string): Promise<string[]> {
-    const users = await User.find({ tenantId: new Types.ObjectId(tenantId), isActive: true }).select("_id").lean();
-    return users.map((u) => u._id.toString());
+    const school = new Types.ObjectId(tenantId);
+    // And the teachers who work here with a login that belongs to another medium of the school.
+    const [users, teachers] = await Promise.all([
+      User.find({ tenantId: school, isActive: true }).select("_id").lean(),
+      Teacher.find({ tenantId: school, isActive: true, userId: { $type: "objectId" } }).select("userId").lean(),
+    ]);
+    return [...new Set([...users.map((u) => u._id.toString()), ...teachers.map((t) => t.userId!.toString())])];
   }
 }

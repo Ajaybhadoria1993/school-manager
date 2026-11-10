@@ -45,7 +45,7 @@ export function MyAttendanceCard() {
 
   return (
     <section aria-label="My attendance" className="space-y-3">
-      <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-foreground">
+      <h2 className="text-section-heading flex items-center gap-2">
         <CalendarCheck2 className="size-5 text-primary" aria-hidden />
         My attendance
       </h2>

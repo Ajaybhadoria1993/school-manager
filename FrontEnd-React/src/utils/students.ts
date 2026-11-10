@@ -599,6 +599,12 @@ export function admitLink({ classId, sectionId }: { classId?: string; sectionId?
   return `/school/students/new${search ? `?${search}` : ""}`;
 }
 
+/** The Manage Students page (`/school/students`), with the class (and section) the list was filtered by, so the same students are on it. */
+export function manageStudentsLink({ classId, sectionId }: { classId?: string; sectionId?: string } = {}): string {
+  const search = new URLSearchParams({ ...(classId ? { class: classId } : {}), ...(classId && sectionId ? { section: sectionId } : {}) }).toString();
+  return `/school/students${search ? `?${search}` : ""}`;
+}
+
 /** The calendar day in India of a moment ("2026-09-02"), for a day shown without the time. */
 export function istDay(iso: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));

@@ -30,7 +30,7 @@ function ProgressRing({ done, total, caption, color }: { done: number; total: nu
               <ProgressCircle.TrackCircle />
               <ProgressCircle.FillCircle />
             </ProgressCircle.Track>
-            <span className="absolute inset-0 flex items-center justify-center text-lg font-extrabold tracking-tight text-foreground">
+            <span className="absolute inset-0 flex items-center justify-center text-lg font-bold text-foreground">
               {done}/{total}
             </span>
           </>
@@ -70,7 +70,7 @@ export function ReviewHero({ data, signals, now }: { data: SchoolReview; signals
           </Avatar>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <h1 className="text-2xl font-bold tracking-[-0.02em] text-foreground sm:text-[32px] sm:leading-10">{tenant.name}</h1>
+              <h1 className="text-page-heading">{tenant.name}</h1>
               {/* A new key on a new status, so the chip pops in again when the decision is made. A suspended school is an approved one that is switched off: say so. */}
               <Chip key={`${status}-${tenant.isActive}`} color={tenant.isActive ? STATUS_COLOR[status] : "danger"} variant="soft" size="lg" className="pop-in">
                 {status === "pending" && (

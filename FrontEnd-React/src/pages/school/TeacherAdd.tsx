@@ -180,7 +180,7 @@ export default function TeacherAddPage() {
         <StudentFormHeader title="Add teacher" crumbs={crumbs} />
         <Card className="flex items-center gap-3 border-success-line bg-success-soft/40 px-5 py-4">
           <CircleCheck className="size-6 shrink-0 text-success" aria-hidden />
-          <h2 className="text-lg font-bold tracking-tight text-foreground">{added.teacher.name} is added</h2>
+          <h2 className="text-section-heading">{added.teacher.name} is added</h2>
         </Card>
         <CredentialsCard teacher={added.teacher.name} username={added.teacher.login?.username ?? form.values.username} password={added.password} />
         <div className="flex flex-wrap items-center gap-2.5">

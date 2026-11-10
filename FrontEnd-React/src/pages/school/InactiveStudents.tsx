@@ -18,7 +18,7 @@ import { Input } from "../../components/ui/Input";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/toast-context";
 
-const TH = "px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-foreground-muted";
+const TH = "px-4 py-3 text-left text-[13.5px] font-semibold text-foreground";
 const outlineLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:border-[#cbd5e1] hover:bg-background focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 

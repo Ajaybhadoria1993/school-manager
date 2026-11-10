@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import type { UserRole } from "../../users/models/User";
 import { isDuplicateKey } from "../../academics/services/shared";
+import { ClassTeacher } from "../../staff/models/ClassTeacher";
 import { Allotment } from "../../subjects/models/Allotment";
 import { MAX_PERIODS_PER_WEEK } from "../../subjects/constants";
 import { DAY_NAMES, type SlotKind } from "../constants";
@@ -39,6 +40,8 @@ export interface GridView {
   load: { teacherId: string; perDay: Record<string, number>; week: number }[];
   issues: Issue[];
   stats: { total: number; filled: number; free: number; placed: Record<string, number> };
+  /** The unit's class teacher this year (in a Pre-Primary class, the mother teacher the screen puts on its periods), or nobody. */
+  classTeacher: { id: string; name: string } | null;
 }
 
 const NO_TIMING = (label: string) => ApiError.conflict(`${label} has no timing yet. Set the school's timings first.`, "NO_TIMING");
@@ -124,6 +127,7 @@ export function buildView(world: World, unit: Unit, cells?: CellIn[]): GridView 
     load: [...load].map(([teacherId, v]) => ({ teacherId, ...v })),
     issues: result.issues,
     stats: { total: result.total, filled: result.total - result.free, free: result.free, placed: Object.fromEntries(result.placed) },
+    classTeacher: null,
   };
 }
 
@@ -134,12 +138,16 @@ export function clashError(errors: Issue[]): ApiError {
   return ApiError.conflict(message, "TIMETABLE_CLASHES", errors.map((e) => ({ path: e.day && e.period ? `d${e.day}p${e.period}` : "cells", message: e.message, code: e.code })));
 }
 
-/** What is stored of a class's timetable that the view cannot say (who changed it, when it was published). */
-async function stamps(tenantId: string, unit: Unit): Promise<{ publishedAt: string | null; updatedAt: string | null }> {
+/** What is stored of a class's timetable that the view cannot say (when it was changed and published), and the unit's class teacher. */
+async function stamps(tenantId: string, unit: Unit, world: World): Promise<{ publishedAt: string | null; updatedAt: string | null; classTeacher: GridView["classTeacher"] }> {
   const doc = await Timetable.findOne({ tenantId: new Types.ObjectId(tenantId), academicYearId: unit.yearId, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null })
     .select("publishedAt updatedAt")
     .lean();
-  return { publishedAt: doc?.publishedAt ? doc.publishedAt.toISOString() : null, updatedAt: doc ? doc.updatedAt.toISOString() : null };
+  const head = await ClassTeacher.findOne({ tenantId: new Types.ObjectId(tenantId), academicYearId: unit.yearId, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null })
+    .select("teacherId")
+    .lean();
+  const teacher = head ? world.teachers.get(head.teacherId.toString()) : undefined;
+  return { publishedAt: doc?.publishedAt ? doc.publishedAt.toISOString() : null, updatedAt: doc ? doc.updatedAt.toISOString() : null, classTeacher: teacher ? { id: teacher.id, name: teacher.name } : null };
 }
 
 export class GridService {
@@ -151,7 +159,7 @@ export class GridService {
     if (role === "teacher" && stored?.status !== "published") {
       throw ApiError.notFound("This timetable has not been published yet.", "TIMETABLE_NOT_PUBLISHED");
     }
-    return { ...buildView(world, unit), ...(await stamps(tenantId, unit)) };
+    return { ...buildView(world, unit), ...(await stamps(tenantId, unit, world)) };
   }
 
   /**
@@ -256,7 +264,7 @@ export class GridService {
   /** The view as it is now, read again from the database. */
   static async reload(tenantId: string, unit: Unit): Promise<GridView> {
     const world = await loadWorld(tenantId, unit.yearId);
-    return { ...buildView(world, unit), ...(await stamps(tenantId, unit)) };
+    return { ...buildView(world, unit), ...(await stamps(tenantId, unit, world)) };
   }
 
   /** Creates the timetable of a unit on its first save (a race between two first saves is settled by the unique index). */

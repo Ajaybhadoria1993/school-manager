@@ -7,9 +7,10 @@ import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
-import type { StudentPage, StudentRow, StudentSettings } from "../../../types";
-import { fakeApi, type Handler } from "../../../test/fakeApi";
+import type { StudentPage, StudentRow, StudentSettings, UserRole } from "../../../types";
+import { fakeApi, spreadsheet, type Handler } from "../../../test/fakeApi";
 import { CAPACITY, SETTINGS, STRUCTURE } from "../../../test/fixtures";
+import { signInAs, signOut } from "../../../test/session";
 import StudentsPage from "../Students";
 
 const NOBODY: StudentPage = { academicYear: { id: "y1", name: "2026-2027" }, items: [], page: 1, limit: 12, total: 0, totalPages: 1 };
@@ -44,7 +45,9 @@ function school(students: StudentRow[] = [], extra: Record<string, Handler> = {}
   });
 }
 
-function openPage(entry = "/school/students") {
+function openPage(entry = "/school/students", who: { role?: UserRole; permissions?: string[] } = {}) {
+  // The school admin unless said: the page asks who is looking (what the school allowed them).
+  signInAs(who.role ?? "school_admin", who.permissions);
   const router = createMemoryRouter([{ path: "/school/students", element: <StudentsPage /> }], { initialEntries: [entry] });
   render(
     <Provider store={store}>
@@ -66,6 +69,7 @@ afterEach(() => {
   // The page leaves first, so nothing on screen asks the API again when the cache is emptied for the next test.
   cleanup();
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
+  signOut();
   vi.unstubAllGlobals();
 });
 
@@ -199,5 +203,59 @@ describe("Students while a year that is over is open (read only)", () => {
     expect(await screen.findByText("Asha Verma")).toBeInTheDocument();
     expect(headerButtons()).toEqual(["Guide", "Export", "Bulk upload", "Add student"]);
     expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
+  });
+});
+
+describe("Students for a person the school allowed (Permissions)", () => {
+  const reception = (permissions: string[]) => ({ role: "receptionist" as const, permissions });
+
+  it("a receptionist who may only see students sees the list, and none of Export, Bulk upload, Add student, the inactive list or the ticks", async () => {
+    school([ASHA]);
+    openPage("/school/students", reception(["students.view"]));
+    expect(await screen.findByText("Asha Verma")).toBeInTheDocument();
+    expect(headerButtons()).toEqual(["Guide"]);
+    expect(screen.queryByRole("navigation", { name: "Students by status" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("each button comes with its own permission: add students gives Add student and Bulk upload, export gives Export, status the inactive list and the ticks", async () => {
+    school([ASHA]);
+    openPage("/school/students", reception(["students.view", "students.add"]));
+    await screen.findByText("Asha Verma");
+    expect(headerButtons()).toEqual(["Guide", "Bulk upload", "Add student"]);
+    cleanup();
+
+    school([ASHA]);
+    openPage("/school/students", reception(["students.view", "students.export"]));
+    await screen.findByText("Asha Verma");
+    expect(headerButtons()).toEqual(["Guide", "Export"]);
+    cleanup();
+
+    school([ASHA]);
+    openPage("/school/students", reception(["students.view", "students.status"]));
+    await screen.findByText("Asha Verma");
+    expect(screen.getByRole("navigation", { name: "Students by status" })).toBeInTheDocument();
+    expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
+  });
+
+  it("Export is a direct download for a person who may export but does not run the school (the layout page is the school admin's)", async () => {
+    const saved: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      saved.push(this.download);
+    });
+    const calls = school([ASHA], { "GET /students/export": () => spreadsheet("students-sunrise.xlsx") });
+    const user = openPage("/school/students", reception(["students.view", "students.export"]));
+    await screen.findByText("Asha Verma");
+    expect(screen.queryByRole("link", { name: "Export" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    await waitFor(() => expect(saved).toEqual(["students-sunrise.xlsx"]));
+    expect(calls.filter((c) => c.path === "/students/export")).toHaveLength(1);
+  });
+
+  it("the school admin and the principal have everything, whatever list their session carries", async () => {
+    school([ASHA]);
+    openPage("/school/students", { role: "principal", permissions: [] });
+    await screen.findByText("Asha Verma");
+    expect(headerButtons()).toEqual(["Guide", "Export", "Bulk upload", "Add student"]);
   });
 });
