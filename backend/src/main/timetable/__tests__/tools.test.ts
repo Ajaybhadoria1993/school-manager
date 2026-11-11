@@ -66,8 +66,10 @@ describe("fill the empty periods", () => {
     const res = await post(r.token, "/grid/autofill", { ...r.c, cells: [cell(1, 1, lesson(r.maths)), cell(1, 2, lesson(r.hindi))], seed: 1 });
     expect(res.status).toBe(200);
     expect(res.body.data.dropped).toBe(1);
-    const kept = res.body.data.cells.filter((c: { day: number; period: number }) => c.day === 1 && c.period <= 2);
-    expect(kept.map((c: { lessons: { subjectId: string }[] }) => c.lessons[0].subjectId)).toEqual([r.hindi]);
+    // The lesson that was allowed stays where it was; the one that was not is not put back (the fill may give that free period to another subject).
+    const at = (period: number) => res.body.data.cells.find((c: { day: number; period: number }) => c.day === 1 && c.period === period)?.lessons[0].subjectId;
+    expect(at(2)).toBe(r.hindi);
+    expect(at(1)).not.toBe(r.maths);
   });
 
   it("gives another arrangement for another seed, the same one for the same seed", async () => {

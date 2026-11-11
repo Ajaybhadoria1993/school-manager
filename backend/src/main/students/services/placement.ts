@@ -3,6 +3,7 @@ import { ApiError } from "../../../utils/ApiError";
 import { SchoolClass } from "../../academics/models/SchoolClass";
 import { Section } from "../../academics/models/Section";
 import { Enrolment } from "../models/Enrolment";
+import { classNumber, needsStream, streamOf } from "../classNumber";
 import { placeTitle } from "./shared";
 
 /** A class (and section) of the current academic year that a student is being put in, checked against the database. */
@@ -20,14 +21,18 @@ export interface Placement {
  *  - the class is one of the school's;
  *  - a class that has sections this year needs one of them (a student of a split class sits in a section);
  *  - the section belongs to THAT class and to THIS year (a section of another class, of last year, or of another school is refused);
- *  - a class with no sections this year takes the student without one.
+ *  - a class with no sections this year takes the student without one;
+ *  - Class 11 and 12 are taught in streams: a student goes into a stream's class ("Class 11 Science"), never into "Class 11" as a
+ *    whole (STREAM_REQUIRED, naming the streams the school has). `allowNoStream` is for a student who already sits in such a class
+ *    and only changes something else (the roll number): the rule is for putting a student INTO a class.
  * Ids that are not the school's are answered like ids that do not exist, so nothing about another school is revealed.
  */
 export async function resolvePlacement(
   tenantId: Types.ObjectId,
   academicYearId: Types.ObjectId,
   classId: string | Types.ObjectId,
-  sectionId: string | Types.ObjectId | null | undefined
+  sectionId: string | Types.ObjectId | null | undefined,
+  options: { allowNoStream?: boolean } = {}
 ): Promise<Placement> {
   const klass = await SchoolClass.findOne({ _id: classId, tenantId }).select("name").lean();
   if (!klass) {
@@ -35,6 +40,7 @@ export async function resolvePlacement(
       { path: "classId", message: "That class is not in your school any more. Reload the page and pick again" },
     ]);
   }
+  if (!options.allowNoStream && needsStream(klass.name)) throw await streamRequired(tenantId, klass.name);
   const sections = await Section.find({ tenantId, classId: klass._id, academicYearId }).select("name capacity").lean();
   if (sectionId) {
     const section = sections.find((s) => s._id.equals(sectionId));
@@ -51,6 +57,18 @@ export async function resolvePlacement(
     ]);
   }
   return { classId: klass._id, className: klass.name, sectionId: null, sectionName: null, capacity: null };
+}
+
+/** 400 STREAM_REQUIRED: Class 11 or 12 as a whole takes no students; the message names the streams the school has (or says there are none). */
+async function streamRequired(tenantId: Types.ObjectId, className: string): Promise<ApiError> {
+  const number = classNumber(className);
+  const classes = await SchoolClass.find({ tenantId }).select("name order").sort({ order: 1, name: 1 }).lean();
+  const streams = classes.filter((c) => classNumber(c.name) === number && streamOf(c.name) !== null).map((c) => c.name);
+  const message =
+    streams.length > 0
+      ? `${className} is taught in streams: choose one of ${streams.join(", ")}.`
+      : `${className} is taught in streams, and your school has none yet: add them (for example ${className} Science) in Classes & Sections.`;
+  return ApiError.badRequest(message, "STREAM_REQUIRED", [{ path: "classId", message: streams.length > 0 ? "Choose the stream" : "Add the streams of this class first" }]);
 }
 
 /** 409 SECTION_FULL with the numbers, so the screen can ask "admit anyway?". */

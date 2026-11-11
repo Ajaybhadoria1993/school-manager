@@ -152,10 +152,10 @@ export function TeacherPreviewGrid({
       <table className="min-w-full border-separate border-spacing-0 text-sm" aria-label="Your file">
         <thead>
           <tr>
-            <th scope="col" className="sticky left-0 top-0 z-30 w-20 border-b border-r border-border bg-background px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wider text-foreground-muted">
+            <th scope="col" className="sticky left-0 top-0 z-30 w-20 border-b border-r border-border bg-background px-3 py-2.5 text-left text-[13.5px] font-semibold text-foreground">
               Row
             </th>
-            <th scope="col" className="sticky top-0 z-20 min-w-44 border-b border-r border-border bg-background px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wider text-foreground-muted">
+            <th scope="col" className="sticky top-0 z-20 min-w-44 border-b border-r border-border bg-background px-3 py-2.5 text-left text-[13.5px] font-semibold text-foreground">
               Status
             </th>
             {headers.map((title, column) => {

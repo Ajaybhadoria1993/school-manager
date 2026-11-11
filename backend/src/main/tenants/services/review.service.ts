@@ -2,10 +2,10 @@ import type { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { reportError } from "../../../utils/logger";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
-import { StructureService } from "../../academics/services/structure.service";
 import { RefreshToken } from "../../auth/models/RefreshToken";
 import { User } from "../../users/models/User";
 import { Tenant, type ITenant } from "../models/Tenant";
+import { MediumService } from "./medium.service";
 import { notifySchoolApproved, notifySchoolReactivated, notifySchoolRejected, notifySchoolSuspended } from "./notifications";
 import { buildSchoolSteps, type SchoolSteps } from "./schoolDetails";
 import { toListItems, type TenantListItem } from "./tenantQueries";
@@ -61,7 +61,11 @@ async function switchActive(tenantId: string, wasActive: boolean, update: Record
     { $set: { ...update, isActive: !wasActive }, ...(Object.keys(unset).length ? { $unset: unset } : {}) },
     { new: true }
   );
-  if (switched) return switched;
+  if (switched) {
+    // A school is switched on or off as one: its other mediums go with it.
+    await Tenant.updateMany({ parentTenantId: switched._id }, { $set: { isActive: !wasActive } });
+    return switched;
+  }
   const current = await Tenant.findById(tenantId).select("approvalStatus").lean();
   if (!current) throw NOT_FOUND();
   throw ApiError.conflict(
@@ -132,11 +136,9 @@ export class ReviewService {
     await AcademicYearService.activateOnboardingYear(tenant._id).catch((err) =>
       reportError(err, { step: "activate the academic year from the school profile", tenantId })
     );
-    // The school's Classes page starts with the classes it named at sign-up. A failure here must never undo the approval:
-    // the page then simply starts empty and offers the same setup by hand.
-    await StructureService.startFromProfile(tenant).catch((err) =>
-      reportError(err, { step: "start classes from the school profile", tenantId })
-    );
+    // Each medium starts with the classes, sections, seats and timing the school filled in. A failure here must never undo the approval:
+    // a side that could not be made is made when the administrator next opens the app, and a page left empty offers the same setup by hand.
+    await MediumService.setUp(tenantId).catch((err) => reportError(err, { step: "start the school from its sign-up form", tenantId }));
     const admin = await adminOf(tenant._id);
     if (admin) notifySchoolApproved(tenant, { name: admin.name, email: admin.email });
     return (await toListItems([tenant]))[0];
@@ -167,7 +169,7 @@ export class ReviewService {
       { "suspension.suspendedAt": new Date(), "suspension.suspendedBy": actorId, "suspension.reason": reason },
       { "suspension.reactivatedAt": 1, "suspension.reactivatedBy": 1, "suspension.note": 1 }
     );
-    const people = await User.find({ tenantId: tenant._id }).select("_id").lean();
+    const people = await User.find({ tenantId: { $in: await MediumService.familyIds(tenant._id) } }).select("_id").lean();
     await RefreshToken.deleteMany({ userId: { $in: people.map((p) => p._id) } });
     const admin = await adminOf(tenant._id);
     if (admin) notifySchoolSuspended(tenant, { name: admin.name, email: admin.email }, reason);

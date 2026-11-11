@@ -62,12 +62,12 @@ export function ClassOverviewCard({ overview, index }: { overview: ClassOverview
       className="stagger-item group relative flex items-center gap-3 rounded-xl border border-border bg-surface px-3.5 py-3.5 transition-all duration-200 focus-within:ring-4 focus-within:ring-primary/20 hover:border-[#cbd5e1] hover:shadow-card sm:gap-4 sm:px-4"
       style={{ "--i": Math.min(index, 8) } as React.CSSProperties}
     >
-      <span aria-hidden className={cn("flex size-11 shrink-0 items-center justify-center rounded-full font-extrabold tracking-tight sm:size-12", colour.mark, mark.length > 2 ? "text-sm" : "text-xl sm:text-2xl")}>
+      <span aria-hidden className={cn("flex size-11 shrink-0 items-center justify-center rounded-full font-bold sm:size-12", colour.mark, mark.length > 2 ? "text-sm" : "text-xl sm:text-2xl")}>
         {PictureOf ? <PictureOf className="size-6 sm:size-7" /> : mark}
       </span>
 
       <div className="min-w-0 flex-1">
-        <h3 className="truncate text-base font-bold tracking-tight text-foreground">
+        <h3 className="text-section-heading truncate">
           <Link
             to={`/school-class/${id}`}
             aria-label={`${name}: ${plural(students, "student")}, ${sections.length === 0 ? "no sections" : plural(sections.length, "section")}`}

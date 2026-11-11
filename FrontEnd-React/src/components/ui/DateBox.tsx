@@ -4,7 +4,7 @@ import { parseDate, type CalendarDate } from "@internationalized/date";
 import { I18nProvider } from "react-aria-components";
 import { CalendarDays, X } from "lucide-react";
 import { cn } from "../../utils/helpers";
-import { iconClass, useControlStyle } from "./Input";
+import { ControlIcon, controlHeight, iconPadding, useControlStyle } from "./Input";
 
 /** A day as the app keeps it ("2026-11-03"), as the calendar's own date; nothing for an empty or broken one. */
 function toCalendarDate(day: string | undefined): CalendarDate | null {
@@ -83,14 +83,18 @@ export function DateBox({
           <DateField.Group
             fullWidth
             className={cn(
-              "relative flex h-10 w-full items-center gap-1 rounded-lg border pl-11 pr-1.5 text-sm text-foreground shadow-none transition-all",
+              "relative flex w-full items-center gap-1 rounded-lg border pr-1.5 text-sm text-foreground shadow-none transition-all",
+              controlHeight(style),
+              iconPadding(style),
               style === "filled"
                 ? "border-transparent bg-primary-soft focus-within:border-primary focus-within:bg-surface focus-within:ring-4 focus-within:ring-primary/15"
-                : "border-border bg-surface focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/15",
+                : style === "boxed"
+                  ? "rounded-[10px] border-foreground/60! bg-surface text-[15px] hover:border-foreground/80! focus-within:border-primary! focus-within:ring-4 focus-within:ring-primary/15 group-data-[invalid=true]:border-danger!"
+                  : "border-border bg-surface focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/15",
               "group-data-[invalid=true]:border-danger group-data-[invalid=true]:ring-2 group-data-[invalid=true]:ring-danger/30"
             )}
           >
-            <CalendarDays className={iconClass} aria-hidden />
+            <ControlIcon icon={CalendarDays} />
             <DateField.Input className="flex min-w-0 flex-1 items-center">
               {(segment) => (
                 <DateField.Segment

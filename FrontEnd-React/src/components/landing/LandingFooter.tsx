@@ -4,7 +4,7 @@ import { LANDING_NAV } from "./nav";
 
 const ACCOUNT = [
   { href: "/signup", label: "Register your school" },
-  { href: "/login", label: "Sign in" },
+  { href: "/login", label: "Login" },
   { href: "/forgot-password", label: "Forgot your password?" },
 ];
 
@@ -56,7 +56,7 @@ export function LandingFooter() {
           <p>
             Already registered?{" "}
             <Link to="/login" className="font-semibold text-slate-300 transition-colors hover:text-white">
-              Sign in
+              Login
             </Link>
           </p>
         </div>

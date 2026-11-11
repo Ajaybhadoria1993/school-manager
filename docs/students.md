@@ -261,7 +261,7 @@ or hidden, never required.
 - **Editing** refuses only emptying a required detail that was saved; a detail never filled (a student admitted before the rule, or
   from an old register) is not forced on every later save.
 - **The bulk upload is flexible: it accepts what an old register has** (the user's rule, 2026-10-24). Add student is the strict one;
-  an upload needs only the five basics (first and last name, gender, date of birth, class and its section) and a parent's name and mobile
+  an upload needs only the basics (first and last name, gender, date of birth and class; the section is placed, see below) and a parent's name and mobile
   number (a student is placed by class, and a parent is linked by mobile). The address, the previous school, the category, the IDs...
   are optional there: every row is held to `LENIENT_FIELD_RULES` on the screen (`prepareRow`) and the server asks only what the
   schema asks (`ImportService.one`); what the school's own form needs and the row lacks is said by the server as a warning (*Not in the
@@ -351,6 +351,22 @@ validated, so a wrong body tells another school nothing.
 Every message a person can see is written once in `schemas/students.schemas.ts`; the screens repeat the same words
 (`FrontEnd-React/src/constants/students.ts`) to say what is wrong before anything is sent. The server checks everything anyway.
 
+## Class 11 and 12: the stream (2026-11-10)
+
+A student of Class 11 or 12 is put in a **stream's class** ("Class 11 Science"), never in "Class 11" as a whole. A stream is a class of its
+own (onboarding makes one per stream, or the school adds the class), with its own sections; it is read from the class name
+(`streamOf` / `needsStream`, the same rules in `backend/src/main/students/classNumber.ts` and `FrontEnd-React/src/utils/classNumber.ts`; a
+single letter after the number is a section, a stream's name is two letters or more).
+
+- **Server:** `resolvePlacement` refuses Class 11/12 as a whole with 400 `STREAM_REQUIRED` (admission, bulk import, move, reactivation
+  placement). The message names the streams the school has, or says it has none and where to add them. A move that does not change the class
+  (a new roll number for a student who sits in Class 11 from before) is allowed (`allowNoStream`). Promotion approval is not checked.
+- **Add / Edit student:** Class 11 and 12 are one chip each; picking one asks "Stream of Class 11" (chips), the class stays empty until a stream
+  is chosen (*Choose the stream*), then the stream's sections show.
+- **Bulk upload:** the Stream column (titles Stream, Group, Faculty, Subject Group) is added empty when a row names Class 11/12 without a stream;
+  the stream may also be written in the class cell ("11 Science", "XI-Commerce"). A missing or unknown stream is a red Stream box; the school's
+  Class 11 as a whole is never an answer.
+
 ## Active and inactive students
 
 **Students are never deleted.** A student who leaves the school (or was admitted by mistake, or came from a wrong upload) is made
@@ -433,18 +449,24 @@ row; it checks each row with the admission form's own `checkStudentForm`. The **
      "Mobile No", "DOB", "Village", "Pin", "Aadhar No", "Samagra ID", "SR No", "CWSN", "RTE"...), first by the headings of the school's
      own export layout, and the school's own fields by their name or export heading (`ownColumnsOf`; an own field's heading stays that
      field even when it is also a usual name, such as Route), so a file it exported comes back as it is. Change it only when a column was read wrong (a detail is in one column only). A whole-name column is split at its last word;
-   - a column every student needs that the file lacks (the name, gender, date of birth, class, a parent's name and mobile, and the
-     Section when a class of the file has sections) is **added empty at the right** when the file opens (`columnsToAdd`): its red boxes
-     say what to type. No other column is added: the address and the previous school are never asked of a file (a column for one of them,
+   - a column every student needs that the file lacks (the name, gender, date of birth, class, a parent's name and mobile) is
+     **added empty at the right** when the file opens (`columnsToAdd`): its red boxes say what to type. The Section is NOT one of them
+     (the user's rule, 2026-11-10: a section is never a reason to stop a row). No other column is added: the address and the previous school are never asked of a file (a column for one of them,
      or for any detail, is added from the **+**, with one value for every row if wanted). When a value that fixes a box is typed, the
      screen offers it for the other rows with the same problem (`SameValueOffer`: *1 more row has "Class 9" in Class. Change it to
      "Class 8" too?*);
    - every cell can be changed in place (list columns suggest their values; a date column says DD-MM-YYYY); the bin leaves a row out;
    - each value of the Class column is matched to a class of the school (`matchClass`: "V", "5th", "5 th", "Std 5", "5th Std",
      "Class-5", "LKG", "KG 1", and with a section, "5-A", "V B", "LKG A"). A value that is no class of the school says so in its box
-     (*Your school has no "Class 9": type one of your classes*); a class with sections and no section says so in the **Section** box
-     (*Class 6 has sections A, B: type one*), where the section is typed; a section written in the class cell that is not the class's
-     ("5-C") says so in that cell (*Class 5 has sections A, B, not "C"*), not as an unknown class. After a box that needed a fix is changed, the other rows with the same value that need
+     (*Your school has no "Class 9": type one of your classes*); a class with sections and no section given (no Section column, an empty box, or a section the class does not have, "5-C" in
+     a class of A and B) is **no problem**: `placeInSections` puts the student in one of the class's sections, the table says so under Ready
+     (*Goes to Class 5 - B*) and the server gets that `sectionId`. Rule: the sections are filled evenly in the order of the file, each student
+     to the section with the fewest (the students the school already has this year and the rows of the file that name their section
+     count); a section with seats left is preferred, a full one only when every section is full (then the seats warning asks, as always);
+     a roll number is kept free (roll 1 does not go where roll 1 is taken); blank rows and students the school already has take no seat.
+     A section the file names that the class does not have is said on that row (*Class 5 has no section "C": the student goes to section A.*);
+     typing a real section in the Section box (or adding the column from the **+**) decides it. NOT done: creating the missing section
+     from the file. A class without sections ignores a section of the file, with a note, as before. After a box that needed a fix is changed, the other rows with the same value that need
      the same fix are offered the same change at once (*1 more row has "Class 9" in Class. Change it to "Class 8" too?*);
    - the **+ Add a column** at the end of the headings adds a column: a detail of the list or one of the school's own fields, with one
      value for every row if wanted, or a **new field of the school's own** made there (the same dialog as on Export; saved at once with

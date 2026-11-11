@@ -1,10 +1,10 @@
 import { useRef, useState } from "react";
-import type { BoardEntry } from "../../types";
+import type { BoardDraft } from "../../types";
 
 export type FieldErrors = Record<string, string>;
 
-/** A box holds text; a multiple choice holds a list; the boards hold a list of board entries. */
-export type FormValue = string | string[] | BoardEntry[];
+/** A box holds text; a multiple choice holds a list; the boards hold a list of boards being filled in. */
+export type FormValue = string | string[] | BoardDraft[];
 export type FormValues = Record<string, FormValue>;
 
 /**

@@ -10,6 +10,9 @@ import type { GridAllotment, GridCell, GridDay, GridTeacher, GridView, Lesson } 
 
 export const cellKey = (day: number, period: number) => `${day}:${period}`;
 
+/** A department called Pre-Primary, however it is written: its classes have a mother teacher and may give a whole day to one subject. */
+export const isPrePrimaryName = (name: string): boolean => name.toLowerCase().replace(/[^a-z]/g, "") === "preprimary";
+
 /** What the screen knows of the class and the school, indexed. */
 export interface GridModel {
   days: GridDay[];
@@ -44,6 +47,25 @@ export function placedCounts(cells: readonly GridCell[]): Map<string, number> {
 }
 
 export const cellAt = (cells: readonly GridCell[], day: number, period: number) => cells.find((c) => c.day === day && c.period === period);
+
+/**
+ * When the class's day ends, day by day: the end of the last period that has a lesson (the class is there for as many periods as it has
+ * lessons that day, nobody sets an end time). Null for a day with no lesson. It reads the lessons given now, so it follows a change before
+ * it is saved; a lesson in a period the day does not have counts for nothing.
+ */
+export function dayEnds(view: Pick<GridView, "days">, cells: readonly GridCell[]): Map<number, string | null> {
+  const ends = new Map<number, string | null>();
+  for (const day of view.days) {
+    let last: { period: number; end: string } | null = null;
+    for (const cell of cells) {
+      if (cell.day !== day.day || cell.lessons.length === 0) continue;
+      const slot = day.slots.find((s) => s.period === cell.period);
+      if (slot?.period != null && (!last || slot.period > last.period)) last = { period: slot.period, end: slot.end };
+    }
+    ends.set(day.day, last?.end ?? null);
+  }
+  return ends;
+}
 
 /** The periods of a day, in order, with where each is in the day's rows. */
 function periodRows(day: GridDay | undefined) {
@@ -82,6 +104,9 @@ export function choiceOf(model: GridModel, subjectId: string): GridAllotment[] {
   return [...model.allotments.values()].filter((a) => a.group?.toLowerCase() === group);
 }
 
+/** The lessons of a period for these subjects: each with no teacher of its own, or the mother teacher when the subject has no usual one. */
+const lessonsOf = (members: readonly GridAllotment[], mother: string | null): Lesson[] => members.map((m) => ({ subjectId: m.subjectId, teacherId: m.teacherId ? null : mother, room: null }));
+
 export interface Placing {
   cells: GridCell[];
   /** How many periods were filled. */
@@ -93,9 +118,10 @@ export interface Placing {
 /**
  * Puts a subject in a period: and, for a subject given in double (or triple) periods, in the periods in a row after it; for a choice,
  * every subject of the choice together. A lesson already in a period is replaced. A subject put on a period that already has exactly
- * that subject takes it off again (a second click undoes the first).
+ * that subject takes it off again (a second click undoes the first). With a `mother` teacher (a Pre-Primary class), a subject that has no
+ * usual teacher of its own gets her.
  */
-export function placeSubject(model: GridModel, cells: readonly GridCell[], subjectId: string, day: number, period: number): Placing {
+export function placeSubject(model: GridModel, cells: readonly GridCell[], subjectId: string, day: number, period: number, mother: string | null = null): Placing {
   const subject = model.allotments.get(subjectId);
   if (!subject) return { cells: [...cells], placed: 0, note: null };
   const here = cellAt(cells, day, period);
@@ -107,9 +133,70 @@ export function placeSubject(model: GridModel, cells: readonly GridCell[], subje
   if (targets.length === 0) return { cells: [...cells], placed: 0, note: null };
 
   const next = cells.filter((c) => !(c.day === day && targets.includes(c.period)));
-  for (const p of targets) next.push({ day, period: p, lessons: members.map((m) => ({ subjectId: m.subjectId, teacherId: null, room: null })) });
+  for (const p of targets) next.push({ day, period: p, lessons: lessonsOf(members, mother) });
   const note = targets.length < subject.blockSize ? `${subject.subjectName} is meant for ${subject.blockSize} periods in a row, but only ${targets.length} fit here.` : null;
   return { cells: sorted(next), placed: targets.length, note };
+}
+
+/**
+ * A subject picked for a period (2026-11-10): an empty period gets it, and so does that period of every other day that is still empty, so
+ * a subject taught daily at one time is one click; a day is then changed by clicking it. A period that already has a lesson changes alone.
+ * Nothing is overwritten and no clash is made: a day whose usual teacher cannot take the period (does not come, or is in another class
+ * then) stays empty and is named in `note`, a day without that period is passed over, and double periods need all their periods free.
+ */
+export function placeAcrossWeek(model: GridModel, cells: readonly GridCell[], subjectId: string, day: number, period: number, mother: string | null = null): Placing {
+  const first = placeSubject(model, cells, subjectId, day, period, mother);
+  const subject = model.allotments.get(subjectId);
+  if (!subject || first.placed === 0 || cellAt(cells, day, period)) return first;
+  const members = choiceOf(model, subjectId);
+  let next = first.cells;
+  let placed = first.placed;
+  const leftOut: string[] = [];
+  for (const other of model.days) {
+    if (other.day === day) continue;
+    const targets = periodsInARow(model, other.day, period, subject.blockSize);
+    if (targets.length < subject.blockSize || targets.some((p) => cellAt(next, other.day, p))) continue;
+    if (targets.some((p) => members.some((m) => teacherTrouble(model, m.teacherId ?? mother, other.day, p)))) {
+      leftOut.push(DAY_NAMES[other.day]);
+      continue;
+    }
+    const placing = placeSubject(model, next, subjectId, other.day, period, mother);
+    next = placing.cells;
+    placed += placing.placed;
+  }
+  const left = leftOut.length > 0 ? `${subject.subjectName} is not on ${leftOut.join(", ")}: its teacher cannot take that period.` : null;
+  return { cells: next, placed, note: [first.note, left].filter(Boolean).join(" ") || null };
+}
+
+/**
+ * A whole day of one subject (a Pre-Primary class, 2026-11-10: "ek din me ek hi cheez"): every period of that day gets it, in place of
+ * what was there; the other days are left as they are. A choice puts all its subjects; the mother teacher goes on a subject with no usual
+ * teacher of its own.
+ */
+export function placeWholeDay(model: GridModel, cells: readonly GridCell[], subjectId: string, day: number, mother: string | null): Placing {
+  const subject = model.allotments.get(subjectId);
+  const periods = periodRows(model.days.find((d) => d.day === day)).map((r) => r.period);
+  if (!subject || periods.length === 0) return { cells: [...cells], placed: 0, note: null };
+  const members = choiceOf(model, subjectId);
+  const next = cells.filter((c) => c.day !== day);
+  for (const p of periods) next.push({ day, period: p, lessons: lessonsOf(members, mother) });
+  return { cells: sorted(next), placed: periods.length, note: null };
+}
+
+/**
+ * A mother teacher chosen for a class (or taken away): she goes on every lesson that has no teacher (none of its own, none usual for the
+ * subject) and in place of the mother teacher before; a lesson given to another teacher on purpose keeps them.
+ */
+export function applyMotherTeacher(model: GridModel, cells: readonly GridCell[], next: string | null, previous: string | null): GridCell[] {
+  return cells.map((c) => ({
+    ...c,
+    lessons: c.lessons.map((l) => {
+      const usual = model.allotments.get(l.subjectId)?.teacherId ?? null;
+      if (l.teacherId === null && usual === null) return { ...l, teacherId: next };
+      if (previous !== null && l.teacherId === previous) return { ...l, teacherId: next };
+      return l;
+    }),
+  }));
 }
 
 /** Takes the lesson out of a period. */
@@ -184,6 +271,50 @@ export function teacherTrouble(model: GridModel, teacherId: string | null, day: 
   if (teacher.offDays.includes(day)) return `${teacher.name} does not come on ${DAY_NAMES[day]}`;
   const clash = model.busy.find((b) => b.teacherId === teacher.id && b.day === day && b.period === period);
   return clash ? `${teacher.name} is teaching ${clash.where} (${clash.subjectName}) then` : null;
+}
+
+/** A teacher who can be chosen for one period, or (`value` null) the subject's usual teacher / no teacher. */
+export interface TeacherChoice {
+  value: string | null;
+  label: string;
+  /** Said under the name: "Usual teacher", or why they cannot take the period. */
+  note: string | null;
+  /** The note says something is wrong. */
+  bad: boolean;
+  /** Cannot be picked: they cannot take the period and the period does not have them already. */
+  disabled: boolean;
+  selected: boolean;
+}
+
+/**
+ * The teachers a period can be given, for the box of the period: the subject's usual teacher (or No teacher) first, then the school's
+ * other teachers, those who teach this subject before the rest. Who cannot take the period is listed with the reason and cannot be picked,
+ * unless the period has them already. Empty when the school has no teacher at all, which the box says.
+ */
+export function teacherChoices(model: GridModel, subjectId: string, day: number, period: number, current: string | null, mother: string | null = null): TeacherChoice[] {
+  const usualId = model.allotments.get(subjectId)?.teacherId ?? null;
+  const usual = usualId ? model.teachers.get(usualId) : undefined;
+  const others = [...model.teachers.values()].filter((t) => t.id !== usualId && (t.isActive || t.id === current));
+  if (!usual && others.length === 0) return [];
+  const usualTrouble = teacherTrouble(model, usualId, day, period);
+  const first: TeacherChoice = {
+    value: null,
+    label: usual?.name ?? "No teacher",
+    note: usualTrouble ?? (usual ? "Usual teacher" : null),
+    bad: !!usualTrouble,
+    disabled: false,
+    selected: current === null || current === usualId,
+  };
+  const teachesIt = (t: GridTeacher) => t.subjectIds.includes(subjectId);
+  const rest = others.filter((t) => t.id !== mother);
+  const ordered = [...others.filter((t) => t.id === mother), ...rest.filter(teachesIt), ...rest.filter((t) => !teachesIt(t))];
+  return [
+    first,
+    ...ordered.map((t): TeacherChoice => {
+      const trouble = teacherTrouble(model, t.id, day, period);
+      return { value: t.id, label: t.name, note: trouble ?? (t.id === mother ? "Mother teacher" : null), bad: !!trouble, disabled: !!trouble && t.id !== current, selected: t.id === current };
+    }),
+  ];
 }
 
 /** A subject that can be put in a period, with what the class wants of it. */
@@ -296,4 +427,4 @@ export function timingGroups(days: readonly GridDay[]): TimingGroup[] {
 }
 
 /** Where a class's (or section's) timetable is, and where what it studies is set. `sectionId` null is a class that has no sections. */
-export const unitPath = (unit: { classId: string; sectionId: string | null }) => `/school/timetable?tab=classes&class=${unit.classId}&section=${unit.sectionId ?? "none"}`;
+export const unitPath = (unit: { classId: string; sectionId: string | null }) => `/school/timetable?class=${unit.classId}&section=${unit.sectionId ?? "none"}`;

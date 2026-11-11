@@ -6,48 +6,84 @@ and the ones it does not, and how to test it.
 
 ## The flow a school follows
 
-Since 2026-11-01 everything is on **one page**, `/school/timetable`, in **two tabs** (the user found four steps on separate pages
-confusing). The old addresses (`/timings`, `/class-subjects`, `/class/:classId/:sectionId`) lead to the right tab.
+**Two pages, nested under one *Timetable* row of the menu since 2026-11-10 (`NavItem.submenu`, `SUBMENUS`), no tabs** (2026-11-09, user: "sidebar ke Timetable par click karun to 2 tab khulte hain, ek hi component me tab se handle
+kar rahe hain, fix karo"): Manage school > **School timings** (`/school/timings`, `pages/school/SchoolTimings.tsx`) and Manage school > **Class timetables**
+(`/school/timetable?class=&section=`, `pages/school/ClassTimetables.tsx`). Before that (2026-11-01) they were the two tabs of one page (and, before
+that, four steps on separate pages, which the user found confusing). School timings asks only for the timings and the departments (no class list);
+Class timetables with no school timing says so and has a button to School timings; "Now make each class's timetable" goes the other way. A year
+that is over is only looked at, so School timings sends it to Class timetables. The subjects page and a teacher's week are longer addresses under
+`/school/timetable/...`, so they light *Class timetables*. Old addresses lead to the right page: `?tab=timings` and `/school/timetable/timings` to
+School timings, `/class-subjects` and `/class/:classId/:sectionId` to Class timetables with the class.
 
-1. **School timings** tab: the **usual school day** as a few numbers (when school starts; each period and an assembly in **minutes**,
+1. **School timings** page: the **usual school day** as a few numbers (when school starts; each period and an assembly in **minutes**,
    where 60 reads "= 1 hr" and 90 "= 1 hr 30 min"; how many periods; a **lunch** and **one short break**, each from when to when, with
    how long it is), drawn period by period as they are typed (08:30, 40 minutes, lunch 10:30 to 11:00, 8 periods gives
    08:30-09:10, 09:10-09:50, 09:50-10:30, lunch, 11:00-11:40 ... 13:40-14:20). The lunch and the short break stand at their own times, the
    periods fit round them (a period that would run into one is cut to end where it starts, and the page says so); they cannot share time
    (`setupProblems`). Then **each day of the week** is *Usual*, *Different* (its own numbers: a short Saturday) or a *Holiday*. **One Save**
    sends the whole week (`PUT /timetable/school-day`). 2026-11-03: the section *Timings for a few classes* (and its dialog) is gone from
-   this tab: it is the school's (or a department's) timing, not a class's; a class's own periods are set on its timetable (*Periods per
+   this tab: it is the school's timing, not a class's; a class's own periods are set on its timetable (*Periods per
    day*). The short break used to be "after period N, minutes" and up to three; days saved that way are read back as the first break at
    its time (the page says rows changed by hand are made again from these numbers when saved).
-   **Unsaved changes are asked about** (2026-11-03): with changes in the week being edited (the school's or a department's), picking
-   another group under *Timing for*, another tab, another page or a reload asks "Save the changes to Pre-Primary's timing?": *Save and
-   continue* sends the week and goes on only if it was saved (the server's reason is shown otherwise, and it waits while the numbers are
-   wrong), *Don't save* goes on and the changes are lost, *Cancel* stays. A week nobody touched (a new school at the usual numbers) asks nothing.
-   **Timing for** (2026-11-02): at the top of the tab, *Whole school* or a **department** (Pre-Primary keeps other hours than Primary). A
-   department follows the school until **Give Pre-Primary its own timing**; that opens the same editor, starting from the school's week,
-   and its save is the department's **whole week** (a holiday there is a holiday for its classes even when the school has school).
-   **Use the school's timing again** takes it away (asks first). The timing follows the department: a class put in it later takes it.
-   Since 2026-11-03 the department's **classes are shown as chips** ("Classes  Class 1  Class 2 ...", or "No classes in it yet") in the
-   card of its usual day and in the "follows the school's timing" card, each *Timing for* card says "5 classes · Own timing", and the grey
-   strip above the card is gone: *Use the school's timing again* (or *Cancel*, for a timing being started, which also says "Not saved yet")
-   is at the right of the card's header.
-2. **Class timetables** tab: every class or section on the left (search, and All / Not started / Draft / Published), the one picked on the
+   **Unsaved changes are asked about** (2026-11-03): with changes in the week being edited, another tab, another page or a reload asks
+   "Save the changes to the school's timing?": *Save and continue* sends the week and goes on only if it was saved (the server's reason
+   is shown otherwise, and it waits while the numbers are wrong), *Don't save* goes on and the changes are lost, *Cancel* stays. A week
+   nobody touched (a new school at the usual numbers) asks nothing.
+   **One timing for the whole school** (2026-11-09, user: "school time ek hi rehta hai, har class/department ka alag nahi"): the *Timing for*
+   choice (Whole school / each department, "Give Pre-Primary its own timing", the classes chips) is GONE from the screens. The school sets
+   when it starts, how long a period is, the lunch (and a short break) once; every class has those times. A class with fewer periods than
+   the school's day keeps the school's times for the periods it has (see *Periods & time* and *Class ends* below). Backend
+   unchanged: it still resolves a department's timing if one was saved before; the tab only says so at the top ("Pre-Primary still keeps a
+   timing of its own." + *Use the school's timing*, which asks first and calls `DELETE /timetable/school-day/:departmentId`).
+   **Pre-Primary's own timing** (2026-11-10, user: "pre-primary ka timing alag ho sakta hai, jaldi shuru ho"; the user chose one Pre-Primary box, not every
+   department): under the school's week, a *Pre-Primary timing* box. It says *Same as the school* until *Give Pre-Primary its own timing*, which starts from the
+   school's usual day; its numbers (start, period length, periods, assembly, lunch, short break) are sent for the **school's usual days only**
+   (`departmentDayBody`), so a day the school keeps different and a holiday stay the school's for its classes. *Use the school's timing* takes it away. Its
+   unsaved changes are asked about with the school's (one *Save and continue* saves both). Other departments get no box; one with a timing from before
+   still gets the notice above.
+2. **Class timetables** page: every class or section on the left (search, and All / Not started / Draft / Published), the one picked on the
    right with its week as a table. **Click a period** and a box opens right under it (2026-11-03; before, a subject was picked above the
    week first and then the periods were clicked, and there was an Eraser): type the first letters of the subject and press Enter, or click it.
    The box lists the class's subjects first (each with its teacher and how many of its periods a week are in: `3/6`), then the school's
    other subjects, then the usual subjects of an Indian school the school does not have yet (picking one adds it to the school), and *Add
    "…" as a new subject* for anything typed that is in no list; what starts with the letters comes first. A subject whose usual teacher does
    not come that day, or is teaching another class then, says so in red (it can still be picked; the server has the last word at Save).
-   A period that has a lesson opens the same box: pick another subject to change it, **Teacher & room** (the lesson window) or **Take it
-   out**. The box is not modal on a desktop (the next period can be clicked at once; Escape or a click elsewhere closes it) and is a modal
+   **A subject goes on every day** (2026-11-10, user: "English daalun to har day par wahi assign ho, change karna ho to click karke kar lun"): picked for an empty
+   period, it also goes in that period of every other day that is still empty (`placeAcrossWeek`, `utils/timetable.ts`). Nothing is overwritten, a period that already has
+   a lesson changes alone, a day without that period is passed over, double periods need all their periods free, and a day whose usual teacher cannot take it stays empty and
+   is named above the week. More days than its periods a week is only the usual *worth a look* warning after Save.
+   A period that has a lesson opens the same box: pick another subject to change it, pick its **teacher** right there (2026-11-10, `teacherChoices`: the usual teacher or *No teacher*
+   first, then those who teach the subject, then the rest; who cannot take the period is shown with why and cannot be picked; *No teacher available in your school* when there is
+   none; it is for that period only), **Room** (the lesson window; a choice of several subjects keeps **Teacher & room** there, one teacher each) or **Take it
+   out**. The box can be given less height than it wants: its lists shrink and scroll, the title and the buttons stay in sight.
+   **A Pre-Primary class** (2026-11-10; its department is called Pre-Primary, however written: `isPrePrimaryName`) has two more things. A **Mother teacher**
+   choice beside Periods & time: she is kept at once as the unit's **class teacher** (`PUT /staff/class-teachers`, so she also takes its attendance), and goes on
+   every lesson that has no teacher (none of its own, none usual for the subject; `applyMotherTeacher`) and on every subject put in from then on (saved with
+   the week). The grid read now names the class teacher (`GridView.classTeacher`, backend `grid.service.ts stamps`). Lessons left without a teacher (the copy
+   to other sections drops teachers) get her with one button, *Put Meena Singh on N periods with no teacher*. And the period box has **This period, all week**
+   (the usual way) or **Whole Monday**: the subject goes in every period of that day, in place of what was there (`placeWholeDay`), for a day of one thing.
+   The choice stays while the page is open. The box is not modal on a desktop (the next period can be clicked at once; Escape or a click elsewhere closes it) and is a modal
    one on a phone (no cursor in the search box until it is touched). A subject the class did not study yet **joins its list when the
    timetable is saved** (with the periods it was given, no teacher).
-   **Periods per day** (2026-11-03) opens a box with the seven days of the week, a − 5 + for each (0 = no school that day) and *Same on every
-   school day*: it changes only this class (every section of it), so Monday can have 5 periods and the other days 8; a day left alone keeps
-   following the school's (or the department's) timing. Fewer periods cut the day after that period, more add periods after the last one
-   (as long as it); the box says each day's times, and *Back to the school's periods* gives the class's own days up. Lessons in a period the
-   class will no longer have are asked about first and taken out only when the person agrees. A class with no timing at all has the same box
-   on its page (*Set the periods of this class*). For the whole school or a department the **School timings** tab is still the place.
+   **A class's day follows its lessons** (2026-11-09, user: "jis class ko jitne periods assign hain uss din ke, uska time wahi rahega; end time
+   select karna faltu"): nothing is set for a class. The grid has the school's rows, and its last row, **Class ends**, says for each day the end
+   of the last period that has a lesson (`dayEnds` in `utils/timetable.ts`; it follows lessons put in before they are saved; "–" for a day with
+   none). The old **Periods per day** box (a − 5 + for each day) is gone with `ClassPeriodsDialog`.
+   **Periods & time** (2026-11-09; the button was first called *Class timing*) is the one button to give a class more or fewer periods than the
+   school's day, or other hours (user: "nursery me 5 period karna hai par 7 hain; nursery ke har section me 5 ho jaye; class wise"): it is for the
+   **whole class, every section of it** (`PUT /timetable/class-day` names the class, never a section) and every school day. Three boxes that are one
+   thing: **Class starts**, **Periods in a day** (− 5 +) and **Class ends**; the period number makes the end, an end typed makes the number (the
+   periods that fit), another start keeps the number and moves the end; the day in words under them ("5 periods · 08:30 to 12:20 · lunch 10:30 to
+   11:00"). 1 to 12 periods; more than the school's day goes on after its last period. The rows are made with the school's length of a period and its
+   lunch and short break where they fall inside the hours, no assembly; a period that would run into the lunch is cut to end where it starts (the
+   School timings rule), and the last period is cut to end with the class when what is left is at least 10 minutes, a shorter bit is dropped
+   (`rowsBetween`, `rowsForPeriods`, `classTimingBody` in `utils/classWeek.ts`). Every day the class has school **and follows the school's usual day**
+   gets them; a day the school keeps different (a short Saturday) is left to the school (or stays as the class's own rows if it has some); a class
+   with no school at all gets Monday to Friday from the usual day; a day the class has off by itself stays off. Only the days that differ from the
+   school's are sent, so the school's own hours send nothing and the class follows the school again; *Back to the school's timing* puts the school's
+   hours in the boxes. Lessons in a period the class will no longer have are asked about first (`LESSONS_IN_REMOVED_PERIODS`) and taken out only when
+   the person agrees. A class with no timing at all has the same box on its page (*Set periods & time*). For the whole school the **School timings**
+   tab is the place.
    The old **Periods & teachers** button is gone (2026-11-03): the subjects' periods a week (the program's fill needs them), single / double
    periods, the teacher and *choices* open from "Fill the empty periods" by itself when no subject has any yet (the line of help under the
    buttons, with its *change periods a week* link, was taken away the same day: no extra text). "Fill the empty periods" lets the program do
@@ -155,6 +191,9 @@ day; a double period broken; a teacher over their daily or weekly limit; a choic
 
 **The program's fill** (`autofill.ts`) keeps what is there, places choices, double periods and the busiest teachers first, spreads a subject over
 the days, never puts a teacher in two places or on a day off, and says what it could not place. The same seed gives the same arrangement.
+**Packed from the first period** (2026-11-09): a period that leaves a gap before it costs more than any other choice, and of the rest the earlier
+one wins, so a filled day has no free period before its last lesson and the grid's *Class ends* is the end of that day (test: *packs each day from the
+first period*, every seed). A teacher who is busy then can still leave a gap: it is only a preference.
 
 ## Real cases covered
 

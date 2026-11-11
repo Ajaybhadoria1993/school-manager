@@ -8,6 +8,7 @@ import {
 import { clearTokens, getRefreshToken, getRememberMe, getToken, setTokens } from "../../utils/auth";
 import type { ApiResponse, SessionEndReason } from "../../types";
 import { sessionEnded } from "../slices/authSlice";
+import { mediumChanged } from "../slices/mediumSlice";
 import { yearViewChanged } from "../slices/yearViewSlice";
 
 /** "/api/v1" in development (the Vite dev server forwards it to the backend); a full URL in production. */
@@ -104,9 +105,12 @@ const rawBaseQuery = fetchBaseQuery({
   baseUrl: API_URL,
   cache: "no-store",
   // Read on every request, so a token that was just refreshed (here or in another tab) is used straight away.
-  prepareHeaders: (headers) => {
+  prepareHeaders: (headers, { getState }) => {
     const token = getToken();
     if (token) headers.set("Authorization", `Bearer ${token}`);
+    // The side of the school that is open (redux/slices/mediumSlice.ts); nothing for the first one.
+    const mediumId = (getState() as { medium?: { mediumId: string | null } }).medium?.mediumId;
+    if (mediumId) headers.set("X-School-Medium", mediumId);
     return headers;
   },
 });
@@ -174,6 +178,11 @@ export const baseQueryWithReauth: BaseQueryFn<string | FetchArgs, unknown, Fetch
   // that show a year ask again. After this request has finished, so the one that failed is asked for again too.
   if (sentYear && result.error && YEAR_REFUSED.includes((result.error.data as { code?: string } | undefined)?.code ?? "")) {
     setTimeout(() => api.dispatch(yearViewChanged(null)), 0);
+  }
+
+  // The medium that was open is not one of the school's: back to the first one, and the screens ask again.
+  if ((result.error?.data as { code?: string } | undefined)?.code === "MEDIUM_NOT_FOUND") {
+    setTimeout(() => api.dispatch(mediumChanged(null)), 0);
   }
 
   // The API answers failures with an error status; a 2xx that says `success: false` is treated as one too.

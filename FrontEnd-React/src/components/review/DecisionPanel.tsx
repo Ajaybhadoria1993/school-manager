@@ -41,7 +41,7 @@ export function DecisionPanel({
             <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-60" />
             <span className="relative inline-flex size-2.5 rounded-full bg-amber-500" />
           </span>
-          <h2 className="text-base font-semibold tracking-tight text-foreground">Your decision</h2>
+          <h2 className="text-section-heading">Your decision</h2>
         </div>
         <p className="mt-2 text-sm text-foreground-muted">
           Read the details, then decide. The administrator gets an email with your decision either way.
@@ -76,7 +76,7 @@ export function DecisionPanel({
           </Alert.Content>
         </Alert>
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
-          <h2 className="text-base font-semibold tracking-tight text-foreground">Switch it back on</h2>
+          <h2 className="text-section-heading">Switch it back on</h2>
           <p className="mt-1.5 text-sm text-foreground-muted">Everyone can sign in again. The administrator gets an email saying so.</p>
           <Button className="mt-4" size="lg" fullWidth onPress={onReactivate}>
             <Power className="size-4" aria-hidden />
@@ -102,7 +102,7 @@ export function DecisionPanel({
           </Alert.Content>
         </Alert>
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
-          <h2 className="text-base font-semibold tracking-tight text-foreground">Need to stop it?</h2>
+          <h2 className="text-section-heading">Need to stop it?</h2>
           <p className="mt-1.5 text-sm text-foreground-muted">
             Suspending signs everyone out and blocks sign-in. Nothing is deleted, and you can switch it back on any time.
           </p>
@@ -140,7 +140,7 @@ export function DecisionPanel({
     <section className="stagger-item rounded-2xl border border-border bg-surface p-5 shadow-card" style={style}>
       <div className="flex items-center gap-2.5">
         {status === "invited" ? <MailCheck className="size-5 text-foreground-muted" aria-hidden /> : <Hourglass className="size-5 text-info" aria-hidden />}
-        <h2 className="text-base font-semibold tracking-tight text-foreground">Nothing to decide yet</h2>
+        <h2 className="text-section-heading">Nothing to decide yet</h2>
       </div>
       <p className="mt-2 text-sm text-foreground-muted">{STATUS_META[status].hint}.</p>
       {status === "onboarding" && (

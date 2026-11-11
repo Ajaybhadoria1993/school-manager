@@ -24,6 +24,11 @@ export interface AuthUser {
   roleLabel?: string | null;
   tenantId: string | null;
   emailVerifiedAt: string | null;
+  /**
+   * What this person may do, by the school's Permissions: everything for the school admin and the principal, the list of their kind for
+   * anyone else (utils/permissions.ts `can`). Sent with the session; the server checks every request again.
+   */
+  permissions?: string[];
 }
 
 /** Returned by login, reset-password and accept-invite. */

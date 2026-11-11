@@ -41,7 +41,7 @@ export function CalendarToolbar({
           <ChevronRight className="size-4" aria-hidden />
         </Button>
         {/* A month's name has a width of its own, so the buttons beside it do not move from month to month. */}
-        <h2 className={cn("mx-1 text-xl font-extrabold tracking-[-0.02em] text-foreground", view === "month" && "sm:min-w-44")}>{title}</h2>
+        <h2 className={cn("mx-1 text-xl font-bold text-foreground", view === "month" && "sm:min-w-44")}>{title}</h2>
         <Button variant="secondary" size="sm" onClick={onToday}>
           Today
         </Button>

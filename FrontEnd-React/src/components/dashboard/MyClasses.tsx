@@ -14,7 +14,7 @@ export function MyClasses() {
   const classes = res.data?.data.items;
   return (
     <section className="space-y-3">
-      <h2 className="text-lg font-bold tracking-tight text-foreground">My classes</h2>
+      <h2 className="text-section-heading">My classes</h2>
       {res.isLoading ? (
         <Skeleton className="h-24 rounded-2xl" />
       ) : !classes || classes.length === 0 ? (

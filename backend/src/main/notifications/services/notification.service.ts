@@ -2,6 +2,8 @@ import { Types } from "mongoose";
 import { pushTo } from "../../../realtime/socket";
 import { ApiError } from "../../../utils/ApiError";
 import { reportError } from "../../../utils/logger";
+import { Tenant } from "../../tenants/models/Tenant";
+import { recordsOfSchool } from "../../tenants/services/schoolSides";
 import { User } from "../../users/models/User";
 import { Notification, type INotification, type NotificationKind } from "../models/Notification";
 
@@ -87,9 +89,13 @@ export class NotificationService {
     const school = new Types.ObjectId(tenantId);
     const needsAdmins = messages.some((m) => m.to === "admins");
     const named = [...new Set(messages.flatMap((m) => (m.to === "admins" ? [] : m.to)))].filter((id) => Types.ObjectId.isValid(id));
+    // A medium run as its own side has no administrator of its own: the school's administrator, who signs in at the school, hears about it.
+    const parent = needsAdmins ? (await Tenant.findById(school).select("parentTenantId").lean())?.parentTenantId : null;
+    const runners = [{ tenantId: school, role: { $in: RUNNER_ROLES } }, ...(parent ? [{ tenantId: parent, role: "school_admin" }] : [])];
     const [admins, open] = await Promise.all([
-      needsAdmins ? User.find({ tenantId: school, role: { $in: RUNNER_ROLES }, isActive: true }).select("_id").lean() : Promise.resolve([]),
-      named.length > 0 ? User.find({ tenantId: school, _id: { $in: named.map((id) => new Types.ObjectId(id)) }, isActive: true }).select("_id").lean() : Promise.resolve([]),
+      needsAdmins ? User.find({ $or: runners, isActive: true }).select("_id").lean() : Promise.resolve([]),
+      // A teacher who also works on this medium may have their login on another one of the school.
+      named.length > 0 ? User.find({ tenantId: { $in: await recordsOfSchool(school) }, _id: { $in: named.map((id) => new Types.ObjectId(id)) }, isActive: true }).select("_id").lean() : Promise.resolve([]),
     ]);
     const adminIds = admins.map((u) => u._id.toString());
     const isOpen = new Set([...adminIds, ...open.map((u) => u._id.toString())]);

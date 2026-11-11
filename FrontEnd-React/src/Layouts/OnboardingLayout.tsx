@@ -24,7 +24,7 @@ function SidePanel() {
 
   return (
     // Stuck to the window: the form on the right scrolls, this panel (photo and all) stays where it is.
-    <aside className="sticky top-0 hidden h-screen w-[22rem] shrink-0 flex-col self-start overflow-hidden bg-navy text-white xl:flex">
+    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col self-start overflow-hidden bg-navy text-white xl:flex">
       <img
         src="/images/hero-campus.jpg"
         alt=""
@@ -34,19 +34,19 @@ function SidePanel() {
       />
       <div aria-hidden className="absolute inset-0 bg-gradient-to-b from-navy/75 via-navy/80 to-navy/95" />
 
-      <div className="relative flex h-full flex-col px-8 py-8">
+      <div className="relative flex h-full flex-col px-6 py-6">
         <BrandMark tone="inverse" />
 
-        <div key={stage} className="rise-in mt-14">
-          <h2 className="font-serif text-[1.75rem] font-bold leading-tight tracking-tight [text-shadow:0_2px_14px_rgb(0_0_0/0.45)]">
+        <div key={stage} className="rise-in mt-10">
+          <h2 className="font-serif text-2xl font-bold leading-tight [text-shadow:0_2px_14px_rgb(0_0_0/0.45)]">
             {copy.lead} <span className="text-sky">{copy.accent}</span>
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-white/75">{copy.text}</p>
         </div>
 
-        <ul className="mt-8 space-y-3">
+        <ul className="mt-6 space-y-2.5">
           {PERKS.map((p) => (
-            <li key={p.title} className="flex items-center gap-3.5 rounded-xl border border-white/15 bg-navy/40 px-4 py-3 backdrop-blur-sm">
+            <li key={p.title} className="flex items-center gap-3 rounded-xl border border-white/15 bg-navy/40 px-3.5 py-2.5 backdrop-blur-sm">
               <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white/15 text-sky">
                 <p.icon className="size-[18px]" aria-hidden />
               </span>
@@ -58,7 +58,7 @@ function SidePanel() {
           ))}
         </ul>
 
-        <div className="mt-auto flex items-start gap-3 rounded-xl border border-white/15 bg-white/10 p-4 backdrop-blur">
+        <div className="mt-auto flex items-start gap-3 rounded-xl border border-white/15 bg-white/10 p-3.5 backdrop-blur">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-sky">
             <Save className="size-[18px]" aria-hidden />
           </span>
@@ -86,38 +86,30 @@ function Frame() {
       <SidePanel />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex h-[4.5rem] shrink-0 items-center justify-between gap-3 border-b border-border bg-surface/90 px-4 backdrop-blur sm:px-8">
-          <div className="flex min-w-0 items-center gap-3">
-            <BrandMark size="sm" className="xl:hidden" tagline={tenant?.name} />
-            <h1 className="hidden text-lg font-semibold text-foreground xl:block">Onboarding</h1>
-          </div>
+      <header className="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between gap-3 bg-navy px-4 text-white lg:px-6">
+        <div className="flex min-w-0 items-center gap-4">
+          <BrandMark size="sm" tone="inverse" className="xl:hidden" />
+          <span aria-hidden className="hidden h-7 w-px bg-white/20 sm:block xl:hidden" />
+          <h1 className="hidden text-base font-semibold sm:block">Onboarding</h1>
+        </div>
 
-          <div className="flex items-center gap-3 sm:gap-4">
-            {tenant && <StatusBadge status={tenant.approvalStatus} className="hidden md:inline-flex" />}
-            <div className="flex items-center gap-2.5 border-l border-border pl-3 sm:pl-4">
-              <span className="flex size-9 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-                {initials(user.name) || "A"}
-              </span>
-              <span className="hidden min-w-0 leading-tight sm:block">
-                <span className="block max-w-40 truncate text-sm font-semibold text-foreground">{user.name}</span>
-                <span className="block max-w-40 truncate text-xs text-foreground-muted">{tenant?.name ?? meta?.label}</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => logout()}
-                aria-label="Sign out"
-                title="Sign out"
-                className="ml-1 rounded-lg p-2 text-foreground-muted transition-colors hover:bg-danger-soft hover:text-danger"
-              >
-                <LogOut className="size-[18px]" aria-hidden />
-              </button>
-            </div>
-          </div>
-        </header>
+        <div className="flex items-center gap-3">
+          {tenant && <StatusBadge status={tenant.approvalStatus} className="hidden md:inline-flex" />}
+          <span aria-hidden className="hidden h-7 w-px bg-white/20 md:block" />
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gold text-xs font-bold text-navy">{initials(user.name) || "A"}</span>
+          <span className="hidden min-w-0 leading-tight sm:block">
+            <span className="block max-w-40 truncate text-sm font-semibold">{user.name}</span>
+            <span className="block max-w-40 truncate text-xs text-white/70">{tenant?.name ?? meta?.label}</span>
+          </span>
+          <button type="button" onClick={() => logout()} aria-label="Sign out" title="Sign out" className="rounded-lg p-2 text-white/70 transition-colors hover:bg-white/10 hover:text-white">
+            <LogOut className="size-[18px]" aria-hidden />
+          </button>
+        </div>
+      </header>
 
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-8 lg:py-8">
-          <Outlet />
-        </main>
+      <main className="w-full flex-1 px-4 py-4 lg:px-6">
+        <Outlet />
+      </main>
       </div>
     </div>
   );

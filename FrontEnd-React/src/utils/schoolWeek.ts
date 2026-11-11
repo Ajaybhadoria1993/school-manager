@@ -80,6 +80,15 @@ export function weekBody(plan: WeekPlan, departmentId: string | null = null): Sc
   return departmentId ? { departmentId, days } : { days };
 }
 
+/**
+ * Pre-Primary's own day (2026-11-10): sent for the school's usual days only, so a day the school keeps different (a short Saturday) and a
+ * holiday follow the school's timing for its classes too. A day not sent is not covered by the department's timing (the server's rule).
+ */
+export function departmentDayBody(school: WeekPlan, setup: DaySetup, departmentId: string): SchoolDayInput {
+  const slots = generateDay(setup).slots;
+  return { departmentId, days: WEEK_DAYS.filter((d) => school.days[d]?.mode === "usual").map((day) => ({ day, slots })) };
+}
+
 export interface WeekProblem {
   /** "usual" for the usual day, a day number for a day of its own, "week" for the week as a whole. */
   where: "usual" | "week" | number;
@@ -87,7 +96,7 @@ export interface WeekProblem {
 }
 
 /** The first thing wrong with a day's numbers: the lunch and the short break first, then what the rows made from them would be refused for. */
-const firstProblem = (setup: DaySetup): string | undefined => setupProblems(setup)[0] ?? slotProblems(generateDay(setup).slots)[0]?.message;
+export const dayProblem = (setup: DaySetup): string | undefined => setupProblems(setup)[0] ?? slotProblems(generateDay(setup).slots)[0]?.message;
 
 /** What the server would refuse, said before anything is sent: no day with school, or a day whose numbers do not make a day. */
 export function weekProblems(plan: WeekPlan): WeekProblem[] {
@@ -95,12 +104,12 @@ export function weekProblems(plan: WeekPlan): WeekProblem[] {
   const modes = WEEK_DAYS.map((d) => plan.days[d]?.mode ?? "off");
   if (modes.every((m) => m === "off")) return [{ where: "week", message: "Keep at least one day with school" }];
   if (modes.includes("usual")) {
-    const first = firstProblem(plan.usual);
+    const first = dayProblem(plan.usual);
     if (first) found.push({ where: "usual", message: first });
   }
   for (const d of WEEK_DAYS) {
     if (plan.days[d]?.mode !== "own") continue;
-    const first = firstProblem(plan.days[d].setup);
+    const first = dayProblem(plan.days[d].setup);
     if (first) found.push({ where: d, message: first });
   }
   return found;

@@ -7,9 +7,10 @@ import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { fakeApi, spreadsheet, type Call, type Handler } from "../../../test/fakeApi";
+import { signInAs, signOut } from "../../../test/session";
 import { STRUCTURE } from "../../../test/schoolClass";
 import { DEV, ENGLISH, MATHS, MEENA } from "../../../test/timetableFixtures";
-import type { Teacher } from "../../../types";
+import type { Teacher, UserRole } from "../../../types";
 import TeacherDirectoryPage from "../TeacherDirectory";
 
 const ASHA: Teacher = {
@@ -24,7 +25,9 @@ const ASHA: Teacher = {
   login: { username: "asha.rao_12", isActive: true },
 };
 
-function openPage(path = "/teachers", extra: Record<string, Handler> = {}) {
+function openPage(path = "/teachers", extra: Record<string, Handler> = {}, who: { role?: UserRole; permissions?: string[] } = {}) {
+  // The school admin unless said: the page asks who is looking (what the school allowed them).
+  signInAs(who.role ?? "school_admin", who.permissions);
   const calls = fakeApi({
     "GET /staff/teachers": () => ({ items: [ASHA, DEV, MEENA] }),
     "GET /staff/teachers/summary": () => ({ teaching: 3, classTeachers: 1, withoutClasses: 1, left: 2 }),
@@ -34,6 +37,7 @@ function openPage(path = "/teachers", extra: Record<string, Handler> = {}) {
   });
   const router = createMemoryRouter(
     [
+      { path: "/teachers/inactive", element: <TeacherDirectoryPage /> },
       { path: "/teachers", element: <TeacherDirectoryPage /> },
       { path: "/teachers/new", element: <p>Add teacher</p> },
       { path: "/teachers/import", element: <p>Bulk upload teachers</p> },
@@ -54,6 +58,7 @@ function openPage(path = "/teachers", extra: Record<string, Handler> = {}) {
 }
 
 afterEach(() => {
+  signOut();
   cleanup();
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
   vi.unstubAllGlobals();
@@ -184,23 +189,25 @@ describe("Teacher (the menu entry on top)", () => {
     expect(router.state.location.pathname).toBe("/teachers/asha/edit");
   });
 
-  it("asks the server for the teaching ones first, and searches by what is typed once the typing stops", async () => {
-    const { calls, user } = openPage();
+  it("loads teaching teachers first and opens the inactive list from its own address", async () => {
+    const { calls, user, router } = openPage();
     await screen.findByRole("table", { name: "Teachers" });
     expect(lastQuery(calls).get("status")).toBe("active");
     await user.type(screen.getByRole("textbox", { name: "Search teachers" }), "asha");
     await waitFor(() => expect(lastQuery(calls).get("search")).toBe("asha"));
     // One request for the word, not one for each letter.
     expect(listCalls(calls).filter((c) => c.query.includes("search=")).length).toBe(1);
+    await router.navigate("/teachers/inactive?q=asha");
+    await waitFor(() => expect(lastQuery(calls).get("status")).toBe("inactive"));
   });
 
-  it("has only the search and four dropdowns (Status, Subject, Class, Designation), each showing its own name (no labels)", async () => {
+  it("has the search and three filters (Subject, Class, Designation), each showing its own name (no labels)", async () => {
     openPage();
     await screen.findByRole("table", { name: "Teachers" });
     const bar = screen.getByRole("search", { name: "Find teachers" });
     expect(within(bar).getByRole("textbox", { name: "Search teachers" })).toBeInTheDocument();
     const dropdowns = within(bar).getAllByRole("button").map((b) => b.textContent?.trim());
-    expect(dropdowns).toEqual(["Teaching", "Subject", "Class", "Designation"]);
+    expect(dropdowns).toEqual(["Subject", "Class", "Designation"]);
     // The other filters are gone (the user asked on 2026-11-03).
     for (const gone of ["Employment", "Gender", "Login", "Class teacher"]) {
       expect(screen.queryByRole("button", { name: new RegExp(`(^|\\s)${gone}$`) })).not.toBeInTheDocument();
@@ -249,18 +256,16 @@ describe("Teacher (the menu entry on top)", () => {
     expect(screen.queryByRole("button", { name: "Clear filters" })).not.toBeInTheDocument();
   });
 
-  it("shows the teachers who have left, or everyone, from the Status dropdown, each row saying which", async () => {
+  it("shows inactive teachers on their sidebar page and still supports older all-teacher links", async () => {
     const GONE: Teacher = { ...DEV, id: "gone", name: "Gone Teacher", isActive: false };
-    const { calls, user } = openPage("/teachers", {
+    const { calls, router } = openPage("/teachers/inactive", {
       "GET /staff/teachers": (_body, query) => ({ items: query.get("status") === "active" ? [ASHA] : query.get("status") === "inactive" ? [GONE] : [ASHA, GONE] }),
     });
     await screen.findByRole("table", { name: "Teachers" });
-    expect(screen.getByRole("button", { name: /(^|\s)Status$/ })).toHaveTextContent("Teaching");
-    await pick(user, "Status", "Have left");
     await waitFor(() => expect(lastQuery(calls).get("status")).toBe("inactive"));
     // (Twice in the page: the Status column, and under the name for a phone, where that column is hidden.)
     await waitFor(() => expect(within(rowsOf(screen.getByRole("table", { name: "Teachers" }))[0]).getAllByText("Left").length).toBeGreaterThan(0));
-    await pick(user, "Status", "All teachers");
+    await router.navigate("/teachers?status=all");
     await waitFor(() => expect(lastQuery(calls).get("status")).toBe("all"));
   });
 
@@ -275,5 +280,45 @@ describe("Teacher (the menu entry on top)", () => {
     openPage("/teachers", { "GET /staff/teachers": () => ({ items: [] }), "GET /staff/teachers/summary": () => ({ teaching: 0, classTeachers: 0, withoutClasses: 0, left: 0 }) });
     expect(await screen.findByText("No teachers yet")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Add teacher" }).every((l) => l.getAttribute("href") === "/teachers/new")).toBe(true);
+  });
+});
+
+describe("the Teacher page for a person the school allowed (Permissions)", () => {
+  const person = (permissions: string[]) => ({ role: "receptionist" as const, permissions });
+  const buttons = () => ["Fields", "Export", "Bulk upload", "Add teacher"].filter((name) => screen.queryByRole("link", { name }) || screen.queryByRole("button", { name }));
+
+  it("a person who may only see the teachers reads the list: no Add teacher, Bulk upload, Fields, Export, and no pencil to change one", async () => {
+    openPage("/teachers", {}, person(["teachers.view"]));
+    await screen.findByText("Asha Rao");
+    expect(buttons()).toEqual([]);
+    expect(screen.queryByRole("link", { name: /^Edit / })).not.toBeInTheDocument();
+  });
+
+  it("each button comes with its own permission", async () => {
+    openPage("/teachers", {}, person(["teachers.view", "teachers.add"]));
+    await screen.findByText("Asha Rao");
+    expect(buttons()).toEqual(["Bulk upload", "Add teacher"]);
+    cleanup();
+
+    openPage("/teachers", {}, person(["teachers.view", "teachers.export"]));
+    await screen.findByText("Asha Rao");
+    expect(buttons()).toEqual(["Export"]);
+    cleanup();
+
+    openPage("/teachers", {}, person(["teachers.view", "teachers.settings"]));
+    await screen.findByText("Asha Rao");
+    expect(buttons()).toEqual(["Fields"]);
+    cleanup();
+
+    openPage("/teachers", {}, person(["teachers.view", "teachers.edit"]));
+    await screen.findByText("Asha Rao");
+    expect(buttons()).toEqual([]);
+    expect(screen.getAllByRole("link", { name: /^Edit / }).length).toBeGreaterThan(0);
+  });
+
+  it("the school admin and the principal have everything", async () => {
+    openPage("/teachers", {}, { role: "principal", permissions: [] });
+    await screen.findByText("Asha Rao");
+    expect(buttons()).toEqual(["Fields", "Export", "Bulk upload", "Add teacher"]);
   });
 });

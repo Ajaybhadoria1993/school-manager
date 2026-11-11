@@ -185,7 +185,7 @@ export function ExamsPanel({ classId, sectionId }: { classId: string; sectionId:
           <section key={exam.id} aria-label={exam.name} className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-card">
             <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border bg-surface-muted/50 px-4 py-3">
               <div className="min-w-0">
-                <h3 className="text-base font-bold tracking-tight text-foreground">{exam.name}</h3>
+                <h3 className="text-section-heading">{exam.name}</h3>
                 <p className="text-sm text-foreground-muted">
                   {exam.typeLabel} · {examDays(exam.startDate, exam.endDate)}
                   {exam.schoolHours && ` · School ${clock12(exam.schoolHours.start)} to ${clock12(exam.schoolHours.end)}`}

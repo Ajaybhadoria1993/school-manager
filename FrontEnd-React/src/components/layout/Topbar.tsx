@@ -1,14 +1,19 @@
 import { useState } from "react";
-import { CalendarDays, ChevronDown, LogOut, Menu } from "lucide-react";
+import { useNavigate } from "react-router";
+import { Building2, CalendarDays, Check, ChevronDown, LogOut, Menu, Moon, Sun } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { useDismiss } from "../../hooks/useDismiss";
+import { useAppTheme } from "../../theme/AppThemeProvider";
 import { cn, initials } from "../../utils/helpers";
 import { ROLE_LABELS } from "./nav-config";
 import { NotificationsBell } from "./NotificationsBell";
+import { MediumSwitcher } from "./MediumSwitcher";
 import { YearSwitcher } from "./YearSwitcher";
 
 function UserMenu() {
   const { user, logout } = useAuth();
+  const { mode, setMode } = useAppTheme();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useDismiss(open, () => setOpen(false));
   if (!user) return null;
@@ -44,7 +49,7 @@ function UserMenu() {
         />
       </button>
       {open && (
-        <div className="pop-in absolute right-0 top-12 z-30 w-64 origin-top-right rounded-2xl border border-border bg-surface p-2 shadow-float">
+        <div role="menu" aria-label="Account options" className="pop-in absolute right-0 top-12 z-30 w-64 origin-top-right rounded-2xl border border-border bg-surface p-2 shadow-float">
           <div className="px-3 py-2.5">
             <p className="truncate text-sm font-bold text-foreground">
               {user.name}
@@ -53,8 +58,54 @@ function UserMenu() {
               {user.email ?? user.username}
             </p>
           </div>
+          {user.role === "school_admin" && (
+            <button
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                navigate("/school");
+              }}
+              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-surface-muted"
+            >
+              <Building2 className="size-4 text-foreground-muted" aria-hidden />
+              <span>School Details</span>
+            </button>
+          )}
+          <div className="my-1 h-px bg-border" />
+          <div className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wider text-foreground-muted">
+            Appearance
+          </div>
+          <div className="grid grid-cols-2 gap-1 px-1">
+            <button
+              role="menuitemradio"
+              aria-checked={mode === "light"}
+              onClick={() => setMode("light")}
+              className={cn(
+                "flex items-center justify-center gap-2 rounded-lg px-2 py-2 text-xs font-semibold transition-colors",
+                mode === "light" ? "bg-primary-soft text-primary-deep" : "text-foreground-muted hover:bg-surface-muted hover:text-foreground",
+              )}
+            >
+              <Sun className="size-3.5" aria-hidden />
+              Light
+              {mode === "light" && <Check className="size-3.5" aria-hidden />}
+            </button>
+            <button
+              role="menuitemradio"
+              aria-checked={mode === "dark"}
+              onClick={() => setMode("dark")}
+              className={cn(
+                "flex items-center justify-center gap-2 rounded-lg px-2 py-2 text-xs font-semibold transition-colors",
+                mode === "dark" ? "bg-primary-soft text-primary-deep" : "text-foreground-muted hover:bg-surface-muted hover:text-foreground",
+              )}
+            >
+              <Moon className="size-3.5" aria-hidden />
+              Dark
+              {mode === "dark" && <Check className="size-3.5" aria-hidden />}
+            </button>
+          </div>
           <div className="my-1 h-px bg-border" />
           <button
+            role="menuitem"
             onClick={() => logout()}
             className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold text-danger transition-colors hover:bg-danger-soft"
           >
@@ -95,16 +146,17 @@ export function Topbar({
           <Menu className="size-5" />
         </button>
         <div className="min-w-0 leading-tight">
-          <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-foreground-muted">
+          <p className="truncate text-caption-subtle font-medium uppercase tracking-wide">
             {context}
           </p>
-          <p className="truncate text-lg font-bold tracking-tight text-foreground">
+          <p className="truncate text-app-title">
             {title}
           </p>
         </div>
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        <MediumSwitcher />
         <YearSwitcher />
         <span className="hidden items-center gap-2 rounded-full bg-primary-soft px-3.5 py-1.5 text-xs font-semibold text-primary-deep md:inline-flex">
           <CalendarDays className="size-3.5" aria-hidden />

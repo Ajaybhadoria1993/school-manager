@@ -8,7 +8,7 @@ export function StudentAvatar({ name, seed, size = "md", className }: { name: st
     <span
       aria-hidden
       className={cn(
-        "flex shrink-0 items-center justify-center font-extrabold tracking-tight",
+        "flex shrink-0 items-center justify-center font-bold",
         size === "lg" ? "size-16 rounded-2xl text-xl" : size === "md" ? "size-12 rounded-2xl text-base" : "size-9 rounded-xl text-xs",
         TONES[avatarTone(seed)].gradient,
         className

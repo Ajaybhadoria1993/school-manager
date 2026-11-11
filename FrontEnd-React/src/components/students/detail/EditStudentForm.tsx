@@ -13,6 +13,8 @@ import { getApiError } from "../../../utils/apiErrors";
 import { formFromStudent, guardianChanges, placementChanges, profileChanges } from "../../../utils/students";
 import type { AcademicStructure, GuardianMatch, SectionItem, SectionLoad, StudentCapacity, StudentDetail } from "../../../types";
 import { ModalError } from "../../ui/AppModal";
+import { Card } from "../../ui/Card";
+import { BoxedControls } from "../../ui/Input";
 import { Button } from "../../ui/Button";
 import { useToast } from "../../ui/toast-context";
 import { AddressFields } from "../form/AddressFields";
@@ -189,7 +191,7 @@ export function EditStudentForm({
 
   return (
     <>
-      <form onSubmit={submit} noValidate className="space-y-6">
+      <form onSubmit={submit} noValidate className="space-y-4 lg:-mx-4 lg:-mt-3">
         <StudentFormHeader
           title="Edit student"
           subtitle={`${student.name} · ${student.admissionNumber}`}
@@ -200,8 +202,9 @@ export function EditStudentForm({
 
         {formError && <ModalError message={formError} />}
 
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-          <div className="min-w-0 space-y-6">
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <BoxedControls>
+          <Card className="min-w-0 space-y-7 p-4 sm:p-5">
             <StudentFields form={form} mode="edit" index={0} />
             <PlacementFields
               form={form}
@@ -217,11 +220,12 @@ export function EditStudentForm({
             <PreviousSchoolFields form={form} index={5} />
             <MoreFields form={form} startOpen={false} index={6} />
             <CustomFields form={form} index={7} />
-          </div>
+          </Card>
+          </BoxedControls>
           <EditSidebar student={student} />
         </div>
 
-        <FormActionBar>
+        <FormActionBar wide>
           <Button type="button" variant="ghost" className="text-foreground-muted hover:text-danger" disabled={!form.dirty || saving} onClick={() => setAsk({ kind: "undo" })}>
             <RotateCcw className="size-4" aria-hidden />
             Undo changes

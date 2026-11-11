@@ -1,5 +1,5 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type {
+import type { TeacherMedium,
   ApiResponse,
   AllotmentView,
   AssignTeacherInput,
@@ -58,7 +58,7 @@ export const unitTag = (unit: UnitRef) => `${unit.classId}:${sectionOf(unit)}`;
 export const timetableApi = createApi({
   reducerPath: "timetableApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Subject", "Teacher", "Schedule", "Allotment", "Overview", "TeacherWeek", "Grid", "TeacherSettings"],
+  tagTypes: ["TeacherMediums", "Subject", "Teacher", "Schedule", "Allotment", "Overview", "TeacherWeek", "Grid", "TeacherSettings"],
   refetchOnMountOrArgChange: 60,
   refetchOnReconnect: true,
   endpoints: (build) => ({
@@ -122,6 +122,15 @@ export const timetableApi = createApi({
     changeTeacherUsername: build.mutation<ApiResponse<Teacher>, { id: string; username: string }>({
       query: ({ id, ...body }) => ({ url: `/staff/teachers/${id}/login`, method: "PATCH", body }),
       invalidatesTags: ["Teacher"],
+    }),
+    // Where a teacher teaches, in a school with more than one medium, and adding them to another with the login they have.
+    getTeacherMediums: build.query<ApiResponse<{ items: TeacherMedium[] }>, string>({
+      query: (id) => `/staff/teachers/${id}/mediums`,
+      providesTags: ["TeacherMediums"],
+    }),
+    addTeacherToMedium: build.mutation<ApiResponse<{ items: TeacherMedium[] }>, { id: string; mediumId: string }>({
+      query: ({ id, mediumId }) => ({ url: `/staff/teachers/${id}/mediums`, method: "POST", body: { mediumId } }),
+      invalidatesTags: ["TeacherMediums"],
     }),
     // What a teacher has been given (their page): class teacher of, and the subjects of classes they teach.
     getTeacherClasses: build.query<ApiResponse<TeacherClasses>, string>({
@@ -354,6 +363,8 @@ export const {
   useGetTeacherQuery,
   useGetMyTeacherQuery,
   useCreateTeacherLoginMutation,
+  useGetTeacherMediumsQuery,
+  useAddTeacherToMediumMutation,
   useResetTeacherPasswordMutation,
   useCheckUsernameQuery,
   useChangeTeacherUsernameMutation,

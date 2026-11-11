@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { RouterProvider, createMemoryRouter } from "react-router";
@@ -62,7 +62,7 @@ afterEach(() => {
 const posts = (calls: Call[], path: string) => calls.filter((c) => c.method === "POST" && c.path === path);
 
 describe("the inactive students", () => {
-  it("lists who is inactive, where they were, who made them inactive, when and why, with the two tabs", async () => {
+  it("lists inactive students and their history without in-page status tabs", async () => {
     school([ASHA, KABIR]);
     openPage();
     expect(await screen.findByRole("heading", { name: "Inactive students", level: 1 })).toBeInTheDocument();
@@ -72,8 +72,7 @@ describe("the inactive students", () => {
     expect(row).toHaveTextContent("Class 5 - A");
     expect(row).toHaveTextContent("25 Oct 2026, 4:00 pm");
     expect(row).toHaveTextContent("by Meena Singh · Left the school");
-    const tabs = screen.getByRole("navigation", { name: "Students by status" });
-    expect(within(tabs).getByRole("link", { name: "Inactive students" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("navigation", { name: "Students by status" })).not.toBeInTheDocument();
     expect(screen.queryByText(/delete|recycle/i)).not.toBeInTheDocument();
   });
 

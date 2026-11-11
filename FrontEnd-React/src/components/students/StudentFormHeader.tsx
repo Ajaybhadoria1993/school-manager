@@ -31,7 +31,7 @@ export function StudentFormHeader({
     <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
       <div className="min-w-0 flex-1 basis-64">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-          <h1 className="text-2xl font-extrabold tracking-[-0.02em] text-foreground sm:text-[1.75rem]">{title}</h1>
+          <h1 className="text-page-heading">{title}</h1>
           {info}
           {subtitle && <p className="text-sm text-foreground-muted">{subtitle}</p>}
         </div>

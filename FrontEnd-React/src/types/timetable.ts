@@ -196,6 +196,8 @@ export interface GridView {
   load: { teacherId: string; perDay: Record<string, number>; week: number }[];
   issues: Issue[];
   stats: { total: number; filled: number; free: number; placed: Record<string, number> };
+  /** The unit's class teacher (in a Pre-Primary class, the mother teacher put on its periods); missing from an older server. */
+  classTeacher?: { id: string; name: string } | null;
 }
 
 export interface AutofillAnswer {

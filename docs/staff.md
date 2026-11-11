@@ -115,7 +115,7 @@ A refused username is `409 USERNAME_TAKEN` with `details[0].path = "login.userna
 ## Not built (ask if wanted)
 
 - The pages a receptionist or the management would use (admissions, visitors, reports): they see the dashboard and the calendar only.
-- A permissions screen (who can open which module) and a staff detail page.
+- A staff detail page. (The permissions screen exists since 2026-11-10: see docs/permissions.md; Add staff does not show the role's permissions yet.)
 - Bulk upload / export of staff, own fields for staff (teachers have both).
 - A second role for the same login: a Principal or Accountant who teaches has no "My classes" (they would need a login that is both: about twenty
   `role === "teacher"` checks to open up); switching *Also a teacher* off after they teach; a change on the Teacher page reaching the Staff record.

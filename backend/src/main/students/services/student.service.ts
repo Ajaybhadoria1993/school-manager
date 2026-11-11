@@ -416,7 +416,8 @@ export class StudentService {
     // A new class brings its own section (none sent: the class must have no sections); otherwise the section may change alone.
     const classId = input.classId ?? enrolment.classId;
     const sectionId = input.classId !== undefined ? input.sectionId : input.sectionId !== undefined ? input.sectionId : enrolment.sectionId;
-    const placement = await resolvePlacement(school, year._id, classId, sectionId);
+    // A student who already sits in Class 11 as a whole (from before streams) may still change their section or roll number.
+    const placement = await resolvePlacement(school, year._id, classId, sectionId, { allowNoStream: classId.toString() === enrolment.classId.toString() });
     const moved = !placement.classId.equals(enrolment.classId) || String(placement.sectionId) !== String(enrolment.sectionId);
     const rollNumber = input.rollNumber !== undefined ? input.rollNumber : moved ? null : (enrolment.rollNumber ?? null);
 

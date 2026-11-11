@@ -85,7 +85,7 @@ export default function TeacherFieldsPage() {
 
       <Card className="space-y-4 p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
+          <h2 className="text-section-heading flex items-center gap-2">
             <ListPlus className="size-5 text-primary" aria-hidden />
             Your own fields
           </h2>

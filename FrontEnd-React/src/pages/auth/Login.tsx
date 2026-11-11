@@ -83,6 +83,7 @@ export default function Login() {
             icon={User}
             id="identifier"
             type="text"
+            lowercase
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}

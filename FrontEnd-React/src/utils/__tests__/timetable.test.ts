@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GridCell, GridView } from "../../types";
-import { buildModel, changeLesson, choiceOf, clearCell, localProblems, matchChoices, missingPeriods, periodsInARow, placeSubject, placedCounts, sameGrid, subjectChoices, teacherOf, teacherTrouble } from "../timetable";
+import { applyMotherTeacher, buildModel, changeLesson, choiceOf, clearCell, dayEnds, isPrePrimaryName, placeAcrossWeek, placeWholeDay, teacherChoices, localProblems, matchChoices, missingPeriods, periodsInARow, placeSubject, placedCounts, sameGrid, subjectChoices, teacherOf, teacherTrouble } from "../timetable";
 
 const day = (n: number, name: string) => ({
   day: n,
@@ -222,5 +222,194 @@ describe("what is wrong with a teacher at a period", () => {
     expect(teacherTrouble(model, "meena", 1, 1)).toBeNull();
     expect(teacherTrouble(model, null, 1, 2)).toBeNull();
     expect(teacherTrouble(model, "nobody", 1, 2)).toBeNull();
+  });
+});
+
+describe("when a class's day ends", () => {
+  it("is the end of the last period that has a lesson, day by day, as the grid is now", () => {
+    const ends = dayEnds(VIEW, [cell(1, 1, "maths"), cell(1, 4, "maths"), cell(2, 2, "sanskrit")]);
+    expect(ends.get(1)).toBe("11:40");
+    expect(ends.get(2)).toBe("09:50");
+  });
+
+  it("is nothing for a day with no lesson, and a lesson in a period the day does not have is not counted", () => {
+    const ends = dayEnds(VIEW, [cell(1, 9, "maths")]);
+    expect(ends.get(1)).toBeNull();
+    expect(ends.get(2)).toBeNull();
+  });
+
+  it("follows a change that is not saved yet (the lessons given, not the stored ones)", () => {
+    expect(dayEnds(VIEW, [cell(1, 5, "maths")]).get(1)).toBe("12:20");
+    expect(dayEnds(VIEW, []).get(1)).toBeNull();
+  });
+});
+
+describe("a subject put in an empty period goes on every day", () => {
+  const free = (id: string, name: string, over: object = {}) => ({ subjectId: id, subjectName: name, subjectCode: null, category: "academic", periodsPerWeek: 0, blockSize: 1, teacherId: null, group: null, ...over });
+  const WEEK_VIEW = {
+    ...VIEW,
+    days: [day(1, "Monday"), day(2, "Tuesday"), day(3, "Wednesday")],
+    allotments: [...VIEW.allotments, free("art", "Art"), free("hindi", "Hindi"), free("games", "Games", { teacherId: "dev" }), free("block", "Lab", { blockSize: 2 })],
+  } as unknown as GridView;
+  const WEEK = buildModel(WEEK_VIEW);
+  const place = (cells: GridCell[], subject: string, d: number, p: number, m = WEEK) => placeAcrossWeek(m, cells, subject, d, p);
+
+  it("fills that period of every day, whichever day it was picked on", () => {
+    const { cells, placed, note } = place([], "art", 2, 1);
+    expect(where(cells)).toEqual(["1.1:art", "2.1:art", "3.1:art"]);
+    expect({ placed, note }).toEqual({ placed: 3, note: null });
+  });
+
+  it("a day that already has a lesson in that period keeps it", () => {
+    expect(where(place([cell(2, 1, "hindi")], "art", 1, 1).cells)).toEqual(["1.1:art", "2.1:hindi", "3.1:art"]);
+  });
+
+  it("changing a period that has a lesson changes only that period", () => {
+    const week = [cell(1, 1, "art"), cell(2, 1, "art"), cell(3, 1, "art")];
+    expect(where(place(week, "hindi", 2, 1).cells)).toEqual(["1.1:art", "2.1:hindi", "3.1:art"]);
+  });
+
+  it("a day its usual teacher does not come stays empty, and says so", () => {
+    const { cells, note } = place([], "maths", 1, 1);
+    expect(where(cells)).toEqual(["1.1:maths", "3.1:maths"]);
+    expect(note).toBe("Mathematics is not on Tuesday: its teacher cannot take that period.");
+  });
+
+  it("the day it was picked on always gets it (that period turns red if the teacher cannot, as before)", () => {
+    const { cells, note } = place([], "maths", 2, 1);
+    expect(where(cells)).toEqual(["1.1:maths", "2.1:maths", "3.1:maths"]);
+    expect(note).toBeNull();
+  });
+
+  it("a day its teacher is busy in another class then stays empty; several such days are named", () => {
+    expect(where(place([], "games", 2, 2).cells)).toEqual(["2.2:games", "3.2:games"]);
+    const busy = buildModel({ ...WEEK_VIEW, busy: [1, 3].map((d) => ({ day: d, period: 2, teacherId: "dev", room: null, where: "Class 6 - A", subjectName: "Computer" })) } as unknown as GridView);
+    expect(place([], "games", 2, 2, busy).note).toBe("Games is not on Monday, Wednesday: its teacher cannot take that period.");
+  });
+
+  it("a day that does not have that period is passed over without a word", () => {
+    const short = { ...day(2, "Tuesday"), slots: day(2, "Tuesday").slots.slice(0, 3) };
+    const m = buildModel({ ...WEEK_VIEW, days: [day(1, "Monday"), short, day(3, "Wednesday")] } as unknown as GridView);
+    const { cells, note } = place([], "art", 1, 5, m);
+    expect(where(cells)).toEqual(["1.5:art", "3.5:art"]);
+    expect(note).toBeNull();
+  });
+
+  it("double periods take their two periods on every day, and a day with only one of them free is left alone", () => {
+    expect(where(place([], "block", 1, 1).cells)).toEqual(["1.1:block", "1.2:block", "2.1:block", "2.2:block", "3.1:block", "3.2:block"]);
+    expect(where(place([cell(2, 2, "hindi")], "block", 1, 1).cells)).toEqual(["1.1:block", "1.2:block", "2.2:hindi", "3.1:block", "3.2:block"]);
+  });
+
+  it("the subjects of a choice go together on every day; a day one of their teachers cannot is left out", () => {
+    const { cells, note } = place([], "sanskrit", 1, 1);
+    expect(where(cells)).toEqual(["1.1:sanskrit+french", "3.1:sanskrit+french"]);
+    expect(note).toBe("Sanskrit is not on Tuesday: its teacher cannot take that period.");
+  });
+
+  it("a subject the class does not have changes nothing", () => {
+    expect(place([], "nothing", 1, 1)).toEqual({ cells: [], placed: 0, note: null });
+  });
+});
+
+describe("the teachers a period can be given", () => {
+  const free = { subjectId: "art", subjectName: "Art", subjectCode: null, category: "activity", periodsPerWeek: 0, blockSize: 1, teacherId: null, group: null };
+  const VIEW2 = { ...VIEW, allotments: [...VIEW.allotments, free] } as unknown as GridView;
+  const m = buildModel(VIEW2);
+  const rows = (subject: string, d: number, p: number, current: string | null = null, mm = m) => teacherChoices(mm, subject, d, p, current);
+  const brief = (list: ReturnType<typeof teacherChoices>) => list.map((c) => [c.value, c.label, c.disabled]);
+
+  it("a subject with no usual teacher: No teacher first (picked), then the teachers still teaching here", () => {
+    const list = rows("art", 1, 1);
+    expect(brief(list)).toEqual([[null, "No teacher", false], ["meena", "Meena Singh", false], ["dev", "Dev Patel", false]]);
+    expect(list[0].selected).toBe(true);
+  });
+
+  it("a subject with a usual teacher: they come first and are not repeated", () => {
+    const list = rows("maths", 1, 1);
+    expect(brief(list)).toEqual([[null, "Meena Singh", false], ["dev", "Dev Patel", false]]);
+    expect(list[0].note).toBe("Usual teacher");
+  });
+
+  it("the teachers of the subject come before the others", () => {
+    const mm = buildModel({ ...VIEW2, teachers: VIEW2.teachers.map((t) => (t.id === "dev" ? { ...t, subjectIds: ["art"] } : t)) } as unknown as GridView);
+    expect(rows("art", 1, 1, null, mm).map((c) => c.value)).toEqual([null, "dev", "meena"]);
+  });
+
+  it("one who cannot take the period is shown with why and cannot be picked", () => {
+    const off = rows("art", 2, 1).find((c) => c.value === "meena")!;
+    expect(off).toMatchObject({ disabled: true, bad: true, note: "Meena Singh does not come on Tuesday" });
+    expect(rows("art", 1, 2).find((c) => c.value === "dev")).toMatchObject({ disabled: true, bad: true, note: "Dev Patel is teaching Class 6 - A (Computer) then" });
+  });
+
+  it("the usual teacher, and the one the period has now, stay selectable even when they cannot (the red edge says so)", () => {
+    expect(rows("maths", 2, 1)[0]).toMatchObject({ value: null, disabled: false, bad: true, note: "Meena Singh does not come on Tuesday" });
+    expect(rows("art", 1, 2, "dev").find((c) => c.value === "dev")).toMatchObject({ selected: true, disabled: false, bad: true });
+  });
+
+  it("naming the usual teacher on the lesson is the same as following them", () => {
+    expect(rows("maths", 1, 1, "meena")[0].selected).toBe(true);
+  });
+
+  it("nothing when the school has no teacher", () => {
+    expect(rows("art", 1, 1, null, buildModel({ ...VIEW2, teachers: [] } as unknown as GridView))).toEqual([]);
+  });
+});
+
+describe("Pre-Primary (2026-11-10): the mother teacher and a whole day of one subject", () => {
+  const free = (id: string, name: string, over: object = {}) => ({ subjectId: id, subjectName: name, subjectCode: null, category: "academic", periodsPerWeek: 0, blockSize: 1, teacherId: null, group: null, ...over });
+  const PP_VIEW = {
+    ...VIEW,
+    days: [day(1, "Monday"), day(2, "Tuesday"), day(3, "Wednesday")],
+    allotments: [...VIEW.allotments, free("art", "Art"), free("rhymes", "Rhymes")],
+  } as unknown as GridView;
+  const PP = buildModel(PP_VIEW);
+  const who = (cells: GridCell[]) => cells.map((c) => `${c.day}.${c.period}:${c.lessons.map((l) => `${l.subjectId}/${l.teacherId ?? "-"}`).join("+")}`);
+
+  it("knows a Pre-Primary department by its name, however it is written", () => {
+    for (const name of ["Pre-Primary", "pre primary", "PrePrimary", "  Pre-primary ", "PRE PRIMARY"]) expect(isPrePrimaryName(name), name).toBe(true);
+    for (const name of ["Primary", "Middle", "Pre-Nursery", ""]) expect(isPrePrimaryName(name), name).toBe(false);
+  });
+
+  it("a subject put in with a mother teacher has her on every day it goes on; a day she does not come stays empty", () => {
+    const { cells, note } = placeAcrossWeek(PP, [], "art", 1, 1, "meena");
+    expect(who(cells)).toEqual(["1.1:art/meena", "3.1:art/meena"]);
+    expect(note).toBe("Art is not on Tuesday: its teacher cannot take that period.");
+  });
+
+  it("a subject with its own usual teacher keeps them, mother teacher or not", () => {
+    expect(who(placeAcrossWeek(PP, [], "maths", 1, 1, "dev").cells)).toEqual(["1.1:maths/-", "3.1:maths/-"]);
+  });
+
+  it("a whole day: the subject goes in every period of that day, in place of what was there; the other days are left as they are", () => {
+    const before = [cell(1, 2, "maths"), cell(2, 1, "maths")];
+    const { cells, placed } = placeWholeDay(PP, before, "rhymes", 1, "meena");
+    expect(who(cells)).toEqual(["1.1:rhymes/meena", "1.2:rhymes/meena", "1.3:rhymes/meena", "1.4:rhymes/meena", "1.5:rhymes/meena", "2.1:maths/-"]);
+    expect(placed).toBe(5);
+  });
+
+  it("a whole day without a mother teacher leaves the teacher to the subject; a choice puts all its subjects; an unknown subject changes nothing", () => {
+    expect(who(placeWholeDay(PP, [], "art", 3, null).cells)[0]).toBe("3.1:art/-");
+    expect(who(placeWholeDay(PP, [], "sanskrit", 3, null).cells)[0]).toBe("3.1:sanskrit/-+french/-");
+    expect(placeWholeDay(PP, [cell(1, 1, "maths")], "nothing", 1, "meena")).toEqual({ cells: [cell(1, 1, "maths")], placed: 0, note: null });
+  });
+
+  it("choosing a mother teacher puts her on the periods with no teacher, and in place of the one chosen before; another teacher on a period stays", () => {
+    const cells: GridCell[] = [
+      cell(1, 1, "art"),
+      { day: 1, period: 2, lessons: [{ subjectId: "art", teacherId: "dev", room: null }] },
+      { day: 1, period: 3, lessons: [{ subjectId: "rhymes", teacherId: "anil", room: "Hall" }] },
+      cell(1, 4, "maths"),
+    ];
+    expect(who(applyMotherTeacher(PP, cells, "meena", "dev"))).toEqual(["1.1:art/meena", "1.2:art/meena", "1.3:rhymes/anil", "1.4:maths/-"]);
+    // No mother teacher any more: the periods that had her have no teacher.
+    expect(who(applyMotherTeacher(PP, cells, null, "dev"))).toEqual(["1.1:art/-", "1.2:art/-", "1.3:rhymes/anil", "1.4:maths/-"]);
+    // The room stays with its lesson.
+    expect(applyMotherTeacher(PP, cells, "meena", null)[2].lessons[0].room).toBe("Hall");
+  });
+
+  it("the mother teacher is named in the box of a period, right after the first row", () => {
+    const list = teacherChoices(PP, "art", 1, 1, null, "dev");
+    expect(list.map((c) => c.value)).toEqual([null, "dev", "meena"]);
+    expect(list[1].note).toBe("Mother teacher");
   });
 });

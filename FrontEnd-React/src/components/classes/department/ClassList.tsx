@@ -29,7 +29,7 @@ function Row({ item, structure, selected, onSelect }: { item: ClassItem; structu
         {selected && <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1 rounded-r-full", t.line)} />}
         <span
           aria-hidden
-          className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl text-sm font-extrabold tracking-tight transition-transform duration-200 group-hover:scale-105", t.gradient)}
+          className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold transition-transform duration-200 group-hover:scale-105", t.gradient)}
         >
           {classMark(item.name)}
         </span>

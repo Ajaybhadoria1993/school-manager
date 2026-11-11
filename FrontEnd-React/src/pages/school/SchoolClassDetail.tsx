@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import { Link, useLocation, useParams, useSearchParams } from "react-router";
+import { cameFrom } from "../../components/layout/nav-config";
 import { ArrowLeft, ArrowRight, CalendarDays, Download, FolderTree, MousePointerClick, NotebookPen, Search, SearchX, UserPlus, UserRound, UsersRound } from "lucide-react";
 import { STUDENT_PAGE_SIZES } from "../../constants/students";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
@@ -41,6 +42,7 @@ export default function SchoolClassDetailPage() {
   const readOnly = useReadOnlyYear();
   const { classId = "" } = useParams();
   const [params, setParams] = useSearchParams();
+  const here = useLocation();
   const structureRes = useGetStructureQuery();
   const overviewRes = useGetClassOverviewQuery({ classId });
   const structure = structureRes.data?.data;
@@ -196,7 +198,7 @@ export default function SchoolClassDetailPage() {
               Export
             </Link>
             {!readOnly && (
-              <Link to={admitLink({ classId, sectionId: section?.id })} className={plainLink}>
+              <Link to={admitLink({ classId, sectionId: section?.id })} state={cameFrom(`${here.pathname}${here.search}`, overview.name)} className={plainLink}>
                 <UserPlus className="size-4" aria-hidden />
                 Add student
               </Link>
@@ -210,7 +212,7 @@ export default function SchoolClassDetailPage() {
       {!showStudents ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border bg-surface px-6 py-10 text-center">
           <MousePointerClick className="size-6 text-foreground-muted" aria-hidden />
-          <h2 className="text-base font-bold text-foreground">Which section&apos;s students?</h2>
+          <h2 className="text-section-heading">Which section&apos;s students?</h2>
           <p className="max-w-md text-sm text-foreground-muted">
             {overview.name} has {plural(overview.sections.length, "section")}. Pick one above to see its students, or All sections to see the whole class.
           </p>
@@ -218,7 +220,7 @@ export default function SchoolClassDetailPage() {
       ) : (
         <section aria-label={`Students of ${where}`} className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-bold tracking-tight text-foreground">
+            <h2 className="text-section-heading">
               Students of {where}
               {list && <span className="ml-2 text-sm font-semibold text-foreground-muted">{list.total}</span>}
             </h2>
@@ -278,7 +280,7 @@ export default function SchoolClassDetailPage() {
                 title={`No students in ${where} yet`}
                 actions={
                   readOnly ? undefined : (
-                    <Link to={admitLink({ classId, sectionId: section?.id })} className={plainLink}>
+                    <Link to={admitLink({ classId, sectionId: section?.id })} state={cameFrom(`${here.pathname}${here.search}`, overview.name)} className={plainLink}>
                       <UserPlus className="size-4" aria-hidden />
                       Add a student
                     </Link>

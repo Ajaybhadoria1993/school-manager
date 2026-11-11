@@ -1,17 +1,18 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router";
-import { ChevronDown, ChevronsLeft, ChevronsRight, LogOut, X } from "lucide-react";
-import { cn, initials } from "../../utils/helpers";
+import { ChevronDown, ChevronsLeft, ChevronsRight, X } from "lucide-react";
+import { cn } from "../../utils/helpers";
 import { useAuth } from "../../hooks/useAuth";
 import { useSidebarCollapsed } from "../../hooks/useSidebarCollapsed";
 import { BrandMark } from "../brand/BrandMark";
-import { FOLDING_GROUPS, NAV_ITEMS, ROLE_LABELS, activeNavItem, groupLabel, type NavItem } from "./nav-config";
+import { FOLDING_GROUPS, NAV_ITEMS, SUBMENUS, activeNavItem, groupLabel, navVisible, pathForMenu, type NavItem } from "./nav-config";
 import { usePending } from "../../hooks/usePending";
 
 /**
- * The navy menu. On a laptop it can fold down to icons (remembered on this device); on a phone it slides in as a drawer.
+ * The light menu. On a laptop it can fold down to icons (remembered on this device); on a phone it slides in as a drawer.
  * Items are grouped under small headings, and planned modules carry a "Soon" tag. A group listed in FOLDING_GROUPS
- * ("Manage school") is one row that opens its pages when clicked, and is already open on one of its pages.
+ * ("Manage school") is one row that opens its pages when clicked, and is already open on one of its pages. Pages with a `submenu` are
+ * nested under a row of their own that opens the same way: Timetable inside Manage school, Attendance at the first level.
  */
 export function Sidebar({
   mobileOpen,
@@ -20,13 +21,13 @@ export function Sidebar({
   mobileOpen: boolean;
   onClose: () => void;
 }) {
-  const { pathname } = useLocation();
-  const { user, tenant, logout } = useAuth();
+  const location = useLocation();
+  const { user, tenant } = useAuth();
   const { pending } = usePending();
   const [folded, setFolded] = useSidebarCollapsed();
 
-  const items = user ? NAV_ITEMS.filter((item) => item.roles.includes(user.role)) : [];
-  const current = activeNavItem(pathname, items);
+  const items = user ? NAV_ITEMS.filter((item) => navVisible(item, user)) : [];
+  const current = activeNavItem(pathForMenu(location), items);
 
   // What the person opened or closed by hand; until then a folding group is open exactly when one of its pages is showing.
   const [chosen, setChosen] = useState<Record<string, boolean>>({});
@@ -34,7 +35,7 @@ export function Sidebar({
   const [seenHref, setSeenHref] = useState(current?.href);
   if (seenHref !== current?.href) {
     setSeenHref(current?.href);
-    if (current && FOLDING_GROUPS[current.group]) setChosen((c) => ({ ...c, [current.group]: true }));
+    if (current) setChosen((c) => ({ ...c, ...(FOLDING_GROUPS[current.group] ? { [current.group]: true } : {}), ...(current.submenu ? { [`sub:${current.submenu}`]: true } : {}) }));
   }
 
   if (!user) return null;
@@ -49,6 +50,18 @@ export function Sidebar({
     else groups.push({ name, items: [item] });
   }
 
+  /** The rows of a group in order: a page, or a submenu row with the pages that sit next to each other under it. */
+  const entriesOf = (groupItems: NavItem[]) => {
+    const entries: ({ link: NavItem } | { sub: string; items: NavItem[] })[] = [];
+    for (const item of groupItems) {
+      const last = entries[entries.length - 1];
+      if (!item.submenu) entries.push({ link: item });
+      else if (last && "sub" in last && last.sub === item.submenu) last.items.push(item);
+      else entries.push({ sub: item.submenu, items: [item] });
+    }
+    return entries;
+  };
+
   /** One page of the menu. `nested` is a page inside a folding group (smaller, indented). */
   const renderLink = (item: NavItem, compact: boolean, nested = false) => {
     const active = item === current;
@@ -60,36 +73,30 @@ export function Sidebar({
           to={item.href}
           onClick={onClose}
           aria-current={active ? "page" : undefined}
-          title={compact ? item.label : undefined}
+          title={compact ? (item.title ?? item.label) : undefined}
           className={cn(
-            "group relative flex items-center gap-3 rounded-xl text-sm font-semibold transition-all duration-200",
+            "group relative flex items-center gap-3 rounded-xl text-[15px] font-medium transition-all duration-200",
             nested && !compact ? "py-1.5 pl-2.5 pr-2" : "py-1.5",
             compact ? "justify-center px-1.5" : !nested && "px-2",
             active
-              ? "bg-white/10 text-white"
-              : "text-slate-300 hover:bg-white/5 hover:text-white",
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-foreground-muted hover:bg-surface-muted hover:text-foreground",
           )}
         >
-          {active && !nested && (
-            <span
-              aria-hidden
-              className="absolute inset-y-2 -left-3 w-1 rounded-r-full bg-sky"
-            />
-          )}
           <span
             className={cn(
               "relative flex shrink-0 items-center justify-center rounded-lg transition-all duration-200",
               nested && !compact ? "size-7" : "size-8",
               active
-                ? "bg-primary text-white shadow-[0_6px_14px_-4px_rgb(37_99_235/0.8)]"
-                : "bg-white/5 text-slate-400 group-hover:scale-110 group-hover:bg-white/10 group-hover:text-white",
+                ? "bg-white/15 text-white"
+                : "bg-surface-muted text-foreground-muted group-hover:scale-110 group-hover:bg-border group-hover:text-foreground",
             )}
           >
             <Icon className={nested && !compact ? "size-[15px]" : "size-[17px]"} aria-hidden />
             {compact && count > 0 && (
               <span
                 aria-hidden
-                className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-warning ring-2 ring-navy"
+                className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full bg-warning ring-2 ring-surface"
               />
             )}
           </span>
@@ -107,13 +114,67 @@ export function Sidebar({
                 </span>
               )}
               {item.comingSoon && (
-                <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">
+                <span className="rounded-full bg-surface-muted px-1.5 py-0.5 text-[10px] font-semibold text-foreground-muted">
                   Soon
                 </span>
               )}
             </>
           )}
         </Link>
+      </li>
+    );
+  };
+
+  /**
+   * A row that opens its own pages, one step further in: Attendance (Student, Teacher, Staff) at the first level of the menu (`topLevel`, as
+   * big as the entries around it), Timetable (School timings, Class timetables) inside Manage school. In the folded (icons only) menu there
+   * is no room for a row of its own: its pages are shown as plain icons.
+   */
+  const renderSub = (name: string, subItems: NavItem[], compact: boolean, topLevel = false) => {
+    if (compact) return subItems.map((item) => renderLink(item, true, !topLevel));
+    const Icon = SUBMENUS[name].icon;
+    const hasCurrent = subItems.includes(current as NavItem);
+    const key = `sub:${name}`;
+    const open = chosen[key] ?? hasCurrent;
+    const panelId = `fold-sub-${name.toLowerCase().replace(/\W+/g, "-")}`;
+    return (
+      <li key={key}>
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={panelId}
+          onClick={() => setChosen((c) => ({ ...c, [key]: !open }))}
+          className={cn(
+            "group flex w-full items-center gap-3 rounded-xl py-1.5 text-[15px] font-medium transition-all duration-200",
+            topLevel ? "px-2" : "pl-2.5 pr-2",
+            hasCurrent || open ? "bg-surface-muted text-foreground" : "text-foreground-muted hover:bg-surface-muted hover:text-foreground",
+          )}
+        >
+          <span
+            className={cn(
+              "flex shrink-0 items-center justify-center rounded-lg transition-all duration-200",
+              topLevel ? "size-8" : "size-7",
+              hasCurrent
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-surface-muted text-foreground-muted group-hover:scale-110 group-hover:bg-border group-hover:text-foreground",
+            )}
+          >
+            <Icon className={topLevel ? "size-[17px]" : "size-[15px]"} aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-left">{name}</span>
+          <ChevronDown className={cn(topLevel ? "size-4" : "size-3.5", "text-foreground-muted transition-transform duration-300", open && "rotate-180")} aria-hidden />
+        </button>
+        <div
+          id={panelId}
+          className={cn(
+            "grid transition-[grid-template-rows,opacity,visibility] duration-300 ease-out",
+            open ? "visible grid-rows-[1fr] opacity-100" : "invisible grid-rows-[0fr] opacity-0",
+          )}
+        >
+          <ul inert={!open} className="ml-[1.1rem] mt-0.5 min-h-0 space-y-0.5 overflow-hidden border-l border-border pl-3">
+            {subItems.map((item) => renderLink(item, false, true))}
+          </ul>
+        </div>
       </li>
     );
   };
@@ -133,19 +194,19 @@ export function Sidebar({
           title={compact ? name : undefined}
           onClick={() => setChosen((c) => ({ ...c, [name]: !open }))}
           className={cn(
-            "group flex w-full items-center gap-3 rounded-xl py-1.5 text-sm font-semibold transition-all duration-200",
+            "group flex w-full items-center gap-3 rounded-xl py-1.5 text-[15px] font-medium transition-all duration-200",
             compact ? "justify-center px-1.5" : "px-2",
             hasCurrent || open
-              ? "bg-white/5 text-white"
-              : "text-slate-300 hover:bg-white/5 hover:text-white",
+              ? "bg-surface-muted text-foreground"
+              : "text-foreground-muted hover:bg-surface-muted hover:text-foreground",
           )}
         >
           <span
             className={cn(
               "flex size-8 shrink-0 items-center justify-center rounded-lg transition-all duration-200",
               hasCurrent
-                ? "bg-primary text-white shadow-[0_6px_14px_-4px_rgb(37_99_235/0.8)]"
-                : "bg-white/5 text-slate-400 group-hover:scale-110 group-hover:bg-white/10 group-hover:text-white",
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "bg-surface-muted text-foreground-muted group-hover:scale-110 group-hover:bg-border group-hover:text-foreground",
             )}
           >
             <Icon className="size-[17px]" aria-hidden />
@@ -154,7 +215,7 @@ export function Sidebar({
             <>
               <span className="min-w-0 flex-1 truncate text-left">{name}</span>
               <ChevronDown
-                className={cn("size-4 text-slate-400 transition-transform duration-300", open && "rotate-180")}
+                className={cn("size-4 text-foreground-muted transition-transform duration-300", open && "rotate-180")}
                 aria-hidden
               />
             </>
@@ -174,10 +235,10 @@ export function Sidebar({
             inert={!open}
             className={cn(
               "min-h-0 space-y-0.5 overflow-hidden",
-              compact ? "mt-0.5" : "ml-[1.15rem] mt-0.5 border-l border-white/10 pl-3",
+              compact ? "mt-0.5" : "ml-[1.15rem] mt-0.5 border-l border-border pl-3",
             )}
           >
-            {groupItems.map((item) => renderLink(item, compact, true))}
+            {entriesOf(groupItems).map((entry) => ("link" in entry ? renderLink(entry.link, compact, true) : renderSub(entry.sub, entry.items, compact)))}
           </ul>
         </div>
       </>
@@ -189,15 +250,15 @@ export function Sidebar({
     <div className="flex h-full flex-col">
       <div
         className={cn(
-          "flex items-center gap-2 pb-4 pt-5",
-          compact ? "justify-center px-2" : "justify-between px-5",
+          "flex items-center gap-1 pb-4 pt-5",
+          compact ? "justify-between px-1" : "justify-between px-4",
         )}
       >
         <BrandMark
           href="/dashboard"
           onClick={onClose}
           size="sm"
-          tone="inverse"
+          tone="default"
           compact={compact}
           tagline={
             isSuperAdmin ? "Platform console" : (tenant?.name ?? "School")
@@ -206,9 +267,18 @@ export function Sidebar({
         <button
           onClick={onClose}
           aria-label="Close menu"
-          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-white lg:hidden"
+          className="rounded-lg p-1.5 text-foreground-muted transition-colors hover:bg-surface-muted hover:text-foreground lg:hidden"
         >
           <X className="size-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setFolded(!folded)}
+          aria-label={folded ? "Expand menu" : "Fold menu"}
+          title={folded ? "Expand menu" : "Fold menu"}
+          className="hidden size-8 shrink-0 items-center justify-center rounded-lg text-foreground-muted transition-colors hover:bg-surface-muted hover:text-foreground lg:inline-flex"
+        >
+          {folded ? <ChevronsRight className="size-4" aria-hidden /> : <ChevronsLeft className="size-4" aria-hidden />}
         </button>
       </div>
 
@@ -225,13 +295,13 @@ export function Sidebar({
               ) : (
                 <>
                   {compact ? (
-                    gi > 0 && <div aria-hidden className="mx-3 mb-2 h-px bg-white/10" />
+                    gi > 0 && <div aria-hidden className="mx-3 mb-2 h-px bg-border" />
                   ) : (
-                    <p className="px-3 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    <p className="px-3 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-foreground-muted">
                       {group.name}
                     </p>
                   )}
-                  <ul className="space-y-0.5">{group.items.map((item) => renderLink(item, compact))}</ul>
+                  <ul className="space-y-0.5">{entriesOf(group.items).map((entry) => ("link" in entry ? renderLink(entry.link, compact) : renderSub(entry.sub, entry.items, compact, true)))}</ul>
                 </>
               )}
             </div>
@@ -239,54 +309,6 @@ export function Sidebar({
         })}
       </nav>
 
-      <div className="border-t border-white/10 p-3">
-        <div
-          className={cn(
-            "flex items-center gap-3 rounded-xl bg-white/5 py-2.5",
-            compact ? "justify-center px-1" : "px-3",
-          )}
-          title={compact ? user.name : undefined}
-        >
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
-            {initials(user.name)}
-          </div>
-          {!compact && (
-            <>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-white">
-                  {user.name}
-                </p>
-                <p className="truncate text-xs text-slate-400">
-                  {user.roleLabel ?? ROLE_LABELS[user.role]}
-                </p>
-              </div>
-              <button
-                onClick={() => logout()}
-                aria-label="Sign out"
-                title="Sign out"
-                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
-              >
-                <LogOut className="size-4" />
-              </button>
-            </>
-          )}
-        </div>
-        <button
-          onClick={() => setFolded(!folded)}
-          aria-label={folded ? "Expand menu" : "Fold menu"}
-          title={folded ? "Expand menu" : "Fold menu"}
-          className="mt-2 hidden w-full items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold text-slate-400 transition-colors hover:bg-white/5 hover:text-white lg:flex"
-        >
-          {folded ? (
-            <ChevronsRight className="size-4" aria-hidden />
-          ) : (
-            <>
-              <ChevronsLeft className="size-4" aria-hidden />
-              Fold menu
-            </>
-          )}
-        </button>
-      </div>
     </div>
   );
 
@@ -294,7 +316,7 @@ export function Sidebar({
     <>
       <aside
         className={cn(
-          "hidden shrink-0 bg-navy transition-[width] duration-300 ease-out lg:sticky lg:top-0 lg:block lg:h-screen",
+          "hidden h-full shrink-0 border-r border-border bg-surface transition-[width] duration-300 ease-out lg:sticky lg:top-0 lg:block",
           folded ? "w-[76px]" : "w-[260px]",
         )}
       >
@@ -304,10 +326,10 @@ export function Sidebar({
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div
-            className="fade-in absolute inset-0 bg-navy/60 backdrop-blur-sm"
+            className="fade-in absolute inset-0 bg-slate-900/35 backdrop-blur-sm"
             onClick={onClose}
           />
-          <aside className="slide-in-left absolute left-0 top-0 h-full w-72 bg-navy shadow-xl">
+          <aside className="slide-in-left absolute left-0 top-0 h-full w-72 border-r border-border bg-surface shadow-xl">
             {render(false)}
           </aside>
         </div>

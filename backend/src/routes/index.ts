@@ -12,6 +12,10 @@ import classroomRoutes from "../main/classroom/routes/v1/classroom.routes";
 import notificationRoutes from "../main/notifications/routes/v1/notifications.routes";
 import examRoutes from "../main/exams/routes/v1/exams.routes";
 import attendanceRoutes from "../main/attendance/routes/v1/attendance.routes";
+import dashboardRoutes from "../main/dashboard/routes/v1/dashboard.routes";
+import transportRoutes from "../main/transport/routes/v1/transport.routes";
+import permissionRoutes from "../main/permissions/routes/v1/permissions.routes";
+import publicRoutes from "../main/tenants/routes/v1/public.routes";
 
 // One line per feature module. Add new modules here as they are built.
 const router = Router();
@@ -34,5 +38,13 @@ router.use("/notifications", notificationRoutes);
 router.use("/exams", examRoutes);
 // Attendance for the people who run the school (students of any class, teachers) and a teacher's own mark.
 router.use("/attendance", attendanceRoutes);
+// The school home page's numbers (students, teachers, today's attendance, what needs attention) in one answer.
+router.use("/dashboard", dashboardRoutes);
+// Transport: the school's vehicles, drivers and attendants, and routes with their stops.
+router.use("/transport", transportRoutes);
+// What each kind of person of the school (Receptionist, Teacher, Parent...) may do: the Permissions page.
+router.use("/permissions", permissionRoutes);
+// What needs no sign-in: a school's logo, for an image tag.
+router.use("/public", publicRoutes);
 
 export default router;

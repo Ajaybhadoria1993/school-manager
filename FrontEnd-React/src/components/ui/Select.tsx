@@ -2,7 +2,7 @@ import { ListBox, Select as HeroSelect, type Key } from "@heroui/react";
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../../utils/helpers";
-import { controlClass, controlHeight, iconClass, useControlStyle } from "./Input";
+import { ControlIcon, controlClass, controlHeight, iconPadding, useControlStyle } from "./Input";
 
 export interface SelectOption {
   value: string;
@@ -133,15 +133,16 @@ function SelectField({
           "cursor-pointer items-center justify-between py-0 pl-3.5 pr-10 text-left shadow-none ring-offset-0",
           // HeroUI marks the root data-invalid; Input's invalid look (red border + soft ring) is repeated here.
           "group-data-[invalid=true]:border-danger group-data-[invalid=true]:ring-2 group-data-[invalid=true]:ring-danger/30",
+          style === "boxed" && "group-data-[invalid=true]:border-danger! aria-expanded:border-primary!",
           // While the list is open the focus is inside it, so the box shows its focus look from aria-expanded.
           style === "filled"
             ? "aria-expanded:border-primary aria-expanded:bg-surface aria-expanded:ring-4 aria-expanded:ring-primary/15"
             : "aria-expanded:border-primary aria-expanded:ring-4 aria-expanded:ring-primary/15",
-          Icon && "pl-11",
+          Icon && iconPadding(style),
           triggerClassName
         )}
       >
-        {Icon && <Icon className={iconClass} aria-hidden />}
+        {Icon && <ControlIcon icon={Icon} />}
         {/* One line always (a narrow box shows "Girls (Fem…" rather than growing a second line). */}
         <HeroSelect.Value className="min-w-0 truncate">
           {({ defaultChildren, isPlaceholder, state }) =>

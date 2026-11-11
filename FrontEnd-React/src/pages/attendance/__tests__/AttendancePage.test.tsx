@@ -13,7 +13,10 @@ import { STRUCTURE } from "../../../test/schoolClass";
 import type { StudentRange, StudentRangeDay, StudentRangeRow, TeacherSheet, TeacherRecord } from "../../../types";
 import { monthBounds, shiftMonth } from "../../../utils/calendar";
 import { todayInIndia } from "../../../utils/students";
-import AttendancePage from "../AttendancePage";
+import AttendanceRedirect from "../AttendanceRedirect";
+import StaffAttendancePage from "../StaffAttendance";
+import StudentAttendancePage from "../StudentAttendance";
+import TeacherAttendancePage from "../TeacherAttendance";
 
 /**
  * Attendance (the menu entry under Teacher, 2026-11-06): three tabs, Student, Teacher and Staff (coming). Student: every class by name
@@ -91,7 +94,7 @@ const TEACHERS: TeacherSheet = {
   summary: { teachers: 2, present: 1, late: 1, absent: 1 },
 };
 
-function open(path = "/attendance", extra: Record<string, Handler> = {}) {
+function open(path = "/attendance/students", extra: Record<string, Handler> = {}) {
   store.dispatch(
     sessionStarted({
       user: { id: "u1", name: "Asha Admin", email: "a@school.example", username: null, role: "school_admin", tenantId: "t1", emailVerifiedAt: null },
@@ -105,7 +108,15 @@ function open(path = "/attendance", extra: Record<string, Handler> = {}) {
     "GET /attendance/students/today": () => ({ date: today, working: true, holiday: null, pending: [] }),
     ...extra,
   });
-  const router = createMemoryRouter([{ path: "/attendance", element: <AttendancePage /> }], { initialEntries: [path] });
+  const router = createMemoryRouter(
+    [
+      { path: "/attendance", element: <AttendanceRedirect /> },
+      { path: "/attendance/students", element: <StudentAttendancePage /> },
+      { path: "/attendance/teachers", element: <TeacherAttendancePage /> },
+      { path: "/attendance/staff", element: <StaffAttendancePage /> },
+    ],
+    { initialEntries: [path] }
+  );
   render(
     <Provider store={store}>
       <ToastProvider>
@@ -128,26 +139,46 @@ const lastQuery = (calls: Call[], path: string) => new URLSearchParams(reads(cal
 const rowOf = (name: string) => screen.getByRole("row", { name: new RegExp(name) });
 const puts = (calls: Call[]) => calls.filter((c) => c.method === "PUT");
 
-describe("the page and its three tabs", () => {
-  it("is called Attendance, with the tabs Student (open to start with), Teacher and Staff", async () => {
-    open();
-    expect(await screen.findByRole("heading", { name: "Attendance", level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Student", selected: true })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Teacher" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Staff" })).toBeInTheDocument();
+describe("three pages, no tabs (2026-11-10: they were the three tabs of one page)", () => {
+  it("Student has its own title and no tabs, and asks only for the students' attendance", async () => {
+    const { calls } = open();
+    expect(await screen.findByRole("heading", { name: "Student attendance", level: 1 })).toBeInTheDocument();
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
+    await screen.findByRole("radiogroup", { name: "Class" });
+    expect(reads(calls, "/attendance/teachers")).toHaveLength(0);
   });
 
-  it("Staff is coming: it says so and asks the server nothing", async () => {
-    const { calls } = open("/attendance?tab=staff");
-    expect(await screen.findByText("Staff attendance is coming soon")).toBeInTheDocument();
+  it("Teacher has its own title and no tabs, and asks only for the teachers' attendance", async () => {
+    const { calls } = open("/attendance/teachers");
+    expect(await screen.findByRole("heading", { name: "Teacher attendance", level: 1 })).toBeInTheDocument();
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    await waitFor(() => expect(reads(calls, "/attendance/teachers")).toHaveLength(1));
+    expect(reads(calls, "/attendance/students")).toHaveLength(0);
+  });
+
+  it("Staff is coming: it has its own title, says so and asks the server nothing", async () => {
+    const { calls } = open("/attendance/staff");
+    expect(await screen.findByRole("heading", { name: "Staff attendance", level: 1 })).toBeInTheDocument();
+    expect(screen.getByText("Staff attendance is coming soon")).toBeInTheDocument();
     expect(calls.filter((c) => c.path.startsWith("/attendance"))).toHaveLength(0);
   });
 
-  it("the tab is kept in the address, so Back and a link open the same one", async () => {
-    const { router, user } = open();
-    await user.click(await screen.findByRole("tab", { name: "Teacher" }));
-    expect(router.state.location.search).toContain("tab=teacher");
-    expect(await screen.findByRole("tab", { name: "Teacher", selected: true })).toBeInTheDocument();
+  it("the old addresses (a bookmark, a link in a notification) lead to the right page, with their filters", async () => {
+    const at = async (from: string, path: string, search = "") => {
+      const { router } = open(from);
+      await waitFor(() => expect(router.state.location.pathname).toBe(path));
+      expect(router.state.location.search).toBe(search);
+      cleanup();
+    };
+    await at("/attendance", "/attendance/students");
+    await at("/attendance?tab=student", "/attendance/students");
+    await at("/attendance?tab=teacher", "/attendance/teachers");
+    await at("/attendance?tab=staff", "/attendance/staff");
+    await at("/attendance?tab=nonsense", "/attendance/students");
+    await at("/attendance?class=c5&section=c5-A", "/attendance/students", "?class=c5&section=c5-A");
+    await at("/attendance?tab=teacher&from=2026-05-01&to=2026-05-31", "/attendance/teachers", "?from=2026-05-01&to=2026-05-31");
   });
 });
 
@@ -191,7 +222,7 @@ describe("Student: the classes and their children", () => {
   });
 
   it("opens on what the address says: a class, a section and a range from May to November", async () => {
-    const { calls } = open("/attendance?class=c5&section=c5-A&from=2026-05-01&to=2026-11-30");
+    const { calls } = open("/attendance/students?class=c5&section=c5-A&from=2026-05-01&to=2026-11-30");
     await screen.findByRole("table", { name: "Attendance of Class 5" });
     expect(Object.fromEntries(lastQuery(calls, "/attendance/students"))).toEqual({ classId: "c5", sectionId: "c5-A", from: "2026-05-01", to: "2026-11-30" });
     expect(within(screen.getByRole("radiogroup", { name: "Class" })).getByRole("radio", { name: "Class 5" })).toBeChecked();
@@ -246,7 +277,7 @@ describe("Student: the list", () => {
   });
 
   it("each child's counts and percentage, and the section when the whole class is read together", async () => {
-    open("/attendance?class=c5");
+    open("/attendance/students?class=c5");
     await screen.findByRole("table", { name: "Attendance of Class 5" });
     const kabir = rowOf("Kabir Rao");
     expect(within(kabir).getByRole("cell", { name: "Present: 1" })).toBeInTheDocument();
@@ -269,7 +300,7 @@ describe("Student: the list", () => {
   });
 
   it("a child who was present on every day taken says so", async () => {
-    const { user } = open("/attendance", {
+    const { user } = open("/attendance/students", {
       "GET /attendance/students": () => ({ ...RANGE, students: [kid("s1", "Asha Verma", 1, [{ date: "2026-11-03", status: "present", reason: null }])] }),
     });
     await screen.findByRole("table", { name: "Attendance of Class 5" });
@@ -279,7 +310,7 @@ describe("Student: the list", () => {
 
   it("a long range (May to November) has no column for each day, only the counts; the days are in the child's window", async () => {
     const days: StudentRangeDay[] = Array.from({ length: 40 }, (_, i) => day(`2026-10-${String((i % 28) + 1).padStart(2, "0")}`, 1));
-    const { user } = open("/attendance?from=2026-05-01&to=2026-11-30", { "GET /attendance/students": () => ({ ...RANGE, from: "2026-05-01", to: "2026-11-30", days }) });
+    const { user } = open("/attendance/students?from=2026-05-01&to=2026-11-30", { "GET /attendance/students": () => ({ ...RANGE, from: "2026-05-01", to: "2026-11-30", days }) });
     const table = await screen.findByRole("table", { name: "Attendance of Class 5" });
     expect(within(table).queryAllByRole("columnheader", { name: /Nov|Oct/ })).toHaveLength(0);
     expect(within(table).getByRole("columnheader", { name: "Absent" })).toBeInTheDocument();
@@ -288,18 +319,18 @@ describe("Student: the list", () => {
   });
 
   it("a class with no children says so", async () => {
-    open("/attendance", { "GET /attendance/students": () => ({ ...RANGE, students: [], summary: { students: 0, present: 0, absent: 0, late: 0, leave: 0, percent: null } }) });
+    open("/attendance/students", { "GET /attendance/students": () => ({ ...RANGE, students: [], summary: { students: 0, present: 0, absent: 0, late: 0, leave: 0, percent: null } }) });
     expect(await screen.findByText("No student in this class yet")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
   it("says what the server said when it cannot read the class", async () => {
-    open("/attendance", { "GET /attendance/students": () => new Response(JSON.stringify({ success: false, message: "Class not found" }), { status: 404, headers: { "Content-Type": "application/json" } }) });
+    open("/attendance/students", { "GET /attendance/students": () => new Response(JSON.stringify({ success: false, message: "Class not found" }), { status: 404, headers: { "Content-Type": "application/json" } }) });
     expect(await screen.findByText("Class not found")).toBeInTheDocument();
   });
 
   it("a school with no classes says so and asks for no attendance", async () => {
-    const { calls } = open("/attendance", { "GET /academics/structure": () => ({ ...STRUCTURE, classes: [] }) });
+    const { calls } = open("/attendance/students", { "GET /academics/structure": () => ({ ...STRUCTURE, classes: [] }) });
     expect(await screen.findByText("No class yet")).toBeInTheDocument();
     expect(reads(calls, "/attendance/students")).toHaveLength(0);
   });
@@ -307,7 +338,7 @@ describe("Student: the list", () => {
 
 describe("Teacher: who came, and when", () => {
   it("asks for this month and lists every teacher with a column for each day and their counts", async () => {
-    const { calls } = open("/attendance?tab=teacher");
+    const { calls } = open("/attendance/teachers");
     const table = await screen.findByRole("table", { name: "Attendance of the teachers" });
     expect(Object.fromEntries(lastQuery(calls, "/attendance/teachers"))).toEqual({ from: THIS_MONTH.from, to: THIS_MONTH.to });
     expect(reads(calls, "/attendance/teachers")).toHaveLength(1);
@@ -324,7 +355,7 @@ describe("Teacher: who came, and when", () => {
   it("four numbers: the teachers, and how many came, were late and were absent", async () => {
     // A person who wants less motion: the numbers are shown at once instead of counting up.
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("reduce"), media: query, addEventListener: () => {}, removeEventListener: () => {} }));
-    open("/attendance?tab=teacher");
+    open("/attendance/teachers");
     const tiles = await screen.findByRole("region", { name: "About the teachers' attendance" });
     await waitFor(() => {
       expect(tiles).toHaveTextContent(/Teachers\s*2/);
@@ -336,7 +367,7 @@ describe("Teacher: who came, and when", () => {
 
   it("Today shows the day: each teacher's status, the time they came and how late, and when school starts", async () => {
     const one = { ...TEACHERS, days: [TEACHERS.days[0]], teachers: TEACHERS.teachers.map((t) => ({ ...t, records: [t.records[0]] })) };
-    const { calls, user } = open("/attendance?tab=teacher", { "GET /attendance/teachers": (_b, q) => (q.get("from") === q.get("to") ? one : TEACHERS) });
+    const { calls, user } = open("/attendance/teachers", { "GET /attendance/teachers": (_b, q) => (q.get("from") === q.get("to") ? one : TEACHERS) });
     await screen.findByRole("table", { name: "Attendance of the teachers" });
     await user.click(screen.getByRole("button", { name: "Today" }));
     await waitFor(() => expect(lastQuery(calls, "/attendance/teachers").get("from")).toBe(today));
@@ -353,7 +384,7 @@ describe("Teacher: who came, and when", () => {
   });
 
   it("a teacher's name opens their days with the time of each mark and the log: when, what, by whom", async () => {
-    const { user } = open("/attendance?tab=teacher");
+    const { user } = open("/attendance/teachers");
     await screen.findByRole("table", { name: "Attendance of the teachers" });
     await user.click(within(rowOf("Dev Patel")).getByRole("button", { name: "Dev Patel" }));
     const dialog = await screen.findByRole("dialog", { name: "Dev Patel" });
@@ -369,26 +400,26 @@ describe("Teacher: who came, and when", () => {
   });
 
   it("says what the server said when it cannot read the sheet", async () => {
-    open("/attendance?tab=teacher", { "GET /attendance/teachers": () => new Response(JSON.stringify({ success: false, message: "Choose a year or less" }), { status: 400, headers: { "Content-Type": "application/json" } }) });
+    open("/attendance/teachers", { "GET /attendance/teachers": () => new Response(JSON.stringify({ success: false, message: "Choose a year or less" }), { status: 400, headers: { "Content-Type": "application/json" } }) });
     expect(await screen.findByText("Choose a year or less")).toBeInTheDocument();
   });
 
   it("a school with no teacher says so", async () => {
-    open("/attendance?tab=teacher", { "GET /attendance/teachers": () => ({ ...TEACHERS, teachers: [], summary: { teachers: 0, present: 0, late: 0, absent: 0 } }) });
+    open("/attendance/teachers", { "GET /attendance/teachers": () => ({ ...TEACHERS, teachers: [], summary: { teachers: 0, present: 0, late: 0, absent: 0 } }) });
     expect(await screen.findByText("No teacher yet")).toBeInTheDocument();
   });
 });
 
 describe("the school sees who is below 75% (2026-11-06)", () => {
   it("a child under 75% has the percentage marked (red, with its reason in the title); a child above does not", async () => {
-    open("/attendance?class=c5");
+    open("/attendance/students?class=c5");
     await screen.findByRole("table", { name: "Attendance of Class 5" });
     expect(within(rowOf("Kabir Rao")).getByRole("cell", { name: "Percentage" })).toHaveAttribute("title", "Below 75%");
     expect(within(rowOf("Asha Verma")).getByRole("cell", { name: "Percentage" })).not.toHaveAttribute("title");
   });
 
   it("a teacher under 75% too", async () => {
-    open("/attendance?tab=teacher");
+    open("/attendance/teachers");
     await screen.findByRole("table", { name: "Attendance of the teachers" });
     expect(within(rowOf("Dev Patel")).getByRole("cell", { name: "Percentage" })).toHaveAttribute("title", "Below 75%");
     expect(within(rowOf("Meena Singh")).getByRole("cell", { name: "Percentage" })).not.toHaveAttribute("title");
@@ -398,20 +429,20 @@ describe("the school sees who is below 75% (2026-11-06)", () => {
 describe("the classes that have not taken today's attendance (2026-11-06)", () => {
   const PENDING = { date: today, working: true, holiday: null, pending: [{ classId: "c5", sectionId: "c5-A", label: "Class 5 - A" }, { classId: "c1", sectionId: null, label: "Class 1" }] };
 
-  it("a warning names them, one request for it, only on the Student tab", async () => {
-    const { calls } = open("/attendance", { "GET /attendance/students/today": () => PENDING });
+  it("a warning names them, one request for it, only on the Student page", async () => {
+    const { calls } = open("/attendance/students", { "GET /attendance/students/today": () => PENDING });
     const warning = await screen.findByRole("region", { name: "Attendance not taken today" });
     expect(within(warning).getAllByRole("button").map((b) => b.textContent)).toEqual(["Class 5 - A", "Class 1"]);
     expect(reads(calls, "/attendance/students/today")).toHaveLength(1);
     cleanup();
     for (const slice of allApiSlices) store.dispatch(slice.util.resetApiState());
-    const second = open("/attendance?tab=teacher", { "GET /attendance/students/today": () => PENDING });
+    const second = open("/attendance/teachers", { "GET /attendance/students/today": () => PENDING });
     await screen.findByRole("table", { name: "Attendance of the teachers" });
     expect(reads(second.calls, "/attendance/students/today")).toHaveLength(0);
   });
 
   it("a click on a class opens it, for today", async () => {
-    const { calls, user } = open("/attendance", { "GET /attendance/students/today": () => PENDING });
+    const { calls, user } = open("/attendance/students", { "GET /attendance/students/today": () => PENDING });
     await user.click(await within(await screen.findByRole("region", { name: "Attendance not taken today" })).findByRole("button", { name: "Class 5 - A" }));
     await waitFor(() => expect(Object.fromEntries(lastQuery(calls, "/attendance/students"))).toEqual({ classId: "c5", sectionId: "c5-A", from: today, to: today }));
     expect(within(screen.getByRole("radiogroup", { name: "Class" })).getByRole("radio", { name: "Class 5" })).toBeChecked();
@@ -419,7 +450,7 @@ describe("the classes that have not taken today's attendance (2026-11-06)", () =
   });
 
   it("a class with no sections opens as the class", async () => {
-    const { calls, user } = open("/attendance?class=c5", { "GET /attendance/students/today": () => PENDING });
+    const { calls, user } = open("/attendance/students?class=c5", { "GET /attendance/students/today": () => PENDING });
     await user.click(await within(await screen.findByRole("region", { name: "Attendance not taken today" })).findByRole("button", { name: "Class 1" }));
     await waitFor(() => expect(lastQuery(calls, "/attendance/students").get("classId")).toBe("c1"));
     expect(lastQuery(calls, "/attendance/students").get("sectionId")).toBe("all");
@@ -431,7 +462,7 @@ describe("the classes that have not taken today's attendance (2026-11-06)", () =
     expect(screen.queryByRole("region", { name: "Attendance not taken today" })).not.toBeInTheDocument();
     cleanup();
     for (const slice of allApiSlices) store.dispatch(slice.util.resetApiState());
-    open("/attendance", { "GET /attendance/students/today": () => new Response(JSON.stringify({ success: false, message: "Boom" }), { status: 500, headers: { "Content-Type": "application/json" } }) });
+    open("/attendance/students", { "GET /attendance/students/today": () => new Response(JSON.stringify({ success: false, message: "Boom" }), { status: 500, headers: { "Content-Type": "application/json" } }) });
     await screen.findByRole("table", { name: "Attendance of Class 5" });
     expect(screen.queryByRole("region", { name: "Attendance not taken today" })).not.toBeInTheDocument();
   });
@@ -441,7 +472,7 @@ describe("the school marks a teacher's day (2026-11-06)", () => {
   const SAVED = { ...rec("2026-11-03", "present", "08:20", 0), source: "school" as const, note: "Phone was dead", log: [{ time: "10:00", at: "2026-11-05T04:30:00.000Z", action: "marked_by_school" as const, by: { name: "Asha Admin", role: "school_admin" }, note: "Phone was dead" }] };
 
   async function openChange(day = "3 Nov", extra: Record<string, Handler> = {}) {
-    const ctx = open("/attendance?tab=teacher", extra);
+    const ctx = open("/attendance/teachers", extra);
     await screen.findByRole("table", { name: "Attendance of the teachers" });
     await ctx.user.click(within(rowOf("Dev Patel")).getByRole("button", { name: "Dev Patel" }));
     const dialog = await screen.findByRole("dialog", { name: "Dev Patel" });
@@ -522,7 +553,7 @@ describe("the school marks a teacher's day (2026-11-06)", () => {
 
   it("a day of a teacher who has no login can be marked too (it is the only way they are counted)", async () => {
     const noLogin = { ...TEACHERS, teachers: [{ ...TEACHERS.teachers[0], records: [rec("2026-11-02", "no_login"), rec("2026-11-03", "no_login")], tally: { present: 0, late: 0, absent: 0, leave: 0, days: 0, percent: null } }] };
-    const { user } = open("/attendance?tab=teacher", { "GET /attendance/teachers": () => noLogin });
+    const { user } = open("/attendance/teachers", { "GET /attendance/teachers": () => noLogin });
     await screen.findByRole("table", { name: "Attendance of the teachers" });
     await user.click(within(rowOf("Dev Patel")).getByRole("button", { name: "Dev Patel" }));
     const dialog = await screen.findByRole("dialog", { name: "Dev Patel" });
@@ -541,20 +572,20 @@ describe("a year that is over is open (the school admin looks at the past)", () 
 
   it("starts on the last month of that year (this month would be empty), and does not ask who has not taken today's attendance", async () => {
     store.dispatch(yearViewChanged("y26"));
-    const { calls } = open("/attendance", YEARS);
+    const { calls } = open("/attendance/students", YEARS);
     await waitFor(() => expect(Object.fromEntries(lastQuery(calls, "/attendance/students"))).toMatchObject({ from: "2026-03-01", to: "2026-03-31" }));
     expect(reads(calls, "/attendance/students/today")).toHaveLength(0);
   });
 
-  it("the Teacher tab starts on the same month", async () => {
+  it("the Teacher page starts on the same month", async () => {
     store.dispatch(yearViewChanged("y26"));
-    const { calls } = open("/attendance?tab=teacher", YEARS);
+    const { calls } = open("/attendance/teachers", YEARS);
     await waitFor(() => expect(Object.fromEntries(lastQuery(calls, "/attendance/teachers"))).toMatchObject({ from: "2026-03-01", to: "2026-03-31" }));
   });
 
   it("a range the school picked is kept, whatever year is open", async () => {
     store.dispatch(yearViewChanged("y26"));
-    const { calls } = open("/attendance?from=2026-11-01&to=2026-11-30", YEARS);
+    const { calls } = open("/attendance/students?from=2026-11-01&to=2026-11-30", YEARS);
     await waitFor(() => expect(Object.fromEntries(lastQuery(calls, "/attendance/students"))).toMatchObject({ from: "2026-11-01", to: "2026-11-30" }));
   });
 });

@@ -8,6 +8,7 @@ import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import type { StudentDetail } from "../../../types";
 import { fakeApi, type Handler } from "../../../test/fakeApi";
+import { signInAs, signOut } from "../../../test/session";
 import { STRUCTURE } from "../../../test/fixtures";
 import StudentDetailPage from "../StudentDetail";
 
@@ -77,6 +78,7 @@ const MOVES: StudentDetail["moves"] = [
 ];
 
 function openPage(extra: Record<string, Handler> = {}) {
+  signInAs("school_admin");
   const calls = fakeApi({ "GET /students/s1": () => ASHA, "GET /academics/structure": () => STRUCTURE, ...extra });
   const router = createMemoryRouter(
     [
@@ -103,6 +105,7 @@ const pickIn = async (user: ReturnType<typeof userEvent.setup>, id: string, opti
 afterEach(() => {
   cleanup();
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
+  signOut();
   vi.unstubAllGlobals();
 });
 

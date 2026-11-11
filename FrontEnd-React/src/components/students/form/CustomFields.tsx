@@ -1,7 +1,7 @@
 import { Sparkles } from "lucide-react";
 import type { StudentForm } from "../../../hooks/useStudentForm";
 import { CustomBox, CustomTick } from "./FieldBox";
-import { FormCard } from "./FormCard";
+import { FormSection } from "./FormSection";
 import { FORM_GRID } from "./formGrid";
 
 /**
@@ -15,7 +15,7 @@ export function CustomFields({ form, index = 0 }: { form: StudentForm; index?: n
   const ticks = fields.filter((f) => f.type === "yesNo");
   const boxes = fields.filter((f) => f.type !== "yesNo");
   return (
-    <FormCard index={index} icon={Sparkles} tone="success" title="Your school's own details" description="The fields your school added on the Export page.">
+    <FormSection index={index} icon={Sparkles} title="Your school's own details">
       {boxes.length > 0 && (
         <div className={FORM_GRID}>
           {boxes.map((f) => (
@@ -30,6 +30,6 @@ export function CustomFields({ form, index = 0 }: { form: StudentForm; index?: n
           ))}
         </div>
       )}
-    </FormCard>
+    </FormSection>
   );
 }

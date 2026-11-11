@@ -4,7 +4,7 @@ import { STATES } from "../../../constants/schoolOptions";
 import { BLOOD_GROUPS, CATEGORIES, GENDERS } from "../../../constants/students";
 import { DISABILITIES, RELIGIONS, type CustomFieldDef } from "../../../constants/studentFields";
 import { cn } from "../../../utils/helpers";
-import { IMPORT_FIELDS, fieldDef, maskDayInput, type CellInput, type ImportField, type RowProblem } from "../../../utils/studentImport";
+import { IMPORT_FIELDS, fieldDef, maskDayInput, streamNames, type CellInput, type ImportField, type RowProblem } from "../../../utils/studentImport";
 import type { AcademicStructure } from "../../../types";
 import { SearchSelect } from "../../ui/SearchSelect";
 
@@ -17,6 +17,7 @@ function Suggestions({ structure, custom }: { structure: AcademicStructure; cust
   const lists: [string, readonly string[]][] = [
     ["gender", GENDERS],
     ["class", structure.classes.map((c) => c.name)],
+    ["stream", streamNames(structure.classes)],
     ["section", sections],
     ["state", STATES],
     ["bloodGroup", BLOOD_GROUPS],
@@ -49,6 +50,8 @@ export interface GridRow {
   warnings: string[];
   /** The student of this row is already in the school: said in Status in place of Ready (the row is not uploaded). */
   already?: { label: string; detail: string };
+  /** The class and section a student goes to when the file gives no section ("Class 5 - A"): said in Status. */
+  placed?: string;
 }
 
 /** A column's detail as the table shows it: its name, the list it suggests, what an empty box says. */
@@ -211,10 +214,10 @@ export function PreviewGrid({
       <table className="min-w-full border-separate border-spacing-0 text-sm" aria-label="Your file">
         <thead>
           <tr>
-            <th scope="col" className="sticky left-0 top-0 z-30 w-20 border-b border-r border-border bg-background px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wider text-foreground-muted">
+            <th scope="col" className="sticky left-0 top-0 z-30 w-20 border-b border-r border-border bg-background px-3 py-2.5 text-left text-[13.5px] font-semibold text-foreground">
               Row
             </th>
-            <th scope="col" className="sticky top-0 z-20 min-w-44 border-b border-r border-border bg-background px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wider text-foreground-muted">
+            <th scope="col" className="sticky top-0 z-20 min-w-44 border-b border-r border-border bg-background px-3 py-2.5 text-left text-[13.5px] font-semibold text-foreground">
               Status
             </th>
             {headers.map((title, column) => {
@@ -327,6 +330,7 @@ export function PreviewGrid({
                       ))}
                     </ul>
                   )}
+                  {r.placed && !r.already && <p className="mt-0.5 text-[11px] text-foreground-muted">Goes to {r.placed}</p>}
                   {r.warnings.map((w, i) => (
                     <p key={i} className="mt-1 flex items-start gap-1.5 text-[11px] text-warning">
                       <Info className="mt-px size-3 shrink-0" aria-hidden />

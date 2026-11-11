@@ -39,9 +39,14 @@ const YEAR_FREE_MODELS: Record<string, string> = {
   TeacherSettings: "the school's own fields for its teachers (a PAN number, a blood group...) are its way of keeping people's records: they do not change with the session",
   Teacher: "the same person every year; what they teach in a year is an Allotment and the periods they take are in that year's timetable",
   StaffMember: "a person who works for the school without teaching (receptionist, management...) is the same person every year; their login and role last across sessions",
+  RolePermission: "what each kind of person of the school may do (the Permissions page) is the school's own rule and lasts across sessions",
+  Vehicle: "a vehicle of the school (its plate, its papers) is the same every year",
+  CrewMember: "a driver or an attendant is the same person every year; the routes they run are the school's own list",
+  TransportRoute: "a route with its stops is the school's own list and lasts across sessions",
   Subject: "the school's list of subjects (Mathematics, Art) lasts across years; which class studies it in a year is an Allotment",
   CalendarEvent: "a holiday or event is a date (or a few), and the date itself says which session it falls in; it is read by date",
   HiddenHoliday: "a standard holiday this school took off; the key carries the day, so it is read by date, whatever the session",
+  SchoolLogo: "the school's logo is the same every year",
   Notification: "a line in one person's bell, kept 90 days whatever the session; the record it is about keeps its own year",
 };
 

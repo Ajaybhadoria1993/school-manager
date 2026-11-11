@@ -64,7 +64,7 @@ export function SectionCard({
       )}
     >
       <div className="flex items-end gap-3">
-        <span aria-hidden className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl text-sm font-extrabold tracking-tight", TONES[tone].gradient)}>
+        <span aria-hidden className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold", TONES[tone].gradient)}>
           {classMark(section.name)}
         </span>
         <label className="block min-w-0 flex-1">

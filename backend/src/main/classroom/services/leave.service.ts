@@ -8,7 +8,7 @@ import { Notify } from "../../notifications/services/events";
 import { User } from "../../users/models/User";
 import { LeaveRequest, type ILeaveRequest, type LeaveStatus } from "../models/LeaveRequest";
 import type { ApplyLeaveInput, DecideLeaveInput, LeaveQuery } from "../schemas/classroom.schemas";
-import { classTeacherUnits, RUNNER_ROLES, sameUnit, teacherOfUser } from "./access";
+import { classTeacherUnits, sameUnit, teacherOfUser, worksOnAllClasses } from "./access";
 import { fromDay, toDay } from "./calendar.service";
 
 export interface LeaveDto {
@@ -118,7 +118,7 @@ export class LeaveService {
     const school = new Types.ObjectId(tenantId);
     const filter: Record<string, unknown> = { tenantId: school };
     if (query.status === "pending") filter.status = "pending";
-    if (!RUNNER_ROLES.includes(caller.role)) {
+    if (!worksOnAllClasses(caller.role)) {
       const teacher = await teacherOfUser(tenantId, caller.userId);
       const units = teacher ? await classTeacherUnits(tenantId, teacher._id) : [];
       if (units.length === 0) return { items: [] };
@@ -133,7 +133,7 @@ export class LeaveService {
     const current = await LeaveRequest.findOne({ _id: id, tenantId: school }).lean();
     if (!current) throw NOT_FOUND();
     const user = await User.findById(caller.userId).select("name role").lean();
-    if (!RUNNER_ROLES.includes(caller.role)) {
+    if (!worksOnAllClasses(caller.role)) {
       const teacher = await teacherOfUser(tenantId, caller.userId);
       const units = teacher ? await classTeacherUnits(tenantId, teacher._id) : [];
       if (!units.some((u) => sameUnit(u, current))) throw ApiError.forbidden("Only the class teacher of this class or the school can answer this leave.", "NOT_CLASS_TEACHER");

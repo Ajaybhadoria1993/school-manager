@@ -18,7 +18,7 @@ export function SectionHeading({
   return (
     <div className={cn(center ? "mx-auto max-w-2xl text-center" : "max-w-2xl", className)}>
       <p className="text-xs font-bold uppercase tracking-wider text-primary">{eyebrow}</p>
-      <h2 className="mt-2 font-serif text-3xl font-bold leading-snug tracking-tight text-foreground">{title}</h2>
+      <h2 className="mt-2 font-serif text-3xl font-bold leading-snug text-foreground">{title}</h2>
       <div aria-hidden className={cn("mb-4 mt-3 h-1 w-16 rounded-full bg-primary", center && "mx-auto")} />
       {description && <p className="text-sm leading-relaxed text-foreground-muted sm:text-base">{description}</p>}
     </div>

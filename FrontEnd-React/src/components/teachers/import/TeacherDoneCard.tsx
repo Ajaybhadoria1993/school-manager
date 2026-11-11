@@ -44,7 +44,7 @@ export function TeacherDoneCard({
       <span aria-hidden className={cn("relative mx-auto flex size-14 items-center justify-center rounded-2xl", added > 0 ? TONES.success.gradient : TONES.warning.gradient)}>
         {added > 0 ? <PartyPopper className="size-7" /> : <TriangleAlert className="size-7" />}
       </span>
-      <h2 className="relative mt-4 text-xl font-extrabold tracking-tight text-foreground">{added > 0 ? `${added} teacher${added === 1 ? "" : "s"} added` : "No teacher was added"}</h2>
+      <h2 className="text-section-heading relative mt-4">{added > 0 ? `${added} teacher${added === 1 ? "" : "s"} added` : "No teacher was added"}</h2>
       <div className="relative mx-auto mt-2 max-w-xl space-y-1 text-sm text-foreground-muted">
         {already > 0 && (
           <p>
@@ -100,7 +100,7 @@ export function TeacherLogins({ added, onDownload }: { added: AddedTeacher[]; on
     <Card className="fade-in space-y-4 p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
+          <h2 className="text-section-heading flex items-center gap-2">
             <KeyRound className="size-5 text-primary" aria-hidden />
             Login details
           </h2>

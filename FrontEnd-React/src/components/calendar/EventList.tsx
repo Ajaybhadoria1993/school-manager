@@ -47,7 +47,7 @@ export function EventList({
     // Beside the calendar it is as tall as the calendar and scrolls inside; under it (a narrow screen) it has a height of its own.
     <Card role="region" aria-label="Holidays and events" className="flex max-h-[34rem] flex-col overflow-hidden xl:absolute xl:inset-0 xl:max-h-none">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-5 py-4">
-        <h3 className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
+        <h3 className="text-section-heading flex items-center gap-2">
           <CalendarRange className="size-4.5 text-primary" aria-hidden />
           Holidays &amp; events
         </h3>

@@ -3,7 +3,7 @@ import type { useUsernameCheck } from "../../../hooks/useUsernameCheck";
 import { generatePassword } from "../../../utils/teachers";
 import { PasswordBox } from "../../teachers/PasswordBox";
 import { UsernameState } from "../../teachers/UsernameState";
-import { Card } from "../../ui/Card";
+import { FormSection } from "./FormSection";
 import { Field } from "../../ui/Field";
 import { Input } from "../../ui/Input";
 
@@ -40,11 +40,9 @@ export function ParentLoginCard({
   const who = parentName.trim() || "the primary parent";
   const taken = !problems.username && check.state === "taken";
   return (
-    <Card role="region" aria-label="Parent login" className="space-y-4 p-5">
-      <h3 className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
-        <KeyRound className="size-5 text-primary" aria-hidden />
-        Parent login
-      </h3>
+    <div role="region" aria-label="Parent login">
+      <FormSection icon={KeyRound} title="Parent login">
+      <div className="space-y-4">
       {existing ? (
         <p className="text-sm text-foreground">
           {who} already signs in as <span className="font-mono font-semibold">{existing}</span>. This child joins that login.
@@ -84,6 +82,8 @@ export function ParentLoginCard({
           )}
         </>
       )}
-    </Card>
+      </div>
+      </FormSection>
+    </div>
   );
 }

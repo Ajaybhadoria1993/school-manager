@@ -75,7 +75,7 @@ export function WaitingView({
             </span>
           </div>
 
-          <h1 className="mt-7 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Waiting for approval</h1>
+          <h1 className="mt-7 text-2xl font-semibold text-foreground sm:text-3xl">Waiting for approval</h1>
           <p className="mx-auto mt-3 max-w-md text-sm text-foreground-muted sm:text-base">
             Your school&apos;s details are with our team. Your dashboard opens as soon as they are approved.
           </p>

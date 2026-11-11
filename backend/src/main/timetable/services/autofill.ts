@@ -163,7 +163,9 @@ export function autofill(input: AutofillInput): AutofillResult {
         if (run.some((span) => filled.has(keyOf(day, span.period)))) continue;
         if (piece.subjects.some((s) => run.some((span) => !teacherFree(s, day, span)))) continue;
 
-        let score = 2 * lessonsOnDay(day) + rng() * 3;
+        // A class's day ends after its last lesson, so lessons are packed from the first period: a period that leaves a gap before it
+        // costs more than any other choice here, and of the rest the earlier one wins.
+        let score = 2 * lessonsOnDay(day) + rng() * 3 + 10 * Math.max(0, i - lessonsOnDay(day)) + 0.5 * i;
         for (const subject of piece.subjects) {
           const runs = runsOn(subject.subjectId, day);
           score += 100 * runs + (runs >= MAX_SAME_SUBJECT_PER_DAY ? 1000 : 0);

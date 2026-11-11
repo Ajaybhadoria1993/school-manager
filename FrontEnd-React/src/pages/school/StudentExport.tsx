@@ -20,7 +20,7 @@ import { Skeleton } from "../../components/ui/Skeleton";
 import { useToast } from "../../components/ui/toast-context";
 
 /**
- * Manage school > Students > Export (`/school/students/export`, with the list's `?q=&class=&section=`): the Excel's columns. A column
+ * Students > Export (`/school/students/export`, with the list's `?q=&class=&section=`): the Excel's columns. A column
  * is in the file or not (the form is not changed: Add student is arranged in Manage fields); Mandatory is the same setting as on the
  * form, so a mandatory detail's column cannot be taken out; ↑ ↓ or a drag set its place in the file, and its heading can be typed
  * over. The preview below shows the file before it is made. Saved for the school (one PUT, only on Save or Export), so every export

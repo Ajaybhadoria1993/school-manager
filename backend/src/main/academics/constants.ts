@@ -24,6 +24,21 @@ export function levelToClass(level: ClassLevel): { name: string; department: (ty
   return { name: `Class ${grade}`, department };
 }
 
+/**
+ * The classes a range of levels makes, in teaching order, each with its usual wing. With streams, Class 11 and Class 12 are one class per
+ * stream ("Class 11 Science"), because a stream has its own students, subjects and timetable. Nothing for a range that runs backwards.
+ */
+export function plannedClasses(lowest: ClassLevel, highest: ClassLevel, streams: readonly string[] = []): { name: string; department: (typeof DEPARTMENT_NAMES)[number] }[] {
+  const from = CLASS_LEVELS.indexOf(lowest);
+  const to = CLASS_LEVELS.indexOf(highest);
+  if (from < 0 || to < from) return [];
+  return CLASS_LEVELS.slice(from, to + 1).flatMap((level) => {
+    const plain = levelToClass(level);
+    if (streams.length === 0 || (level !== "11" && level !== "12")) return [plain];
+    return streams.map((stream) => ({ name: `${plain.name} ${stream}`, department: plain.department }));
+  });
+}
+
 /** Section names for a count: 1 -> A, 3 -> A B C. */
 export function sectionLetters(count: number): string[] {
   return Array.from({ length: count }, (_, i) => String.fromCharCode(65 + i));

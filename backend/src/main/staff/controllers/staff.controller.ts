@@ -1,3 +1,4 @@
+import { TeacherMediumService } from "../services/teacherMedium.service";
 import { NextFunction, Request, Response } from "express";
 import { ApiError } from "../../../utils/ApiError";
 import { asyncHandler } from "../../../utils/asyncHandler";
@@ -70,6 +71,14 @@ export const setClassTeacher = asyncHandler(async (req: Request, res: Response) 
 
 export const checkUsernameFree = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, await checkUsername((req.validatedQuery as UsernameCheckQuery).username));
+});
+
+export const listTeacherMediums = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await TeacherMediumService.list(tenantOf(req), idOf(req)));
+});
+
+export const addTeacherToMedium = asyncHandler(async (req: Request, res: Response) => {
+  return sendCreated(res, await TeacherMediumService.add(tenantOf(req), idOf(req), body<{ mediumId: string }>(req).mediumId), "Added");
 });
 
 export const createTeacherLogin = asyncHandler(async (req: Request, res: Response) => {

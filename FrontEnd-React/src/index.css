@@ -1,21 +1,15 @@
-/* Fonts, served from our own bundle: Plus Jakarta Sans for the app, Merriweather (serif) for public-page headlines. */
-@import "@fontsource/plus-jakarta-sans/400.css";
-@import "@fontsource/plus-jakarta-sans/500.css";
-@import "@fontsource/plus-jakarta-sans/600.css";
-@import "@fontsource/plus-jakarta-sans/700.css";
-@import "@fontsource/plus-jakarta-sans/800.css";
-@import "@fontsource/merriweather/700.css";
-@import "@fontsource/merriweather/900.css";
+/* The font, served from our own bundle: Outfit everywhere, the font of Infinity Medisetu (2026-11-10, user: "text font bhi same medisetu jesa"). */
+@import "@fontsource/outfit/400.css";
+@import "@fontsource/outfit/500.css";
+@import "@fontsource/outfit/600.css";
+@import "@fontsource/outfit/700.css";
 
 @import "tailwindcss";
 /* HeroUI v3 (heroui.com): the behaviour and accessibility of the dropdown. Must come right after tailwindcss. */
 @import "@heroui/styles";
 
 /*
- * Design system: "Modern Corporate & Clean Precision" (docs/design/stitch-design-system.md).
- * Cobalt blue for actions, deep navy for structure, a sky accent, crisp white cards on a cool grey canvas.
- * Every colour in the app comes from these tokens, so a re-brand is a change in this one block.
- * The app is light-only on purpose: the sign-in and onboarding screens are designed around the white card and navy panel.
+ * Base design tokens for public pages. The signed-in app shell gets its saved light/dark mode and accent from AppThemeProvider.
  */
 :root {
   color-scheme: light;
@@ -26,6 +20,7 @@
   --surface-muted: #f1f5f9; /* subtle containers, table dividers */
   --foreground: #0f172a; /* headings, strong text */
   --foreground-muted: #64748b; /* captions, helper text */
+  --foreground-secondary: #475569; /* labels: a step darker than the captions (Medisetu's text-muted) */
   --border: #e2e8f0; /* hairlines */
 
   /* Primary: institutional cobalt blue */
@@ -34,11 +29,15 @@
   --primary-foreground: #ffffff;
   --primary-soft: #eff4ff; /* tinted backgrounds, filled inputs, active nav */
   --primary-deep: #004ac6; /* brand wordmark, links that need more weight */
+  --brand: #2563eb; /* the EduShiksha wordmark stays blue in every app theme */
+  --primary-shadow: 0 4px 10px -2px rgb(37 99 235 / 0.4);
+  --primary-shadow-hover: 0 6px 14px -2px rgb(37 99 235 / 0.45);
 
   /* Structure: deep navy, and the sky accent for focus and live data */
   --navy: #0f172a;
   --panel: #213145; /* the dark panel beside the sign-in form */
   --sky: #38bdf8;
+  --gold: #d99f27; /* the accent of the form sections */
 
   /* Status colours: text, tint and hairline, each for badges and notices */
   --success: #047857;
@@ -56,12 +55,11 @@
 
   --radius-card: 1rem;
 
-  /* The font families named in the @font-face rules imported at the top. */
-  --font-jakarta: "Plus Jakarta Sans";
-  --font-merriweather: "Merriweather";
+  /* The font family named in the @font-face rules imported at the top. */
+  --font-outfit: "Outfit";
 
   /* Elevation, level 1 (resting card) to 4 (modal) */
-  --elev-card: 0 1px 3px 0 rgb(15 23 42 / 0.04), 0 1px 2px -1px rgb(15 23 42 / 0.04);
+  --elev-card: 0 1px 2px 0 rgb(15 23 42 / 0.03);
   --elev-raised: 0 4px 6px -1px rgb(15 23 42 / 0.07), 0 2px 4px -2px rgb(15 23 42 / 0.05);
   --elev-float: 0 10px 15px -3px rgb(15 23 42 / 0.08), 0 4px 6px -4px rgb(15 23 42 / 0.04);
   --elev-modal: 0 20px 25px -5px rgb(15 23 42 / 0.1), 0 8px 10px -6px rgb(15 23 42 / 0.04);
@@ -91,10 +89,12 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-primary-soft: var(--primary-soft);
   --color-primary-deep: var(--primary-deep);
+  --color-brand: var(--brand);
 
   --color-navy: var(--navy);
   --color-panel: var(--panel);
   --color-sky: var(--sky);
+  --color-gold: var(--gold);
 
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
@@ -114,8 +114,10 @@
   --shadow-float: var(--elev-float);
   --shadow-modal: var(--elev-modal);
 
-  --font-sans: var(--font-jakarta);
-  --font-serif: var(--font-merriweather), Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-outfit);
+  /* The public pages' headlines used a serif; they are Outfit too now, so `font-serif` stays a valid class and means the same font. */
+  --font-serif: var(--font-outfit);
+  --color-foreground-secondary: var(--foreground-secondary);
 }
 
 * {
@@ -126,6 +128,8 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Everything that can be clicked shows the hand, like a link (Tailwind 4 gives buttons the plain arrow; the user asked on 2026-11-04).
@@ -184,6 +188,38 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .rise-in {
+    animation: none;
+  }
+}
+
+/* The marks of a dashboard chart grow from their base when the page opens (a bar from its left, a column from its bottom). */
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes grow-y {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+.grow-x {
+  transform-origin: left center;
+  animation: grow-x 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.grow-y {
+  transform-origin: center bottom;
+  animation: grow-y 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .grow-x,
+  .grow-y {
     animation: none;
   }
 }
@@ -277,11 +313,146 @@ body {
 
 .sidebar-scroll {
   scrollbar-width: thin;
-  scrollbar-color: rgb(255 255 255 / 0.18) transparent;
+  scrollbar-color: color-mix(in srgb, var(--foreground-muted) 38%, transparent) transparent;
 }
 .sidebar-scroll::-webkit-scrollbar {
   width: 6px;
 }
 .sidebar-scroll::-webkit-scrollbar-thumb {
-  background: rgb(255 255 255 / 0.18);
+  background: color-mix(in srgb, var(--foreground-muted) 38%, transparent);
+  border-radius: 999px;
+}
+
+@layer utilities {
+  /* ==========================================================================
+     TYPE SCALE: the 8 steps of Infinity Medisetu's responsive typography (2026-11-10), same sizes, weights and breakpoints.
+     Each class carries its size, weight, line-height and colour, and steps up at the breakpoints on its own; use these for text and do not
+     hand-roll `text-[15px] font-bold` or a `text-sm sm:text-base lg:text-lg` ladder. One `text-page-heading` per page.
+     The colour is built in (heading and number steps: the strong text; the label: the secondary; the caption: the muted), so no colour class
+     goes beside them unless the design differs. Plain CSS: `!` and variants do not work on them (use a utility to override a size).
+     ========================================================================== */
+
+  /* The header's brand or school title. */
+  .text-app-title {
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--foreground);
+  }
+  @media (min-width: 640px) {
+    .text-app-title {
+      font-size: 16px;
+    }
+  }
+  @media (min-width: 768px) {
+    .text-app-title {
+      font-size: 18px;
+    }
+  }
+
+  /* The page's title, and the greeting. */
+  .text-page-heading {
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    color: var(--foreground);
+  }
+  @media (min-width: 640px) {
+    .text-page-heading {
+      font-size: 22px;
+    }
+  }
+  @media (min-width: 768px) {
+    .text-page-heading {
+      font-size: 24px;
+    }
+  }
+  @media (min-width: 1024px) {
+    .text-page-heading {
+      font-size: 26px;
+    }
+  }
+
+  /* A section's or a card's title. */
+  .text-section-heading {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--foreground);
+  }
+  @media (min-width: 640px) {
+    .text-section-heading {
+      font-size: 16px;
+    }
+  }
+
+  /* The one big figure a card is about. */
+  .text-metric-headline {
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--foreground);
+  }
+  @media (min-width: 640px) {
+    .text-metric-headline {
+      font-size: 22px;
+    }
+  }
+  @media (min-width: 1024px) {
+    .text-metric-headline {
+      font-size: 24px;
+    }
+  }
+
+  /* The numbers of a row of stat tiles. */
+  .text-stat-value {
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--foreground);
+  }
+  @media (min-width: 640px) {
+    .text-stat-value {
+      font-size: 20px;
+    }
+  }
+  @media (min-width: 1536px) {
+    .text-stat-value {
+      font-size: 22px;
+    }
+  }
+
+  /* A card's, a form's or a field's label. */
+  .text-body-label {
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.35;
+    color: var(--foreground-secondary);
+  }
+  @media (min-width: 640px) {
+    .text-body-label {
+      font-size: 13.5px;
+    }
+  }
+
+  /* A subtitle, a change from before, a hint. */
+  .text-caption-subtle {
+    font-size: 11px;
+    line-height: 1.35;
+    color: var(--foreground-muted);
+  }
+  @media (min-width: 640px) {
+    .text-caption-subtle {
+      font-size: 12px;
+    }
+  }
+
+  /* A card's link to more ("View", "Open calendar"). */
+  .text-action-link {
+    font-size: 13.5px;
+    font-weight: 500;
+    line-height: 1.35;
+    letter-spacing: -0.02em;
+  }
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { RouterProvider, createMemoryRouter } from "react-router";
@@ -9,7 +9,7 @@ import store from "../../../redux/store";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
 import { ALLOTMENT, ART, ENGLISH, GRID, MATHS, MEENA, OVERVIEW } from "../../../test/timetableFixtures";
 import type { AcademicStructure, GridCell, GridView } from "../../../types";
-import TimetablePage from "../Timetable";
+import ClassTimetablesPage from "../ClassTimetables";
 
 const STRUCTURE: AcademicStructure = {
   academicYear: { id: "y1", name: "2026-2027" },
@@ -51,10 +51,11 @@ function openPage(view: GridView = GRID, extra: Record<string, Handler> = {}) {
   });
   const router = createMemoryRouter(
     [
-      { path: "/school/timetable", element: <TimetablePage /> },
+      { path: "/school/timetable", element: <ClassTimetablesPage /> },
+      { path: "/school/timings", element: <p>The school timings</p> },
       { path: "/dashboard", element: <p>The dashboard</p> },
     ],
-    { initialEntries: ["/school/timetable?tab=classes&class=c5&section=c5-A"] }
+    { initialEntries: ["/school/timetable?class=c5&section=c5-A"] }
   );
   render(
     <Provider store={store}>
@@ -169,11 +170,11 @@ describe("A class's timetable: the page", () => {
     expect(rows()).toEqual(["English"]);
   });
 
-  it("is a calm page when the class has no timing, and leads to the timings tab", async () => {
+  it("is a calm page when the class has no timing, and leads to the School timings page", async () => {
     const { router, user } = openPage({ ...GRID, days: [] });
     expect(await screen.findByText(/This class has no school timing yet/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Set the school timings" }));
-    await waitFor(() => expect(router.state.location.search).toContain("tab=timings"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/school/timings"));
   });
 
   it("shows the week at once for a class with no subjects: any subject of the school can be put in, and is sent with the lessons", async () => {
@@ -184,7 +185,7 @@ describe("A class's timetable: the page", () => {
     expect(MON1()).toHaveAccessibleName("Monday, Period 1, 08:30 to 09:10: Mathematics");
     await user.click(screen.getByRole("button", { name: "Save the timetable" }));
     await waitFor(() => expect(puts(calls)).toHaveLength(1));
-    expect(puts(calls)[0].body).toMatchObject({ cells: [{ day: 1, period: 1, lessons: [lesson("maths")] }] });
+    expect(puts(calls)[0].body).toMatchObject({ cells: [1, 2, 3, 4, 5].map((day) => ({ day, period: 1, lessons: [lesson("maths")] })) });
   });
 
   it("adds a usual subject the school does not have yet when it is picked, and uses it", async () => {
@@ -253,11 +254,11 @@ describe("A class's timetable: the page", () => {
     await waitFor(() => expect(calls.filter((c) => c.method === "GET" && c.path === "/timetable/grid").length).toBe(before + 1));
   });
 
-  it("will not open the periods per day while the week has changes that are not saved", async () => {
+  it("will not open the class timing while the week has changes that are not saved", async () => {
     const { user } = openPage();
     await screen.findByRole("table", { name: "Weekly timetable" });
     await put(user, MON1(), "Mathematics");
-    expect(screen.getByRole("button", { name: "Periods per day" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Periods & time" })).toBeDisabled();
   });
 
   it("the fill asks for the periods a week when no subject has any, and says to save first when the week has changes", async () => {
@@ -293,14 +294,13 @@ describe("A class's timetable: putting subjects in", () => {
     await screen.findByRole("table", { name: "Weekly timetable" });
     await put(user, MON1(), "Mathematics");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await put(user, TUE1(), "Mathematics");
     expect(MON1()).toHaveAccessibleName("Monday, Period 1, 08:30 to 09:10: Mathematics");
     expect(MON1()).toHaveTextContent("Meena");
-    expect(screen.getByText("2 of 40 periods have a lesson")).toBeInTheDocument();
+    expect(screen.getByText("5 of 40 periods have a lesson")).toBeInTheDocument();
     expect(screen.getByText("Not saved")).toBeInTheDocument();
     // The box of another period says how many Mathematics periods are in now.
     await user.click(MON2());
-    expect(await screen.findByRole("option", { name: "Mathematics" })).toHaveTextContent("2/6");
+    expect(await screen.findByRole("option", { name: "Mathematics" })).toHaveTextContent("5/6");
   });
 
   it("types the first letters and presses Enter: the first subject that fits goes in; the arrow keys move to another", async () => {
@@ -449,7 +449,7 @@ describe("A class's timetable: one period's teacher and room", () => {
     const { calls, user } = openPage(withMaths);
     await screen.findByRole("table", { name: "Weekly timetable" });
     await user.click(MON1());
-    await user.click(await screen.findByRole("button", { name: "Teacher & room" }));
+    await user.click(await screen.findByRole("button", { name: "Room" }));
     // The box gives way to the window.
     await waitFor(() => expect(screen.queryByRole("dialog", { name: /choose the subject/ })).not.toBeInTheDocument());
     const d = await screen.findByRole("dialog", { name: "Monday, Period 1" });
@@ -473,7 +473,7 @@ describe("A class's timetable: one period's teacher and room", () => {
     const { user } = openPage(withMaths);
     await screen.findByRole("table", { name: "Weekly timetable" });
     await user.click(MON1());
-    await user.click(await screen.findByRole("button", { name: "Teacher & room" }));
+    await user.click(await screen.findByRole("button", { name: "Room" }));
     await user.click(await screen.findByRole("button", { name: "Take it out of this period" }));
     expect(MON1()).toHaveAccessibleName(/empty$/);
   });
@@ -484,14 +484,13 @@ describe("A class's timetable: saving", () => {
     const { calls, user } = openPage();
     await screen.findByRole("table", { name: "Weekly timetable" });
     await put(user, TUE1(), "English");
-    await put(user, MON1(), "English");
     expect(screen.getByRole("button", { name: "Save the timetable" })).toBeEnabled();
     // The class list on the left is read again (its status changes); the week itself is not.
     const notList = () => calls.filter((c) => c.path !== "/timetable/overview");
     const before = notList().length;
     await user.click(screen.getByRole("button", { name: "Save the timetable" }));
     expect(await screen.findByText("Everything is saved.")).toBeInTheDocument();
-    expect(puts(calls)[0].body).toEqual({ classId: "c5", sectionId: "c5-A", cells: [{ day: 1, period: 1, lessons: [lesson("english")] }, { day: 2, period: 1, lessons: [lesson("english")] }] });
+    expect(puts(calls)[0].body).toEqual({ classId: "c5", sectionId: "c5-A", cells: [1, 2, 3, 4, 5].map((day) => ({ day, period: 1, lessons: [lesson("english")] })) });
     expect(notList().length).toBe(before + 1);
     expect(screen.queryByText("Not saved")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save the timetable" })).toBeDisabled();
@@ -548,15 +547,15 @@ describe("A class's timetable: saving", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/dashboard"));
   });
 
-  it("asks before opening another class, or the other tab, with changes that are not saved", async () => {
+  it("asks before opening another class, or another page, with changes that are not saved", async () => {
     const { router, user } = openPage();
     await screen.findByRole("table", { name: "Weekly timetable" });
     await put(user, MON1(), "Mathematics");
     await user.click(within(screen.getByRole("list", { name: "Classes" })).getByRole("button", { name: /Class 5 - B/ }));
     const d = await screen.findByRole("dialog", { name: "Leave without saving?" });
     await user.click(within(d).getByRole("button", { name: "Cancel" }));
-    expect(router.state.location.search).toBe("?tab=classes&class=c5&section=c5-A");
-    await user.click(screen.getByRole("tab", { name: "School timings" }));
+    expect(router.state.location.search).toBe("?class=c5&section=c5-A");
+    await act(async () => void router.navigate("/school/timings"));
     expect(await screen.findByRole("dialog", { name: "Leave without saving?" })).toBeInTheDocument();
   });
 
@@ -715,5 +714,260 @@ describe("A class's timetable: the checks", () => {
     await put(user, MON1(), "Mathematics");
     expect(screen.queryByText("Mathematics has none of its 6 periods")).not.toBeInTheDocument();
     expect(screen.getByText(/Save the timetable to see all the checks/)).toBeInTheDocument();
+  });
+});
+
+describe("A class's timetable: when its day ends", () => {
+  const endsRow = () => within(screen.getByRole("table", { name: "Weekly timetable" })).getByRole("row", { name: /^Class ends/ });
+  const endsOf = () => within(endsRow()).getAllByRole("cell").map((c) => c.textContent);
+
+  it("says for each day when the class ends: the end of the last period that has a lesson, with nothing to set; a day with no lesson has none", async () => {
+    openPage({ ...GRID, cells: [{ day: 1, period: 3, lessons: [lesson("maths")] }, { day: 2, period: 5, lessons: [lesson("english")] }] });
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    expect(endsOf()).toEqual(["10:30", "12:20", "–", "–", "–"]);
+  });
+
+  it("follows the lessons as they are put in, before anything is saved", async () => {
+    const { user } = openPage();
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    expect(endsOf()).toEqual(["–", "–", "–", "–", "–"]);
+    await put(user, MON1(), "Mathematics");
+    expect(endsOf()[0]).toBe("09:10");
+    await put(user, MON2(), "English");
+    expect(endsOf()[0]).toBe("09:50");
+    // Period 2 went on every day too; a day whose lessons are taken out ends earlier.
+    expect(endsOf().slice(0, 2)).toEqual(["09:50", "09:50"]);
+    await user.click(MON2());
+    await user.click(await screen.findByRole("button", { name: "Take it out" }));
+    expect(endsOf().slice(0, 2)).toEqual(["09:10", "09:50"]);
+  });
+});
+
+describe("A class's timetable: a subject goes on every day", () => {
+  const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+  const firsts = () => DAYS.map((d) => slot(d, 1, "08:30 to 09:10").getAttribute("aria-label")!.split(": ")[1]);
+  const games = { subjectId: "games", subjectName: "Karate", subjectCode: null, category: "activity" as const, periodsPerWeek: 0, blockSize: 1, teacherId: "dev", group: null };
+
+  it("put in an empty period, it is in that period of every day, not saved yet; nothing else moves", async () => {
+    const { calls, user } = openPage();
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await put(user, MON1(), "English");
+    expect(firsts()).toEqual(["ENG", "ENG", "ENG", "ENG", "ENG"]);
+    expect(MON2()).toHaveAccessibleName(/empty$/);
+    expect(screen.getByText("5 of 40 periods have a lesson")).toBeInTheDocument();
+    expect(screen.getByText("Not saved")).toBeInTheDocument();
+    expect(puts(calls)).toHaveLength(0);
+  });
+
+  it("changing one day afterwards changes only that day", async () => {
+    const { user } = openPage();
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await put(user, MON1(), "English");
+    await put(user, TUE1(), "Mathematics");
+    expect(firsts()).toEqual(["ENG", "Mathematics", "ENG", "ENG", "ENG"]);
+  });
+
+  it("a day that already has a lesson in that period keeps it", async () => {
+    const { user } = openPage({ ...GRID, exists: true, cells: [{ day: 3, period: 1, lessons: [lesson("maths")] }] });
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await put(user, MON1(), "English");
+    expect(firsts()).toEqual(["ENG", "ENG", "Mathematics", "ENG", "ENG"]);
+  });
+
+  it("a day its teacher does not come stays empty, and the page says so", async () => {
+    const { user } = openPage({ ...GRID, allotments: [...GRID.allotments, games] });
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await put(user, TUE1(), "Karate");
+    expect(MON1()).toHaveAccessibleName(/empty$/);
+    expect(TUE1()).toHaveAccessibleName(/Karate$/);
+    expect(await screen.findByText("Karate is not on Monday: its teacher cannot take that period.")).toBeInTheDocument();
+  });
+});
+
+describe("A class's timetable: choosing the teacher in the box of a period", () => {
+  const teachersOf = (subject: string) => screen.findByRole("radiogroup", { name: `Teacher for ${subject}` });
+
+  it("a period with a lesson lists the teachers; one who cannot take it is shown and cannot be picked; a pick is for that period only, and goes with Save", async () => {
+    const { calls, user } = openPage();
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await put(user, MON1(), "English");
+    await user.click(MON1());
+    const group = await teachersOf("English");
+    const radios = within(group).getAllByRole("radio");
+    expect(radios.map((r) => r.getAttribute("aria-label"))).toEqual(["No teacher", "Dev Patel", "Meena Singh"]);
+    expect(radios[0]).toBeChecked();
+    expect(radios[1]).toBeDisabled();
+    expect(radios[1]).toHaveTextContent("Dev Patel does not come on Monday");
+    await user.click(radios[2]);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(MON1()).toHaveTextContent("Meena Singh");
+    expect(TUE1()).toHaveTextContent("no teacher");
+    await user.click(screen.getByRole("button", { name: "Save the timetable" }));
+    await waitFor(() => expect(puts(calls)).toHaveLength(1));
+    const sent = (puts(calls)[0].body as { cells: GridCell[] }).cells;
+    expect(sent.find((c) => c.day === 1)!.lessons[0].teacherId).toBe("meena");
+    expect(sent.find((c) => c.day === 2)!.lessons[0].teacherId).toBeNull();
+  });
+
+  it("opens with the teacher the period has now, and can go back to no teacher", async () => {
+    const { user } = openPage({ ...GRID, exists: true, cells: [{ day: 1, period: 1, lessons: [{ subjectId: "english", teacherId: "meena", room: null }] }] });
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await user.click(MON1());
+    const group = await teachersOf("English");
+    expect(within(group).getByRole("radio", { name: "Meena Singh" })).toBeChecked();
+    await user.click(within(group).getByRole("radio", { name: "No teacher" }));
+    await waitFor(() => expect(MON1()).toHaveTextContent("no teacher"));
+  });
+
+  it("a subject with a usual teacher starts on them", async () => {
+    const { user } = openPage({ ...GRID, exists: true, cells: [{ day: 1, period: 1, lessons: [lesson("maths")] }] });
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await user.click(MON1());
+    const group = await teachersOf("Mathematics");
+    expect(within(group).getByRole("radio", { name: "Meena Singh" })).toBeChecked();
+    expect(within(group).getByRole("radio", { name: "Meena Singh" })).toHaveTextContent("Usual teacher");
+  });
+
+  it("says so when the school has no teacher", async () => {
+    const { user } = openPage({ ...GRID, teachers: [], exists: true, cells: [{ day: 1, period: 1, lessons: [lesson("english")] }] });
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await user.click(MON1());
+    expect(await screen.findByText("No teacher available in your school")).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+  });
+
+  it("an empty period asks only for the subject", async () => {
+    const { user } = openPage();
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await user.click(MON1());
+    await screen.findByRole("option", { name: "English" });
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(screen.queryByText("No teacher available in your school")).not.toBeInTheDocument();
+  });
+
+  it("a choice of several subjects keeps its own window for a teacher each", async () => {
+    const a = { subjectId: "sanskrit", subjectName: "Sanskrit", subjectCode: null, category: "academic" as const, periodsPerWeek: 3, blockSize: 1, teacherId: null, group: "Third language" };
+    const b = { ...a, subjectId: "french", subjectName: "French" };
+    const { user } = openPage({ ...GRID, allotments: [...GRID.allotments, a, b], exists: true, cells: [{ day: 1, period: 1, lessons: [lesson("sanskrit"), lesson("french")] }] });
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await user.click(MON1());
+    expect(await screen.findByRole("button", { name: "Teacher & room" })).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+  });
+});
+
+describe("A Pre-Primary class: the mother teacher and a whole day of one subject (2026-11-10)", () => {
+  const PP_STRUCTURE: AcademicStructure = { ...STRUCTURE, departments: [{ id: "d0", name: "Pre-Primary", classCount: 1 }], classes: [{ ...STRUCTURE.classes[0], departmentId: "d0" }] };
+  const classTeacher = (body: unknown) => {
+    const b = body as { classId: string; sectionId: string | null; teacherId: string | null };
+    const teacher = b.teacherId ? { id: b.teacherId, name: b.teacherId === "meena" ? "Meena Singh" : "Dev Patel" } : null;
+    return { classId: b.classId, sectionId: b.sectionId, label: "Class 5 - A", teacher };
+  };
+  const openPP = (view: GridView = GRID, extra: Record<string, Handler> = {}) => openPage(view, { "GET /academics/structure": () => PP_STRUCTURE, "PUT /staff/class-teachers": classTeacher, ...extra });
+  // The class layout (which says the class is Pre-Primary) is a read of its own: the choice shows once it has come.
+  const motherBox = () => screen.findByRole("button", { name: /Mother teacher/ });
+  const withMeena = (view: GridView): GridView => ({ ...view, classTeacher: { id: "meena", name: "Meena Singh" } });
+  const ctPuts = (calls: Call[]) => calls.filter((c) => c.method === "PUT" && c.path === "/staff/class-teachers");
+
+  it("has a Mother teacher choice", async () => {
+    openPP();
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    expect(await motherBox()).toBeInTheDocument();
+  });
+
+  it("a class of another department has no Mother teacher choice and no Whole day in its box", async () => {
+    const { calls, user } = openPage();
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await waitFor(() => expect(calls.some((c) => c.path === "/academics/structure")).toBe(true));
+    await user.click(MON1());
+    await screen.findByRole("option", { name: "English" });
+    expect(screen.queryByRole("button", { name: /Mother teacher/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: "Put the subject in" })).not.toBeInTheDocument();
+  });
+
+  it("choosing her keeps her as the class teacher (one request), puts her on the periods with no teacher, and Save keeps them", async () => {
+    const cells = [{ day: 1, period: 1, lessons: [lesson("english")] }, { day: 1, period: 2, lessons: [lesson("maths")] }];
+    const { calls, user } = openPP({ ...GRID, exists: true, cells });
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await user.click(await motherBox());
+    await user.click(await screen.findByRole("option", { name: "Meena Singh" }));
+    await waitFor(() => expect(ctPuts(calls)).toHaveLength(1));
+    expect(ctPuts(calls)[0].body).toEqual({ classId: "c5", sectionId: "c5-A", teacherId: "meena" });
+    await waitFor(() => expect(MON1()).toHaveTextContent("Meena Singh"));
+    // Maths keeps its own usual teacher (also Meena here, but not written on the lesson).
+    expect(screen.getByText("Not saved")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save the timetable" }));
+    await waitFor(() => expect(puts(calls).filter((c) => c.path === "/timetable/grid")).toHaveLength(1));
+    const sent = (puts(calls).find((c) => c.path === "/timetable/grid")!.body as { cells: GridCell[] }).cells;
+    expect(sent[0].lessons[0]).toMatchObject({ subjectId: "english", teacherId: "meena" });
+    expect(sent[1].lessons[0]).toMatchObject({ subjectId: "maths", teacherId: null });
+  });
+
+  it("with a mother teacher, a subject put in has her on every day it goes on", async () => {
+    const { user } = openPP(withMeena(GRID));
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await put(user, MON1(), "English");
+    for (const d of ["Monday", "Tuesday", "Friday"]) expect(slot(d, 1, "08:30 to 09:10")).toHaveTextContent("Meena Singh");
+  });
+
+  it("the box can put a subject in the whole day: every period of that day, the other days left as they are; one period all week is the first choice", async () => {
+    const { user } = openPP(withMeena(GRID));
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await user.click(MON1());
+    const how = await screen.findByRole("radiogroup", { name: "Put the subject in" });
+    expect(within(how).getByRole("radio", { name: "This period, all week" })).toBeChecked();
+    await user.click(within(how).getByRole("radio", { name: "Whole Monday" }));
+    await user.click(screen.getByRole("option", { name: "English" }));
+    expect(slot("Monday", 1, "08:30 to 09:10")).toHaveAccessibleName(/ENG$/);
+    expect(slot("Monday", 8, "13:40 to 14:20")).toHaveAccessibleName(/ENG$/);
+    expect(slot("Monday", 8, "13:40 to 14:20")).toHaveTextContent("Meena Singh");
+    expect(TUE1()).toHaveAccessibleName(/empty$/);
+    expect(screen.getByText("8 of 40 periods have a lesson")).toBeInTheDocument();
+  });
+
+  it("a whole day replaces what the day had, even when the period picked already has that subject", async () => {
+    const { user } = openPP({ ...GRID, exists: true, cells: [{ day: 1, period: 1, lessons: [lesson("english")] }, { day: 1, period: 2, lessons: [lesson("maths")] }] });
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await user.click(MON1());
+    await user.click(within(await screen.findByRole("radiogroup", { name: "Put the subject in" })).getByRole("radio", { name: "Whole Monday" }));
+    await user.click(screen.getByRole("option", { name: "English" }));
+    expect(MON2()).toHaveAccessibleName(/ENG$/);
+  });
+
+  it("the box names the mother teacher first in its list of teachers", async () => {
+    const { user } = openPP(withMeena({ ...GRID, exists: true, cells: [{ day: 1, period: 1, lessons: [lesson("english")] }] }));
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await user.click(MON1());
+    const radios = within(await screen.findByRole("radiogroup", { name: "Teacher for English" })).getAllByRole("radio");
+    expect(radios.map((r) => r.getAttribute("aria-label"))).toEqual(["No teacher", "Meena Singh", "Dev Patel"]);
+    expect(radios[1]).toHaveTextContent("Mother teacher");
+  });
+
+  it("periods left with no teacher (copied from another section, say) are given her in one click", async () => {
+    const cells = [{ day: 1, period: 1, lessons: [lesson("english")] }, { day: 2, period: 1, lessons: [lesson("english")] }];
+    const { user } = openPP(withMeena({ ...GRID, exists: true, cells }));
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await user.click(await screen.findByRole("button", { name: "Put Meena Singh on 2 periods with no teacher" }));
+    expect(MON1()).toHaveTextContent("Meena Singh");
+    expect(TUE1()).toHaveTextContent("Meena Singh");
+    expect(screen.queryByRole("button", { name: /periods? with no teacher/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Not saved")).toBeInTheDocument();
+  });
+
+  it("says so when the school has no teacher to choose", async () => {
+    openPP({ ...GRID, teachers: [] });
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    expect(await screen.findByText("No teacher available in your school")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Mother teacher/ })).not.toBeInTheDocument();
+  });
+
+  it("says why when the mother teacher could not be kept, and changes nothing", async () => {
+    const { calls, user } = openPP({ ...GRID, exists: true, cells: [{ day: 1, period: 1, lessons: [lesson("english")] }] }, { "PUT /staff/class-teachers": server(409, "Meena Singh has left the school.") });
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await user.click(await motherBox());
+    await user.click(await screen.findByRole("option", { name: "Meena Singh" }));
+    expect(await screen.findByText("Meena Singh has left the school.")).toBeInTheDocument();
+    expect(MON1()).toHaveTextContent("no teacher");
+    expect(ctPuts(calls)).toHaveLength(1);
   });
 });

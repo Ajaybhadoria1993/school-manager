@@ -13,7 +13,7 @@ export function Block({ icon: Icon, tone, title, index = 0, children }: { icon: 
   return (
     <Card role="region" aria-label={title} className="stagger-item relative overflow-hidden p-5" style={{ "--i": index } as React.CSSProperties}>
       <div aria-hidden className={cn("pointer-events-none absolute -right-12 -top-12 size-40 rounded-full bg-gradient-to-br to-transparent blur-2xl", t.glow)} />
-      <h2 className="relative flex items-center gap-2.5 text-base font-bold tracking-tight text-foreground">
+      <h2 className="text-section-heading relative flex items-center gap-2.5">
         <span aria-hidden className={cn("flex size-9 items-center justify-center rounded-xl", t.gradient)}>
           <Icon className="size-4.5" />
         </span>

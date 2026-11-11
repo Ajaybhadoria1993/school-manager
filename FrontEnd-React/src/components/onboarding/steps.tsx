@@ -2,10 +2,10 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  BookOpen,
   Building,
   CalendarDays,
   Globe,
-  GraduationCap,
   Hash,
   Landmark,
   Mail,
@@ -23,19 +23,23 @@ import { Button } from "../ui/Button";
 import { Field } from "../ui/Field";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
-import { CLASS_LEVELS, DESIGNATIONS, OTHER_CHOICE, SCHOOL_TYPES, STATES, STATE_BOARD_CHOICE } from "../../constants/schoolOptions";
+import { DESIGNATIONS, OTHER_CHOICE, SCHOOL_TYPES, STATES, STATE_BOARD_CHOICE } from "../../constants/schoolOptions";
 import { checkAcademicYear } from "../../utils/academicYear";
+import { boardFromApi, boardToApi, planErrors } from "../../utils/mediumPlans";
 import { isIndianMobile, isPhone, isPinCode, isEmail, isUdise } from "../../utils/validators";
 import type { SchoolSteps } from "../../types";
+import { FormSection } from "../students/form/FormSection";
+import { PAGE_GRID } from "../students/form/formGrid";
 import { AcademicYearFields } from "./AcademicYearFields";
 import { BoardsField, emptyBoard } from "./BoardsField";
+import { LogoField } from "./LogoField";
 import { useFormValues, str, type FieldErrors, type FormDraft } from "./useFormValues";
 
 /** A step saves its values and says what went wrong, field by field. null means it worked. */
 export type SubmitStep = (values: Record<string, unknown>) => Promise<FieldErrors | null>;
 
-interface StepProps<K extends 1 | 2 | 3> {
-  initial: SchoolSteps[K];
+interface StepProps<I> {
+  initial: I;
   /** Typed but not saved yet: kept by the wizard so Back and forth does not lose it. */
   draft?: FormDraft;
   onSubmit: SubmitStep;
@@ -45,7 +49,7 @@ interface StepProps<K extends 1 | 2 | 3> {
 
 function Footer({ onBack, saving, label = "Save & Continue" }: { onBack?: () => void; saving: boolean; label?: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-t border-border pt-6">
+    <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
       {onBack ? (
         <Button type="button" variant="outline" onClick={onBack} disabled={saving}>
           <ArrowLeft className="size-4" aria-hidden />
@@ -62,11 +66,6 @@ function Footer({ onBack, saving, label = "Save & Continue" }: { onBack?: () => 
   );
 }
 
-/** A small blue caption that groups related fields, like LOCATION on the address step. */
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <legend className="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-primary">{children}</legend>;
-}
-
 function ErrorSummary({ message }: { message?: string }) {
   if (!message) return null;
   return (
@@ -76,21 +75,31 @@ function ErrorSummary({ message }: { message?: string }) {
   );
 }
 
-export function StepSchool({ initial, draft, onSubmit, saving }: StepProps<1>) {
+/** The form is long: a problem far up the page is brought into view, or the school would only see that nothing happened. */
+function showFirstProblem() {
+  requestAnimationFrame(() => document.querySelector('[aria-invalid="true"], [data-invalid="true"], form [role="alert"]')?.scrollIntoView?.({ block: "center", behavior: "smooth" }));
+}
+
+/** The school and where it is: its name, type and logo, its address and contact, its size and numbers. */
+export function StepSchool({ initial, draft, onSubmit, saving }: StepProps<SchoolSteps[1] & SchoolSteps[2]>) {
+  // The defaults cover answers saved before district and division existed (an input that starts as undefined makes React warn).
   const f = useFormValues(
     {
       schoolName: initial.schoolName,
       schoolType: str(initial.schoolType),
-      establishedYear: str(initial.establishedYear),
-      boards: initial.boards.length > 0 ? initial.boards : [emptyBoard()],
-      lowestClass: str(initial.lowestClass),
-      highestClass: str(initial.highestClass),
+      addressLine1: initial.addressLine1 ?? "",
+      addressLine2: initial.addressLine2 ?? "",
+      pincode: initial.pincode ?? "",
+      state: initial.state ?? "",
+      division: initial.division ?? "",
+      district: initial.district ?? "",
+      city: initial.city ?? "",
+      schoolPhone: initial.schoolPhone ?? "",
+      schoolEmail: initial.schoolEmail ?? "",
+      website: initial.website ?? "",
       approxStudents: str(initial.approxStudents),
-      // Named like the server's error paths ("academicYear.endDate"), so its messages land under the right box.
-      "academicYear.name": initial.academicYear?.name ?? "",
-      "academicYear.startDate": initial.academicYear?.startDate ?? "",
-      "academicYear.endDate": initial.academicYear?.endDate ?? "",
-      udiseCode: initial.udiseCode,
+      udiseCode: initial.udiseCode ?? "",
+      establishedYear: str(initial.establishedYear),
     },
     draft
   );
@@ -101,108 +110,6 @@ export function StepSchool({ initial, draft, onSubmit, saving }: StepProps<1>) {
     const next: FieldErrors = {};
     if (v.schoolName.trim().length < 2) next.schoolName = "Enter the school name.";
     if (!v.schoolType) next.schoolType = "Choose the type of school.";
-    v.boards.forEach((entry, i) => {
-      if (!entry.board) next[`boards.${i}.board`] = "Choose the board.";
-      if (entry.board === STATE_BOARD_CHOICE && !entry.stateBoard) next[`boards.${i}.stateBoard`] = "Choose the state board.";
-      if (entry.board === OTHER_CHOICE && entry.otherBoard.trim().length < 2) next[`boards.${i}.otherBoard`] = "Enter the name of the board.";
-      if (entry.mediums.length === 0) next[`boards.${i}.mediums`] = "Choose at least one medium.";
-    });
-    if (!v.lowestClass) next.lowestClass = "Choose the first class.";
-    if (!v.highestClass) next.highestClass = "Choose the last class.";
-    if (v.lowestClass && v.highestClass && CLASS_LEVELS.indexOf(v.lowestClass as never) > CLASS_LEVELS.indexOf(v.highestClass as never)) {
-      next.highestClass = "The last class cannot be lower than the first class.";
-    }
-    const students = Number(v.approxStudents);
-    if (!Number.isInteger(students) || students < 1) next.approxStudents = "Enter the number of students.";
-    if (v.udiseCode && !isUdise(v.udiseCode)) next.udiseCode = "UDISE+ code is 11 digits.";
-    if (v.establishedYear && !/^\d{4}$/.test(v.establishedYear.trim())) next.establishedYear = "Enter a 4-digit year.";
-    const year = checkAcademicYear(v["academicYear.name"], v["academicYear.startDate"], v["academicYear.endDate"]);
-    for (const [field, message] of Object.entries(year)) if (message) next[`academicYear.${field}`] = message;
-    f.setErrors(next);
-    if (Object.keys(next).length > 0) return;
-    const { "academicYear.name": name, "academicYear.startDate": startDate, "academicYear.endDate": endDate, ...rest } = v;
-    // The month the session starts in is read by the server from the start date.
-    const serverErrors = await onSubmit({ ...rest, academicYear: { name: name.trim(), startDate, endDate } });
-    if (serverErrors) f.setErrors(serverErrors);
-  }
-
-  return (
-    <form onSubmit={submit} className="space-y-8" noValidate>
-      <fieldset>
-        <SectionLabel>Basics</SectionLabel>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field id="schoolName" label="School name" error={errors.schoolName}>
-            <Input id="schoolName" icon={School} value={v.schoolName} onChange={(e) => set("schoolName", e.target.value)} required autoComplete="organization" aria-invalid={!!errors.schoolName} />
-          </Field>
-          <Field id="schoolType" label="Type of school" error={errors.schoolType}>
-            <Select id="schoolType" icon={Landmark} value={v.schoolType} onChange={(value) => set("schoolType", value)} options={SCHOOL_TYPES} placeholder="Choose type" invalid={!!errors.schoolType} />
-          </Field>
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <SectionLabel>Board and medium</SectionLabel>
-        <p className="-mt-2 mb-4 text-sm text-foreground-muted">
-          Add every board your school follows, with the medium it is taught in and that board&apos;s own affiliation number. If a board is taught
-          in English and Hindi, choose both. Following another board too? Use &ldquo;Add another board&rdquo;.
-        </p>
-        <BoardsField value={v.boards} onChange={(boards) => set("boards", boards)} errors={errors} />
-      </fieldset>
-
-      <fieldset>
-        <SectionLabel>Classes and size</SectionLabel>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field id="lowestClass" label="Classes from" error={errors.lowestClass}>
-            <Select id="lowestClass" icon={GraduationCap} value={v.lowestClass} onChange={(value) => set("lowestClass", value)} options={CLASS_LEVELS} placeholder="First class" invalid={!!errors.lowestClass} />
-          </Field>
-          <Field id="highestClass" label="Classes up to" error={errors.highestClass}>
-            <Select id="highestClass" icon={GraduationCap} value={v.highestClass} onChange={(value) => set("highestClass", value)} options={CLASS_LEVELS} placeholder="Last class" invalid={!!errors.highestClass} />
-          </Field>
-          <Field id="approxStudents" label="Students (approximately)" error={errors.approxStudents}>
-            <Input id="approxStudents" icon={Users} value={v.approxStudents} onChange={(e) => set("approxStudents", e.target.value)} inputMode="numeric" aria-invalid={!!errors.approxStudents} />
-          </Field>
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <SectionLabel>Academic year</SectionLabel>
-        <p className="-mt-2 mb-4 text-sm text-foreground-muted">
-          The session your school is running, with its own first and last day. It becomes your current academic year once your
-          school is approved; classes and sections are set up for it.
-        </p>
-        <AcademicYearFields
-          idPrefix="academicYear"
-          values={{ name: v["academicYear.name"], startDate: v["academicYear.startDate"], endDate: v["academicYear.endDate"] }}
-          errors={{ name: errors["academicYear.name"] ?? errors.academicYear, startDate: errors["academicYear.startDate"], endDate: errors["academicYear.endDate"] }}
-          onChange={(field, value) => set(`academicYear.${field}`, value)}
-        />
-      </fieldset>
-
-      <fieldset>
-        <SectionLabel>Registration</SectionLabel>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <Field id="udiseCode" label="UDISE+ code" optional error={errors.udiseCode} hint="11 digits, printed on your UDISE+ certificate.">
-            <Input id="udiseCode" icon={Hash} value={v.udiseCode} onChange={(e) => set("udiseCode", e.target.value)} inputMode="numeric" maxLength={11} aria-invalid={!!errors.udiseCode} />
-          </Field>
-          <Field id="establishedYear" label="Year established" optional error={errors.establishedYear}>
-            <Input id="establishedYear" icon={CalendarDays} value={v.establishedYear} onChange={(e) => set("establishedYear", e.target.value)} inputMode="numeric" maxLength={4} placeholder="For example 1998" aria-invalid={!!errors.establishedYear} />
-          </Field>
-        </div>
-      </fieldset>
-      <ErrorSummary message={errors._form} />
-      <Footer saving={saving} />
-    </form>
-  );
-}
-
-export function StepAddress({ initial, draft, onSubmit, onBack, saving }: StepProps<2>) {
-  // The defaults cover answers saved before district and division existed (an input that starts as undefined makes React warn).
-  const f = useFormValues({ ...initial, division: initial.division ?? "", district: initial.district ?? "" }, draft);
-  const { values: v, errors, set } = f;
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const next: FieldErrors = {};
     if (v.addressLine1.trim().length < 3) next.addressLine1 = "Enter the street address.";
     if (!STATES.includes(v.state as never)) next.state = "Choose the state.";
     if (v.district.trim().length < 2) next.district = "Enter the district.";
@@ -211,17 +118,38 @@ export function StepAddress({ initial, draft, onSubmit, onBack, saving }: StepPr
     if (!isPhone(v.schoolPhone)) next.schoolPhone = "Enter a 10-digit phone number (for a landline, the STD code and the number).";
     if (!isEmail(v.schoolEmail)) next.schoolEmail = "Enter a valid email address.";
     if (v.website && !/^https?:\/\/\S+\.\S+/.test(v.website.trim())) next.website = "Enter a full web address, like https://school.in";
+    const students = Number(v.approxStudents);
+    if (!Number.isInteger(students) || students < 1) next.approxStudents = "Enter the number of students.";
+    if (v.udiseCode && !isUdise(v.udiseCode)) next.udiseCode = "UDISE+ code is 11 digits.";
+    if (v.establishedYear && !/^\d{4}$/.test(v.establishedYear.trim())) next.establishedYear = "Enter a 4-digit year.";
     f.setErrors(next);
-    if (Object.keys(next).length > 0) return;
+    if (Object.keys(next).length > 0) {
+      showFirstProblem();
+      return;
+    }
     const serverErrors = await onSubmit(v);
-    if (serverErrors) f.setErrors(serverErrors);
+    if (serverErrors) {
+      f.setErrors(serverErrors);
+      showFirstProblem();
+    }
   }
 
   return (
-    <form onSubmit={submit} className="space-y-7" noValidate>
-      <fieldset>
-        <SectionLabel>Location</SectionLabel>
-        <div className="grid gap-5 sm:grid-cols-2">
+    <form onSubmit={submit} className="space-y-6" noValidate>
+      <FormSection icon={School} title="Basics">
+        <div className={PAGE_GRID}>
+          <Field id="schoolName" label="School name" error={errors.schoolName}>
+            <Input id="schoolName" icon={School} value={v.schoolName} onChange={(e) => set("schoolName", e.target.value)} required autoComplete="organization" aria-invalid={!!errors.schoolName} />
+          </Field>
+          <Field id="schoolType" label="Type of school" error={errors.schoolType}>
+            <Select id="schoolType" icon={Landmark} value={v.schoolType} onChange={(value) => set("schoolType", value)} options={SCHOOL_TYPES} placeholder="Choose type" invalid={!!errors.schoolType} />
+          </Field>
+          <LogoField logoUrl={initial.logoUrl ?? ""} />
+        </div>
+      </FormSection>
+
+      <FormSection icon={MapPin} title="Location">
+        <div className={PAGE_GRID}>
           <Field id="addressLine1" label="Street address" error={errors.addressLine1} className="sm:col-span-2">
             <Input id="addressLine1" icon={MapPin} value={v.addressLine1} onChange={(e) => set("addressLine1", e.target.value)} autoComplete="address-line1" aria-invalid={!!errors.addressLine1} />
           </Field>
@@ -244,11 +172,10 @@ export function StepAddress({ initial, draft, onSubmit, onBack, saving }: StepPr
             <Input id="city" icon={Building} value={v.city} onChange={(e) => set("city", e.target.value)} autoComplete="address-level2" aria-invalid={!!errors.city} />
           </Field>
         </div>
-      </fieldset>
+      </FormSection>
 
-      <fieldset>
-        <SectionLabel>Contact</SectionLabel>
-        <div className="grid gap-5 sm:grid-cols-2">
+      <FormSection icon={Phone} title="Contact">
+        <div className={PAGE_GRID}>
           <Field id="schoolPhone" label="School phone" error={errors.schoolPhone}>
             <Input id="schoolPhone" icon={Phone} prefix="+91" type="tel" value={v.schoolPhone} onChange={(e) => set("schoolPhone", e.target.value.replace(/\D/g, ""))} inputMode="numeric" maxLength={10} placeholder="10 digits" autoComplete="tel-national" aria-invalid={!!errors.schoolPhone} />
           </Field>
@@ -259,14 +186,90 @@ export function StepAddress({ initial, draft, onSubmit, onBack, saving }: StepPr
             <Input id="website" icon={Globe} type="url" value={v.website} onChange={(e) => set("website", e.target.value)} placeholder="https://school.in" aria-invalid={!!errors.website} />
           </Field>
         </div>
-      </fieldset>
+      </FormSection>
+
+      <FormSection icon={Hash} title="Registration">
+        <div className={PAGE_GRID}>
+          <Field id="approxStudents" label="Students (approximately)" error={errors.approxStudents}>
+            <Input id="approxStudents" icon={Users} value={v.approxStudents} onChange={(e) => set("approxStudents", e.target.value)} inputMode="numeric" aria-invalid={!!errors.approxStudents} />
+          </Field>
+          <Field id="udiseCode" label="UDISE+ code" optional error={errors.udiseCode} hint="11 digits, printed on your UDISE+ certificate.">
+            <Input id="udiseCode" icon={Hash} value={v.udiseCode} onChange={(e) => set("udiseCode", e.target.value)} inputMode="numeric" maxLength={11} aria-invalid={!!errors.udiseCode} />
+          </Field>
+          <Field id="establishedYear" label="Year established" optional error={errors.establishedYear}>
+            <Input id="establishedYear" icon={CalendarDays} value={v.establishedYear} onChange={(e) => set("establishedYear", e.target.value)} inputMode="numeric" maxLength={4} placeholder="For example 1998" aria-invalid={!!errors.establishedYear} />
+          </Field>
+        </div>
+      </FormSection>
+      <ErrorSummary message={errors._form} />
+      <Footer saving={saving} />
+    </form>
+  );
+}
+
+/** The academic year, and what the school runs in it: its boards, the mediums of each, and for each medium its classes and timing. */
+export function StepAcademic({ initial, draft, onSubmit, onBack, saving }: StepProps<SchoolSteps[1]>) {
+  const f = useFormValues(
+    {
+      boards: initial.boards.length > 0 ? initial.boards.map(boardFromApi) : [emptyBoard()],
+      // Named like the server's error paths ("academicYear.endDate"), so its messages land under the right box.
+      "academicYear.name": initial.academicYear?.name ?? "",
+      "academicYear.startDate": initial.academicYear?.startDate ?? "",
+      "academicYear.endDate": initial.academicYear?.endDate ?? "",
+    },
+    draft
+  );
+  const { values: v, errors, set } = f;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const next: FieldErrors = {};
+    v.boards.forEach((entry, i) => {
+      if (!entry.board) next[`boards.${i}.board`] = "Choose the board.";
+      if (entry.board === STATE_BOARD_CHOICE && !entry.stateBoard) next[`boards.${i}.stateBoard`] = "Choose the state board.";
+      if (entry.board === OTHER_CHOICE && entry.otherBoard.trim().length < 2) next[`boards.${i}.otherBoard`] = "Enter the name of the board.";
+      if (entry.mediums.length === 0) next[`boards.${i}.mediums`] = "Choose at least one medium.";
+      entry.plans.forEach((plan, p) => Object.assign(next, planErrors(plan, `boards.${i}.plans.${p}`)));
+    });
+    const year = checkAcademicYear(v["academicYear.name"], v["academicYear.startDate"], v["academicYear.endDate"]);
+    for (const [field, message] of Object.entries(year)) if (message) next[`academicYear.${field}`] = message;
+    f.setErrors(next);
+    if (Object.keys(next).length > 0) {
+      showFirstProblem();
+      return;
+    }
+    // The month the session starts in, and the first and last class of the school, are read by the server.
+    const serverErrors = await onSubmit({
+      boards: v.boards.map(boardToApi),
+      academicYear: { name: v["academicYear.name"].trim(), startDate: v["academicYear.startDate"], endDate: v["academicYear.endDate"] },
+    });
+    if (serverErrors) {
+      f.setErrors(serverErrors);
+      showFirstProblem();
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-6" noValidate>
+      <FormSection icon={CalendarDays} title="Academic year">
+        <AcademicYearFields
+          idPrefix="academicYear"
+          values={{ name: v["academicYear.name"], startDate: v["academicYear.startDate"], endDate: v["academicYear.endDate"] }}
+          errors={{ name: errors["academicYear.name"] ?? errors.academicYear, startDate: errors["academicYear.startDate"], endDate: errors["academicYear.endDate"] }}
+          onChange={(field, value) => set(`academicYear.${field}`, value)}
+        />
+      </FormSection>
+
+      <FormSection icon={BookOpen} title="Board and medium">
+        <BoardsField value={v.boards} onChange={(boards) => set("boards", boards)} errors={errors} />
+      </FormSection>
       <ErrorSummary message={errors._form} />
       <Footer onBack={onBack} saving={saving} />
     </form>
   );
 }
 
-export function StepProfile({ initial, draft, onSubmit, onBack, saving }: StepProps<3>) {
+export function StepProfile({ initial, draft, onSubmit, onBack, saving }: StepProps<SchoolSteps[3]>) {
   const f = useFormValues(
     {
       adminName: initial.adminName,
@@ -301,13 +304,9 @@ export function StepProfile({ initial, draft, onSubmit, onBack, saving }: StepPr
   }
 
   return (
-    <form onSubmit={submit} className="space-y-8" noValidate>
-      <fieldset>
-        <SectionLabel>About you</SectionLabel>
-        <p className="-mt-2 mb-4 text-sm text-foreground-muted">
-          You are creating the school&apos;s administrator account. Teachers and other staff are added after the school is approved.
-        </p>
-        <div className="grid gap-5 sm:grid-cols-2">
+    <form onSubmit={submit} className="space-y-6" noValidate>
+      <FormSection icon={UserRound} title="About you">
+        <div className={PAGE_GRID}>
           <Field id="adminName" label="Your full name" error={errors.adminName}>
             <Input id="adminName" icon={UserRound} value={v.adminName} onChange={(e) => set("adminName", e.target.value)} autoComplete="name" aria-invalid={!!errors.adminName} />
           </Field>
@@ -328,7 +327,7 @@ export function StepProfile({ initial, draft, onSubmit, onBack, saving }: StepPr
             <Input id="alternateMobile" icon={Smartphone} prefix="+91" type="tel" value={v.alternateMobile} onChange={(e) => set("alternateMobile", e.target.value.replace(/\D/g, ""))} inputMode="numeric" maxLength={10} placeholder="10 digits" aria-invalid={!!errors.alternateMobile} />
           </Field>
         </div>
-      </fieldset>
+      </FormSection>
       <ErrorSummary message={errors._form} />
       <Footer onBack={onBack} saving={saving} />
     </form>

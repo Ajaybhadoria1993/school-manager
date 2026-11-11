@@ -22,6 +22,7 @@ import { errorHandler } from "../../../middleware/errorHandler";
 import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { AuthToken } from "../../auth/models/AuthToken";
 import { RefreshToken } from "../../auth/models/RefreshToken";
+import { plannedClasses } from "../../academics/constants";
 import { AcademicYear } from "../../academics/models/AcademicYear";
 import { Section } from "../../academics/models/Section";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
@@ -31,19 +32,15 @@ import { User } from "../../users/models/User";
 const SUPER = { email: "superadmin@example.com", password: "Admin@123" };
 const PASSWORD = "Sch00l@Admin";
 
-const step1 = {
+// Step 1 holds the school and where it is; step 2 the academic year and the boards.
+const school = {
   schoolName: "Sunrise Public School",
   schoolType: "Private",
-  boards: [{ board: "CBSE", stateBoard: "", otherBoard: "", affiliationNumber: "2130456", mediums: ["English"] }],
-  lowestClass: "Nursery",
-  highestClass: "12",
   approxStudents: 850,
-  sessionStartMonth: 4,
-  academicYear: { name: "2026-2027", startDate: "2026-04-01", endDate: "2027-03-31" },
   udiseCode: "27210100101",
   establishedYear: 1998,
 };
-const step2 = {
+const address = {
   addressLine1: "12 MG Road",
   addressLine2: "Near City Mall",
   city: "Pune",
@@ -54,6 +51,14 @@ const step2 = {
   schoolPhone: "2012345678",
   schoolEmail: "office@sunrise.example",
   website: "https://sunrise.example",
+};
+const step1 = { ...school, ...address };
+const step2 = {
+  boards: [{ board: "CBSE", stateBoard: "", otherBoard: "", affiliationNumber: "2130456", mediums: ["English"] }],
+  lowestClass: "Nursery",
+  highestClass: "12",
+  sessionStartMonth: 4,
+  academicYear: { name: "2026-2027", startDate: "2026-04-01", endDate: "2027-03-31" },
 };
 const step3 = {
   adminName: "Asha Verma",
@@ -82,8 +87,32 @@ async function selfRegister(schoolName = "Sunrise Public School", email = "princ
   return { raw, session: res.body.data, status: res.status };
 }
 
+/** Step 2 asks each medium for its classes and timing; a test about something else gets a plain plan for each one its boards list. */
+function withPlans(body: { boards?: unknown; lowestClass?: string; highestClass?: string }) {
+  if (!Array.isArray(body.boards)) return body;
+  const lowest = (body.lowestClass ?? "Nursery") as "Nursery";
+  const highest = (body.highestClass ?? "12") as "12";
+  const planOf = (medium: unknown) => ({
+    medium,
+    lowestClass: lowest,
+    highestClass: highest,
+    seniorStreams: [],
+    classes: plannedClasses(lowest, highest).map((c) => ({ name: c.name, sections: 1, seats: 40 })),
+    week: { days: [1, 2, 3, 4, 5, 6], usual: [{ kind: "period", label: "", start: "08:00", end: "08:40" }], saturday: null },
+  });
+  const boards = body.boards.map((b) => {
+    if (typeof b !== "object" || b === null || "plans" in b) return b;
+    const mediums = (b as { mediums?: unknown }).mediums;
+    return { ...b, plans: Array.isArray(mediums) ? mediums.map(planOf) : [] };
+  });
+  return { ...body, boards };
+}
+
 const put = (token: string, step: number, body: unknown) =>
-  request(app).put(`/api/v1/onboarding/steps/${step}`).set(auth(token)).send(body as object);
+  request(app)
+    .put(`/api/v1/onboarding/steps/${step}`)
+    .set(auth(token))
+    .send((step === 2 ? withPlans(body as object) : body) as object);
 
 async function fillAll(token: string, overrides: { step1?: object; step2?: object; step3?: object } = {}) {
   await put(token, 1, { ...step1, ...overrides.step1 });
@@ -230,14 +259,15 @@ describe("onboarding form", () => {
     const token = session.accessToken;
     const fieldsOf = (res: request.Response) => res.body.details.map((d: { path: string }) => d.path);
 
-    const s1 = await put(token, 1, { ...step1, boards: [{ board: "Nope", mediums: ["English"] }], udiseCode: "123" });
+    const s1 = await put(token, 1, { ...step1, udiseCode: "123", pincode: "12", website: "not a url" });
     expect(s1.status).toBe(400);
     expect(s1.body.code).toBe("VALIDATION_ERROR");
-    expect(fieldsOf(s1)).toEqual(expect.arrayContaining(["boards.0.board", "udiseCode"]));
+    expect(fieldsOf(s1)).toEqual(expect.arrayContaining(["udiseCode", "pincode", "website"]));
     expect(s1.body.details.find((d: { path: string }) => d.path === "udiseCode").message).toBe("UDISE+ code is 11 digits");
 
-    const s2 = await put(token, 2, { ...step2, pincode: "12", website: "not a url" });
-    expect(fieldsOf(s2)).toEqual(expect.arrayContaining(["pincode", "website"]));
+    const s2 = await put(token, 2, { ...step2, boards: [{ board: "Nope", mediums: ["English"] }] });
+    expect(s2.status).toBe(400);
+    expect(fieldsOf(s2)).toEqual(expect.arrayContaining(["boards.0.board"]));
 
     const s3 = await put(token, 3, { ...step3, mobile: "12345" });
     expect(fieldsOf(s3)).toEqual(expect.arrayContaining(["mobile"]));
@@ -250,36 +280,36 @@ describe("onboarding form", () => {
     const { session } = await selfRegister();
     const token = session.accessToken;
 
-    const one = await put(token, 1, { ...step1, udiseCode: "", establishedYear: "" });
+    const one = await put(token, 1, { ...step1, udiseCode: "", establishedYear: "", addressLine2: "", website: "" });
     expect(one.status).toBe(200);
     expect(one.body.data.onboarding).toMatchObject({ status: "IN_PROGRESS", completedSteps: [1], currentStep: 2 });
 
-    const two = await put(token, 2, { ...step2, addressLine2: "", website: "" });
+    const two = await put(token, 2, step2);
     expect(two.body.data.onboarding).toMatchObject({ completedSteps: [1, 2], currentStep: 3 });
 
     // Going back to edit an earlier step does not undo progress.
-    const edit = await put(token, 1, { ...step1, boards: [{ board: "ICSE", mediums: ["English"] }] });
+    const edit = await put(token, 2, { ...step2, boards: [{ board: "ICSE", mediums: ["English"] }] });
     expect(edit.body.data.onboarding.completedSteps).toEqual([1, 2]);
-    expect(edit.body.data.steps[1].boards).toEqual([{ board: "ICSE", stateBoard: "", otherBoard: "", affiliationNumber: "", mediums: ["English"] }]);
+    expect(edit.body.data.steps[1].boards).toMatchObject([{ board: "ICSE", stateBoard: "", otherBoard: "", affiliationNumber: "", mediums: ["English"] }]);
   });
 
-  describe("boards, classes and size (step 1)", () => {
+  describe("boards, classes and timing (step 2)", () => {
     const mp = { board: "State Board", stateBoard: "M.P. Board", mediums: ["Hindi", "English"] };
 
     it("keeps each board with its own medium: CBSE in English, the M.P. Board in Hindi and English", async () => {
       const { session } = await selfRegister();
-      const res = await put(session.accessToken, 1, {
-        ...step1,
+      const res = await put(session.accessToken, 2, {
+        ...step2,
         boards: [{ board: "CBSE", stateBoard: "", mediums: ["English"] }, mp],
       });
       expect(res.status).toBe(200);
       // The mediums come back in the order of the form (English before Hindi), whatever order they were sent in.
-      expect(res.body.data.steps[1].boards).toEqual([
+      expect(res.body.data.steps[1].boards).toMatchObject([
         { board: "CBSE", stateBoard: "", otherBoard: "", affiliationNumber: "", mediums: ["English"] },
         { board: "State Board", stateBoard: "M.P. Board", otherBoard: "", affiliationNumber: "", mediums: ["English", "Hindi"] },
       ]);
       const stored = (await Tenant.findOne())?.profile?.boardEntries ?? [];
-      expect(
+      expect(res.body.data.steps[1].boards).toMatchObject(
         stored.map((e) => ({
           board: e.board,
           stateBoard: e.stateBoard ?? "",
@@ -287,7 +317,7 @@ describe("onboarding form", () => {
           affiliationNumber: e.affiliationNumber ?? "",
           mediums: [...e.mediums],
         }))
-      ).toEqual(res.body.data.steps[1].boards);
+      );
     });
 
     it("asks for the state board of a State Board entry, and for a medium on every entry", async () => {
@@ -296,22 +326,22 @@ describe("onboarding form", () => {
         Object.fromEntries(res.body.details.map((d: { path: string; message: string }) => [d.path, d.message]));
 
       // (The state-board check runs once the entry's own fields are valid, so each is asked on its own.)
-      const noState = await put(session.accessToken, 1, {
-        ...step1,
+      const noState = await put(session.accessToken, 2, {
+        ...step2,
         boards: [{ board: "State Board", stateBoard: "", mediums: ["English"] }],
       });
       expect(noState.status).toBe(400);
       expect(messages(noState)).toMatchObject({ "boards.0.stateBoard": "Choose the state board" });
 
-      const noMedium = await put(session.accessToken, 1, {
-        ...step1,
+      const noMedium = await put(session.accessToken, 2, {
+        ...step2,
         boards: [{ board: "CBSE", stateBoard: "", mediums: [] }],
       });
       expect(noMedium.status).toBe(400);
       expect(messages(noMedium)).toMatchObject({ "boards.0.mediums": "Choose at least one medium" });
 
-      const unknown = await put(session.accessToken, 1, {
-        ...step1,
+      const unknown = await put(session.accessToken, 2, {
+        ...step2,
         boards: [{ board: "State Board", stateBoard: "Narnia Board", mediums: ["English"] }],
       });
       expect(unknown.status).toBe(400);
@@ -320,24 +350,24 @@ describe("onboarding form", () => {
     it("drops a state board that no longer belongs to the entry", async () => {
       const { session } = await selfRegister();
       // A client that still sends the old state board after the board was changed to CBSE.
-      const res = await put(session.accessToken, 1, {
-        ...step1,
+      const res = await put(session.accessToken, 2, {
+        ...step2,
         boards: [{ board: "CBSE", stateBoard: "M.P. Board", mediums: ["English"] }],
       });
       expect(res.status).toBe(200);
-      expect(res.body.data.steps[1].boards).toEqual([
+      expect(res.body.data.steps[1].boards).toMatchObject([
         { board: "CBSE", stateBoard: "", otherBoard: "", affiliationNumber: "", mediums: ["English"] },
       ]);
     });
 
     it("needs at least one board, refuses the same board twice, and caps the list", async () => {
       const { session } = await selfRegister();
-      const none = await put(session.accessToken, 1, { ...step1, boards: [] });
+      const none = await put(session.accessToken, 2, { ...step2, boards: [] });
       expect(none.status).toBe(400);
       expect(none.body.details[0]).toMatchObject({ path: "boards", message: "Add at least one board" });
 
-      const twice = await put(session.accessToken, 1, {
-        ...step1,
+      const twice = await put(session.accessToken, 2, {
+        ...step2,
         boards: [
           { board: "CBSE", mediums: ["English"] },
           { board: "CBSE", mediums: ["Hindi"] },
@@ -349,18 +379,18 @@ describe("onboarding form", () => {
       // Two different state boards are fine; the same one twice is not.
       const mp2 = { ...mp, mediums: ["Hindi"] };
       const up = { board: "State Board", stateBoard: "U.P. Board", mediums: ["Hindi"] };
-      expect((await put(session.accessToken, 1, { ...step1, boards: [mp, up] })).status).toBe(200);
-      const sameState = await put(session.accessToken, 1, { ...step1, boards: [mp, mp2] });
+      expect((await put(session.accessToken, 2, { ...step2, boards: [mp, up] })).status).toBe(200);
+      const sameState = await put(session.accessToken, 2, { ...step2, boards: [mp, mp2] });
       expect(sameState.status).toBe(400);
       expect(sameState.body.details[0]).toMatchObject({ path: "boards.1.stateBoard", message: "This state board is already added" });
 
       const many = Array.from({ length: 7 }, (_, i) => ({ board: "Other", otherBoard: `Board ${i}`, mediums: ["English"] }));
-      const tooMany = await put(session.accessToken, 1, { ...step1, boards: many });
+      const tooMany = await put(session.accessToken, 2, { ...step2, boards: many });
       expect(tooMany.status).toBe(400);
       expect(tooMany.body.details[0]).toMatchObject({ path: "boards", message: "A school can list at most 6 boards" });
 
       // The early shape (a flat list of board names) is refused, not guessed at.
-      expect((await put(session.accessToken, 1, { ...step1, boards: ["CBSE"] })).status).toBe(400);
+      expect((await put(session.accessToken, 2, { ...step2, boards: ["CBSE"] })).status).toBe(400);
     });
 
     it("checks the class range, the student count and the session month here too", async () => {
@@ -368,19 +398,24 @@ describe("onboarding form", () => {
       const messages = (res: request.Response) =>
         Object.fromEntries(res.body.details.map((d: { path: string; message: string }) => [d.path, d.message]));
 
-      const backwards = await put(session.accessToken, 1, { ...step1, lowestClass: "10", highestClass: "5" });
+      const backwards = await put(session.accessToken, 2, { ...step2, lowestClass: "10", highestClass: "5" });
       expect(backwards.status).toBe(400);
-      expect(messages(backwards)).toMatchObject({ highestClass: "The last class cannot be lower than the first class" });
+      expect(messages(backwards)).toMatchObject({ "boards.0.plans.0.highestClass": "The last class cannot be lower than the first class" });
 
-      const size = await put(session.accessToken, 1, { ...step1, approxStudents: 0, sessionStartMonth: 13 });
+      const size = await put(session.accessToken, 1, { ...step1, approxStudents: 0 });
       expect(size.status).toBe(400);
-      expect(messages(size)).toMatchObject({ approxStudents: "Enter the number of students", sessionStartMonth: "Choose a month" });
+      expect(messages(size)).toMatchObject({ approxStudents: "Enter the number of students" });
+
+      const month = await put(session.accessToken, 2, { ...step2, sessionStartMonth: 13 });
+      expect(month.status).toBe(400);
+      expect(messages(month)).toMatchObject({ sessionStartMonth: "Choose a month" });
     });
 
-    it("saves classes, size and session with step 1, so step 3 is only about the administrator", async () => {
+    it("saves classes, size and session with steps 1 and 2, so step 3 is only about the administrator", async () => {
       const { session } = await selfRegister();
       const juneToMay = { name: "2026-27", startDate: "2026-06-01", endDate: "2027-05-31" };
-      await put(session.accessToken, 1, { ...step1, lowestClass: "LKG", highestClass: "8", approxStudents: 420, academicYear: juneToMay });
+      await put(session.accessToken, 1, { ...step1, approxStudents: 420 });
+      await put(session.accessToken, 2, { ...step2, lowestClass: "LKG", highestClass: "8", academicYear: juneToMay });
       const state = (await request(app).get("/api/v1/onboarding").set(auth(session.accessToken))).body.data;
       expect(state.steps[1]).toMatchObject({ lowestClass: "LKG", highestClass: "8", approxStudents: 420, sessionStartMonth: 6 });
       expect(Object.keys(state.steps[3]).sort()).toEqual(["adminName", "alternateMobile", "designation", "designationOther", "mobile"]);
@@ -394,8 +429,8 @@ describe("onboarding form", () => {
 
     it("keeps an affiliation number with its own board", async () => {
       const { session } = await selfRegister();
-      const res = await put(session.accessToken, 1, {
-        ...step1,
+      const res = await put(session.accessToken, 2, {
+        ...step2,
         boards: [
           { board: "CBSE", affiliationNumber: "2130456", mediums: ["English"] },
           { board: "State Board", stateBoard: "M.P. Board", affiliationNumber: "MP/1234", mediums: ["Hindi"] },
@@ -414,20 +449,20 @@ describe("onboarding form", () => {
 
     it("asks for the name of an 'Other' board, and forgets it for any other board", async () => {
       const { session } = await selfRegister();
-      const missing = await put(session.accessToken, 1, { ...step1, boards: [{ board: "Other", otherBoard: "", mediums: ["English"] }] });
+      const missing = await put(session.accessToken, 2, { ...step2, boards: [{ board: "Other", otherBoard: "", mediums: ["English"] }] });
       expect(missing.status).toBe(400);
       expect(messages(missing)).toMatchObject({ "boards.0.otherBoard": "Enter the name of the board" });
 
-      const ok = await put(session.accessToken, 1, { ...step1, boards: [{ board: "Other", otherBoard: "  Cambridge IGCSE ", mediums: ["English"] }] });
+      const ok = await put(session.accessToken, 2, { ...step2, boards: [{ board: "Other", otherBoard: "  Cambridge IGCSE ", mediums: ["English"] }] });
       expect(ok.status).toBe(200);
       expect(ok.body.data.steps[1].boards[0]).toMatchObject({ board: "Other", otherBoard: "Cambridge IGCSE" });
 
-      const changed = await put(session.accessToken, 1, { ...step1, boards: [{ board: "CBSE", otherBoard: "Cambridge IGCSE", mediums: ["English"] }] });
+      const changed = await put(session.accessToken, 2, { ...step2, boards: [{ board: "CBSE", otherBoard: "Cambridge IGCSE", mediums: ["English"] }] });
       expect(changed.body.data.steps[1].boards[0]).toMatchObject({ board: "CBSE", otherBoard: "" });
 
       // The same named board twice is a slip, whatever the capital letters.
-      const twice = await put(session.accessToken, 1, {
-        ...step1,
+      const twice = await put(session.accessToken, 2, {
+        ...step2,
         boards: [
           { board: "Other", otherBoard: "Cambridge", mediums: ["English"] },
           { board: "Other", otherBoard: "CAMBRIDGE", mediums: ["Hindi"] },
@@ -440,18 +475,18 @@ describe("onboarding form", () => {
     it("takes the state from the list, with its district and an optional division", async () => {
       const { session } = await selfRegister();
       const token = session.accessToken;
-      const free = await put(token, 2, { ...step2, state: "Narnia" });
+      const free = await put(token, 1, { ...step1, state: "Narnia" });
       expect(free.status).toBe(400);
       expect(messages(free)).toMatchObject({ state: "Choose the state" });
 
-      const noDistrict = await put(token, 2, { ...step2, district: "" });
+      const noDistrict = await put(token, 1, { ...step1, district: "" });
       expect(messages(noDistrict)).toMatchObject({ district: "Enter the district" });
 
-      const noDivision = await put(token, 2, { ...step2, state: "Kerala", division: "", district: "Thrissur" });
+      const noDivision = await put(token, 1, { ...step1, state: "Kerala", division: "", district: "Thrissur" });
       expect(noDivision.status).toBe(200);
       expect(noDivision.body.data.steps[2]).toMatchObject({ state: "Kerala", district: "Thrissur", division: "" });
 
-      const full = await put(token, 2, { ...step2, state: "Madhya Pradesh", division: "Bhopal", district: "Sehore" });
+      const full = await put(token, 1, { ...step1, state: "Madhya Pradesh", division: "Bhopal", district: "Sehore" });
       expect(full.body.data.steps[2]).toMatchObject({ state: "Madhya Pradesh", division: "Bhopal", district: "Sehore" });
     });
 
@@ -459,16 +494,16 @@ describe("onboarding form", () => {
       const { session } = await selfRegister();
       const token = session.accessToken;
       for (const typed of ["9876543210", "+91 98765 43210", "919876543210", "09876543210", "98765-43210"]) {
-        const res = await put(token, 2, { ...step2, schoolPhone: typed });
+        const res = await put(token, 1, { ...step1, schoolPhone: typed });
         expect(res.status).toBe(200);
         expect(res.body.data.steps[2].schoolPhone).toBe("9876543210");
       }
       // A landline: the STD code and the number are the 10 digits.
-      const landline = await put(token, 2, { ...step2, schoolPhone: "0755-2345678" });
+      const landline = await put(token, 1, { ...step1, schoolPhone: "0755-2345678" });
       expect(landline.body.data.steps[2].schoolPhone).toBe("7552345678");
 
       for (const bad of ["98765", "987654321", "98765432101", "abcdefghij", ""]) {
-        const res = await put(token, 2, { ...step2, schoolPhone: bad });
+        const res = await put(token, 1, { ...step1, schoolPhone: bad });
         expect(res.status, bad).toBe(400);
         expect(messages(res)).toMatchObject({ schoolPhone: "Enter a 10-digit phone number" });
       }
@@ -515,7 +550,7 @@ describe("onboarding form", () => {
     const done = await fillAll(token);
     expect(done.body.data.onboarding).toMatchObject({ status: "COMPLETED", completedSteps: [1, 2, 3, 4] });
 
-    const edit = await put(token, 2, { ...step2, city: "Mumbai" });
+    const edit = await put(token, 1, { ...step1, city: "Mumbai" });
     expect(edit.status).toBe(200);
     expect(edit.body.data.onboarding).toMatchObject({ status: "IN_PROGRESS", currentStep: 4, completedSteps: [1, 2, 3] });
     expect(edit.body.data.steps[4]).toEqual({ confirmed: false });
@@ -563,6 +598,25 @@ describe("onboarding form", () => {
     expect(state.steps[4]).toEqual({ confirmed: true });
   });
 
+  it("a step saves only its own answers: step 1 leaves the boards alone, step 2 leaves the address alone", async () => {
+    const { session } = await selfRegister();
+    const token = session.accessToken;
+    const read = async () => (await request(app).get("/api/v1/onboarding").set(auth(token))).body.data.steps;
+    await fillAll(token);
+
+    await put(token, 1, { ...step1, city: "Mumbai", schoolType: "Government" });
+    let steps = await read();
+    expect(steps[2].city).toBe("Mumbai");
+    expect(steps[1].boards.map((b: { board: string }) => b.board)).toEqual(["CBSE"]);
+    expect(steps[1].academicYear.name).toBe("2026-2027");
+
+    await put(token, 2, { ...step2, boards: [{ board: "ICSE", mediums: ["English"] }] });
+    steps = await read();
+    expect(steps[1].boards.map((b: { board: string }) => b.board)).toEqual(["ICSE"]);
+    expect(steps[2].city).toBe("Mumbai");
+    expect(steps[1].schoolType).toBe("Government");
+  });
+
   it("refuses a school name another school already uses, pointing at the field", async () => {
     await selfRegister("Greenfield School", "green@example.com");
     const { session } = await selfRegister("Sunrise Public School", "principal@sunrise.example");
@@ -576,7 +630,7 @@ describe("onboarding form", () => {
   it("keeps one school's form away from another's", async () => {
     const a = await selfRegister("School Alpha", "alpha@example.com");
     const b = await selfRegister("School Beta", "beta@example.com");
-    await put(a.session.accessToken, 2, step2);
+    await put(a.session.accessToken, 1, step1);
     const stateB = (await request(app).get("/api/v1/onboarding").set(auth(b.session.accessToken))).body.data;
     expect(stateB.steps[2].city).toBe("");
     expect(stateB.onboarding.completedSteps).toEqual([]);
@@ -895,7 +949,7 @@ describe("suspending and reactivating a school", () => {
   });
 });
 
-describe("the academic year (named in step 1, switched on by the approval)", () => {
+describe("the academic year (named in step 2, switched on by the approval)", () => {
   const messages = (res: request.Response) =>
     Object.fromEntries((res.body.details ?? []).map((d: { path: string; message: string }) => [d.path, d.message]));
   const yearsOf = (tenantId: string) => AcademicYear.find({ tenantId }).lean();
@@ -903,33 +957,33 @@ describe("the academic year (named in step 1, switched on by the approval)", () 
   it("is required, with a message per field, and its end must come after its start", async () => {
     const { session } = await selfRegister();
     const token = session.accessToken as string;
-    const { academicYear: _left, ...withoutYear } = step1;
+    const { academicYear: _left, ...withoutYear } = step2;
 
-    const missing = await put(token, 1, withoutYear);
+    const missing = await put(token, 2, withoutYear);
     expect(missing.status).toBe(400);
     expect(messages(missing)).toMatchObject({ academicYear: "Enter the academic year" });
 
-    const blank = await put(token, 1, { ...step1, academicYear: { name: "", startDate: "", endDate: "" } });
+    const blank = await put(token, 2, { ...step2, academicYear: { name: "", startDate: "", endDate: "" } });
     expect(messages(blank)).toMatchObject({
       "academicYear.name": "Enter the academic year name, for example 2026-2027",
       "academicYear.startDate": "Choose the start date",
       "academicYear.endDate": "Choose the end date",
     });
 
-    const backwards = await put(token, 1, { ...step1, academicYear: { name: "2026-2027", startDate: "2027-03-31", endDate: "2026-04-01" } });
+    const backwards = await put(token, 2, { ...step2, academicYear: { name: "2026-2027", startDate: "2027-03-31", endDate: "2026-04-01" } });
     expect(messages(backwards)).toMatchObject({ "academicYear.endDate": "The end date must be after the start date" });
-    const sameDay = await put(token, 1, { ...step1, academicYear: { name: "2026-2027", startDate: "2026-04-01", endDate: "2026-04-01" } });
+    const sameDay = await put(token, 2, { ...step2, academicYear: { name: "2026-2027", startDate: "2026-04-01", endDate: "2026-04-01" } });
     expect(messages(sameDay)).toMatchObject({ "academicYear.endDate": "The end date must be after the start date" });
 
-    const impossible = await put(token, 1, { ...step1, academicYear: { name: "2026-2027", startDate: "2026-02-30", endDate: "2027-03-31" } });
+    const impossible = await put(token, 2, { ...step2, academicYear: { name: "2026-2027", startDate: "2026-02-30", endDate: "2027-03-31" } });
     expect(messages(impossible)).toMatchObject({ "academicYear.startDate": "Choose a valid start date" });
-    const typo = await put(token, 1, { ...step1, academicYear: { name: "2026-2027", startDate: "2026-04-01", endDate: "2062-03-31" } });
+    const typo = await put(token, 2, { ...step2, academicYear: { name: "2026-2027", startDate: "2026-04-01", endDate: "2062-03-31" } });
     expect(messages(typo)).toMatchObject({ "academicYear.endDate": "An academic year can be at most two years long" });
 
-    // Nothing half-saved: no year, and step 1 is not counted as done.
+    // Nothing half-saved: no year, and step 2 is not counted as done.
     expect(await yearsOf(session.tenant.id)).toHaveLength(0);
     const state = (await request(app).get("/api/v1/onboarding").set(auth(token))).body.data;
-    expect(state.onboarding.completedSteps).not.toContain(1);
+    expect(state.onboarding.completedSteps).not.toContain(2);
   });
 
   it("takes the school's own dates (not April to March), keeps one pending year however often it is saved, and reads it back", async () => {
@@ -937,12 +991,12 @@ describe("the academic year (named in step 1, switched on by the approval)", () 
     const token = session.accessToken as string;
     const tenantId = session.tenant.id as string;
 
-    expect((await put(token, 1, { ...step1, academicYear: { name: "2026", startDate: "2026-01-05", endDate: "2026-12-20" } })).status).toBe(200);
+    expect((await put(token, 2, { ...step2, academicYear: { name: "2026", startDate: "2026-01-05", endDate: "2026-12-20" } })).status).toBe(200);
     // A retry, and three saves at the same moment: still one record.
-    expect((await put(token, 1, step1)).status).toBe(200);
+    expect((await put(token, 2, step2)).status).toBe(200);
     const together = await Promise.all(
       ["2026-27 A", "2026-27 B", "2026-27 C"].map((name) =>
-        put(token, 1, { ...step1, academicYear: { name, startDate: "2026-06-15", endDate: "2027-04-30" } })
+        put(token, 2, { ...step2, academicYear: { name, startDate: "2026-06-15", endDate: "2027-04-30" } })
       )
     );
     expect(together.map((r) => r.status)).toEqual([200, 200, 200]);
@@ -965,11 +1019,11 @@ describe("the academic year (named in step 1, switched on by the approval)", () 
     const { session } = await selfRegister();
     const token = session.accessToken as string;
     await fillAll(token);
-    // As if step 1 had been saved before academic years existed.
+    // As if step 2 had been saved before academic years existed.
     await AcademicYear.deleteMany({ tenantId: session.tenant.id });
     const res = await request(app).post("/api/v1/onboarding/submit").set(auth(token));
     expect(res.status).toBe(400);
-    expect(res.body.details.missingSteps).toEqual([1]);
+    expect(res.body.details.missingSteps).toEqual([2]);
   });
 
   it("stays pending while the school waits and after a rejection; approval makes it the one active year, exactly once", async () => {
@@ -987,7 +1041,7 @@ describe("the academic year (named in step 1, switched on by the approval)", () 
     expect((await yearsOf(tenantId)).map((y) => y.status)).toEqual(["pending"]);
 
     // The school fixes its dates and resubmits: the same record is updated.
-    expect((await put(token, 1, { ...step1, academicYear: { name: "2026-2027", startDate: "2026-04-10", endDate: "2027-03-31" } })).status).toBe(200);
+    expect((await put(token, 2, { ...step2, academicYear: { name: "2026-2027", startDate: "2026-04-10", endDate: "2027-03-31" } })).status).toBe(200);
     await put(token, 4, { confirmed: true });
     expect((await request(app).post("/api/v1/onboarding/submit").set(auth(token))).status).toBe(200);
     expect(await yearsOf(tenantId)).toHaveLength(1);

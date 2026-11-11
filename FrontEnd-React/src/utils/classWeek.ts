@@ -1,24 +1,22 @@
-import { DAY_NAMES } from "../constants/timetable";
+import { MAX_PERIODS, MIN_PERIOD_MINUTES } from "../constants/timetable";
 import type { ClassDayInput, Schedule, Slot } from "../types";
-import { DEFAULT_SETUP, clockToMinutes, generateDay, minutesToClock } from "./timings";
+import { DEFAULT_SETUP, clockToMinutes, generateDay, setupFromSlots, type DaySetup } from "./timings";
 
 /**
- * A class's own periods in a day, as the "Periods per day" box of its timetable thinks of them: for each day of the week how many
- * periods the class has, which the class follows from the school (or its department) and which are its own. Changing a number makes the
- * rows of that day (fewer: the rows up to that period; more: periods after the last row, as long as the last one; none: no school), and
- * only the days that end up different from what the class would follow anyway are sent (`PUT /timetable/class-day`). The rules of which
- * timing a class follows are the server's (backend scheduleRules.ts `resolveSchedule`); this is the same, so the box can say before
- * anything is sent what each day is now.
+ * A class's own hours, as the "Class timing" box of its timetable thinks of them. A class has the school's times (the school's one day:
+ * when it starts, how long a period is, the lunch) and is there for as many periods as it has lessons that day; nothing is set for it.
+ * Only a class that is called at other hours (9 to 2, say) gets a timing of its own: its rows are made from the hours and the school's
+ * length of a period and lunch, and only the days that end up different from what the class would follow anyway are sent
+ * (`PUT /timetable/class-day`). The rules of which timing a class follows are the server's (backend scheduleRules.ts `resolveSchedule`);
+ * this is the same, so the box can say before anything is sent what the class has now.
  */
 
 export const periodCount = (rows: readonly Slot[]): number => rows.filter((s) => s.kind === "period").length;
 
 const sameRow = (a: Slot, b: Slot) => a.kind === b.kind && a.start === b.start && a.end === b.end && (a.label ?? "") === (b.label ?? "");
-export const sameRows = (a: readonly Slot[], b: readonly Slot[]): boolean => a.length === b.length && a.every((s, i) => sameRow(s, b[i]));
-/** `a` is the first rows of `b` (or all of them). */
-const isPrefix = (a: readonly Slot[], b: readonly Slot[]) => a.length <= b.length && a.every((s, i) => sameRow(s, b[i]));
+const sameRows = (a: readonly Slot[], b: readonly Slot[]): boolean => a.length === b.length && a.every((s, i) => sameRow(s, b[i]));
 
-/** A timing made for exactly this class (not a department's, not one for several classes): what "Periods per day" writes. */
+/** A timing made for exactly this class (not a department's, not one for several classes): what the "Class timing" box writes. */
 export const isOwnTiming = (s: Pick<Schedule, "scope" | "classIds" | "departmentId">, classId: string): boolean =>
   s.scope === "only" && !s.departmentId && s.classIds.length === 1 && s.classIds[0] === classId;
 
@@ -66,82 +64,119 @@ export function referenceDay(days: readonly ClassDay[]): Slot[] {
   return fullest.length > 0 ? fullest : generateDay(DEFAULT_SETUP).slots;
 }
 
-/**
- * The same day with `n` periods. Fewer: the rows up to the n-th period (what came after, lunch or breaks, goes). More: periods after the
- * last row, each as long as the last period. None: no rows. Null when it cannot be done: nothing to start from, or the day would run
- * past midnight.
- */
-export function withPeriods(rows: readonly Slot[], n: number): Slot[] | null {
-  if (n <= 0) return [];
-  const have = periodCount(rows);
-  if (have === 0) return null;
-  if (n === have) return [...rows];
-  if (n < have) {
-    const out: Slot[] = [];
-    let seen = 0;
-    for (const row of rows) {
-      out.push(row);
-      if (row.kind === "period") {
-        seen += 1;
-        if (seen === n) break;
-      }
-    }
-    return out;
-  }
-  const last = [...rows].reverse().find((s) => s.kind === "period")!;
-  const length = (clockToMinutes(last.end) ?? 0) - (clockToMinutes(last.start) ?? 0);
-  const from = clockToMinutes(rows[rows.length - 1].end);
-  if (from === null || length <= 0) return null;
-  let cursor: number = from;
-  const out = [...rows];
-  for (let i = have; i < n; i += 1) {
-    const end: number = cursor + length;
-    if (end > 1439) return null;
-    out.push({ kind: "period", label: "", start: minutesToClock(cursor), end: minutesToClock(end) });
-    cursor = end;
-  }
-  return out;
+/** When the class comes and goes now: its own day's hours if it has one, else the day it follows (the usual day when it has no school). */
+export function classHours(days: readonly ClassDay[]): { start: string; end: string } {
+  const own = days.find((d) => d.own && d.current.length > 0);
+  const rows = own ? own.current : referenceDay(days);
+  return { start: rows[0].start, end: rows[rows.length - 1].end };
 }
 
 /**
- * The rows a day starts from when its number changes: the rows it has, unless they are only the school's day cut short (then the
- * school's, so going back up gives the school's day again), or it has none (then the school's, or the class's fullest day).
+ * The numbers of a class's day from `start`: the school's length of a period (taken from `reference`, a day of the school), its lunch and
+ * short break when they fall inside the hours (after the start, and before `until` when the end is known), no assembly.
  */
-function startFrom(day: ClassDay, reference: readonly Slot[]): readonly Slot[] {
-  if (day.current.length === 0) return day.inherited.length > 0 ? day.inherited : reference;
-  if (day.own && isPrefix(day.current, day.inherited)) return day.inherited;
-  return day.current;
-}
-
-/** The rows of a day with `n` periods, or null when that cannot be made. The rows it has now when the number is the same. */
-export function rowsFor(day: ClassDay, n: number, reference: readonly Slot[]): Slot[] | null {
-  if (n === periodCount(day.current)) return day.current;
-  return withPeriods(startFrom(day, reference), n) ?? withPeriods(reference, n);
+function classSetup(start: string, from: number, until: number, reference: readonly Slot[], periods: number): DaySetup {
+  const school = setupFromSlots(reference);
+  const inside = (a: string | null, b: string | null) => {
+    const x = a ? clockToMinutes(a) : null;
+    const y = b ? clockToMinutes(b) : null;
+    return x !== null && y !== null && x >= from && y <= until;
+  };
+  const lunch = inside(school.lunchStart, school.lunchEnd);
+  const rest = inside(school.breakStart, school.breakEnd);
+  return {
+    ...school,
+    start,
+    periods,
+    assemblyMinutes: 0,
+    lunchStart: lunch ? school.lunchStart : null,
+    lunchEnd: lunch ? school.lunchEnd : null,
+    breakStart: rest ? school.breakStart : null,
+    breakEnd: rest ? school.breakEnd : null,
+  };
 }
 
 /**
- * What `PUT /timetable/class-day` is sent for these numbers of periods: the days that are not what the class would follow anyway (a day
- * with no periods is sent with no rows). `problem` says why a day cannot be made, and then nothing should be sent.
+ * The rows of a class that comes from `start` to `end` (9:00 to 14:00 say): periods as long as the school's, the school's lunch and short
+ * break where they fall inside those hours, no assembly. The last period is cut to end where the class ends when what is left is long
+ * enough for a period; a shorter bit is left out, so the day ends with the last whole period. Null when the hours make no day: a time
+ * is missing, the end is not after the start, or no period fits.
  */
-export function classDayBody(
-  classId: string,
-  days: readonly ClassDay[],
-  counts: Readonly<Record<number, number>>,
-  reference: readonly Slot[],
-  removeLessons: boolean
-): { body: ClassDayInput; problem: string | null } {
-  const sent: ClassDayInput["days"] = [];
-  let problem: string | null = null;
-  for (const d of days) {
-    const n = counts[d.day] ?? periodCount(d.current);
-    const rows = rowsFor(d, n, reference);
-    if (!rows) {
-      problem ??= `${DAY_NAMES[d.day]} cannot have ${n} period${n === 1 ? "" : "s"}: the day would run past midnight.`;
+export function rowsBetween(start: string, end: string, reference: readonly Slot[]): Slot[] | null {
+  const from = clockToMinutes(start);
+  const to = clockToMinutes(end);
+  if (from === null || to === null || to <= from) return null;
+  const rows: Slot[] = [];
+  for (const slot of generateDay(classSetup(start, from, to, reference, MAX_PERIODS)).slots) {
+    const opens = clockToMinutes(slot.start) ?? 0;
+    const closes = clockToMinutes(slot.end) ?? 0;
+    if (opens >= to) break;
+    if (closes <= to) {
+      rows.push(slot);
       continue;
     }
+    // This row runs past the end of the class: a period is cut to end with it (when that is still a period), a break is dropped.
+    if (slot.kind === "period" && to - opens >= MIN_PERIOD_MINUTES) rows.push({ ...slot, end });
+    break;
+  }
+  // A day does not end with a break.
+  while (rows.length > 0 && rows[rows.length - 1].kind !== "period") rows.pop();
+  return rows.length > 0 ? rows : null;
+}
+
+/**
+ * The rows of a class that starts at `start` and has `n` periods (more or fewer than the school's day: the day is cut after the n-th
+ * period, or goes on after the last one). Null for no period, more than a day can have, or a day that would run past midnight.
+ */
+export function rowsForPeriods(start: string, n: number, reference: readonly Slot[]): Slot[] | null {
+  const from = clockToMinutes(start);
+  if (from === null || n < 1 || n > MAX_PERIODS) return null;
+  const { slots } = generateDay(classSetup(start, from, Infinity, reference, n));
+  const last = slots.at(-1);
+  return last && clockToMinutes(last.end) !== null ? slots : null;
+}
+
+/**
+ * What `PUT /timetable/class-day` is sent for a class that comes from `start` to `end`: every day the class has school and follows the
+ * school's usual day gets those hours (a class with no school at all: Monday to Friday from the usual day); a day the school keeps
+ * different (a short Saturday) stays as it is, the class's own rows if it has any; a day it has off by itself stays off; a day with no
+ * school stays without. Only the days that differ from what the class would follow anyway are sent, so the school's own hours send
+ * nothing. `problem` says why the hours make no day, and then nothing should be sent.
+ */
+export function classTimingBody(classId: string, days: readonly ClassDay[], start: string, end: string, removeLessons: boolean): { body: ClassDayInput; problem: string | null } {
+  const empty = { body: { classId, days: [], removeLessons } as ClassDayInput };
+  const from = clockToMinutes(start);
+  const to = clockToMinutes(end);
+  if (from === null || to === null) return { ...empty, problem: "Enter when the class starts and ends" };
+  if (to <= from) return { ...empty, problem: "The class must end after it starts" };
+
+  const reference = referenceDay(days);
+  const hasSchool = days.some((d) => d.current.length > 0);
+  // The school's usual day: the rows most of its days have.
+  const signature = (rows: readonly Slot[]) => JSON.stringify(rows.map((r) => [r.kind, r.start, r.end]));
+  const tally = new Map<string, number>();
+  for (const d of days) if (d.inherited.length > 0) tally.set(signature(d.inherited), (tally.get(signature(d.inherited)) ?? 0) + 1);
+  const usual = [...tally].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+  const sent: ClassDayInput["days"] = [];
+  for (const d of days) {
+    const schooled = hasSchool ? d.current.length > 0 : d.day <= 5;
+    if (!schooled) {
+      // A day the class has off by itself (the school has school that day) stays off.
+      if (hasSchool && d.own && d.inherited.length > 0) sent.push({ day: d.day, slots: [] });
+      continue;
+    }
+    const follows = !hasSchool || usual === null || signature(d.inherited) === usual;
+    if (!follows) {
+      // A day the school keeps different is left to the school, unless the class already has rows of its own on it.
+      if (d.own) sent.push({ day: d.day, slots: d.current });
+      continue;
+    }
+    const rows = rowsBetween(start, end, d.inherited.length > 0 ? d.inherited : d.current.length > 0 ? d.current : reference);
+    if (!rows) return { ...empty, problem: "These hours are too short for a period" };
     if (!sameRows(rows, d.inherited)) sent.push({ day: d.day, slots: rows });
   }
-  return { body: { classId, days: sent, removeLessons }, problem };
+  return { body: { classId, days: sent, removeLessons }, problem: null };
 }
 
 /** "08:30 to 12:20 · lunch 10:30 to 11:00": a day in a few words; "No school" for a day with no rows. */

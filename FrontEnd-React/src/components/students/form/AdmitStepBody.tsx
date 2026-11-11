@@ -5,7 +5,7 @@ import { stepName } from "../../../utils/placement";
 import type { AcademicStructure, SectionItem, SectionLoad, StudentCapacity } from "../../../types";
 import { AddressFields } from "./AddressFields";
 import { AdmissionCard } from "./AdmissionCard";
-import { FormCard } from "./FormCard";
+import { FormSection } from "./FormSection";
 import { GuardiansCard } from "./GuardiansCard";
 import { PlacedFields } from "./PlacedFields";
 import { PlacementFields } from "./PlacementFields";
@@ -46,9 +46,9 @@ export function AdmitStepBody({
         {structure ? (
           <PlacementFields form={form} structure={structure} capacity={capacity} index={0} onPickFull={onPickFull ?? (() => {})} />
         ) : (
-          <FormCard index={0} icon={FolderTree} tone="success" title="Class and section" description="Where the student sits in this year's classes.">
+          <FormSection index={0} icon={FolderTree} title="Class and section">
             <p className="text-sm text-foreground-muted">Your classes and sections are shown here once they are set up in Classes & Sections.</p>
-          </FormCard>
+          </FormSection>
         )}
         <AdmissionCard form={form} index={1} />
         <PreviousSchoolFields form={form} index={2} />

@@ -9,6 +9,7 @@ import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import type { StudentSettings } from "../../../types";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
+import { signInAs, signOut } from "../../../test/session";
 import { CAPACITY, SETTINGS, STRUCTURE } from "../../../test/fixtures";
 import { placeIn } from "../../../utils/placement";
 import ManageFieldsPage from "../ManageFields";
@@ -67,7 +68,9 @@ const ADMITTED = {
 };
 const withRules = (fields: FieldRules): StudentSettings => ({ ...SETTINGS, fields });
 
-function openPage(entry = "/school/students/new") {
+function openPage(entry = "/school/students/new", state?: unknown) {
+  // The school admin: the page asks who is looking (what the school allowed them).
+  signInAs("school_admin");
   const router = createMemoryRouter(
     [
       { path: "/school/students/new", element: <StudentAdmitPage /> },
@@ -75,7 +78,7 @@ function openPage(entry = "/school/students/new") {
       { path: "/school/students/:id", element: <p>The student's page</p> },
       { path: "/school/students", element: <p>The students</p> },
     ],
-    { initialEntries: [entry] }
+    { initialEntries: [state === undefined ? entry : { pathname: entry, state }] }
   );
   render(
     <Provider store={store}>
@@ -135,6 +138,7 @@ async function parents(user: User) {
 }
 
 afterEach(() => {
+  signOut();
   cleanup();
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
   vi.unstubAllGlobals();
@@ -730,5 +734,56 @@ describe("Add student: the parent's login (2026-11-04)", () => {
     const card = await screen.findByRole("region", { name: "Parent login" });
     await waitFor(() => expect(card).toHaveTextContent("Ravi Verma already signs in as ravi.verma_12"));
     expect(within(card).queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+});
+
+describe("Add student: the look of the page", () => {
+  const open = async () => {
+    school({}, withRules(LENIENT_RULES));
+    openPage();
+    await addStudent();
+    await boxWhenShown("firstName");
+  };
+
+  it("has no column beside the form: the fields use the whole width", async () => {
+    await open();
+    expect(screen.queryByLabelText("About this admission")).not.toBeInTheDocument();
+    expect(screen.queryByText("Quick tips")).not.toBeInTheDocument();
+    expect(screen.queryByText("Form completion")).not.toBeInTheDocument();
+  });
+
+  it("a section is a heading with its fields, and no line of explanation under it", async () => {
+    await open();
+    expect(screen.getByRole("heading", { name: /^Student/ })).toBeInTheDocument();
+    expect(screen.queryByText(/name as it should appear/)).not.toBeInTheDocument();
+  });
+
+  it("every box of the form has the taller look", async () => {
+    await open();
+    expect(box("firstName")?.className).toMatch(/(^|\s)h-12(\s|$)/);
+  });
+});
+
+describe("the way back from the admission form", () => {
+  const trail = () => within(screen.getByRole("navigation", { name: "Breadcrumb" }));
+  const open = async (state?: unknown) => {
+    school();
+    openPage("/school/students/new", state);
+    await addStudent();
+  };
+
+  it("is the page the person opened it from (Students), not Manage Students", async () => {
+    await open({ cameFrom: { href: "/school-class/students?class=c5", label: "Students" } });
+    expect(trail().getByRole("link", { name: "Students" })).toHaveAttribute("href", "/school-class/students?class=c5");
+  });
+
+  it("is named after the class page it came from", async () => {
+    await open({ cameFrom: { href: "/school-class/c5", label: "Class 5" } });
+    expect(trail().getByRole("link", { name: "Class 5" })).toHaveAttribute("href", "/school-class/c5");
+  });
+
+  it("is Manage Students' list when it was opened from there (or by an address typed in)", async () => {
+    await open();
+    expect(trail().getByRole("link", { name: "Students" })).toHaveAttribute("href", "/school/students");
   });
 });
