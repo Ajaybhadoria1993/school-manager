@@ -65,6 +65,14 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
     ],
   },
   {
+    key: "transport",
+    label: "Transport",
+    items: [
+      { key: "transport.view", label: "See the vehicles, drivers and routes", for: ["staff"] },
+      { key: "transport.manage", label: "Add and change vehicles, drivers and routes", for: ["staff"] },
+    ],
+  },
+  {
     key: "attendance",
     label: "Attendance",
     items: [
@@ -152,6 +160,7 @@ export const IMPLIES: Readonly<Record<string, string>> = {
   "staff.edit": "staff.view",
   "classes.manage": "classes.view",
   "years.manage": "classes.view",
+  "transport.manage": "transport.view",
 };
 
 /** The people who can do everything: no checkbox for them. */
@@ -196,7 +205,9 @@ export const DEFAULT_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
   ],
   parent: ["calendar.view", "child.attendance", "child.timetable", "child.exams", "child.diary", "child.leave"],
   accountant: ["dashboard.view", "students.view", "students.export", "calendar.view"],
-  ...Object.fromEntries(PROFILES.filter((p) => p.kind === "staff" && p.key !== "accountant").map((p) => [p.key, SCHOOL_DEFAULT])),
+  // Transport is new: the transport in-charge starts with it (nobody had it before, so nothing is taken away from anyone).
+  transport: ["calendar.view", "transport.view", "transport.manage"],
+  ...Object.fromEntries(PROFILES.filter((p) => p.kind === "staff" && p.key !== "accountant" && p.key !== "transport").map((p) => [p.key, SCHOOL_DEFAULT])),
 };
 
 /** The logins that have a profile of their own (a staff login of any other kind is looked up by the person's role). */

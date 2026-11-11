@@ -19,7 +19,7 @@ export function BarList({ title, rows, unit }: { title: string; rows: BarRow[]; 
   const total = rows.reduce((n, r) => n + r.value, 0);
   return (
     <div>
-      <ul aria-hidden className="max-h-[26rem] space-y-1.5 overflow-y-auto pr-1">
+      <ul aria-hidden className="max-h-[18rem] space-y-1.5 overflow-y-auto pr-1">
         {rows.map((r) => (
           <li key={r.key} className="group/mark relative grid grid-cols-[6.5rem_1fr_3rem] items-center gap-3 rounded-md py-0.5 text-sm hover:bg-primary-soft/60">
             <span className="truncate pl-1 text-foreground-muted" title={r.label}>

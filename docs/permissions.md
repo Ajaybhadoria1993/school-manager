@@ -20,6 +20,7 @@ a Parent, a Librarian... When that person signs in, the menu shows what the scho
 | Group | Key | Given to |
 |---|---|---|
 | Dashboard | `dashboard.view` | staff |
+| Transport | `transport.view`, `transport.manage` (vehicles, drivers and attendants, routes; docs/transport.md) | staff |
 | Students | `students.view`, `.add` (Add student + Bulk upload + a parent's first login), `.edit` (also a parent's new password/username), `.status` (inactive/active, transfer out), `.export`, `.settings` (what Add student asks, the Excel layout: Manage fields + the Export page) | staff |
 | Teachers | `teachers.view`, `.add` (Add teacher + Bulk upload; makes subjects), `.edit` (details, classes, class teacher, login, make inactive), `.export`, `.settings` (the extra fields) | staff |
 | Staff | `staff.view`, `.add`, `.edit` (details, login, make inactive, remove) | staff |

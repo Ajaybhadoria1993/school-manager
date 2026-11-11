@@ -43,7 +43,7 @@ export function Switch({
       >
         <span
           aria-hidden
-          className={cn("inline-block size-5 rounded-full bg-white shadow transition-transform duration-200", checked ? "translate-x-[1.375rem]" : "translate-x-0.5")}
+          className={cn("inline-block size-5 rounded-full bg-surface shadow transition-transform duration-200", checked ? "translate-x-[1.375rem]" : "translate-x-0.5")}
         />
       </button>
       <label htmlFor={id} className="min-w-0 cursor-pointer select-none">

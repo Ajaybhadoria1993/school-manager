@@ -13,6 +13,7 @@ import notificationRoutes from "../main/notifications/routes/v1/notifications.ro
 import examRoutes from "../main/exams/routes/v1/exams.routes";
 import attendanceRoutes from "../main/attendance/routes/v1/attendance.routes";
 import dashboardRoutes from "../main/dashboard/routes/v1/dashboard.routes";
+import transportRoutes from "../main/transport/routes/v1/transport.routes";
 import permissionRoutes from "../main/permissions/routes/v1/permissions.routes";
 import publicRoutes from "../main/tenants/routes/v1/public.routes";
 
@@ -39,6 +40,8 @@ router.use("/exams", examRoutes);
 router.use("/attendance", attendanceRoutes);
 // The school home page's numbers (students, teachers, today's attendance, what needs attention) in one answer.
 router.use("/dashboard", dashboardRoutes);
+// Transport: the school's vehicles, drivers and attendants, and routes with their stops.
+router.use("/transport", transportRoutes);
 // What each kind of person of the school (Receptionist, Teacher, Parent...) may do: the Permissions page.
 router.use("/permissions", permissionRoutes);
 // What needs no sign-in: a school's logo, for an image tag.

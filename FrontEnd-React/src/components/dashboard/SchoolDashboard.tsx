@@ -61,7 +61,7 @@ export function SchoolDashboard() {
   const people = d ? d.people.teachers + d.people.staff : null;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -173,7 +173,7 @@ export function SchoolDashboard() {
 
           {isToday && <SchoolNowStrip data={d} />}
 
-          <div className="grid items-stretch gap-5 lg:grid-cols-3">
+          <div className="grid items-start gap-4 lg:grid-cols-3 2xl:grid-cols-4">
             <div className="min-w-0 lg:col-span-2">
               <AttendanceTrendCard />
             </div>
@@ -192,7 +192,7 @@ export function SchoolDashboard() {
             <div className="min-w-0">
               <AdmissionsCard admissions={d.admissions} />
             </div>
-            <div className="min-w-0 lg:col-span-2">
+            <div className="min-w-0 lg:col-span-2 2xl:col-span-1">
               <ComingUpCard upcoming={d.upcoming} />
             </div>
           </div>

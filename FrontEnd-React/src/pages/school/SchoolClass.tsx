@@ -24,7 +24,7 @@ import { FilterBar, FilterSearch, FilterSelect } from "../../components/ui/Filte
 import { Input } from "../../components/ui/Input";
 import { Skeleton } from "../../components/ui/Skeleton";
 
-/** The two lists of this page, each on its own address and with its own menu entry: Classes (`/school-class`) and Students (`/school-class/students`). */
+/** The Classes and class-filtered Students lists. Both student list addresses belong to the single Students menu entry. */
 type View = "classes" | "students";
 const STUDENTS_PATH = "/school-class/students";
 
@@ -48,13 +48,13 @@ const plainLink =
  * Add student), four numbers of the school (departments, classes and sections from the class layout, students from the seat counts:
  * reads the app already has), and a row of search and filters (no labels: each dropdown shows its name until something is picked).
  *
- * Two addresses, two menu entries (2026-11-04; they were two tabs of one page, now there are none): **Classes** (`/school-class`): a
+ * Two addresses under one menu entry for each area: **Classes** (`/school-class`): a
  * card for each class that matches (its students, sections and seats; a class opens its own page, a section on a card opens that
  * section's students); filters: department, class, part of a class name. **Students** (`/school-class/students`): every student that
  * matches, class by class; filters: department, class, section, gender, a search and the order. Each has ONE button in the primary colour (Manage
  * classes on Classes, Add student on Students). Every filter is a request to the server
  * (the class cards from `/students/class-overview`, the students from `/students`): nothing is filtered in the browser. The filters, the
- * page and the page size are in the address. Add student (the header button, 2026-11-09) goes to the Manage Students page with the chosen
+ * page and the page size are in the address. Add student (the header button, 2026-11-09) goes to the Students management page with the chosen
  * class and section in the address (the admission form is one press further, from there). The old address
  * `/school-class?view=students&...` goes to the new one with its filters.
  */
@@ -170,7 +170,7 @@ function SchoolClassView({ view }: { view: View }) {
         crumbs={[{ label: "Dashboard", to: "/dashboard" }]}
         info={year ? <Badge tone="primary">{year}</Badge> : undefined}
         actions={
-          // One button, in the primary colour: Manage classes on Classes, Add student on Students (it opens Manage Students with the chosen class and section).
+          // One button, in the primary colour: Manage classes on Classes, Add student on Students (the management page keeps the chosen class and section).
           ready && !readOnly ? (
             view === "students" ? (
               <Link to={manageStudentsLink({ classId, sectionId })} className={plainLink}>

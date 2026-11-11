@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router";
 import { useAuthSession } from "../hooks/useAuthSession";
+import { AppThemeProvider } from "../theme/AppThemeProvider";
 
 /** A new page opens at its top, as a page load does (links to a place on the same page, like "#features", keep their place). */
 function ScrollToTop() {
@@ -15,9 +16,9 @@ function ScrollToTop() {
 export function RootLayout() {
   useAuthSession();
   return (
-    <>
+    <AppThemeProvider>
       <ScrollToTop />
       <Outlet />
-    </>
+    </AppThemeProvider>
   );
 }

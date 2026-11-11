@@ -118,3 +118,22 @@ export interface OnboardingState {
   rejectionReason: string | null;
   steps: SchoolSteps;
 }
+
+/** Public school details that an approved school administrator can update from School Details. */
+export interface UpdateSchoolProfileInput {
+  schoolName: string;
+  schoolType: string;
+  approxStudents: number;
+  udiseCode: string;
+  establishedYear: number | null;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  division: string;
+  district: string;
+  pincode: string;
+  schoolPhone: string;
+  schoolEmail: string;
+  website: string;
+}

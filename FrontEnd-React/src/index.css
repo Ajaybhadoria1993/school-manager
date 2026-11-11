@@ -9,10 +9,7 @@
 @import "@heroui/styles";
 
 /*
- * Design system: "Modern Corporate & Clean Precision" (docs/design/stitch-design-system.md).
- * Cobalt blue for actions, deep navy for structure, a sky accent, crisp white cards on a cool grey canvas.
- * Every colour in the app comes from these tokens, so a re-brand is a change in this one block.
- * The app is light-only on purpose: the sign-in and onboarding screens are designed around the white card and navy panel.
+ * Base design tokens for public pages. The signed-in app shell gets its saved light/dark mode and accent from AppThemeProvider.
  */
 :root {
   color-scheme: light;
@@ -32,6 +29,9 @@
   --primary-foreground: #ffffff;
   --primary-soft: #eff4ff; /* tinted backgrounds, filled inputs, active nav */
   --primary-deep: #004ac6; /* brand wordmark, links that need more weight */
+  --brand: #2563eb; /* the EduShiksha wordmark stays blue in every app theme */
+  --primary-shadow: 0 4px 10px -2px rgb(37 99 235 / 0.4);
+  --primary-shadow-hover: 0 6px 14px -2px rgb(37 99 235 / 0.45);
 
   /* Structure: deep navy, and the sky accent for focus and live data */
   --navy: #0f172a;
@@ -89,6 +89,7 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-primary-soft: var(--primary-soft);
   --color-primary-deep: var(--primary-deep);
+  --color-brand: var(--brand);
 
   --color-navy: var(--navy);
   --color-panel: var(--panel);
@@ -312,13 +313,14 @@ body {
 
 .sidebar-scroll {
   scrollbar-width: thin;
-  scrollbar-color: rgb(255 255 255 / 0.18) transparent;
+  scrollbar-color: color-mix(in srgb, var(--foreground-muted) 38%, transparent) transparent;
 }
 .sidebar-scroll::-webkit-scrollbar {
   width: 6px;
 }
 .sidebar-scroll::-webkit-scrollbar-thumb {
-  background: rgb(255 255 255 / 0.18);
+  background: color-mix(in srgb, var(--foreground-muted) 38%, transparent);
+  border-radius: 999px;
 }
 
 @layer utilities {

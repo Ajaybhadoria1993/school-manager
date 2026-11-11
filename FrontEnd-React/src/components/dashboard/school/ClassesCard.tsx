@@ -15,7 +15,7 @@ export function ClassesCard({ students, classes }: { students: SchoolDashboard["
       {students.total === 0 ? (
         <p className="text-sm text-foreground-muted">No students added yet</p>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <SegmentBar
             label="Boys and girls"
             segments={[

@@ -1,5 +1,5 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type { ApiResponse, OnboardingState } from "../../types";
+import type { ApiResponse, OnboardingState, UpdateSchoolProfileInput } from "../../types";
 import { baseQueryWithReauth } from "./baseQueryWithReauth";
 
 /** The server answers with the whole form: only the logo's address changes, so the boxes being typed in are not disturbed. */
@@ -43,6 +43,23 @@ export const onboardingApi = createApi({
       },
     }),
 
+    /** Edits the approved school's public details, independently of onboarding progress. */
+    updateSchoolProfile: build.mutation<ApiResponse<OnboardingState>, UpdateSchoolProfileInput>({
+      query: (body) => ({ url: "/onboarding/profile", method: "PUT", body }),
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          const { data } = await queryFulfilled;
+          dispatch(
+            onboardingApi.util.updateQueryData("getOnboarding", undefined, (draft) => {
+              draft.data = data.data;
+            }),
+          );
+        } catch {
+          // The caller shows the save error; leave the last saved profile in the cache.
+        }
+      },
+    }),
+
     /** The school's logo saves on its own, as soon as a picture is chosen. */
     saveLogo: build.mutation<ApiResponse<OnboardingState>, FormData>({
       query: (body) => ({ url: "/onboarding/logo", method: "PUT", body }),
@@ -81,6 +98,7 @@ export const {
   useGetOnboardingQuery,
   useLazyGetOnboardingQuery,
   useSaveOnboardingStepMutation,
+  useUpdateSchoolProfileMutation,
   useConfirmOnboardingMutation,
   useSubmitOnboardingMutation,
   useSaveLogoMutation,

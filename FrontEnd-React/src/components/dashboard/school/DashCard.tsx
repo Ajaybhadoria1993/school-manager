@@ -4,8 +4,8 @@ import { cn } from "../../../utils/helpers";
 
 /**
  * One card of the school's dashboard (the look of Infinity Medisetu's section card, 2026-11-10): a small icon, a title (the card's name for a
- * screen reader too) with the days it is about under it, something on the right (a count, a link), and the content. Plain white, the same in
- * every card, and as tall as the row it is in.
+ * screen reader too) with the days it is about under it, something on the right (a count, a link), and the content. Plain white and the same
+ * in every card; cards use their content height instead of stretching to a taller neighbor.
  */
 export function DashCard({
   title,
@@ -26,7 +26,7 @@ export function DashCard({
   children: ReactNode;
 }) {
   return (
-    <Card id={id} role="region" aria-label={title} className={cn("flex h-full min-w-0 flex-col p-5", className)}>
+    <Card id={id} role="region" aria-label={title} className={cn("flex min-w-0 flex-col p-5", className)}>
       <header className="mb-4 flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           {icon && (

@@ -8,8 +8,7 @@ import { sessionStarted, signedOut } from "../../../redux/slices/authSlice";
 import { Sidebar } from "../Sidebar";
 
 /**
- * The navy menu. Under Manage school, Timetable is ONE row (2026-11-10, user: "Timetable option rahe, click karun to nested 2 option
- * dikhe: School timings, Class timetables"): it opens its two pages underneath, nested one step further in.
+ * Timetable is one expandable row in the main sidebar just below Attendance, with School timings and Class timetables nested inside it.
  */
 
 const signIn = (role = "school_admin") =>
@@ -49,8 +48,8 @@ const nestedOf = (name: string) => within(document.getElementById(row(name).getA
 const timetableRow = () => row("Timetable");
 const nested = () => nestedOf("Timetable");
 
-describe("the menu: Timetable with its two pages nested under it", () => {
-  it("shows one Timetable row under Manage school, closed, and no School timings or Class timetables of its own at the first level", () => {
+describe("the menu: Timetable below Attendance with its two pages nested under it", () => {
+  it("shows one Timetable row at the main sidebar level, closed, with its two pages nested inside", () => {
     openMenu("/school/classes");
     expect(timetableRow()).toHaveAttribute("aria-expanded", "false");
     // The two pages are only inside the Timetable row's panel.
@@ -83,12 +82,43 @@ describe("the menu: Timetable with its two pages nested under it", () => {
     expect(nested().getByRole("link", { name: "Class timetables" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("leaves the other pages of Manage school where they were, beside the Timetable row", () => {
+  it("keeps class setup under the single Classes entry and Timetable outside Manage school", () => {
     openMenu("/school/classes");
     const names = screen.getAllByRole("link").map((a) => a.textContent);
-    expect(names).toEqual(expect.arrayContaining(["Classes & Sections", "Promotion", "Test & Exam", "Manage Students", "Manage Teacher"]));
-    expect(names.indexOf("School timings")).toBeGreaterThan(names.indexOf("Promotion"));
-    expect(names.indexOf("Class timetables")).toBeLessThan(names.indexOf("Test & Exam"));
+    expect(names).toEqual(expect.arrayContaining(["Classes", "Promotion", "Test & Exam", "Active teachers", "Inactive teachers"]));
+    expect(names).not.toContain("Manage Teacher");
+    expect(names).not.toContain("Manage Students");
+    expect(screen.getAllByRole("link", { name: "Classes" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Students" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Teachers" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Timetable" })).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Classes" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("link", { name: "Classes & Sections" })).not.toBeInTheDocument();
+  });
+
+  it("opens the Students row into separate Active and Inactive pages, and marks the current page", async () => {
+    const user = userEvent.setup();
+    openMenu("/school/students/inactive");
+    expect(row("Students")).toHaveAttribute("aria-expanded", "true");
+    const studentPages = nestedOf("Students");
+    expect(studentPages.getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["Active students", "/school/students"],
+      ["Inactive students", "/school/students/inactive"],
+    ]);
+    expect(studentPages.getByRole("link", { name: "Inactive students" })).toHaveAttribute("aria-current", "page");
+    await user.click(row("Students"));
+    expect(row("Students")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("opens the Teacher row into one active directory and one inactive directory", () => {
+    openMenu("/teachers/inactive");
+    expect(row("Teachers")).toHaveAttribute("aria-expanded", "true");
+    const teacherPages = nestedOf("Teachers");
+    expect(teacherPages.getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["Active teachers", "/teachers"],
+      ["Inactive teachers", "/teachers/inactive"],
+    ]);
+    expect(teacherPages.getByRole("link", { name: "Inactive teachers" })).toHaveAttribute("aria-current", "page");
   });
 });
 
@@ -116,10 +146,11 @@ describe("the menu: Attendance with its three pages nested under it", () => {
     expect(screen.getAllByRole("link").filter((a) => a.getAttribute("aria-current") === "page")).toHaveLength(1);
   });
 
-  it("the Teacher and Staff entries of the menu stay where they were, beside the Attendance row, and leave it closed", () => {
+  it("the Teachers submenu and Staff stay beside Attendance, with the active teacher page selected", () => {
     openMenu("/teachers");
     expect(row("Attendance")).toHaveAttribute("aria-expanded", "false");
-    const teacher = screen.getAllByRole("link", { name: "Teacher" }).find((a) => a.getAttribute("href") === "/teachers")!;
+    expect(row("Teachers")).toHaveAttribute("aria-expanded", "true");
+    const teacher = nestedOf("Teachers").getByRole("link", { name: "Active teachers" });
     expect(teacher).toHaveAttribute("aria-current", "page");
     expect(screen.getAllByRole("link", { name: "Staff" }).map((a) => a.getAttribute("href"))).toEqual(["/attendance/staff", "/staff"]);
   });

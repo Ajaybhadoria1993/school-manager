@@ -7,13 +7,13 @@ import { SchoolLogo } from "../../tenants/models/SchoolLogo";
 import { Tenant, type ApprovalStatus, type ITenant } from "../../tenants/models/Tenant";
 import { notifySuperAdminsOfSubmission } from "../../tenants/services/notifications";
 import { buildSchoolSteps, type SchoolSteps } from "../../tenants/services/schoolDetails";
-import { nameKeyOf } from "../../tenants/services/tenantFactory";
+import { nameKeyOf, SCHOOL_EXISTS } from "../../tenants/services/tenantFactory";
 import {
   toOnboardingProgress,
   type OnboardingProgress,
 } from "../../tenants/services/tenantState";
 import { User, type IUser } from "../../users/models/User";
-import { step1Schema, step2Schema, step3Schema, step4Schema, type Step2Input } from "../schemas/onboarding.schemas";
+import { step1Schema, step2Schema, step3Schema, step4Schema, type Step1Input, type Step2Input } from "../schemas/onboarding.schemas";
 
 /** While a school is in one of these states its administrator may still edit the form. */
 const EDITABLE: ApprovalStatus[] = ["onboarding", "rejected"];
@@ -191,6 +191,53 @@ export class OnboardingService {
 
     const freshAdmin = await User.findById(admin._id);
     return toState(fresh ?? updated, freshAdmin ?? admin, savedYear);
+  }
+
+  /** Updates the approved school's public/contact details without changing onboarding or academic setup. */
+  static async updateSchoolProfile(caller: Caller, input: Step1Input): Promise<OnboardingState> {
+    const { tenant } = await load(caller);
+    if (tenant.approvalStatus !== "approved") throw LOCKED();
+    // The signed-in account always starts on the main school; keep this guard in case a side is ever passed here.
+    if (tenant.parentTenantId) throw ApiError.forbidden("Switch to the main school to edit its profile.", "FORBIDDEN");
+
+    const set: Record<string, unknown> = {
+      name: input.schoolName,
+      nameKey: nameKeyOf(input.schoolName),
+      "profile.schoolType": input.schoolType,
+      "profile.approxStudents": input.approxStudents,
+      "profile.udiseCode": input.udiseCode ?? "",
+      "profile.establishedYear": input.establishedYear ?? null,
+      "address.line1": input.addressLine1,
+      "address.line2": input.addressLine2 ?? "",
+      "address.city": input.city,
+      "address.state": input.state,
+      "address.division": input.division ?? "",
+      "address.district": input.district,
+      "address.pincode": input.pincode,
+      contactPhone: input.schoolPhone,
+      schoolEmail: input.schoolEmail,
+      website: input.website ?? "",
+    };
+
+    let updated: ITenant | null;
+    try {
+      updated = await Tenant.findOneAndUpdate(
+        { _id: tenant._id, approvalStatus: "approved", parentTenantId: null },
+        { $set: set },
+        { new: true, runValidators: true },
+      );
+    } catch (err) {
+      if ((err as { code?: number }).code === 11000) throw SCHOOL_EXISTS();
+      throw err;
+    }
+    if (!updated) throw LOCKED();
+
+    // These fields describe the whole school, so keep its existing medium sides in sync while preserving their class data.
+    const sideSet = { ...set };
+    delete sideSet.nameKey;
+    await Tenant.updateMany({ parentTenantId: updated._id, approvalStatus: "approved" }, { $set: sideSet }, { runValidators: true });
+
+    return OnboardingService.getState(caller);
   }
 
   /** The school's logo, while the form can still be edited. Replaces the one before. It does not count as a step of the form. */

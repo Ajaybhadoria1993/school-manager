@@ -56,12 +56,12 @@ export const TONES: Record<
     wash: "from-sky-400/10",
   },
   navy: {
-    tile: "bg-surface-muted text-navy",
+    tile: "bg-surface-muted text-foreground",
     glow: "from-slate-400/20",
-    line: "bg-navy",
-    text: "text-navy",
+    line: "bg-border",
+    text: "text-foreground",
     gradient: "bg-gradient-to-br from-slate-500 to-navy text-white shadow-[0_8px_18px_-6px_rgb(15_23_42/0.6)]",
-    chip: "bg-surface-muted text-navy ring-slate-300",
+    chip: "bg-surface-muted text-foreground ring-border",
     wash: "from-slate-400/10",
   },
 };

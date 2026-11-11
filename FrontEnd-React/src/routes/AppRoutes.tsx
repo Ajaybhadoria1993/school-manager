@@ -37,6 +37,7 @@ const routes: RouteObject[] = [
         ...lazyRoute(() => import("../Layouts/MainLayout")),
         children: [
           { path: "dashboard", ...lazyRoute(() => import("../pages/dashboard/Dashboard")) },
+          { path: "settings", ...lazyRoute(() => import("../pages/settings/Settings")) },
           // A signed-in parent's child (their home lists the children; the API answers only for their own).
           { path: "my-children/:id", ...lazyRoute(() => import("../pages/parent/ChildPage")) },
           // The school's holidays and events: everyone of the school sees them; the people who run it change them (the API checks).
@@ -49,15 +50,15 @@ const routes: RouteObject[] = [
           { path: "school", ...lazyRoute(() => import("../pages/school/School")) },
           // The pages of the school's work. The school admin and the principal open them all; anyone else opens the ones the school
           // allowed their kind of person (Permissions, docs/permissions.md): each group below is one or more keys. The API checks too.
-          // Only the school admin: the permissions, the other attendance of staff (not built), the medium of a teacher, the Manage Teacher twin.
+          // School-wide setup pages and the legacy teacher-management address, which now redirects into the single Teacher section.
           {
             ...lazyRoute(() => import("./SchoolManagerRoute")),
             children: [
               { path: "attendance", ...lazyRoute(() => import("../pages/attendance/AttendanceRedirect")) },
               { path: "attendance/staff", ...lazyRoute(() => import("../pages/attendance/StaffAttendance")) },
               { path: "permissions", ...lazyRoute(() => import("../pages/permissions/Permissions")) },
-              // Teachers (the Manage Teacher entry of Manage school): the same pages as Teacher, on their own address.
-              { path: "school/teachers", ...lazyRoute(() => import("../pages/school/Teachers")) },
+              // Keep old bookmarks working while the teacher directory and management now share one page.
+              { path: "school/teachers", element: <Navigate to="/teachers" replace /> },
               { path: "school/teachers/:id", ...lazyRoute(() => import("../pages/school/TeacherDetail")) },
               {
                 ...lazyRoute(() => import("./RunningYearRoute")),
@@ -110,7 +111,7 @@ const routes: RouteObject[] = [
               { path: "school/timetable", ...lazyRoute(() => import("../pages/school/ClassTimetables")) },
               { path: "school/timetable/timings", ...lazyRoute(() => import("../pages/school/TimetableRedirect")) },
               { path: "school/timetable/subjects", ...lazyRoute(() => import("../pages/school/TimetableSubjects")) },
-              { path: "school/timetable/teachers", element: <Navigate to="/school/teachers" replace /> },
+              { path: "school/timetable/teachers", element: <Navigate to="/teachers" replace /> },
               { path: "school/timetable/class-subjects", ...lazyRoute(() => import("../pages/school/TimetableRedirect")) },
               { path: "school/timetable/class/:classId/:sectionId", ...lazyRoute(() => import("../pages/school/TimetableRedirect")) },
               { path: "school/timetable/teacher/:teacherId", ...lazyRoute(() => import("../pages/school/TimetableTeacherWeek")) },
@@ -124,10 +125,11 @@ const routes: RouteObject[] = [
               { path: "school/exams/:id", ...lazyRoute(() => import("../pages/school/ExamDetail")) },
             ],
           },
-          // Teachers (the Teacher entry of the menu): the list, one teacher's page, Add teacher, Bulk upload, the change form, the extra fields.
+          // Teachers: one directory for active and inactive teachers, their school-wide management actions, and teacher details/forms.
           {
             element: <PermissionRoute keys={["teachers.view"]} />,
             children: [
+              { path: "teachers/inactive", ...lazyRoute(() => import("../pages/teachers/TeacherDirectory")) },
               { path: "teachers", ...lazyRoute(() => import("../pages/teachers/TeacherDirectory")) },
               { path: "teachers/:id", ...lazyRoute(() => import("../pages/school/TeacherDetail")) },
             ],
@@ -195,6 +197,16 @@ const routes: RouteObject[] = [
           {
             element: <PermissionRoute keys={["students.status"]} />,
             children: [{ path: "school/students/inactive", ...lazyRoute(() => import("../pages/school/InactiveStudents")) }],
+          },
+          // Transport: vehicles, drivers and attendants, routes (one row of the menu; /transport leads to the first).
+          {
+            element: <PermissionRoute keys={["transport.view"]} />,
+            children: [
+              { path: "transport", element: <Navigate to="/transport/vehicles" replace /> },
+              { path: "transport/vehicles", ...lazyRoute(() => import("../pages/transport/Vehicles")) },
+              { path: "transport/drivers", ...lazyRoute(() => import("../pages/transport/Drivers")) },
+              { path: "transport/routes", ...lazyRoute(() => import("../pages/transport/Routes")) },
+            ],
           },
           {
             element: <PermissionRoute keys={["attendance.view"]} />,

@@ -37,6 +37,7 @@ function openPage(path = "/teachers", extra: Record<string, Handler> = {}, who: 
   });
   const router = createMemoryRouter(
     [
+      { path: "/teachers/inactive", element: <TeacherDirectoryPage /> },
       { path: "/teachers", element: <TeacherDirectoryPage /> },
       { path: "/teachers/new", element: <p>Add teacher</p> },
       { path: "/teachers/import", element: <p>Bulk upload teachers</p> },
@@ -188,23 +189,25 @@ describe("Teacher (the menu entry on top)", () => {
     expect(router.state.location.pathname).toBe("/teachers/asha/edit");
   });
 
-  it("asks the server for the teaching ones first, and searches by what is typed once the typing stops", async () => {
-    const { calls, user } = openPage();
+  it("loads teaching teachers first and opens the inactive list from its own address", async () => {
+    const { calls, user, router } = openPage();
     await screen.findByRole("table", { name: "Teachers" });
     expect(lastQuery(calls).get("status")).toBe("active");
     await user.type(screen.getByRole("textbox", { name: "Search teachers" }), "asha");
     await waitFor(() => expect(lastQuery(calls).get("search")).toBe("asha"));
     // One request for the word, not one for each letter.
     expect(listCalls(calls).filter((c) => c.query.includes("search=")).length).toBe(1);
+    await router.navigate("/teachers/inactive?q=asha");
+    await waitFor(() => expect(lastQuery(calls).get("status")).toBe("inactive"));
   });
 
-  it("has only the search and four dropdowns (Status, Subject, Class, Designation), each showing its own name (no labels)", async () => {
+  it("has the search and three filters (Subject, Class, Designation), each showing its own name (no labels)", async () => {
     openPage();
     await screen.findByRole("table", { name: "Teachers" });
     const bar = screen.getByRole("search", { name: "Find teachers" });
     expect(within(bar).getByRole("textbox", { name: "Search teachers" })).toBeInTheDocument();
     const dropdowns = within(bar).getAllByRole("button").map((b) => b.textContent?.trim());
-    expect(dropdowns).toEqual(["Teaching", "Subject", "Class", "Designation"]);
+    expect(dropdowns).toEqual(["Subject", "Class", "Designation"]);
     // The other filters are gone (the user asked on 2026-11-03).
     for (const gone of ["Employment", "Gender", "Login", "Class teacher"]) {
       expect(screen.queryByRole("button", { name: new RegExp(`(^|\\s)${gone}$`) })).not.toBeInTheDocument();
@@ -253,18 +256,16 @@ describe("Teacher (the menu entry on top)", () => {
     expect(screen.queryByRole("button", { name: "Clear filters" })).not.toBeInTheDocument();
   });
 
-  it("shows the teachers who have left, or everyone, from the Status dropdown, each row saying which", async () => {
+  it("shows inactive teachers on their sidebar page and still supports older all-teacher links", async () => {
     const GONE: Teacher = { ...DEV, id: "gone", name: "Gone Teacher", isActive: false };
-    const { calls, user } = openPage("/teachers", {
+    const { calls, router } = openPage("/teachers/inactive", {
       "GET /staff/teachers": (_body, query) => ({ items: query.get("status") === "active" ? [ASHA] : query.get("status") === "inactive" ? [GONE] : [ASHA, GONE] }),
     });
     await screen.findByRole("table", { name: "Teachers" });
-    expect(screen.getByRole("button", { name: /(^|\s)Status$/ })).toHaveTextContent("Teaching");
-    await pick(user, "Status", "Have left");
     await waitFor(() => expect(lastQuery(calls).get("status")).toBe("inactive"));
     // (Twice in the page: the Status column, and under the name for a phone, where that column is hidden.)
     await waitFor(() => expect(within(rowsOf(screen.getByRole("table", { name: "Teachers" }))[0]).getAllByText("Left").length).toBeGreaterThan(0));
-    await pick(user, "Status", "All teachers");
+    await router.navigate("/teachers?status=all");
     await waitFor(() => expect(lastQuery(calls).get("status")).toBe("all"));
   });
 

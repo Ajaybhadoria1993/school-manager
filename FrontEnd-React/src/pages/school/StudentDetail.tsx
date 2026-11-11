@@ -26,7 +26,7 @@ import { CredentialsCard } from "../../components/teachers/CredentialsCard";
 import type { SiblingOf } from "./StudentAdmit";
 
 /**
- * Manage school > Students > one student (`/school/students/:id`). Opening it asks for this student only (a student just admitted or
+ * Students > one student (`/school/students/:id`). Opening it asks for this student only (a student just admitted or
  * saved is already known: nothing is asked). It shows everything about them: this year's class, their details, their parents,
  * their brothers and sisters (each a link), their class in every year, the address. Edit turns the page into the same form as the
  * admission, with one Save at the top; only then are the class layout and the seats read (for the class and section chips).

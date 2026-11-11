@@ -80,7 +80,7 @@ const plainLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary-hover";
 
 /**
- * Manage school > Students > Admit (`/school/students/new`), laid out like a new-patient page of a clinic app: a plain header (Back,
+ * Students > Admit (`/school/students/new`), laid out like a new-patient page of a clinic app: a plain header (Back,
  * the title), the form as cards on the left, and on the right a live preview, how much of the form is filled in and a few tips. The one
  * **Admit** button sits in a bar pinned to the bottom of the screen, with **Clear all** beside it (dimmed until something is typed).
  * Nothing is sent while typing, except one lookup when a parent's full mobile number is typed. Admit (or Enter in a box) checks every
@@ -91,7 +91,7 @@ const plainLink =
 export default function StudentAdmitPage() {
   const location = useLocation();
   const family = (location.state as { siblingOf?: SiblingOf } | null)?.siblingOf;
-  // Opened from the Students page or a class's page, the way back leads there; from Manage Students (or a typed address), to its list.
+  // Opened from a filtered Students list or a class's page, the way back leads there; otherwise it returns to the main Students list.
   const from = cameFromOf(location.state);
   const crumbs = [{ label: from?.label ?? "Students", to: from?.href ?? "/school/students" }];
   const [params] = useSearchParams();

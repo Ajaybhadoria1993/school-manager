@@ -53,7 +53,7 @@ function Toggle({
         checked ? (tone === "success" ? "bg-success" : "bg-primary") : "bg-border"
       )}
     >
-      <span aria-hidden className={cn("inline-block size-4 rounded-full bg-white shadow transition-transform duration-200", checked ? "translate-x-[1.125rem]" : "translate-x-0.5")} />
+      <span aria-hidden className={cn("inline-block size-4 rounded-full bg-surface shadow transition-transform duration-200", checked ? "translate-x-[1.125rem]" : "translate-x-0.5")} />
     </button>
   );
 }

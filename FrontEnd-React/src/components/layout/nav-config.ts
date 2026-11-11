@@ -5,18 +5,22 @@ import {
   CalendarClock,
   Clock3,
   CalendarDays,
+  Bus,
   CalendarRange,
   ClipboardList,
-  FolderTree,
-  GraduationCap,
   LayoutDashboard,
   LayoutGrid,
   MailCheck,
   Rocket,
   School,
+  Settings2,
+  UserCheck,
   UserCog,
   UserRoundCheck,
+  UserRoundMinus,
+  UserX,
   ShieldCheck,
+  Route,
   UserRoundCog,
   UsersRound,
   type LucideIcon,
@@ -54,8 +58,7 @@ export interface NavItem {
   comingSoon?: boolean;
 }
 
-// The menu holds only the pages that exist today: Dashboard, then "Manage school" (built one page at a time, see README).
-// The planned modules in constants/modules.ts still have preview pages, but stay out of the menu until they are built.
+// The menu holds the pages that exist today; planned modules in constants/modules.ts stay out until they are built.
 // The menu draws a heading whenever the group changes, so keep the items of one group together.
 export const NAV_ITEMS: NavItem[] = [
   {
@@ -77,8 +80,7 @@ export const NAV_ITEMS: NavItem[] = [
     group: "Overview",
   },
   {
-    // Every class with its sections, students and seats, and each class's own page. For the people who run the school
-    // (SchoolManagerRoute). Since 2026-11-04 Classes and Students are two entries of the menu (they were two tabs of one School Class page).
+    // The school's class overview and its setup page share one menu entry. Manage classes from the overview; Students stays separate.
     label: "Classes",
     href: "/school-class",
     icon: School,
@@ -88,33 +90,46 @@ export const NAV_ITEMS: NavItem[] = [
     group: "Overview",
   },
   {
-    // Every student of the year, class by class, found by search and filters. A longer address than Classes', so it lights up on its own.
-    label: "Students",
-    href: "/school-class/students",
-    icon: Backpack,
-    roles: ["school_admin", "principal"],
-    group: "Overview",
-  },
-  {
-    // The students' list for a person the school allowed to see students (Permissions, 2026-11-10): search, filters, a student's page, and
-    // Add student / Bulk upload / Export when they may. The people who run the school have Students above and Manage Students under Manage school.
-    label: "Students",
+    // Students is one expandable menu: active and inactive lists are separate pages within it.
+    label: "Active students",
     href: "/school/students",
-    icon: Backpack,
-    roles: [],
+    icon: UserCheck,
+    roles: ["school_admin", "principal"],
     permission: ["students.view"],
     schoolWide: true,
     group: "Overview",
+    submenu: "Students",
   },
   {
-    // Every teacher, found by search and filters; a teacher's page gives their classes, class teacher post and login. (SchoolManagerRoute.)
-    label: "Teacher",
+    label: "Inactive students",
+    href: "/school/students/inactive",
+    icon: UserX,
+    roles: ["school_admin", "principal"],
+    permission: ["students.status"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Students",
+  },
+  {
+    // Teacher directory and management share one menu. Active and inactive teachers are separate pages under this row.
+    label: "Active teachers",
     href: "/teachers",
-    icon: UsersRound,
+    icon: UserRoundCheck,
     roles: ["school_admin", "principal"],
     permission: ["teachers.view"],
     schoolWide: true,
     group: "Overview",
+    submenu: "Teachers",
+  },
+  {
+    label: "Inactive teachers",
+    href: "/teachers/inactive",
+    icon: UserRoundMinus,
+    roles: ["school_admin", "principal"],
+    permission: ["teachers.view"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Teachers",
   },
   {
     // Attendance, for the people who run the school: one row of the menu that opens Student, Teacher and Staff (2026-11-10; they were three tabs).
@@ -150,6 +165,28 @@ export const NAV_ITEMS: NavItem[] = [
     submenu: "Attendance",
   },
   {
+    // School timings and class timetables sit just below Attendance in the main sidebar (2026-11-11).
+    label: "School timings",
+    href: "/school/timings",
+    icon: Clock3,
+    roles: ["school_admin", "principal"],
+    permission: ["timetable.edit"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Timetable",
+  },
+  {
+    // Each class's weekly timetable. Its subjects page and a teacher's week are longer addresses under it, so they light it up too.
+    label: "Class timetables",
+    href: "/school/timetable",
+    icon: CalendarClock,
+    roles: ["school_admin", "principal"],
+    permission: ["timetable.edit"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Timetable",
+  },
+  {
     // The people who work for the school without teaching (a receptionist, an accountant, the management): added with a role and an email,
     // invited by email, they set a password and sign in (2026-11-07). STAFF_MANAGERS in constants/staffMembers.ts.
     label: "Staff",
@@ -159,6 +196,38 @@ export const NAV_ITEMS: NavItem[] = [
     permission: ["staff.view"],
     schoolWide: true,
     group: "Overview",
+  },
+  {
+    // Transport (2026-11-10): the school's vehicles, the drivers and attendants, and the routes with their stops: one row of the menu that opens
+    // Vehicles, Drivers and Routes. For the people the school allowed (transport.view / transport.manage).
+    label: "Vehicles",
+    href: "/transport/vehicles",
+    icon: Bus,
+    roles: ["school_admin", "principal"],
+    permission: ["transport.view"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Transport",
+  },
+  {
+    label: "Drivers",
+    href: "/transport/drivers",
+    icon: UserRoundCog,
+    roles: ["school_admin", "principal"],
+    permission: ["transport.view"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Transport",
+  },
+  {
+    label: "Routes",
+    href: "/transport/routes",
+    icon: Route,
+    roles: ["school_admin", "principal"],
+    permission: ["transport.view"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Transport",
   },
   {
     // What each kind of person of the school (Receptionist, Teacher, Parent...) may do, with checkboxes (2026-11-10). Only the school admin changes it.
@@ -195,15 +264,6 @@ export const NAV_ITEMS: NavItem[] = [
     showPendingBadge: true,
   },
   {
-    label: "Classes & Sections",
-    href: "/school/classes",
-    icon: FolderTree,
-    roles: ["school_admin", "principal"],
-    permission: ["classes.manage"],
-    schoolWide: true,
-    group: "Manage school",
-  },
-  {
     label: "Academic years",
     href: "/school/academic-years",
     icon: CalendarRange,
@@ -223,30 +283,6 @@ export const NAV_ITEMS: NavItem[] = [
     group: "Manage school",
   },
   {
-    // The school's one day: when it starts, how long a period is, the lunch, the days (TIMETABLE_WRITERS in constants/timetable.ts).
-    // 2026-11-09: School timings and Class timetables are two pages (they were the two tabs of one Timetable page); 2026-11-10: they sit
-    // nested under ONE "Timetable" row of the menu, which opens them.
-    label: "School timings",
-    href: "/school/timings",
-    icon: Clock3,
-    roles: ["school_admin", "principal"],
-    permission: ["timetable.edit"],
-    schoolWide: true,
-    group: "Manage school",
-    submenu: "Timetable",
-  },
-  {
-    // Each class's weekly timetable. Its subjects page and a teacher's week are longer addresses under it, so they light it up too.
-    label: "Class timetables",
-    href: "/school/timetable",
-    icon: CalendarClock,
-    roles: ["school_admin", "principal"],
-    permission: ["timetable.edit"],
-    schoolWide: true,
-    group: "Manage school",
-    submenu: "Timetable",
-  },
-  {
     // Exams and tests of the year (2026-11-06): Half-Yearly, Annual, Unit, Monthly, Class test; which classes write what, when and for how long.
     label: "Test & Exam",
     href: "/school/exams",
@@ -257,21 +293,11 @@ export const NAV_ITEMS: NavItem[] = [
     group: "Manage school",
   },
   {
-    // Admit, edit, import, export, make inactive: "Manage Students" like "Manage Teacher", so it is not mistaken for the Students list above.
-    label: "Manage Students",
-    href: "/school/students",
-    icon: GraduationCap,
-    // The people who admit students (STUDENT_WRITERS in constants/students.ts; the accountant reads through the API only for now).
-    roles: ["school_admin", "principal"],
-    group: "Manage school",
-  },
-  {
-    // The people who teach: added in steps with their own login, left, brought back (STAFF_WRITERS in constants/teachers.ts).
-    label: "Manage Teacher",
-    href: "/school/teachers",
-    icon: UserRoundCheck,
-    roles: ["school_admin", "principal"],
-    group: "Manage school",
+    label: "Settings",
+    href: "/settings",
+    icon: Settings2,
+    roles: ["super_admin", "school_admin", "principal", "accountant", "teacher", "receptionist", "management", "staff", "parent", "student"],
+    group: "Account",
   },
 ];
 
@@ -296,9 +322,8 @@ export interface CameFrom {
 }
 
 /**
- * The state of a link that opens a page of another menu entry: Add student is a page of Manage Students, but a person who pressed it on the
- * Students page (or a class's page) is still working there, so that menu entry stays lit, the top bar keeps its title and the way back
- * leads to where they were.
+ * The state of a link that opens a child page: Add student is part of Students, but a person who pressed it on a class-filtered list or a
+ * class page is still working there, so the correct sidebar entry stays lit and the way back leads to where they were.
  */
 export const cameFrom = (href: string, label?: string) => ({ cameFrom: { href, label } });
 
@@ -310,15 +335,30 @@ export function cameFromOf(state: unknown): CameFrom | null {
 }
 
 /** The address the menu is lit by: the page the person came from when the link said so, else the page's own address. */
-export function pathForMenu(location: { pathname: string; state: unknown }): string {
+export function pathForMenu(location: { pathname: string; state: unknown; search?: string }): string {
   const from = cameFromOf(location.state);
-  return from ? from.href.split(/[?#]/)[0] : location.pathname;
+  const path = from ? from.href.split(/[?#]/)[0] : location.pathname;
+  // Older teacher links can still express the inactive list as a query filter.
+  if (path === "/teachers" && new URLSearchParams(location.search ?? "").get("status") === "inactive") return "/teachers/inactive";
+  return path;
 }
 
 /** What the top bar calls the page of a menu entry. */
 export const pageTitleOf = (item: NavItem | undefined): string => item?.title ?? item?.label ?? "Dashboard";
 
 export function activeNavItem(pathname: string, items: readonly NavItem[] = NAV_ITEMS): NavItem | undefined {
+  // Class setup is reached from the Classes overview's Manage classes button, so both addresses light the same sidebar entry.
+  if (pathname === "/school/classes" || pathname.startsWith("/school/classes/")) {
+    return items.find((item) => item.href === "/school-class");
+  }
+  // The class-filtered student list and the management routes share the single Students menu entry.
+  if (pathname === "/school-class/students" || pathname.startsWith("/school-class/students/")) {
+    return items.find((item) => item.href === "/school/students");
+  }
+  // Old Manage Teacher addresses stay valid, but now light up the single Teacher section.
+  if (pathname === "/school/teachers" || pathname.startsWith("/school/teachers/")) {
+    return items.find((item) => item.href === "/teachers");
+  }
   return items
     .filter((item) => pathname === item.href || pathname.startsWith(item.href + "/"))
     .sort((a, b) => b.href.length - a.href.length)[0];
@@ -336,6 +376,9 @@ export const FOLDING_GROUPS: Record<string, { icon: LucideIcon }> = {
 export const SUBMENUS: Record<string, { icon: LucideIcon }> = {
   Timetable: { icon: CalendarClock },
   Attendance: { icon: CalendarCheck2 },
+  Transport: { icon: Bus },
+  Students: { icon: Backpack },
+  Teachers: { icon: UsersRound },
 };
 
 /** The menu heading as the person sees it: the platform team has a single "Platform" section. */

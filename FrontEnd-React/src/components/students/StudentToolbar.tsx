@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, LayoutGrid, List, Search, X } from "lucide-react";
 import type { StudentFilters as Filters, StudentView } from "../../hooks/useStudentFilters";
-import type { AcademicStructure, StudentCapacity } from "../../types";
+import type { AcademicStructure } from "../../types";
 import { cn } from "../../utils/helpers";
 import { Button } from "../ui/Button";
 import { WithTip } from "../ui/Hint";
@@ -18,7 +18,7 @@ const VIEWS: { value: StudentView; label: string; icon: typeof List; tip: string
 
 /**
  * The row above the students, like the appointments list it is modelled on: a search that takes all the room that is left, the class
- * (with arrows to step to the class before or after it, and how many students each class has), the section of that class, and the
+ * (with arrows to step to the class before or after it), the section of that class, and the
  * List / Grid switch at the right. Nothing is filtered here: a change goes to the address and the server answers with the matching page
  * (the switch only changes how the answer is drawn). The search box waits until typing stops (300 ms), so a burst of typing is one
  * request. The students come in the server's order (by class and section, then by name): there is no sort to pick. Every control has a
@@ -28,14 +28,12 @@ export function StudentToolbar({
   filters,
   active,
   structure,
-  capacity,
   onChange,
   onClear,
 }: {
   filters: Filters;
   active: number;
   structure: AcademicStructure;
-  capacity: StudentCapacity | undefined;
   onChange: (patch: Partial<Filters>) => void;
   onClear: () => void;
 }) {
@@ -54,11 +52,9 @@ export function StudentToolbar({
     timer.current = window.setTimeout(() => onChange({ q }), 300);
   }
 
-  const byClass = new Map((capacity?.classes ?? []).map((c) => [c.classId, c.enrolled]));
-  const bySection = new Map((capacity?.sections ?? []).map((s) => [s.sectionId, s.enrolled]));
   const classOptions = [
-    { value: ALL, label: `All classes (${capacity?.totals.students ?? 0})` },
-    ...structure.classes.map((c) => ({ value: c.id, label: `${c.name} (${byClass.get(c.id) ?? 0})` })),
+    { value: ALL, label: "All classes" },
+    ...structure.classes.map((c) => ({ value: c.id, label: c.name })),
   ];
   // The classes in teaching order, with "all" first: the arrows step through them.
   const steps = ["", ...structure.classes.map((c) => c.id)];
@@ -68,11 +64,8 @@ export function StudentToolbar({
   const hasSections = !!klass && klass.sections.length > 0;
   const sectionOptions = hasSections
     ? [
-        { value: ALL, label: `All sections (${byClass.get(klass.id) ?? 0})` },
-        ...klass.sections.map((s) => ({
-          value: s.id,
-          label: `Section ${s.name} (${bySection.get(s.id) ?? 0}${s.capacity ? `/${s.capacity} seats` : ""})`,
-        })),
+        { value: ALL, label: "All sections" },
+        ...klass.sections.map((s) => ({ value: s.id, label: `Section ${s.name}` })),
       ]
     : [];
 

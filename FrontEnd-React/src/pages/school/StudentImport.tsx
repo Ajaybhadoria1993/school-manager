@@ -103,7 +103,7 @@ function inParts<T>(items: T[]): T[][] {
 }
 
 /**
- * Manage school > Students > Bulk upload (`/school/students/import`): the students a school already has, from any spreadsheet, in three
+ * Students > Bulk upload (`/school/students/import`): the students a school already has, from any spreadsheet, in three
  * steps.
  *  1. Upload: the sample file (made by the server with the school's own classes) or the school's own sheet (.xlsx / .csv). The server
  *     reads it (nothing is kept) and sends back its column titles and rows.

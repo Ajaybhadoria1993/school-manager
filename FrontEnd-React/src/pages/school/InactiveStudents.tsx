@@ -11,7 +11,6 @@ import { StudentAvatar } from "../../components/students/StudentAvatar";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
 import { PlacementDialog } from "../../components/students/status/PlacementDialog";
-import { StudentStatusTabs } from "../../components/students/status/StudentStatusTabs";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
@@ -26,7 +25,7 @@ const outlineLink =
 const where = (s: InactiveStudent) => (s.className ? placeLabel({ className: s.className, sectionName: s.sectionName }) : "No class");
 
 /**
- * Manage school > Students > Inactive students (`/school/students/inactive`): the students who left the school (or were taken out by
+ * Students > Inactive students (`/school/students/inactive`): the students who left the school (or were taken out by
  * mistake), kept whole. Each row says who made the student inactive, when and why, and the name opens their page, so their details are
  * there whenever they are needed. **Make active** (one, or every ticked one) puts a student back in their class and section with one
  * click. Nothing is ever deleted. One read of the list; each action is one request, and the lists, the seats and the students' pages
@@ -88,7 +87,6 @@ export default function InactiveStudentsPage() {
   return (
     <div className="space-y-6">
       <StudentFormHeader title="Inactive students" subtitle="Students who left the school. Their record is kept: make them active again whenever they return." />
-      <StudentStatusTabs />
 
       {problem && <p className="rounded-xl border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger">{problem}</p>}
 

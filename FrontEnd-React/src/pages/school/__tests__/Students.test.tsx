@@ -7,7 +7,7 @@ import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
-import type { StudentPage, StudentRow, StudentSettings, UserRole } from "../../../types";
+import type { StudentCapacity, StudentPage, StudentRow, StudentSettings, UserRole } from "../../../types";
 import { fakeApi, spreadsheet, type Handler } from "../../../test/fakeApi";
 import { CAPACITY, SETTINGS, STRUCTURE } from "../../../test/fixtures";
 import { signInAs, signOut } from "../../../test/session";
@@ -109,15 +109,53 @@ describe("Students, a new school with nobody admitted yet", () => {
 const KABIR: StudentRow = { ...ASHA, id: "s2", firstName: "Kabir", lastName: "Rao", name: "Kabir Rao", admissionNumber: "ADM-2026-0002", primaryGuardian: { id: "g2", name: "Anil Rao", relation: "Father", mobile: "9111111111" } };
 
 describe("Students, active and inactive", () => {
-  it("has two tabs, Active and Inactive, and no Recycle bin anywhere", async () => {
+  it("shows the active-student list without in-page status tabs or a Recycle bin", async () => {
     school([ASHA, KABIR]);
     openPage();
     await screen.findByText("Asha Verma");
-    const tabs = screen.getByRole("navigation", { name: "Students by status" });
-    expect(within(tabs).getByRole("link", { name: "Active students" })).toHaveAttribute("href", "/school/students");
-    expect(within(tabs).getByRole("link", { name: "Inactive students" })).toHaveAttribute("href", "/school/students/inactive");
+    expect(screen.queryByRole("navigation", { name: "Students by status" })).not.toBeInTheDocument();
     expect(screen.queryByText(/recycle/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/selected/)).not.toBeInTheDocument();
+  });
+
+  it("scopes the summary cards to the selected class and keeps class and section choices free of counts", async () => {
+    const classCapacity: StudentCapacity = {
+      ...CAPACITY,
+      sections: [{ ...CAPACITY.sections[0], enrolled: 6, seatsLeft: 24 }],
+      classes: [
+        { classId: "c1", enrolled: 2, nextRollNumber: 3 },
+        { classId: "c6", enrolled: 6, nextRollNumber: 7 },
+      ],
+      totals: { students: 8, seats: 30, seatsLeft: 24, fullSections: 0 },
+    };
+    school([ASHA, KABIR], { "GET /students/capacity": () => classCapacity });
+    const user = openPage("/school/students?class=c6");
+    await screen.findByText("Asha Verma");
+
+    const summary = screen.getByRole("region", { name: "Students at a glance" });
+    const valueFor = (label: string) => within(summary).getByText(label).parentElement?.querySelectorAll("p")[1].textContent;
+    await waitFor(() => {
+      expect(valueFor("Students")).toBe("6");
+      expect(valueFor("Classes with students")).toBe("1");
+      expect(valueFor("Seats left")).toBe("24");
+      expect(valueFor("Full sections")).toBe("0");
+    });
+
+    const classPicker = screen.getByLabelText("Show the students of a class");
+    expect(classPicker).toHaveTextContent("Class 6");
+    expect(classPicker).not.toHaveTextContent("(6)");
+    await user.click(classPicker);
+    expect(await screen.findByRole("option", { name: "Class 6" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Class 6 \(/ })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    const sectionPicker = screen.getByLabelText("Show a section of the class");
+    expect(sectionPicker).toHaveTextContent("All sections");
+    expect(sectionPicker).not.toHaveTextContent("(6)");
+    await user.click(sectionPicker);
+    expect(await screen.findByRole("option", { name: "All sections" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Section A" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /Section A \(/ })).not.toBeInTheDocument();
   });
 
   it("ticking rows says how many are chosen; the box at the top chooses (or clears) the whole page", async () => {
@@ -218,7 +256,7 @@ describe("Students for a person the school allowed (Permissions)", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
-  it("each button comes with its own permission: add students gives Add student and Bulk upload, export gives Export, status the inactive list and the ticks", async () => {
+  it("each button comes with its own permission: status keeps the active-list ticks while Inactive is a sidebar destination", async () => {
     school([ASHA]);
     openPage("/school/students", reception(["students.view", "students.add"]));
     await screen.findByText("Asha Verma");
@@ -234,7 +272,7 @@ describe("Students for a person the school allowed (Permissions)", () => {
     school([ASHA]);
     openPage("/school/students", reception(["students.view", "students.status"]));
     await screen.findByText("Asha Verma");
-    expect(screen.getByRole("navigation", { name: "Students by status" })).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Students by status" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("checkbox").length).toBeGreaterThan(0);
   });
 

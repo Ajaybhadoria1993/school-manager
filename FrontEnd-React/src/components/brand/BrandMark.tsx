@@ -45,11 +45,11 @@ export function BrandMark({
           className={cn(
             "block font-bold",
             size === "lg" ? "text-2xl" : "text-lg",
-            inverse ? "text-white" : "text-navy",
+            inverse ? "text-white" : "text-foreground",
           )}
         >
           Edu
-          <span className={inverse ? "text-sky" : "text-primary"}>Shiksha</span>
+          <span className={inverse ? "text-sky" : "text-brand"}>Shiksha</span>
         </span>
         <span
           className={cn(

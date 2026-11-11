@@ -49,9 +49,9 @@ Multi-tenant School ERP, built step by step from the specs in [`docs/`](docs/) (
   reason. Nothing is deleted. The Schools list has a *Suspended* tab, and a suspended school shows as *Suspended*, not
   *Approved*. Only the latest suspension is kept (who, when, why, and when it was lifted).
 
-**Manage school: Classes & Sections** (school admin and principal)
+**Classes and class setup** (school admin and principal)
 
-- **Manage school → Classes & Sections** (`/school/classes`) sets up the layout of the school before any student exists:
+- **Classes** (`/school-class`) shows classes, sections, student counts and seats. **Manage classes** opens the setup screen (`/school/classes`) from this same sidebar entry. The setup screen builds the layout of the school before any student exists:
   departments (Primary, Middle...), classes (Nursery, Class 5...) and their sections (A, B, or a stream), each with optional
   seats and room. When a school is approved, its classes (from the lowest to the highest class it gave at sign-up) are created
   for it, without sections: the page opens as a ready list, and each class gets its sections (A, B, C...) with one click. A class

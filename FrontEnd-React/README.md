@@ -145,8 +145,9 @@ Nothing you can see. Under the hood:
 
 # Manage school: Classes & Sections
 
-The first page under **Manage school** in the menu: click the **Manage school** row in the sidebar and **Classes &
-Sections** (`/school/classes`) opens underneath it. It is where the principal or school admin
+The **Classes** page (`/school-class`) is the single sidebar entry for the school's classes. It shows class cards and student counts; its
+**Manage classes** button opens **Classes & Sections** (`/school/classes`) for setup and editing. Both addresses highlight the same
+Classes entry. The setup screen is where the principal or school admin
 builds the layout of the school *before* any student or teacher exists: which classes the school runs, and which
 sections each class has. Students, attendance, timetable and fees will all point at these sections later.
 
@@ -430,8 +431,8 @@ How a few details work:
 - **Grouping.** The server sends departments already in display order (by where their first class sits) and classes in
   teaching order. `groupClasses()` only lays them out wing by wing and adds an "Other classes" group when needed.
 - **Menu highlight.** `activeNavItem()` in `nav-config.ts` picks the *longest* matching address, so when one menu address is
-  the start of another only one item lights up. The menu now holds only Dashboard and Manage school > Classes & Sections and Students
-  (plus Schools for the super admin); the planned modules in `constants/modules.ts` keep their preview pages but are not in the menu.
+  the start of another only one item lights up. Classes overview and class setup share the **Classes** entry; Students remains separate.
+  The planned modules in `constants/modules.ts` keep their preview pages but are not in the menu.
 - **The "Manage school" row folds.** Groups listed in `FOLDING_GROUPS` (`nav-config.ts`) are drawn by the sidebar as one row
   with a chevron instead of a heading: click it and the group's pages slide open underneath (the same in the icon-only
   menu and in the phone drawer). A group is open by itself when you arrive on one of its pages (a reload, a link, the back

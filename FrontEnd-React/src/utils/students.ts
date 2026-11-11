@@ -311,7 +311,7 @@ export const keepsDetails = (g: GuardianDraft) => !!g.match && g.choice === "use
 
 /**
  * Everything the server would refuse that can be seen from the boxes alone, with its words. `classHasSections` decides whether a
- * section is needed (the server checks it against the year's sections). `rules` are the school's needs (Manage school > Students >
+ * section is needed (the server checks it against the year's sections). `rules` are the school's needs (Students > Settings >
  * Fields): a needed detail left empty is said with its own message; a detail that is not needed is checked only when it is filled.
  */
 export function checkStudentForm(
@@ -599,7 +599,7 @@ export function admitLink({ classId, sectionId }: { classId?: string; sectionId?
   return `/school/students/new${search ? `?${search}` : ""}`;
 }
 
-/** The Manage Students page (`/school/students`), with the class (and section) the list was filtered by, so the same students are on it. */
+/** The Students management page (`/school/students`), with the list's selected class and section. */
 export function manageStudentsLink({ classId, sectionId }: { classId?: string; sectionId?: string } = {}): string {
   const search = new URLSearchParams({ ...(classId ? { class: classId } : {}), ...(classId && sectionId ? { section: sectionId } : {}) }).toString();
   return `/school/students${search ? `?${search}` : ""}`;
