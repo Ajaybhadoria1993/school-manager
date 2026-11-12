@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { AcademicYear } from "../../academics/models/AcademicYear";
 import { SchoolClass } from "../../academics/models/SchoolClass";
+import { NOT_INACTIVE } from "../../academics/models/status";
 import { toAcademicYearDto, type AcademicYearDto } from "../../academics/services/academicYear.service";
 import { isDuplicateKey } from "../../academics/services/shared";
 import { Enrolment } from "../models/Enrolment";
@@ -68,7 +69,8 @@ export class YearActivationService {
     // The students who leave are inactive now; their place is read from the year that just closed. Then the list is done.
     let leftSchool = 0;
     if (batch) {
-      const classes = await SchoolClass.find({ tenantId: school }).sort({ order: 1, _id: 1 }).select("_id").lean();
+      // The last class a student can reach is the last one the school still runs.
+      const classes = await SchoolClass.find({ tenantId: school, ...NOT_INACTIVE }).sort({ order: 1, _id: 1 }).select("_id").lean();
       const lastClass = classes.at(-1)?._id.toString();
       const passedOut = leaving.filter((e) => e.fromClassId.toString() === lastClass).map((e) => e.studentId.toString());
       const others = leaving.filter((e) => e.fromClassId.toString() !== lastClass).map((e) => e.studentId.toString());

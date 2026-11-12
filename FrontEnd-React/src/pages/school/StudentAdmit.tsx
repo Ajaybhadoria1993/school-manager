@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
-import { Armchair, ArrowLeft, ArrowRight, CalendarX2, CopyCheck, Eraser, ListChecks, Trash2, UserPlus } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarX2, CopyCheck, Eraser, ListChecks, Trash2, UserPlus } from "lucide-react";
 import { useStudentForm } from "../../hooks/useStudentForm";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useAdmitStudentMutation, useCreateGuardianLoginMutation, useGetCapacityQuery, useGetStudentSettingsQuery, useLookupGuardianMutation } from "../../redux/api/studentsApi";
@@ -15,12 +15,13 @@ import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
 import { emptyGuardian, emptyStudentForm, formatMobile, placeLabel, toAdmission, type StudentFormValues } from "../../utils/students";
 import { isIndianMobile, isPasswordValid, isUsername } from "../../utils/validators";
-import type { AcademicStructure, GuardianMatch, Relation, SectionItem, SectionLoad, StudentAddress, StudentCapacity } from "../../types";
+import type { AcademicStructure, GuardianMatch, Relation, StudentAddress, StudentCapacity } from "../../types";
 import { AdmitStepBody } from "../../components/students/form/AdmitStepBody";
 import { ManageFieldsLink } from "../../components/students/export/ManageFieldsLink";
 import { useCan } from "../../hooks/useCan";
 import { CustomFieldDialog } from "../../components/students/export/CustomFieldDialog";
 import { AskDialog } from "../../components/students/form/AskDialog";
+import { SeatsFullDialog, type SeatsUnit } from "../../components/students/form/SeatsFullDialog";
 import { FormActionBar } from "../../components/students/form/FormActionBar";
 import { cameFromOf } from "../../components/layout/nav-config";
 import type { Crumb } from "../../components/ui/PageBackNav";
@@ -45,8 +46,7 @@ export interface SiblingOf {
 type Ask =
   | { kind: "clear" }
   | { kind: "fields" }
-  | { kind: "full-pick"; section: SectionItem; load: SectionLoad; className: string }
-  | { kind: "full"; message: string }
+  | { kind: "seats"; unit: SeatsUnit; admitting: boolean }
   | { kind: "duplicate"; message: string; student: { id: string; name: string; admissionNumber: string; className: string | null; sectionName: string | null; inactive?: boolean } };
 
 /** The class (and section) a link chose (`?class=&section=`), when they are the school's: the section only if it is one of that class. */
@@ -223,8 +223,9 @@ function AdmitForm({
     password: loginTried && !isPasswordValid(parentLogin.password) ? MESSAGES.password : undefined,
   };
 
-  // A section the person said "yes, even though it is full" to.
-  const [overCapacityFor, setOverCapacityFor] = useState<string | null>(null);
+  // A full section (or class) the person said "add seats" to: the seats it will have, sent with the admission. Keyed by the place, so
+  // picking another place forgets it.
+  const [raise, setRaise] = useState<{ key: string; to: number } | null>(null);
   const [ask, setAsk] = useState<Ask | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -290,7 +291,7 @@ function AdmitForm({
     });
   }, [family, form]);
 
-  async function send(flags: { allowOverCapacity: boolean; confirmNotDuplicate: boolean }) {
+  async function send(flags: { allowOverCapacity: boolean; confirmNotDuplicate: boolean; raiseSeatsTo?: number }, put?: { sectionId: string }) {
     setFormError(null);
     // The parent's login, when ticked: checked before anything is sent.
     const wantLogin = parentLogin.on && !existingLogin;
@@ -301,8 +302,9 @@ function AdmitForm({
       return;
     }
     try {
-      const res = await admit(toAdmission(form.values, flags, form.custom.filter((f) => f.mode !== "hidden"))).unwrap();
+      const res = await admit(toAdmission(put ? { ...form.values, ...put } : form.values, flags, form.custom.filter((f) => f.mode !== "hidden"))).unwrap();
       push("success", res.message ?? `${res.data.name} admitted`);
+      if (flags.raiseSeatsTo) push("info", `The seats of ${placeName(put?.sectionId ?? form.values.sectionId)} are now ${flags.raiseSeatsTo}.`);
       const arrived: Arrived = { admitted: true };
       // The student is in: the primary parent's login is made now (a refusal is said on the student's page, where it can be made again).
       const parent = res.data.guardians?.find((g) => g.isPrimary) ?? res.data.guardians?.[0];
@@ -319,8 +321,9 @@ function AdmitForm({
     } catch (err) {
       const error = getApiError(err);
       const first = (Array.isArray(error?.details) ? error.details[0] : undefined) as Record<string, unknown> | undefined;
-      if (error?.code === "SECTION_FULL") {
-        setAsk({ kind: "full", message: error.message });
+      if ((error?.code === "SECTION_FULL" || error?.code === "CLASS_FULL") && first && typeof first.capacity === "number" && typeof first.enrolled === "number") {
+        // Full after all (it filled up since the page was opened, or the class was never asked about): the same question as picking it.
+        setAsk({ kind: "seats", admitting: true, unit: unitOf(form.values.classId, form.values.sectionId || null, first.enrolled, first.capacity) });
       } else if (error?.code === "DUPLICATE_STUDENT" && first?.student) {
         setAsk({ kind: "duplicate", message: error.message, student: first.student as Extract<Ask, { kind: "duplicate" }>["student"] });
       } else if (error?.code === "GUARDIAN_EXISTS" && first?.guardian) {
@@ -338,7 +341,24 @@ function AdmitForm({
     }
   }
 
-  const flags = () => ({ allowOverCapacity: !!form.values.sectionId && overCapacityFor === form.values.sectionId, confirmNotDuplicate: false });
+  const placeKey = (classId: string, sectionId: string | null) => (sectionId ? `section:${sectionId}` : `class:${classId}`);
+  /** The seats the place that is picked now will be raised to, when the person said so. */
+  const raisedTo = raise && raise.key === placeKey(form.values.classId, form.values.sectionId || null) ? raise.to : null;
+  const flags = () => ({ allowOverCapacity: false, confirmNotDuplicate: false, ...(raisedTo !== null ? { raiseSeatsTo: raisedTo } : {}) });
+
+  /** "Class 5 - A", or "Class 1" when there is no section: the place a student is put in (the names of the school as they are now). */
+  function placeName(sectionId: string | null | undefined): string {
+    const klass = structure.classes.find((c) => c.id === form.values.classId);
+    const section = klass?.sections.find((x) => x.id === sectionId);
+    return section ? `${klass?.name} - ${section.name}` : (klass?.name ?? "The class");
+  }
+
+  /** The place that is full, described for the dialog (the numbers come from what the server or the seat counts said). */
+  function unitOf(classId: string, sectionId: string | null, enrolled: number, seats: number): SeatsUnit {
+    const klass = structure.classes.find((c) => c.id === classId);
+    const section = klass?.sections.find((x) => x.id === sectionId);
+    return { classId, className: klass?.name ?? "The class", sectionId, sectionName: section?.name ?? null, enrolled, capacity: seats };
+  }
 
   /** Enter in a box or the button: on a step before the last it goes to the next step; on the last one it admits. */
   function submit(e: React.FormEvent) {
@@ -362,7 +382,7 @@ function AdmitForm({
   /** Clear all: every box goes back to empty (the parents of a brother or sister too), and what was asked or refused is forgotten. */
   function clearAll() {
     form.reset(emptyStudentForm(rules));
-    setOverCapacityFor(null);
+    setRaise(null);
     setFormError(null);
     setPosition(0);
     setFurthest(0);
@@ -407,7 +427,9 @@ function AdmitForm({
               steps={steps}
               structure={structure}
               capacity={capacity}
-              onPickFull={(section, load) => setAsk({ kind: "full-pick", section, load, className: structure.classes.find((c) => c.id === section.classId)?.name ?? "" })}
+              raisedTo={raisedTo}
+              onPickFull={(section, load) => setAsk({ kind: "seats", admitting: false, unit: unitOf(section.classId, section.id, load.enrolled, load.capacity ?? 0) })}
+              onFullClass={(klass, enrolled, seats) => setAsk({ kind: "seats", admitting: false, unit: unitOf(klass.id, null, enrolled, seats) })}
               onAddField={(step) => {
                 fieldsEditor.setError(null);
                 setAddingField(step);
@@ -495,38 +517,30 @@ function AdmitForm({
           <p>Choose the fields first, then come back and fill the form.</p>
         </AskDialog>
       )}
-      {ask?.kind === "full-pick" && (
-        <AskDialog
-          title={`${ask.className} - ${ask.section.name} is full`}
-          icon={Armchair}
-          confirmLabel="Put the student here anyway"
+      {ask?.kind === "seats" && (
+        <SeatsFullDialog
+          unit={ask.unit}
+          structure={structure}
+          canMakeSections={can("classes.manage")}
+          admitting={ask.admitting}
           onClose={() => setAsk(null)}
-          onConfirm={() => {
-            setOverCapacityFor(ask.section.id);
-            form.set("sectionId", ask.section.id);
+          onAddSeats={(to) => {
+            const { unit } = ask;
+            setAsk(null);
+            setRaise({ key: placeKey(unit.classId, unit.sectionId), to });
+            // A full section that was only picked is picked now; the seats are raised when the student is admitted.
+            if (unit.sectionId) form.set("sectionId", unit.sectionId);
+            if (ask.admitting) void send({ ...flags(), raiseSeatsTo: to });
           }}
-        >
-          <p>
-            {ask.load.enrolled} of {ask.load.capacity} seats are taken. You can still put the student in this section; it will have more students
-            than its seats.
-          </p>
-          <p>Or pick another section, or give this one more seats in Classes & Sections.</p>
-        </AskDialog>
-      )}
-      {ask?.kind === "full" && (
-        <AskDialog
-          title="This section is full"
-          icon={Armchair}
-          confirmLabel="Admit anyway"
-          onClose={() => setAsk(null)}
-          onConfirm={() => {
-            setOverCapacityFor(form.values.sectionId);
-            void send({ ...flags(), allowOverCapacity: true });
+          onDivided={(section, result) => {
+            const admitting = ask.admitting;
+            setAsk(null);
+            setRaise(null);
+            form.set("sectionId", section.id);
+            push("success", `${result.class.name} is divided into ${result.sections.map((x) => x.name).join(", ")}.`);
+            if (admitting) void send({ allowOverCapacity: false, confirmNotDuplicate: false }, { sectionId: section.id });
           }}
-        >
-          <p>{ask.message}</p>
-          <p>It filled up after this page was opened. Admit the student anyway, or cancel and pick another section.</p>
-        </AskDialog>
+        />
       )}
       {ask?.kind === "duplicate" && (
         <AskDialog

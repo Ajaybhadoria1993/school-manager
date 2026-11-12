@@ -36,6 +36,15 @@ const classRowSchema = z.object({
     .min(1, "Enter the seats")
     // Of one section, or of the whole class when it has no sections: the rows below say which limit applies.
     .max(MAX_CLASS_CAPACITY, `Up to ${MAX_CLASS_CAPACITY} seats`),
+  /** Where the class sits ("101"): the room of its first section when approval makes the class. Optional; an empty box is none. */
+  room: z
+    .string()
+    .trim()
+    .max(30, "Keep the room under 30 characters")
+    .regex(/^[^<>]*$/, "The room cannot contain < or >")
+    .nullable()
+    .optional()
+    .transform((value) => value || null),
 });
 
 const rowsOfDay = z.array(slotSchema, { required_error: "Add at least one period", invalid_type_error: "Add at least one period" }).max(MAX_SLOTS, `Up to ${MAX_SLOTS} rows in a day`);

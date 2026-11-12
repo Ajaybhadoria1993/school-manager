@@ -1,9 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
-import type { ClassFilters as Filters, ClassSort } from "../../../hooks/useClassFilters";
+import type { ClassFilters as Filters, ClassSort, ClassStatus } from "../../../hooks/useClassFilters";
 import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
+
+const STATUSES: { value: ClassStatus; label: string }[] = [
+  { value: "all", label: "All classes" },
+  { value: "active", label: "Active only" },
+  { value: "inactive", label: "Inactive only" },
+];
 
 const SORTS: { value: ClassSort; label: string }[] = [
   { value: "order", label: "Sort: Order" },
@@ -73,6 +79,10 @@ export function ClassFilters({
             send(e.target.value);
           }}
         />
+      </div>
+
+      <div className="w-40 shrink-0">
+        <Select aria-label="Show classes" value={filters.status} options={STATUSES} onChange={(status) => onChange({ status: status as ClassStatus })} />
       </div>
 
       <div className="w-40 shrink-0">

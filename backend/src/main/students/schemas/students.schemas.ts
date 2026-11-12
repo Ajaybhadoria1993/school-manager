@@ -339,6 +339,13 @@ const classId = z.string({ required_error: "Choose the class", invalid_type_erro
 /** "" or null: no section (only allowed for a class that has none this year; the service checks that). */
 const sectionId = z.preprocess((v) => (v === "" ? null : v), objectId.nullable().optional());
 
+/** The new seats of a full section or class: a whole number (a section has up to 200, a class up to 2000; the service checks which). */
+const raiseSeatsTo = z
+  .number({ invalid_type_error: "Seats must be a number" })
+  .int("Seats must be a whole number")
+  .min(1, "Seats must be at least 1")
+  .max(2000, "Seats cannot be more than 2000");
+
 /**
  * One admission: the student, their guardians (1 to 4, exactly one primary) and their place in the current academic year. The
  * class and section rules that need the database (the section belongs to that class and year, a seat is free...) are checked by
@@ -359,6 +366,11 @@ export const admitStudentSchema = z
       .max(MAX_GUARDIANS, `A student can have at most ${MAX_GUARDIANS} guardians`),
     /** The person saw that the section is full and wants the student in it anyway. */
     allowOverCapacity: z.boolean().default(false),
+    /**
+     * The person saw that the section (or the class, when it has no sections) is full and says: raise its seats to this number and put
+     * the student in. It must leave room for the student; the server raises the seats only when it is really full.
+     */
+    raiseSeatsTo: raiseSeatsTo.optional(),
     /** The person saw the possible duplicate (same name, birthday and primary mobile) and says it is a different child. */
     confirmNotDuplicate: z.boolean().default(false),
   })
@@ -438,6 +450,8 @@ export const moveStudentSchema = z
     sectionId,
     rollNumber,
     allowOverCapacity: z.boolean().default(false),
+    /** Raise the seats of the full place to this number and move the student in (see the admission). */
+    raiseSeatsTo: raiseSeatsTo.optional(),
     /** Why the student is moved (optional): kept with who moved them and when. */
     reason: z
       .string()

@@ -2,7 +2,7 @@ import { FolderTree } from "lucide-react";
 import type { Placement, StepDef } from "../../../constants/studentFields";
 import type { StudentForm } from "../../../hooks/useStudentForm";
 import { stepName } from "../../../utils/placement";
-import type { AcademicStructure, SectionItem, SectionLoad, StudentCapacity } from "../../../types";
+import type { AcademicStructure, ClassItem, SectionItem, SectionLoad, StudentCapacity } from "../../../types";
 import { AddressFields } from "./AddressFields";
 import { AdmissionCard } from "./AdmissionCard";
 import { FormSection } from "./FormSection";
@@ -27,6 +27,8 @@ export function AdmitStepBody({
   structure,
   capacity,
   onPickFull,
+  onFullClass,
+  raisedTo,
   onAddField,
 }: {
   form: StudentForm;
@@ -37,6 +39,10 @@ export function AdmitStepBody({
   capacity?: StudentCapacity;
   /** A full section was pressed: the page asks first. */
   onPickFull?: (section: SectionItem, load: SectionLoad) => void;
+  /** The class that was picked has no sections and no seat left: the page asks what to do (add seats, or make sections). */
+  onFullClass?: (klass: ClassItem, enrolled: number, capacity: number) => void;
+  /** The seats the picked place will be raised to when the student is admitted (the person said so), if any. */
+  raisedTo?: number | null;
   /** Adds "Add your own field" to the steps after Parents: the page says which step the button is on. */
   onAddField?: (step: string) => void;
 }) {
@@ -44,7 +50,7 @@ export function AdmitStepBody({
     return (
       <>
         {structure ? (
-          <PlacementFields form={form} structure={structure} capacity={capacity} index={0} onPickFull={onPickFull ?? (() => {})} />
+          <PlacementFields form={form} structure={structure} capacity={capacity} index={0} onPickFull={onPickFull ?? (() => {})} onFullClass={onFullClass} raisedTo={raisedTo} />
         ) : (
           <FormSection index={0} icon={FolderTree} title="Class and section">
             <p className="text-sm text-foreground-muted">Your classes and sections are shown here once they are set up in Classes & Sections.</p>

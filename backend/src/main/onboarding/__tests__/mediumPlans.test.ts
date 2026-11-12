@@ -193,3 +193,24 @@ describe("step 2: the streams of Class 11 and 12", () => {
     expect(problems(withBoard({ plans: [plan("English", "11", "12", { seniorStreams: ["Agriculture"], classes: rows("11", "12") })] }))).toEqual({ "boards.0.plans.0.classes": "Fill in the sections and seats of every class" });
   });
 });
+
+describe("step 2: the room of a class", () => {
+  const withRoom = (room: unknown) => withBoard({ plans: [plan("English", "1", "2", { classes: rows("1", "2").map((c, i) => (i === 0 ? { ...c, room } : c)) })] });
+
+  it("is optional: a class with no room, an empty box and a missing room are all fine", () => {
+    expect(problems(withRoom(undefined))).toEqual({});
+    expect(problems(withRoom(""))).toEqual({});
+    expect(problems(withRoom(null))).toEqual({});
+  });
+
+  it("is kept tidy: trimmed, and an empty box is none", () => {
+    const parsed = step2Schema.parse(withRoom("  101  "));
+    expect(parsed.boards[0].plans[0].classes[0].room).toBe("101");
+    expect(step2Schema.parse(withRoom("   ")).boards[0].plans[0].classes[0].room).toBeNull();
+  });
+
+  it("is refused when it is too long or has angle brackets, naming the box", () => {
+    expect(problems(withRoom("R".repeat(31)))).toEqual({ "boards.0.plans.0.classes.0.room": "Keep the room under 30 characters" });
+    expect(problems(withRoom("<b>1</b>"))).toEqual({ "boards.0.plans.0.classes.0.room": "The room cannot contain < or >" });
+  });
+});

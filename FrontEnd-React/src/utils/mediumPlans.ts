@@ -78,16 +78,66 @@ export const planTotals = (plan: MediumPlanDraft) => ({
 /** The same sections, or the same seats, for every class. */
 export const setAllClasses = (plan: MediumPlanDraft, values: { sections?: number; seats?: number }): MediumPlanDraft => ({ ...plan, classes: plan.classes.map((c) => ({ ...c, ...values })) });
 
-/** Another medium's answers, as a start to change from. A copy: changing one never changes the other. */
-export const copyPlan = (from: MediumPlanDraft, medium: string): MediumPlanDraft => ({
-  ...from,
-  medium,
-  seniorStreams: [...from.seniorStreams],
-  classes: from.classes.map((c) => ({ ...c })),
-  days: [...from.days],
-  usual: { ...from.usual },
-  saturday: from.saturday ? { ...from.saturday } : null,
-});
+/** A room's name is up to 30 letters (the server keeps the same limit). */
+export const MAX_ROOM = 30;
+
+/**
+ * Room numbers counted up from the first: "101" gives 101, 102, 103; "Room 12" gives "Room 12", "Room 13"; a leading zero is kept ("A-009"
+ * gives "A-009", "A-010"). Null when the first has no number at its end to count from.
+ */
+export function roomSequence(first: string, count: number): string[] | null {
+  const found = /^(.*?)(\d+)$/.exec(first.trim());
+  if (!found) return null;
+  const [, text, digits] = found;
+  return Array.from({ length: count }, (_, i) => `${text}${String(Number(digits) + i).padStart(digits.length, "0")}`);
+}
+
+/**
+ * "Quick Fill: apply the same settings to all": the same sections and/or seats for every class, and, when a first room is given, the rooms
+ * counted up from it, one for each class that has sections (a class with none has no room to give). What is not given stays as it was.
+ */
+export function quickFill(plan: MediumPlanDraft, values: { sections?: number; seats?: number; firstRoom?: string }): MediumPlanDraft {
+  const filled = plan.classes.map((c) => ({ ...c, ...(values.sections !== undefined ? { sections: values.sections } : {}), ...(values.seats !== undefined ? { seats: values.seats } : {}) }));
+  const rooms = values.firstRoom?.trim() ? roomSequence(values.firstRoom, filled.filter((c) => c.sections > 0).length) : null;
+  let next = 0;
+  return { ...plan, classes: filled.map((c) => (rooms && c.sections > 0 ? { ...c, room: rooms[next++] } : c)) };
+}
+
+const ORDINAL = ["th", "st", "nd", "rd"];
+/** "10" is "10th", "1" is "1st"; "Nursery" stays "Nursery". */
+export function ordinalLevel(level: string): string {
+  const n = Number(level);
+  if (!Number.isInteger(n) || level.trim() === "") return level;
+  const tens = n % 100;
+  return `${n}${ORDINAL[tens >= 11 && tens <= 13 ? 0 : n % 10 < 4 ? n % 10 : 0]}`;
+}
+
+/** "Nursery to 10th": the range of a medium as the heading of Class Sections says it; "" until both ends are chosen. */
+export function rangeText(lowest: string, highest: string): string {
+  if (!lowest || !highest || levelIndex(lowest) > levelIndex(highest)) return "";
+  return lowest === highest ? ordinalLevel(lowest) : `${ordinalLevel(lowest)} to ${ordinalLevel(highest)}`;
+}
+
+/** "Nursery, LKG, UKG, Class 1 to 10": the classes a range makes, with the numbered ones as a run. Streams of 11 and 12 are not listed. */
+export function classRangeSummary(lowest: string, highest: string): string {
+  const from = levelIndex(lowest);
+  const to = levelIndex(highest);
+  if (from < 0 || to < from) return "";
+  const parts: string[] = [];
+  const numbers: number[] = [];
+  const flush = () => {
+    if (numbers.length > 0) parts.push(numbers.length === 1 ? `Class ${numbers[0]}` : `Class ${numbers[0]} to ${numbers[numbers.length - 1]}`);
+    numbers.length = 0;
+  };
+  for (const level of CLASS_LEVELS.slice(from, to + 1)) {
+    if (Number.isNaN(Number(level))) {
+      flush();
+      parts.push(level);
+    } else numbers.push(Number(level));
+  }
+  flush();
+  return parts.join(", ");
+}
 
 /** One plan for each medium of the board, in the same order: the ones already filled in are kept, a new medium starts empty. */
 export const syncPlans = (plans: readonly MediumPlanDraft[], mediums: readonly string[]): MediumPlanDraft[] => mediums.map((medium) => plans.find((p) => p.medium === medium) ?? emptyPlan(medium));
@@ -110,6 +160,7 @@ export function planErrors(plan: MediumPlanDraft, prefix: string): Record<string
     else if (c.sections === 0 && c.seats > MAX_CLASS_SEATS) found[seats] = `Up to ${MAX_CLASS_SEATS} seats`;
     else if (c.sections > 0 && c.seats > MAX_SEATS) found[seats] = `Up to ${MAX_SEATS} seats in a section`;
     else if (c.sections > 0 && c.sections * c.seats > MAX_CLASS_SEATS) found[seats] = `A class holds up to ${MAX_CLASS_SEATS} seats in all`;
+    if ((c.room ?? "").trim().length > MAX_ROOM) found[`${prefix}.classes.${i}.room`] = `Keep the room under ${MAX_ROOM} characters`;
   });
   if (plan.days.length === 0) found[`${prefix}.week.days`] = "Choose the days school is open.";
   const usual = dayProblem(plan.usual);
@@ -126,7 +177,8 @@ export const planToApi = (plan: MediumPlanDraft): MediumPlan => ({
   lowestClass: plan.lowestClass,
   highestClass: plan.highestClass,
   seniorStreams: plan.seniorStreams,
-  classes: plan.classes,
+  // A room is sent only when one was typed: an empty box is no room.
+  classes: plan.classes.map(({ room, ...row }) => (room?.trim() ? { ...row, room: room.trim() } : row)),
   week: { days: plan.days, usual: generateDay(plan.usual).slots, saturday: plan.saturday && plan.days.includes(6) ? generateDay(plan.saturday).slots : null },
 });
 
@@ -155,4 +207,41 @@ export function planSummary(plan: MediumPlan): string {
 /** Every medium of the school in one line each: what a screen that reads the form back shows. */
 export function planLines(boards: readonly BoardEntry[]): { label: string; summary: string }[] {
   return boards.flatMap((entry) => (entry.plans ?? []).map((plan) => ({ label: `${boards.length > 1 ? `${boardLabel(entry)} · ` : ""}${plan.medium} Medium`, summary: planSummary(plan) })));
+}
+
+/** What the review of the form says about one medium: its classes, sections and seats added up, its days and its timing. */
+export interface PlanFacts {
+  /** "Pre-Nursery to 12th". */
+  range: string;
+  classes: number;
+  sections: number;
+  seats: number;
+  /** How many classes were given a room. */
+  rooms: number;
+  streams: string[];
+  /** "Mon to Sat". */
+  days: string;
+  /** "08:30 to 14:20" for the usual day; "" when the day has no rows. */
+  timing: string;
+  /** Saturday's own timing, when it has one and Saturday is a school day; otherwise "". */
+  saturday: string;
+}
+
+const dayText = (slots: readonly { start: string; end: string }[]) => {
+  const { start, end } = describeDay(slots as Parameters<typeof describeDay>[0]);
+  return start && end ? `${start} to ${end}` : "";
+};
+
+export function planFacts(plan: MediumPlan): PlanFacts {
+  return {
+    range: rangeText(plan.lowestClass, plan.highestClass),
+    classes: plan.classes.length,
+    sections: plan.classes.reduce((n, c) => n + c.sections, 0),
+    seats: plan.classes.reduce((n, c) => n + classSeats(c), 0),
+    rooms: plan.classes.filter((c) => c.sections > 0 && (c.room ?? "").trim() !== "").length,
+    streams: [...plan.seniorStreams],
+    days: daysLabel(plan.week.days),
+    timing: dayText(plan.week.usual),
+    saturday: plan.week.saturday && plan.week.days.includes(6) ? dayText(plan.week.saturday) : "",
+  };
 }

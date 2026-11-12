@@ -16,7 +16,7 @@ import {
 } from "../schemas/students.schemas";
 import { AdmissionService, type AdmissionYear } from "./admission.service";
 import { classNameOf } from "./classNames";
-import { seatsTaken } from "./placement";
+import { classSeatsTaken, seatsTaken } from "./placement";
 import { StudentSettingsService } from "./settings.service";
 
 type Problem = { path: string; message: string };
@@ -36,13 +36,17 @@ export interface ImportRowResult {
   student?: { id: string; name: string; admissionNumber: string };
 }
 
-/** A section whose seats were raised because the file brought more students than it had seats (and the class's, when its sections no longer fitted). */
+/**
+ * A section whose seats were raised because the file brought more students than it had seats (and the class's, when its sections no
+ * longer fitted); or, with no section, a class that has none and whose own seats were raised the same way.
+ */
 export interface SeatsRaised {
   classId: string;
   className: string;
-  sectionId: string;
-  sectionName: string;
-  /** The section's seats before and after. */
+  /** Null when it is a class with no sections that was raised (then `from` and `to` are the class's own seats). */
+  sectionId: string | null;
+  sectionName: string | null;
+  /** The section's (or the class's own) seats before and after. */
   from: number;
   to: number;
   /** The class's seats before and after; null when the class had room enough and was not changed. */
@@ -87,6 +91,12 @@ function sectionsOfAdmitted(input: ImportStudentsInput, results: ImportRowResult
   return [...new Set(input.rows.filter((r) => admitted.has(r.row) && r.student.sectionId).map((r) => String(r.student.sectionId)))];
 }
 
+/** The classes (once each) that admitted rows went into with no section: they sit in the class itself. */
+function classesOfAdmitted(input: ImportStudentsInput, results: ImportRowResult[]): string[] {
+  const admitted = new Set(results.filter((r) => r.ok).map((r) => r.row));
+  return [...new Set(input.rows.filter((r) => admitted.has(r.row) && !r.student.sectionId && r.student.classId).map((r) => String(r.student.classId)))];
+}
+
 export class ImportService {
   /**
    * A part of a bulk import (up to 100 rows), one row after another. Each row is an admission like the form's, checked by the same
@@ -112,8 +122,32 @@ export class ImportService {
     for (const row of input.rows) results.push(await ImportService.one(tenantId, school, year, row, input, needs, className));
     const ok = results.filter((r) => r.ok).length;
     // The person said to go over the seats: nobody sits beyond them, the seats grow to hold everyone who was admitted.
-    const seatsRaised = !input.dryRun && input.allowOverCapacity ? await ImportService.raiseSeats(school, year, sectionsOfAdmitted(input, results)) : [];
+    const seatsRaised =
+      !input.dryRun && input.allowOverCapacity
+        ? [
+            ...(await ImportService.raiseSeats(school, year, sectionsOfAdmitted(input, results))),
+            ...(await ImportService.raiseClassSeats(school, year, classesOfAdmitted(input, results))),
+          ]
+        : [];
     return { dryRun: input.dryRun, results, ok, failed: results.length - ok, seatsRaised };
+  }
+
+  /**
+   * The same for a class that has no sections: its own seats grow to the students it has now, when it has more than seats (a class whose
+   * seats are not set is left alone). A class that has sections is raised through them (`raiseSeats`).
+   */
+  private static async raiseClassSeats(school: Types.ObjectId, year: AdmissionYear, classIds: string[]): Promise<SeatsRaised[]> {
+    const raised: SeatsRaised[] = [];
+    for (const classId of classIds) {
+      if (await Section.exists({ tenantId: school, classId, academicYearId: year._id })) continue;
+      const klass = await SchoolClass.findOne({ _id: classId, tenantId: school }).select("name capacity").lean();
+      if (!klass || klass.capacity == null) continue;
+      const students = await classSeatsTaken(school, year._id, klass._id);
+      if (students <= klass.capacity) continue;
+      await SchoolClass.updateOne({ _id: klass._id, tenantId: school }, { $set: { capacity: students } });
+      raised.push({ classId, className: klass.name, sectionId: null, sectionName: null, from: klass.capacity, to: students, classFrom: null, classTo: null });
+    }
+    return raised;
   }
 
   /**

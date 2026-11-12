@@ -19,9 +19,10 @@ import {
   assertSeat,
   resolvePlacement,
   rollNumberTaken,
-  sectionFull,
-  seatsTaken,
+  seatsFull,
+  seatsTakenIn,
 } from "./placement";
+import { raiseSeats } from "./seatRaise";
 import {
   aadhaarTaken,
   addressOf,
@@ -421,8 +422,11 @@ export class StudentService {
     const moved = !placement.classId.equals(enrolment.classId) || String(placement.sectionId) !== String(enrolment.sectionId);
     const rollNumber = input.rollNumber !== undefined ? input.rollNumber : moved ? null : (enrolment.rollNumber ?? null);
 
-    if (moved) await assertSeat(school, year._id, placement, input.allowOverCapacity, student._id);
+    const mustRaise = moved && (await assertSeat(school, year._id, placement, input.allowOverCapacity, student._id, input.raiseSeatsTo));
     await assertRollNumberFree(school, year._id, placement, rollNumber, student._id);
+    // "Raise the seats and move": they grow first (and are put back if the move fails below), so the student has one.
+    const seats = mustRaise && input.raiseSeatsTo !== undefined ? await raiseSeats(school, year._id, placement, input.raiseSeatsTo) : null;
+    if (seats?.changed) placement.capacity = seats.changed.to;
 
     const was = (await placesOf(school, year._id, [student._id])).get(student._id.toString());
     const before: Pick<IEnrolment, "classId" | "sectionId" | "rollNumber"> = {
@@ -436,16 +440,18 @@ export class StudentService {
         { $set: { classId: placement.classId, sectionId: placement.sectionId, rollNumber } }
       );
     } catch (err) {
+      await seats?.undo();
       if (isDuplicateKey(err) && rollNumber !== null) throw rollNumberTaken(placement, rollNumber);
       throw err;
     }
 
-    // Two moves into the last seat at the same moment: the section must not end up over its limit unless someone said so.
-    if (moved && !input.allowOverCapacity && placement.sectionId && placement.capacity !== null) {
-      const taken = await seatsTaken(school, year._id, placement.sectionId);
+    // Two moves into the last seat at the same moment: the section (or class) must not end up over its limit unless someone said so.
+    if (moved && !input.allowOverCapacity && placement.capacity !== null) {
+      const taken = await seatsTakenIn(school, year._id, placement);
       if (taken > placement.capacity) {
         await Enrolment.updateOne({ _id: enrolment._id, tenantId: school }, { $set: before });
-        throw sectionFull(placement, taken - 1);
+        await seats?.undo();
+        throw seatsFull(placement, taken - 1);
       }
     }
     // Where the student was, who moved them, when and why: the year's enrolment is changed in place, so this is what keeps the history.

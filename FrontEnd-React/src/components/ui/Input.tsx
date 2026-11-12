@@ -19,7 +19,8 @@ export const Label = ({ className, ...props }: LabelHTMLAttributes<HTMLLabelElem
  * switches every control inside it to "filled", so the pages do not have to ask for it one by one. "boxed" is taller with a firm border and
  * its icon in a block of its own, for the student admission form (BoxedControls).
  */
-type ControlStyle = "outline" | "filled" | "boxed";
+/** "soft" is the sign-up form's look: a tall white box with rounded corners, a light border and a blue icon inside it (SoftControls). */
+type ControlStyle = "outline" | "filled" | "boxed" | "soft";
 const ControlStyleContext = createContext<ControlStyle>("outline");
 
 /** Wrap a form in this and every Input, Select and Textarea inside it takes the soft "filled" look. */
@@ -33,6 +34,11 @@ export function BoxedControls({ children }: { children: React.ReactNode }) {
   return <ControlStyleContext.Provider value="boxed">{children}</ControlStyleContext.Provider>;
 }
 
+/** Wrap a form in this and every Input, Select and date box inside it takes the "soft" look of the sign-up form. */
+export function SoftControls({ children }: { children: React.ReactNode }) {
+  return <ControlStyleContext.Provider value="soft">{children}</ControlStyleContext.Provider>;
+}
+
 export const useControlStyle = () => useContext(ControlStyleContext);
 
 export function controlClass(style: ControlStyle) {
@@ -40,14 +46,17 @@ export function controlClass(style: ControlStyle) {
     "w-full rounded-lg text-sm text-foreground placeholder:text-[#94a3b8] transition-all focus:outline-none disabled:opacity-60 aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-danger/30",
     style === "filled"
       ? "border border-transparent bg-primary-soft focus:border-primary focus:bg-surface focus:ring-4 focus:ring-primary/15 disabled:bg-surface-muted"
-      : style === "boxed"
+      : style === "soft"
+        ? // "!": the same reason as below (index.css colours every border from outside Tailwind's layers).
+          "rounded-xl border border-border bg-white text-[15px] shadow-card hover:border-primary/40! focus:border-primary! focus:ring-4 focus:ring-primary/15 disabled:bg-surface-muted aria-[invalid=true]:border-danger!"
+        : style === "boxed"
         ? // "!": index.css colours every border from outside Tailwind's layers, which beats any plain border colour written here.
           "rounded-[10px] border border-foreground/60! bg-surface text-[15px] hover:border-foreground/80! focus:border-primary! focus:ring-4 focus:ring-primary/15 disabled:bg-surface-muted aria-[invalid=true]:border-danger!"
         : "border border-border bg-surface focus:border-primary focus:ring-4 focus:ring-primary/15 disabled:bg-surface-muted aria-[invalid=true]:border-danger"
   );
 }
 
-export const controlHeight = (style: ControlStyle) => (style === "boxed" ? "h-12" : style === "filled" ? "h-11" : "h-10");
+export const controlHeight = (style: ControlStyle) => (style === "boxed" || style === "soft" ? "h-12" : style === "filled" ? "h-11" : "h-10");
 
 /** How far the text of a box starts when an icon is at its left. */
 export const iconPadding = (style: ControlStyle) => (style === "boxed" ? "pl-14" : "pl-11");
@@ -57,6 +66,8 @@ export const iconClass = "pointer-events-none absolute left-3.5 top-1/2 size-[18
 /** The icon at the left of a box: on its own, or in a block of its own in the boxed look. */
 export function ControlIcon({ icon: Icon }: { icon: LucideIcon }) {
   const style = useControlStyle();
+  // The soft look: the icon is blue, like the icons of the sign-up form's cards.
+  if (style === "soft") return <Icon className="pointer-events-none absolute left-3.5 top-1/2 size-[19px] -translate-y-1/2 text-primary" aria-hidden />;
   if (style !== "boxed") return <Icon className={iconClass} aria-hidden />;
   return (
     <span data-slot="control-icon" aria-hidden className="pointer-events-none absolute inset-y-px left-px flex w-11 items-center justify-center rounded-l-[9px] border-r border-foreground/40! bg-surface-muted text-foreground">

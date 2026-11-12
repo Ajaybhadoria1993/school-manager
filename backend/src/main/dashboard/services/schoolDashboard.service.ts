@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { indiaNow } from "../../../utils/clock";
 import { SchoolClass } from "../../academics/models/SchoolClass";
+import { NOT_INACTIVE } from "../../academics/models/status";
 import { seatedIn } from "../../academics/services/viewedYear";
 import { AttendanceDay } from "../../classroom/models/AttendanceDay";
 import { LeaveRequest } from "../../classroom/models/LeaveRequest";
@@ -126,7 +127,7 @@ export class SchoolDashboardService {
 
     const [capacity, classes, today, marksToday, teachers, staff, sheet, leavesWaiting, withoutClassTeacher, admitted, upcoming] = await Promise.all([
       CapacityService.summary(tenantId),
-      SchoolClass.find({ tenantId: school }).sort({ order: 1, _id: 1 }).select("name").lean(),
+      SchoolClass.find({ tenantId: school, ...NOT_INACTIVE }).sort({ order: 1, _id: 1 }).select("name").lean(),
       StudentAttendanceService.today(tenantId),
       AttendanceDay.find({ tenantId: school, date: fromDay(now.date) }).select("marks.status").lean(),
       Teacher.countDocuments({ tenantId: school, isActive: true }),

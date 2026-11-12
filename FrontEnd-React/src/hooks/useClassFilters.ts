@@ -3,6 +3,8 @@ import { useSearchParams } from "react-router";
 import type { ClassListQuery } from "../types";
 
 export type ClassSort = "order" | "name" | "seats";
+/** Which classes the list shows: every one (the default, so a class made inactive stays where it was, marked), or only one kind. */
+export type ClassStatus = "all" | "active" | "inactive";
 export const PAGE_SIZES = [10, 20, 50] as const;
 
 /** What the person has asked of the class list, as it is in the address (so a reload, a link and the back button all keep it). */
@@ -11,6 +13,7 @@ export interface ClassFilters {
   q: string;
   sort: ClassSort;
   dir: "asc" | "desc";
+  status: ClassStatus;
   page: number;
   limit: number;
   /** The class open on the right, if one was picked. */
@@ -33,6 +36,7 @@ export function useClassFilters(scope: string) {
       q: params.get("q") ?? "",
       sort: sort === "name" || sort === "seats" ? sort : "order",
       dir: params.get("dir") === "desc" ? "desc" : "asc",
+      status: params.get("status") === "active" || params.get("status") === "inactive" ? (params.get("status") as ClassStatus) : "all",
       page: Math.max(1, Number(params.get("page")) || 1),
       limit: (PAGE_SIZES as readonly number[]).includes(limit) ? limit : PAGE_SIZES[0],
       selected: params.get("class"),
@@ -43,6 +47,7 @@ export function useClassFilters(scope: string) {
     () => ({
       ...(filters.q.trim() ? { search: filters.q.trim() } : {}),
       departmentId: scope,
+      status: filters.status,
       sort: filters.sort,
       dir: filters.dir,
       page: filters.page,
@@ -52,7 +57,7 @@ export function useClassFilters(scope: string) {
   );
 
   /** How many filters are set (the sort and the page are not filters). */
-  const active = filters.q.trim() !== "" ? 1 : 0;
+  const active = (filters.q.trim() !== "" ? 1 : 0) + (filters.status !== "all" ? 1 : 0);
 
   // The address as it is right now, including a change made a moment ago that has not been drawn yet. A change is built from this,
   // never from the address of an older render: a box that was typed in a moment ago sends its change from a timer, and must not
@@ -82,6 +87,7 @@ export function useClassFilters(scope: string) {
         if ("q" in patch) set("q", patch.q ?? "", "");
         if ("sort" in patch) set("sort", patch.sort ?? "order", "order");
         if ("dir" in patch) set("dir", patch.dir ?? "asc", "asc");
+        if ("status" in patch) set("status", patch.status ?? "all", "all");
         if ("limit" in patch) set("limit", patch.limit ?? PAGE_SIZES[0], PAGE_SIZES[0]);
         if ("selected" in patch) set("class", patch.selected ?? null, null);
         if ("page" in patch) set("page", patch.page ?? 1, 1);
@@ -90,11 +96,12 @@ export function useClassFilters(scope: string) {
     [apply]
   );
 
-  /** Takes the search away (the sort and the picked class stay). */
+  /** Takes the search and the status away (the sort and the picked class stay). */
   const clear = useCallback(
     () =>
       apply((next) => {
         next.delete("q");
+        next.delete("status");
         next.delete("page");
       }),
     [apply]

@@ -18,6 +18,8 @@ import type {
   ClassInput,
   ClassItem,
   DepartmentItem,
+  DivideClassInput,
+  DivideClassResult,
   NewClassInput,
   QuickSetupInput,
   QuickSetupResult,
@@ -151,10 +153,17 @@ export const academicsApi = createApi({
       query: ({ id, name }) => ({ url: `/academics/departments/${id}`, method: "PATCH", body: { name } }),
       invalidatesTags: ["Structure"],
     }),
-    /** Its classes are left in no department, so every read of a class changes. */
-    deleteDepartment: build.mutation<ApiResponse<{ unlinkedClasses: number }>, string>({
-      query: (id) => ({ url: `/academics/departments/${id}`, method: "DELETE" }),
-      invalidatesTags: ["Structure", "ClassList", "Class"],
+    /**
+     * A department is never deleted: it is made inactive (the server allows it only when none of its classes is active) and made active
+     * again. Its classes do not change either way, so only the layout is read again.
+     */
+    deactivateDepartment: build.mutation<ApiResponse<DepartmentItem>, string>({
+      query: (id) => ({ url: `/academics/departments/${id}/deactivate`, method: "POST", body: {} }),
+      invalidatesTags: ["Structure"],
+    }),
+    reactivateDepartment: build.mutation<ApiResponse<DepartmentItem>, string>({
+      query: (id) => ({ url: `/academics/departments/${id}/reactivate`, method: "POST", body: {} }),
+      invalidatesTags: ["Structure"],
     }),
 
     /** A new class cannot be on screen yet: the layout and the list gain a row. */
@@ -170,10 +179,35 @@ export const academicsApi = createApi({
       query: ({ id, refresh: _refresh, ...body }) => ({ url: `/academics/classes/${id}`, method: "PATCH", body }),
       invalidatesTags: (_result, _error, { refresh }) => (refresh === false ? [] : ["Structure", "ClassList", "Class"]),
     }),
-    /** The class is gone: the layout and the list lose it. (Nothing else is read again, and the open class is not asked for.) */
-    deleteClass: build.mutation<ApiResponse<{ removedSections: number }>, string>({
-      query: (id) => ({ url: `/academics/classes/${id}`, method: "DELETE" }),
-      invalidatesTags: ["Structure", "ClassList"],
+    /**
+     * A class is never deleted (its students and their history belong to it): it is made inactive, which the server allows only when no
+     * student is left in it, and made active again. The layout and the list lose it (or gain it); the open class is not asked for again
+     * when it goes, and is when it comes back.
+     */
+    deactivateClass: build.mutation<ApiResponse<ClassItem>, string>({
+      query: (id) => ({ url: `/academics/classes/${id}/deactivate`, method: "POST", body: {} }),
+      // The class stays in its department's list, marked inactive, and the one that is open is read again to show it so.
+      invalidatesTags: ["Structure", "ClassList", "Class"],
+    }),
+    reactivateClass: build.mutation<ApiResponse<ClassItem>, string>({
+      query: (id) => ({ url: `/academics/classes/${id}/reactivate`, method: "POST", body: {} }),
+      invalidatesTags: ["Structure", "ClassList", "Class"],
+    }),
+    /**
+     * A class with students in it itself is divided into sections and the students are shared out between them. It changes the class, its
+     * sections and where its students sit, so those are read again where they are on screen (the student lists and the seat counts too).
+     */
+    divideClass: build.mutation<ApiResponse<DivideClassResult>, { id: string } & DivideClassInput>({
+      query: ({ id, ...body }) => ({ url: `/academics/classes/${id}/divide`, method: "POST", body }),
+      invalidatesTags: ["Structure", "ClassList", "Class"],
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          dispatch(studentsApi.util.invalidateTags(["StudentList", "Capacity", "Student"]));
+        } catch {
+          // The screen shows the reason.
+        }
+      },
     }),
 
     createSection: build.mutation<ApiResponse<SectionItem>, { classId: string } & SectionInput>({
@@ -213,10 +247,13 @@ export const {
   useAssignDepartmentMutation,
   useCreateDepartmentMutation,
   useRenameDepartmentMutation,
-  useDeleteDepartmentMutation,
+  useDeactivateDepartmentMutation,
+  useReactivateDepartmentMutation,
   useCreateClassMutation,
   useUpdateClassMutation,
-  useDeleteClassMutation,
+  useDeactivateClassMutation,
+  useReactivateClassMutation,
+  useDivideClassMutation,
   useCreateSectionMutation,
   useUpdateSectionMutation,
   useDeleteSectionMutation,

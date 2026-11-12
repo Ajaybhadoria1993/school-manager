@@ -38,6 +38,12 @@
   --panel: #213145; /* the dark panel beside the sign-in form */
   --sky: #38bdf8;
   --gold: #d99f27; /* the accent of the form sections */
+  /* The sign-up form's side panel and the pastel of its class cards (from the EduShiksha login kit) */
+  --onboard: #1e3a8a;
+  --onboard-deep: #172554;
+  --onboard-page-from: #eaf2ff;
+  --onboard-page-via: #f6f9ff;
+  --onboard-page-to: #eef6ff;
 
   /* Status colours: text, tint and hairline, each for badges and notices */
   --success: #047857;
@@ -95,6 +101,11 @@
   --color-panel: var(--panel);
   --color-sky: var(--sky);
   --color-gold: var(--gold);
+  --color-onboard: var(--onboard);
+  --color-onboard-deep: var(--onboard-deep);
+  --color-onboard-page-from: var(--onboard-page-from);
+  --color-onboard-page-via: var(--onboard-page-via);
+  --color-onboard-page-to: var(--onboard-page-to);
 
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
@@ -455,4 +466,10 @@ body {
     line-height: 1.35;
     letter-spacing: -0.02em;
   }
+}
+
+/* The handwritten taglines of the sign-up form: the first of these that the device has. */
+.font-script {
+  font-family: "Segoe Script", "Snell Roundhand", "Lucida Handwriting", "Brush Script MT", cursive;
+  font-style: italic;
 }

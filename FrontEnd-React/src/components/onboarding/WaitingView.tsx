@@ -6,8 +6,8 @@ import { formatBoards, formatClassRange, formatPhone } from "../../constants/sch
 import { formatDateTime } from "../../utils/status";
 import { cn } from "../../utils/helpers";
 import type { OnboardingState } from "../../types";
-import { useReportStage } from "./stage";
-import { Stepper } from "./Stepper";
+import { STAGE_COUNT } from "../../constants/onboardingStages";
+import { useReportProgress } from "./stage";
 
 function Milestone({ title, text, state }: { title: string; text: string; state: "done" | "active" }) {
   return (
@@ -44,7 +44,8 @@ export function WaitingView({
   email: string;
   onCheck: () => Promise<void>;
 }) {
-  useReportStage(5);
+  // Every screen of the form is done: the list at the side shows them all ticked while the team checks.
+  useReportProgress({ active: STAGE_COUNT + 1, done: Array.from({ length: STAGE_COUNT }, (_, i) => i + 1), reachable: 0 });
   const [checking, setChecking] = useState(false);
   const s1 = state.steps[1];
   const s2 = state.steps[2];
@@ -62,10 +63,6 @@ export function WaitingView({
 
   return (
     <div className="space-y-5">
-      <Card className="px-5 py-4 sm:px-7 sm:py-5">
-        <Stepper active={5} completed={[1, 2, 3, 4]} maxOpen={5} />
-      </Card>
-
       <Card className="rise-in overflow-hidden text-center">
         <div className="bg-gradient-to-b from-primary-soft to-surface px-6 pb-2 pt-10 sm:px-10">
           <div className="relative mx-auto flex size-20 items-center justify-center">

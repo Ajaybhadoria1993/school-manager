@@ -40,7 +40,9 @@ import {
   problemOf,
   problemsCsv,
   takenNameNote,
+  targetLabel,
   typedTableFields,
+  usableTarget,
   type OwnColumn,
 } from "../studentImport";
 
@@ -953,5 +955,125 @@ describe("the seats an upload raised", () => {
     expect(joinNames(["Class 6", "Class 7"])).toBe("Class 6 and Class 7");
     expect(joinNames(["Class 6", "Class 7", "UKG", "Class 6"])).toBe("Class 6, Class 7 and UKG");
     expect(joinNames([])).toBe("");
+  });
+});
+
+describe("a file made for one class (and maybe one section)", () => {
+  const FIVE = { classId: "c5", sectionId: null };
+  const FIVE_B = { classId: "c5", sectionId: "c5-B" };
+  const SCIENCE = { classId: "c11s", sectionId: null };
+  /** A row as the file has it, read for a file made for `target`. */
+  const forTarget = (values: Partial<Record<Title, string>>, target: { classId: string; sectionId: string | null } | null) =>
+    prepareRow(sheetRow(4, { ...AARAV, ...values }), MAPPING, STRUCTURE, [], target);
+  /** The same, from a file with no Class and no Sec column at all. */
+  const NO_CLASS_HEADERS = HEADERS.filter((h) => h !== "Class" && h !== "Sec");
+  const noClassColumn = (target: { classId: string; sectionId: string | null } | null) =>
+    prepareRow(sheetRow(4, AARAV, NO_CLASS_HEADERS), autoMap(NO_CLASS_HEADERS), STRUCTURE, [], target);
+
+  it("without a target nothing changes: a row with no class still says so", () => {
+    expect(forTarget({ Class: "", Sec: "" }, null).problems.map((p) => p.label)).toContain("Class");
+    expect(prepareRow(sheetRow(4, { ...AARAV, Class: "", Sec: "" }), MAPPING, STRUCTURE).problems.map((p) => p.label)).toContain("Class");
+  });
+
+  it("a file with no class column at all: every row is of the target class, with nothing to fix", () => {
+    const p = noClassColumn(FIVE);
+    expect(p.problems).toEqual([]);
+    expect(p).toMatchObject({ classId: "c5", classLabel: "Class 5", sectionId: null, autoSection: { word: "" } });
+    expect(p.input.student.classId).toBe("c5");
+  });
+
+  it("an empty class box is the target class too, and the class is a Class 1 with no sections as well", () => {
+    expect(forTarget({ Class: "", Sec: "" }, FIVE)).toMatchObject({ classId: "c5", problems: [] });
+    expect(forTarget({ Class: "", Sec: "" }, { classId: "c1", sectionId: null })).toMatchObject({ classId: "c1", sectionId: null, autoSection: null, problems: [] });
+  });
+
+  it("a row that names the class of the file is fine, however it is written", () => {
+    for (const written of ["5", "V", "5th", "Class 5", "class-5", "Std 5"]) {
+      expect(forTarget({ Class: written, Sec: "" }, FIVE), written).toMatchObject({ classId: "c5", problems: [] });
+    }
+  });
+
+  it("a row that names another class is a problem in the Class box, which says what the file is for", () => {
+    const p = forTarget({ Class: "Class 6", Sec: "" }, FIVE);
+    expect(p.problems).toEqual([{ label: "Class", message: 'This file is for Class 5, but this row says "Class 6"', fields: ["className"] }]);
+  });
+
+  it("a class the school does not have stays the old problem (not the file's)", () => {
+    expect(forTarget({ Class: "Class 9", Sec: "" }, FIVE).problems).toEqual([{ label: "Class", message: 'Your school has no "Class 9": type one of your classes', fields: ["className"] }]);
+  });
+
+  it("the class of the file is placed in its sections as always (the target names the class, not the section)", () => {
+    expect(forTarget({ Class: "5", Sec: "" }, FIVE)).toMatchObject({ sectionId: null, autoSection: { word: "" } });
+    // A section the file names is kept.
+    expect(forTarget({ Class: "5", Sec: "B" }, FIVE)).toMatchObject({ sectionId: "c5-B", autoSection: null, problems: [] });
+  });
+
+  it("one section: every row is in it, with nothing left to place", () => {
+    expect(forTarget({ Class: "", Sec: "" }, FIVE_B)).toMatchObject({ classId: "c5", sectionId: "c5-B", classLabel: "Class 5 - B", autoSection: null, problems: [] });
+    expect(forTarget({ Class: "5", Sec: "b" }, FIVE_B)).toMatchObject({ sectionId: "c5-B", problems: [] });
+    expect(noClassColumn(FIVE_B)).toMatchObject({ classId: "c5", sectionId: "c5-B", classLabel: "Class 5 - B", problems: [] });
+    expect(forTarget({ Class: "", Sec: "" }, FIVE_B).input.student).toMatchObject({ classId: "c5", sectionId: "c5-B" });
+  });
+
+  it("one section: a row of another section is a problem in the Section box, whether the box or the class cell says it", () => {
+    const boxed = forTarget({ Class: "5", Sec: "A" }, FIVE_B);
+    expect(boxed.problems).toEqual([{ label: "Section", message: "This file is for Class 5 - B, but this row says section A", fields: ["sectionName"] }]);
+    const inClass = forTarget({ Class: "5-A", Sec: "" }, FIVE_B);
+    expect(inClass.problems).toEqual([{ label: "Section", message: "This file is for Class 5 - B, but this row says section A", fields: ["className"] }]);
+    // A section the class does not have is not the file's section either.
+    expect(forTarget({ Class: "5", Sec: "C" }, FIVE_B).problems.map((p) => p.label)).toEqual(["Section"]);
+  });
+
+  it("a stream's class: a row that names only 11 or XI is of the stream, another stream is a problem", () => {
+    for (const written of ["", "11", "XI", "Class 11"]) {
+      expect(forTarget({ Class: written, Sec: "" }, SCIENCE), written).toMatchObject({ classId: "c11s", problems: [] });
+    }
+    expect(forTarget({ Class: "11 Science", Sec: "" }, SCIENCE)).toMatchObject({ classId: "c11s", problems: [] });
+    expect(forTarget({ Class: "11 Commerce", Sec: "" }, SCIENCE).problems).toEqual([
+      { label: "Class", message: 'This file is for Class 11 Science, but this row says "11 Commerce"', fields: ["className"] },
+    ]);
+    // The Stream column says a stream: it is read as always.
+    const headers = [...HEADERS, "Stream"];
+    const streamed = prepareRow(sheetRow(4, { ...AARAV, Class: "11", Stream: "Commerce" }, headers), autoMap(headers), STRUCTURE, [], SCIENCE);
+    expect(streamed.problems.map((p) => p.label)).toEqual(["Class"]);
+  });
+
+  it("a target the school no longer has is ignored (the file is read as a whole-school file)", () => {
+    expect(forTarget({ Class: "", Sec: "" }, { classId: "gone", sectionId: null }).problems.map((p) => p.label)).toContain("Class");
+  });
+
+  it("the table adds no Class or Stream column to a file made for one class", () => {
+    const headers = ["Name", "Gender", "DOB", "Father Name", "Mobile"];
+    expect(columnsToAdd(autoMap(headers), [], CLASSES)).toEqual(["className"]);
+    expect(columnsToAdd(autoMap(headers), [], CLASSES, true)).toEqual([]);
+    const withClass = ["Name", "Class", "Gender", "DOB", "Father Name", "Mobile"];
+    const elevens = [{ cells: ["Asha", "11", "F", "14-05-2016", "Ravi", "9876543210"] }];
+    expect(columnsToAdd(autoMap(withClass), elevens, CLASSES)).toEqual(["stream"]);
+    expect(columnsToAdd(autoMap(withClass), elevens, CLASSES, true)).toEqual([]);
+  });
+
+  it("the typed table has no Class or Section column for one class (the class is chosen already)", () => {
+    const all = typedTableFields(undefined).map((f) => f.key);
+    expect(all).toContain("className");
+    const one = typedTableFields(undefined, true).map((f) => f.key);
+    expect(one).not.toContain("className");
+    expect(one).not.toContain("sectionName");
+    expect(one).toContain("firstName");
+  });
+});
+
+describe("who a file is for, in words", () => {
+  it("a class, a section of it, or nobody in particular (the whole school)", () => {
+    expect(targetLabel(null, CLASSES)).toBeNull();
+    expect(targetLabel({ classId: "c5", sectionId: null }, CLASSES)).toBe("Class 5");
+    expect(targetLabel({ classId: "c5", sectionId: "c5-B" }, CLASSES)).toBe("Class 5 - B");
+    expect(targetLabel({ classId: "c11s", sectionId: null }, CLASSES)).toBe("Class 11 Science");
+  });
+
+  it("a class the school no longer has is no target, and a section it no longer has is dropped", () => {
+    expect(usableTarget({ classId: "gone", sectionId: null }, CLASSES)).toBeNull();
+    expect(targetLabel({ classId: "gone", sectionId: null }, CLASSES)).toBeNull();
+    expect(usableTarget({ classId: "c5", sectionId: "c5-Z" }, CLASSES)).toEqual({ classId: "c5", sectionId: null });
+    expect(usableTarget({ classId: "c5", sectionId: "c5-A" }, CLASSES)).toEqual({ classId: "c5", sectionId: "c5-A" });
   });
 });

@@ -230,6 +230,8 @@ export interface AdmitStudentInput extends RecordsInput {
   /** The school's own fields that are answered. */
   custom?: CustomAnswers;
   allowOverCapacity?: boolean;
+  /** The section (or the class, when it has no sections) is full: raise its seats to this number, then admit. */
+  raiseSeatsTo?: number;
   confirmNotDuplicate?: boolean;
 }
 
@@ -253,6 +255,8 @@ export interface MoveStudentInput {
   sectionId?: string | null;
   rollNumber?: number | null;
   allowOverCapacity?: boolean;
+  /** The place is full: raise its seats to this number, then move the student in. */
+  raiseSeatsTo?: number;
   /** Why (optional): kept in the student's moves with who moved them and when. */
   reason?: string;
 }
@@ -304,6 +308,15 @@ export interface ImportSheet {
   rows: { row: number; cells: string[] }[];
 }
 
+/**
+ * A file made for one class, or for one section of it: every student of it is of that class (and section). `sectionId` null means any
+ * section of the class (the students are shared between them). No target at all is a file for the whole school, each row naming its class.
+ */
+export interface ImportTarget {
+  classId: string;
+  sectionId: string | null;
+}
+
 /** One row sent to be checked or admitted: an admission body, its row number in the file, and the school's own admission number. */
 export interface ImportRowInput {
   row: number;
@@ -322,12 +335,12 @@ export interface ImportRowResult {
   student?: { id: string; name: string; admissionNumber: string };
 }
 
-/** A section whose seats were raised by an upload that brought more students than it had seats (the class's too, when its sections no longer fitted). */
+/** A section whose seats were raised by an upload that brought more students than it had seats (the class's too, when its sections no longer fitted); or a class with no sections whose own seats were raised (`sectionId` is then null). */
 export interface SeatsRaised {
   classId: string;
   className: string;
-  sectionId: string;
-  sectionName: string;
+  sectionId: string | null;
+  sectionName: string | null;
   from: number;
   to: number;
   /** The class's seats before and after; null when the class was not changed. */

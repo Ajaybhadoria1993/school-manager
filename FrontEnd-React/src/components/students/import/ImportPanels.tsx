@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Armchair, Download, FileSpreadsheet, PartyPopper, PencilLine, RefreshCw, TriangleAlert, Upload, UsersRound } from "lucide-react";
 import { Link } from "react-router";
 import { TONES } from "../../../constants/tones";
@@ -22,7 +23,10 @@ export function FileBar({
   already = 0,
   onChangeFile,
   disabled,
+  children,
 }: {
+  /** A row under the file: who it is for (the whole school, one class or one section). */
+  children?: ReactNode;
   file: { name: string; size: number };
   sheetName: string;
   rows: number;
@@ -64,6 +68,7 @@ export function FileBar({
         <RefreshCw className="size-3.5" aria-hidden />
         Choose another file
       </Button>
+      {children && <div className="w-full border-t border-border pt-3">{children}</div>}
     </Card>
   );
 }
@@ -133,10 +138,15 @@ export function DoneCard({
   linked,
   raised = [],
   year,
+  studentsTo = "/school/students",
+  studentsLabel,
   onFix,
   onDownloadProblems,
   onAnother,
 }: {
+  /** Where the last button leads: the students (the default), or the class page the upload was opened from, named by `studentsLabel`. */
+  studentsTo?: string;
+  studentsLabel?: string;
   admitted: number;
   /** Rows that still need a fix. */
   notAdmitted: number;
@@ -174,10 +184,10 @@ export function DoneCard({
         {raised.length > 0 && (
           <div className="mx-auto max-w-xl rounded-xl border border-warning-line bg-warning-soft px-4 py-3 text-left text-sm text-foreground">
             {raised.map((r) => (
-              <p key={r.sectionId} className="flex items-start gap-2">
+              <p key={r.sectionId ?? r.classId} className="flex items-start gap-2">
                 <Armchair className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
                 <span>
-                  {r.className} - {r.sectionName}: seats raised from {r.from} to {r.to}.
+                  {r.sectionName ? `${r.className} - ${r.sectionName}` : r.className}: seats raised from {r.from} to {r.to}.
                   {r.classTo !== null && ` ${r.className} now has ${r.classTo} seats.`}
                 </span>
               </p>
@@ -212,13 +222,13 @@ export function DoneCard({
           Upload another file
         </Button>
         <Link
-          to="/school/students"
+          to={studentsTo}
           className={cn(
             "inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-all",
             notAdmitted > 0 ? "border border-border bg-surface text-foreground shadow-sm hover:bg-background" : "bg-primary text-primary-foreground hover:bg-primary-hover"
           )}
         >
-          Go to students
+          Go to {studentsLabel ?? "students"}
         </Link>
       </div>
     </Card>

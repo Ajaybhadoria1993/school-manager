@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 import { cameFrom } from "../../components/layout/nav-config";
-import { ArrowLeft, ArrowRight, CalendarDays, Download, FolderTree, MousePointerClick, NotebookPen, Search, SearchX, UserPlus, UserRound, UsersRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays, Download, FileUp, FolderTree, MousePointerClick, NotebookPen, Search, SearchX, UserPlus, UserRound, UsersRound } from "lucide-react";
 import { STUDENT_PAGE_SIZES } from "../../constants/students";
+import { useCan } from "../../hooks/useCan";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetClassOverviewQuery, useGetStudentsQuery } from "../../redux/api/studentsApi";
 import { plural, toneOf } from "../../utils/academics";
 import { getApiError } from "../../utils/apiErrors";
-import { admitLink } from "../../utils/students";
+import { admitLink, importLink } from "../../utils/students";
 import { ALL_SECTIONS, SectionPicker } from "../../components/schoolClass/SectionPicker";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentPager } from "../../components/students/StudentPager";
@@ -43,6 +44,9 @@ export default function SchoolClassDetailPage() {
   const { classId = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const here = useLocation();
+  // Bulk upload for this class: for the people who may admit students, in a year that is still running.
+  const can = useCan();
+  const mayUpload = !readOnly && can("students.add");
   const structureRes = useGetStructureQuery();
   const overviewRes = useGetClassOverviewQuery({ classId });
   const structure = structureRes.data?.data;
@@ -157,14 +161,6 @@ export default function SchoolClassDetailPage() {
     <div className="space-y-6">
       <StudentFormHeader
         title={overview.name}
-        subtitle={[
-          plural(overview.students, "student"),
-          hasSections ? plural(overview.sections.length, "section") : "no sections",
-          overview.seats > 0 ? `${overview.seatsLeft} of ${overview.seats} seats left` : null,
-          overview.departmentName,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
         crumbs={[{ label: "Classes", to: "/school-class" }]}
         info={
           // The class teacher of the class (no sections) or of the picked section; with no section picked each section's card says its own.
@@ -187,32 +183,62 @@ export default function SchoolClassDetailPage() {
                 <ArrowRight className="size-4" aria-hidden />
               </Link>
             )}
-            <Link to={timetableTo} className={outlineLink}>
-              <CalendarDays className="size-4" aria-hidden />
-              Timetable &amp; teachers
-            </Link>
-            {(!hasSections || active) && (
-              // The class's attendance, diary and tests (docs/parent-teacher-flow.md), for the people who run the school.
-              <Link to={`/class-work/${classId}${active ? `?section=${active.id}` : ""}`} className={outlineLink}>
-                <NotebookPen className="size-4" aria-hidden />
-                Class work
-              </Link>
-            )}
-            <Link to={{ pathname: "/school/students/export", search: exportSearch }} className={outlineLink}>
-              <Download className="size-4" aria-hidden />
-              Export
-            </Link>
-            {!readOnly && (
-              <Link to={admitLink({ classId, sectionId: active?.id })} state={cameFrom(`${here.pathname}${here.search}`, overview.name)} className={plainLink}>
-                <UserPlus className="size-4" aria-hidden />
-                Add student
-              </Link>
-            )}
           </>
         }
       />
 
       {hasSections && !only && <SectionPicker overview={overview} tone={tone} picked={picked} to={sectionTo} />}
+
+      {/* The search box and the page's buttons, one row: the box at the left (only when students are listed), the buttons at the right. */}
+      <div role="group" aria-label="Search and actions" className="flex flex-wrap items-center justify-between gap-3">
+        {showStudents && (
+          <div className="w-full sm:max-w-xs">
+            <Input
+              aria-label={`Search the students of ${where}`}
+              icon={Search}
+              maxLength={60}
+              placeholder="Search by name or admission number"
+              value={text}
+              onFocus={() => (typing.current = true)}
+              onBlur={() => (typing.current = false)}
+              onChange={(e) => {
+                setText(e.target.value);
+                window.clearTimeout(timer.current);
+                timer.current = window.setTimeout(() => change({ q: e.target.value }), 300);
+              }}
+            />
+          </div>
+        )}
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <Link to={timetableTo} className={outlineLink}>
+            <CalendarDays className="size-4" aria-hidden />
+            Timetable &amp; teachers
+          </Link>
+          {(!hasSections || active) && (
+            // The class's attendance, diary and tests (docs/parent-teacher-flow.md), for the people who run the school.
+            <Link to={`/class-work/${classId}${active ? `?section=${active.id}` : ""}`} className={outlineLink}>
+              <NotebookPen className="size-4" aria-hidden />
+              Class work
+            </Link>
+          )}
+          <Link to={{ pathname: "/school/students/export", search: exportSearch }} className={outlineLink}>
+            <Download className="size-4" aria-hidden />
+            Export
+          </Link>
+          {mayUpload && (
+            <Link to={importLink({ classId, sectionId: active?.id })} state={cameFrom(`${here.pathname}${here.search}`, overview.name)} className={outlineLink}>
+              <FileUp className="size-4" aria-hidden />
+              Bulk upload
+            </Link>
+          )}
+          {!readOnly && (
+            <Link to={admitLink({ classId, sectionId: active?.id })} state={cameFrom(`${here.pathname}${here.search}`, overview.name)} className={plainLink}>
+              <UserPlus className="size-4" aria-hidden />
+              Add student
+            </Link>
+          )}
+        </div>
+      </div>
 
       {!showStudents ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border bg-surface px-6 py-10 text-center">
@@ -224,29 +250,6 @@ export default function SchoolClassDetailPage() {
         </div>
       ) : (
         <section aria-label={`Students of ${where}`} className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-section-heading">
-              Students of {where}
-              {list && <span className="ml-2 text-sm font-semibold text-foreground-muted">{list.total}</span>}
-            </h2>
-            <div className="w-full sm:max-w-xs">
-              <Input
-                aria-label={`Search the students of ${where}`}
-                icon={Search}
-                maxLength={60}
-                placeholder="Search by name or admission number"
-                value={text}
-                onFocus={() => (typing.current = true)}
-                onBlur={() => (typing.current = false)}
-                onChange={(e) => {
-                  setText(e.target.value);
-                  window.clearTimeout(timer.current);
-                  timer.current = window.setTimeout(() => change({ q: e.target.value }), 300);
-                }}
-              />
-            </div>
-          </div>
-
           {listRes.error && !list ? (
             <Card className="flex flex-col items-center gap-3 py-10 text-center">
               <p className="text-sm text-danger">{getApiError(listRes.error)?.message ?? "Could not load the students."}</p>
@@ -285,10 +288,18 @@ export default function SchoolClassDetailPage() {
                 title={`No students in ${where} yet`}
                 actions={
                   readOnly ? undefined : (
-                    <Link to={admitLink({ classId, sectionId: active?.id })} state={cameFrom(`${here.pathname}${here.search}`, overview.name)} className={plainLink}>
-                      <UserPlus className="size-4" aria-hidden />
-                      Add a student
-                    </Link>
+                    <>
+                      <Link to={admitLink({ classId, sectionId: active?.id })} state={cameFrom(`${here.pathname}${here.search}`, overview.name)} className={plainLink}>
+                        <UserPlus className="size-4" aria-hidden />
+                        Add a student
+                      </Link>
+                      {mayUpload && (
+                        <Link to={importLink({ classId, sectionId: active?.id })} state={cameFrom(`${here.pathname}${here.search}`, overview.name)} className={outlineLink}>
+                          <FileUp className="size-4" aria-hidden />
+                          Bulk upload
+                        </Link>
+                      )}
+                    </>
                   )
                 }
               >

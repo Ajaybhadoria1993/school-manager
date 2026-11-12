@@ -77,7 +77,7 @@ describe("the class teacher, on the class's School Class page", () => {
   it("is named at the top, N/A when there is none, and the teachers box is not on this page", async () => {
     openPage("/school-class/c1");
     expect(await screen.findByText("Class teacher: N/A")).toBeInTheDocument();
-    await screen.findByRole("heading", { name: /Students of Class 1/ });
+    await screen.findByRole("region", { name: /Students of Class 1/ });
     expect(screen.queryByRole("region", { name: /^Teachers of/ })).not.toBeInTheDocument();
   });
 

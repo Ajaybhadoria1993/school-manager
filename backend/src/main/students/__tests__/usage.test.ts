@@ -10,8 +10,9 @@ import { studentCountsBySection } from "../../academics/services/usage";
 import { Enrolment } from "../models/Enrolment";
 
 /**
- * The class and section delete guards of Classes & Sections, now with real students (academics.test.ts checks the same guards with
- * the counts stubbed). A class or section with students cannot be deleted; a class keeps its history across years.
+ * The class and section guards of Classes & Sections, with real students (academics.test.ts checks the section guard with the counts
+ * stubbed). A section with students cannot be deleted; a class with students cannot be made inactive (a class is never deleted) and
+ * keeps its history across years.
  */
 
 const academics = "/api/v1/academics";
@@ -68,23 +69,23 @@ describe("the class and section delete guards, with real students", () => {
     expect((await request(app).delete(`${academics}/sections/${s.b}`).set(as(s.token))).status).toBe(200);
   });
 
-  it("keeps a class whose section has students, and a class without sections that has students itself", async () => {
+  it("a class whose section has students, or which holds students itself, is not made inactive", async () => {
     const s = await setUp();
     await admit(s.token, s.class5, s.b, "9000000001");
-    const inSection = await request(app).delete(`${academics}/classes/${s.class5}`).set(as(s.token));
+    const inSection = await request(app).post(`${academics}/classes/${s.class5}/deactivate`).set(as(s.token));
     expect(inSection.status).toBe(409);
     expect(inSection.body.code).toBe("CLASS_HAS_STUDENTS");
 
     await admit(s.token, s.class1, null, "9000000002");
-    const inClass = await request(app).delete(`${academics}/classes/${s.class1}`).set(as(s.token));
+    const inClass = await request(app).post(`${academics}/classes/${s.class1}/deactivate`).set(as(s.token));
     expect(inClass.status).toBe(409);
     expect(inClass.body.code).toBe("CLASS_HAS_STUDENTS");
     expect(inClass.body.message).toContain("1 student.");
-    expect(await SchoolClass.countDocuments({ tenantId: s.tenantId })).toBe(2);
+    expect(await SchoolClass.countDocuments({ tenantId: s.tenantId, status: { $ne: "inactive" } })).toBe(2);
     expect(await Section.countDocuments({ tenantId: s.tenantId })).toBe(2);
   });
 
-  it("keeps a class that had students in another academic year (its history), even with none this year", async () => {
+  it("a class that had students in another academic year (its history) is made inactive, and the history stays", async () => {
     const s = await setUp();
     // Last year a student sat in Class 1, which has no sections.
     await Enrolment.create({
@@ -95,14 +96,15 @@ describe("the class and section delete guards, with real students", () => {
       sectionId: null,
       enrolledAt: new Date("2025-06-01"),
     });
-    const res = await request(app).delete(`${academics}/classes/${s.class1}`).set(as(s.token));
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe("CLASS_HAS_HISTORY");
+    const res = await request(app).post(`${academics}/classes/${s.class1}/deactivate`).set(as(s.token));
+    expect(res.status).toBe(200);
+    expect(await Enrolment.countDocuments({ tenantId: s.tenantId, classId: s.class1 })).toBe(1);
     expect(await SchoolClass.countDocuments({ tenantId: s.tenantId, _id: s.class1 })).toBe(1);
   });
 
-  it("lets a class with no students at all be deleted, as before", async () => {
+  it("a class with no students at all is made inactive, and is not deleted either", async () => {
     const s = await setUp();
-    expect((await request(app).delete(`${academics}/classes/${s.class1}`).set(as(s.token))).status).toBe(200);
+    expect((await request(app).post(`${academics}/classes/${s.class1}/deactivate`).set(as(s.token))).status).toBe(200);
+    expect((await request(app).delete(`${academics}/classes/${s.class1}`).set(as(s.token))).status).toBe(404);
   });
 });

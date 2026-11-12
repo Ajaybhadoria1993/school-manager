@@ -42,13 +42,14 @@ const fakeApi = (extra: Record<string, Handler> = {}) =>
     ...extra,
   });
 
-function openPage() {
+function openPage(entry: string | { pathname: string; search?: string; state?: unknown } = "/school/students/import") {
   const router = createMemoryRouter(
     [
       { path: "/school/students/import", element: <StudentImportPage /> },
       { path: "/school/students", element: <p>The students</p> },
+      { path: "/school-class/:classId", element: <p>The class page</p> },
     ],
-    { initialEntries: ["/school/students/import"] }
+    { initialEntries: [entry] }
   );
   render(
     <Provider store={store}>
@@ -785,5 +786,250 @@ describe("Bulk upload: more students than seats", () => {
     await user.click(await screen.findByRole("button", { name: "Upload and admit" }));
     await screen.findByRole("heading", { name: "3 students admitted to 2026-2027" });
     expect(screen.queryByText(/Recommended: divide/)).not.toBeInTheDocument();
+  });
+});
+
+// ---- A file made for one class, or one section of it -------------------------------------------------------------------------
+
+/** The school with Class 5 (sections A and B) as well. */
+const WITH_FIVE = {
+  ...STRUCTURE,
+  classes: [
+    ...STRUCTURE.classes,
+    {
+      id: "c5",
+      name: "Class 5",
+      order: 5,
+      departmentId: null,
+      capacity: null,
+      sections: [
+        { id: "c5-A", classId: "c5", name: "A", capacity: 40, room: null },
+        { id: "c5-B", classId: "c5", name: "B", capacity: 40, room: null },
+      ],
+    },
+  ],
+};
+const CAPACITY_FIVE = {
+  ...CAPACITY,
+  sections: [
+    ...CAPACITY.sections,
+    { sectionId: "c5-A", classId: "c5", capacity: 40, enrolled: 0, seatsLeft: 40, nextRollNumber: 1 },
+    { sectionId: "c5-B", classId: "c5", capacity: 40, enrolled: 0, seatsLeft: 40, nextRollNumber: 1 },
+  ],
+};
+/** The register of one class: no Class column at all. */
+const CLASS_FIVE_FILE: ImportSheet = {
+  fileName: "class5.csv",
+  sheetName: "",
+  headerRow: 1,
+  headers: ["Student Name", "Gender", "DOB", "Father Name", "Mobile No"],
+  rows: [
+    { row: 2, cells: ["Asha Verma", "F", "14-05-2016", "Ravi Verma", "9876543210"] },
+    { row: 3, cells: ["Bina Rao", "F", "02-02-2016", "Anil Rao", "9111111111"] },
+    { row: 4, cells: ["Chetan Das", "M", "03-03-2016", "Amit Das", "9222222222"] },
+  ],
+};
+const oneClassApi = (extra: Record<string, Handler> = {}) =>
+  fakeApi({ "GET /academics/structure": () => WITH_FIVE, "GET /students/capacity": () => CAPACITY_FIVE, "POST /students/import/read": () => CLASS_FIVE_FILE, ...extra });
+const picker = (name: RegExp) => screen.getByRole("button", { name });
+async function choose(user: ReturnType<typeof userEvent.setup>, name: RegExp, option: string) {
+  await user.click(picker(name));
+  await user.click(await screen.findByRole("option", { name: option }));
+}
+const sentRows = (calls: { method: string; path: string; body: unknown }[]) =>
+  (calls.find((c) => c.method === "POST" && c.path === "/students/import")!.body as { rows: { row: number; student: { classId: string; sectionId: string | null } }[] }).rows;
+const admitted3 = () => ({ dryRun: false, ok: 3, failed: 0, results: [okRow(2, "Asha Verma"), okRow(3, "Bina Rao"), okRow(4, "Chetan Das")] });
+
+describe("Bulk upload: a file made for one class or one section", () => {
+  it("starts as a whole-school file; a class can be chosen, and a section only for a class that has sections", async () => {
+    oneClassApi();
+    const user = openPage();
+    await screen.findByText("Drag and drop your students file here");
+    expect(picker(/Upload for/)).toHaveTextContent("Whole school");
+    expect(screen.queryByRole("button", { name: /Section$/ })).not.toBeInTheDocument();
+    await choose(user, /Upload for/, "Class 1");
+    // Class 1 has no sections: nothing to choose.
+    expect(screen.queryByRole("button", { name: /Section$/ })).not.toBeInTheDocument();
+    await choose(user, /Upload for/, "Class 5");
+    expect(picker(/Section$/)).toHaveTextContent("Any section");
+    await user.click(picker(/Section$/));
+    expect(await screen.findByRole("option", { name: "A" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "B" })).toBeInTheDocument();
+  });
+
+  it("a file with no class column is ready as it is: no Class column is added, the students are shared between the class sections", async () => {
+    const calls = oneClassApi({ "POST /students/import": admitted3 });
+    const user = openPage();
+    await screen.findByText("Drag and drop your students file here");
+    await choose(user, /Upload for/, "Class 5");
+    const table = await openFile(user);
+    expect(screen.queryByRole("combobox", { name: /What the column "Class" is$/ })).not.toBeInTheDocument();
+    expect(within(table).getAllByText("Ready")).toHaveLength(3);
+    expect(screen.getAllByText("Goes to Class 5 - A")).toHaveLength(2);
+    expect(screen.getAllByText("Goes to Class 5 - B")).toHaveLength(1);
+    expect(uploadButton()).toHaveTextContent("Upload 3 students");
+
+    await user.click(uploadButton());
+    expect(await screen.findByText(/admitted into Class 5/)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Upload and admit" }));
+    await screen.findByRole("heading", { name: "3 students admitted to 2026-2027" });
+    expect(sentRows(calls).map((r) => [r.row, r.student.classId, r.student.sectionId])).toEqual([
+      [2, "c5", "c5-A"],
+      [3, "c5", "c5-B"],
+      [4, "c5", "c5-A"],
+    ]);
+  });
+
+  it("one section: every student goes to it, and the dialog says so", async () => {
+    const calls = oneClassApi({ "POST /students/import": admitted3 });
+    const user = openPage();
+    await screen.findByText("Drag and drop your students file here");
+    await choose(user, /Upload for/, "Class 5");
+    await choose(user, /Section$/, "B");
+    const table = await openFile(user);
+    expect(within(table).getAllByText("Ready")).toHaveLength(3);
+    // Where they go is already said at the top: not repeated under every row.
+    expect(screen.queryByText(/Goes to Class 5/)).not.toBeInTheDocument();
+    await user.click(uploadButton());
+    expect(await screen.findByText(/admitted into Class 5 - B/)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Upload and admit" }));
+    await screen.findByRole("heading", { name: "3 students admitted to 2026-2027" });
+    expect(sentRows(calls).map((r) => [r.student.classId, r.student.sectionId])).toEqual([
+      ["c5", "c5-B"],
+      ["c5", "c5-B"],
+      ["c5", "c5-B"],
+    ]);
+  });
+
+  it("a row of another class is a red box that says what the file is for, and is not uploaded", async () => {
+    oneClassApi({
+      "POST /students/import/read": () => ({
+        ...CLASS_FIVE_FILE,
+        headers: ["Student Name", "Class", "Gender", "DOB", "Father Name", "Mobile No"],
+        rows: [
+          { row: 2, cells: ["Asha Verma", "5", "F", "14-05-2016", "Ravi Verma", "9876543210"] },
+          { row: 3, cells: ["Bina Rao", "Class 6", "F", "02-02-2016", "Anil Rao", "9111111111"] },
+          { row: 4, cells: ["Chetan Das", "", "M", "03-03-2016", "Amit Das", "9222222222"] },
+        ],
+      }),
+    });
+    const user = openPage();
+    await screen.findByText("Drag and drop your students file here");
+    await choose(user, /Upload for/, "Class 5");
+    await openFile(user);
+    expect(box("Class", 3)).toHaveAttribute("aria-invalid", "true");
+    expect(said("Class", 3)).toBe('This file is for Class 5, but this row says "Class 6"');
+    expect(box("Class", 2)).not.toHaveAttribute("aria-invalid");
+    expect(box("Class", 4)).not.toHaveAttribute("aria-invalid");
+    expect(uploadButton()).toHaveTextContent("Upload 2 students");
+  });
+
+  it("the class can be chosen after the file is open: the table follows at once, nothing is asked of the server again", async () => {
+    const calls = oneClassApi();
+    const user = openPage();
+    await openFile(user);
+    // A whole-school file with no class: the empty Class column is red and nothing is ready.
+    expect(uploadButton()).toBeDisabled();
+    const before = calls.length;
+    await choose(user, /Upload for/, "Class 5");
+    await waitFor(() => expect(uploadButton()).toHaveTextContent("Upload 3 students"));
+    expect(calls.length).toBe(before);
+  });
+
+  it("another file after an upload is a whole-school file again, so a Class 6 file is never put in Class 5 by forgetting", async () => {
+    oneClassApi({ "POST /students/import": admitted3 });
+    const user = openPage();
+    await screen.findByText("Drag and drop your students file here");
+    await choose(user, /Upload for/, "Class 5");
+    await openFile(user);
+    await user.click(uploadButton());
+    await user.click(await screen.findByRole("button", { name: "Upload and admit" }));
+    await screen.findByRole("heading", { name: "3 students admitted to 2026-2027" });
+    await user.click(screen.getByRole("button", { name: /Upload another file/ }));
+    await screen.findByText("Drag and drop your students file here");
+    expect(picker(/Upload for/)).toHaveTextContent("Whole school");
+  });
+
+  it("the same file again for the same class: every student is already there and nothing is left to upload", async () => {
+    oneClassApi({
+      "POST /students/import/match": () => ({
+        matches: CLASS_FIVE_FILE.rows.map((r) => ({ row: r.row, kind: "same", student: saved(r.cells[0], { className: "Class 5", sectionName: "A" }) })),
+      }),
+    });
+    const user = openPage();
+    await screen.findByText("Drag and drop your students file here");
+    await choose(user, /Upload for/, "Class 5");
+    await openFile(user);
+    expect(await screen.findByText(/Every student of this file is already in your school/)).toBeInTheDocument();
+    expect(uploadButton()).toBeDisabled();
+  });
+});
+
+describe("Bulk upload opened from a class", () => {
+  it("opens with that class and section chosen: the file needs no class and every student goes there", async () => {
+    const calls = oneClassApi({ "POST /students/import": admitted3 });
+    const user = openPage("/school/students/import?class=c5&section=c5-B");
+    await screen.findByText("Drag and drop your students file here");
+    expect(picker(/Upload for/)).toHaveTextContent("Class 5");
+    expect(picker(/Section$/)).toHaveTextContent("B");
+    const table = await openFile(user);
+    expect(within(table).getAllByText("Ready")).toHaveLength(3);
+    await user.click(uploadButton());
+    await user.click(await screen.findByRole("button", { name: "Upload and admit" }));
+    await screen.findByRole("heading", { name: "3 students admitted to 2026-2027" });
+    expect(sentRows(calls).map((r) => [r.student.classId, r.student.sectionId])).toEqual([["c5", "c5-B"], ["c5", "c5-B"], ["c5", "c5-B"]]);
+  });
+
+  it("a class only: its sections share the students", async () => {
+    oneClassApi();
+    openPage("/school/students/import?class=c5");
+    await screen.findByText("Drag and drop your students file here");
+    expect(picker(/Upload for/)).toHaveTextContent("Class 5");
+    expect(picker(/Section$/)).toHaveTextContent("Any section");
+  });
+
+  it("a class or section that is not the school's is ignored", async () => {
+    oneClassApi();
+    openPage("/school/students/import?class=nope&section=c5-B");
+    await screen.findByText("Drag and drop your students file here");
+    expect(picker(/Upload for/)).toHaveTextContent("Whole school");
+    cleanup();
+    openPage("/school/students/import?class=c5&section=zzz");
+    await screen.findByText("Drag and drop your students file here");
+    expect(picker(/Upload for/)).toHaveTextContent("Class 5");
+    expect(picker(/Section$/)).toHaveTextContent("Any section");
+  });
+
+  it("Upload another file keeps the class the page was opened for", async () => {
+    oneClassApi({ "POST /students/import": admitted3 });
+    const user = openPage("/school/students/import?class=c5");
+    await screen.findByText("Drag and drop your students file here");
+    await choose(user, /Upload for/, "Class 6");
+    await openFile(user);
+    await user.click(uploadButton());
+    await user.click(await screen.findByRole("button", { name: "Upload and admit" }));
+    await screen.findByRole("heading", { name: "3 students admitted to 2026-2027" });
+    await user.click(screen.getByRole("button", { name: /Upload another file/ }));
+    await screen.findByText("Drag and drop your students file here");
+    expect(picker(/Upload for/)).toHaveTextContent("Class 5");
+  });
+
+  it("Go to ... leads to the class page it was opened from", async () => {
+    oneClassApi({ "POST /students/import": admitted3 });
+    const user = openPage({ pathname: "/school/students/import", search: "?class=c5", state: { cameFrom: { href: "/school-class/c5", label: "Class 5" } } });
+    await screen.findByText("Drag and drop your students file here");
+    await openFile(user);
+    await user.click(uploadButton());
+    await user.click(await screen.findByRole("button", { name: "Upload and admit" }));
+    await screen.findByRole("heading", { name: "3 students admitted to 2026-2027" });
+    expect(screen.getByRole("link", { name: "Go to Class 5" })).toHaveAttribute("href", "/school-class/c5");
+  });
+
+  it("the crumb leads to the class page", async () => {
+    oneClassApi();
+    const user = openPage({ pathname: "/school/students/import", search: "?class=c5", state: { cameFrom: { href: "/school-class/c5", label: "Class 5" } } });
+    await screen.findByText("Drag and drop your students file here");
+    await user.click(screen.getByRole("button", { name: "Class 5" }));
+    expect(await screen.findByText("The class page")).toBeInTheDocument();
   });
 });

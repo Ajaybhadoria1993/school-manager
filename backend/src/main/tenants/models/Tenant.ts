@@ -36,7 +36,8 @@ export interface IMediumPlan {
   highestClass: (typeof CLASS_LEVELS)[number];
   /** The streams of Class 11 and 12: the usual ones (Science, Commerce, Arts, Maths) and any the school named itself. */
   seniorStreams: string[];
-  classes: { name: string; sections: number; seats: number }[];
+  /** `room`: where the class sits; becomes the room of its first section when the school is approved. */
+  classes: { name: string; sections: number; seats: number; room?: string | null }[];
   week: { days: number[]; usual: IPlanSlot[]; saturday?: IPlanSlot[] | null };
 }
 
@@ -169,7 +170,7 @@ const mediumPlanSchema = new Schema<IMediumPlan>(
     highestClass: { type: String, enum: CLASS_LEVELS, required: true },
     seniorStreams: { type: [{ type: String, trim: true, maxlength: 30 }], default: [] },
     classes: {
-      type: [new Schema({ name: { type: String, required: true, trim: true, maxlength: 40 }, sections: { type: Number, required: true }, seats: { type: Number, required: true } }, { _id: false })],
+      type: [new Schema({ name: { type: String, required: true, trim: true, maxlength: 40 }, sections: { type: Number, required: true }, seats: { type: Number, required: true }, room: { type: String, trim: true, maxlength: 30, default: null } }, { _id: false })],
       default: [],
     },
     week: {

@@ -153,7 +153,7 @@ export function EditStudentForm({
         form.rebase(PLACEMENT_PATHS);
       } catch (err) {
         const error = getApiError(err);
-        if (error?.code === "SECTION_FULL") full = error.message;
+        if (error?.code === "SECTION_FULL" || error?.code === "CLASS_FULL") full = error.message;
         else keep(err, (path) => path);
       }
     }

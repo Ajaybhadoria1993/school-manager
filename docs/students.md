@@ -521,6 +521,10 @@ row; it checks each row with the admission form's own `checkStudentForm`. The **
   one-Aadhaar-one-child rule refuse a row already admitted, so the same file can be uploaded again, and a file that holds some of the
   school's students can be uploaded, after fixing some rows. The screen says so before the upload (`POST /import/match`); the server
   still decides at the upload, and a row it refuses as `DUPLICATE_STUDENT` moves to **Already in school** (not to Need a fix).
+- **A file for one class or one section** (2026-11-12): the **Upload for** box (Whole school / a class / a class and one of its sections, chosen on
+  step 1 and still changeable on step 2) tells the page whom the file is for. A row with no class is of that class (and section), so a register of
+  Class 5 needs no Class column; a row that names another class or section is red and says what the file is for, so nobody is admitted into the wrong
+  class by a slip. Whole school stays the default, and it comes back after each upload. No API change: each row still carries its class and section.
 - **What "the same student" is** (one rule, on the server, used by the check and the upload): the name (any capitals, any spaces), the
   birthday and the primary parent's mobile are the same; or the school's own admission number, or the Aadhaar number, belongs to a
   student with the same name and birthday (the parent changed the mobile). **The same name alone is never the same student** (two
@@ -569,10 +573,13 @@ uploaded; the table's + Add a column brings any other). The export itself is Exc
 ## Classes & Sections now count real students
 
 `backend/src/main/academics/services/usage.ts` is implemented: `studentCountsBySection` counts the active enrolments of each section,
-and `enrolmentCountsByClass` counts a class's enrolments this year and in every other year. So a section with students cannot be
-deleted (`SECTION_HAS_STUDENTS`), a class whose sections or whose own whole-class enrolments have students cannot be deleted
-(`CLASS_HAS_STUDENTS`), and a class with students in another academic year cannot be deleted either (`CLASS_HAS_HISTORY`), because
-history keeps a class alive.
+and `activeStudentsInClass` counts the students still sitting in a class (active, this year or in the year that waits). So a section with
+students cannot be deleted (`SECTION_HAS_STUDENTS`) and a class with students cannot be made inactive (`CLASS_HAS_STUDENTS`). A class is never
+deleted: history (students who left, past years) stays with it, and does not stop it from being made inactive. An inactive class takes no
+admission, move or reactivation (`400 CLASS_INACTIVE`). **A class with no sections is held to its own seats** (`CLASS_FULL`, like a section's
+`SECTION_FULL`): the admission and the move take `raiseSeatsTo` (raise the full place's seats, then put the student in), a bulk upload raises
+the seats of a full class, and `POST /academics/classes/:id/divide` divides a class into sections and shares its students out
+(`students/__tests__/classFull.test.ts`, `divideClass.test.ts`).
 
 ## The School Class page: Classes (`/school-class`) and Students (`/school-class/students`)
 
@@ -601,14 +608,17 @@ edit, import, export, inactive), like Manage Teacher, so no two entries are both
 
   **A class's seats** (`seats` of `GET /class-overview`, 2026-11-04): its sections' seats added up (3 sections of 40 = 120); a class
   without sections, or whose sections have no limit, has its own seats (the number set when it was made); nothing set: 0, and no bar.
-  `seatsLeft` and `percent` follow. The class's own page says the same ("39 of 40 seats left").
+  `seatsLeft` and `percent` follow. (The class's own page does not show these numbers: since 2026-11-13 it has no line of numbers under the title and no
+  "Students of ..." heading; the class cards of School Class show them.)
 * **Students**: search name or admission number, Department, Class, Section (once a class with sections is picked), Gender, Order (the
   usual class-and-section order is the list's first row) -> `GET /students`, with the pager (its "Showing 1 to 12 of 40" is the count).
 
 Every filter is a request to the server and stays in the address. *Clear filters* sits over the content when a filter is on. The search
 waits 300 ms after the last key and then reads the newest address, so a dropdown picked meanwhile is kept.
 
-**One class** (`/school-class/:classId`): the class teacher is named beside the title, "Class teacher: N/A" when there is none (for a class
+**One class** (`/school-class/:classId`, layout since 2026-11-13: the header is the title, the class teacher and the arrows to the classes before and after;
+under the section cards ONE row holds the search box at the left (only once students are listed) and the buttons at the right: Timetable & teachers,
+Class work, Export, Bulk upload, Add student): the class teacher is named beside the title, "Class teacher: N/A" when there is none (for a class
 with sections: the picked section's; with no section picked each section's card names its own). **Timetable & teachers** opens
 `/school-class/:classId/timetable` (`?section=`, a class with sections opens on its first one and switches with the section links), only that
 class: four tiles (class teacher or N/A, subjects, periods a week, school day), the **Teachers of ...** box (class teacher and each subject's
@@ -628,7 +638,7 @@ read: `GET /timetable/grid` for the class.
   by `guardians.N.relation`, any number of Guardians and Others admitted; the same in a bulk-upload row).
 - `students.isolation.test.ts`: `itKeepsSchoolsApart` for the list, the seats, reading / changing / moving a student and changing a
   guardian, plus another school's class, section and guardian sent in a body, and the lookup searching only the caller's school.
-- `usage.test.ts`: the real counts and the class / section delete guards with real students, including a class with students in a past year.
+- `usage.test.ts`: the real counts and the section delete / class Make inactive guards with real students, including a class with students in a past year.
 - `importMatch.test.ts` (13): the same student by name, birthday and mobile (capitals and spaces do not matter, who and where come
   back), only the rows that meet somebody, the same name alone is nobody, twins and brothers are not matches, the same name and birthday
   with another or no mobile is a `maybe`, the school's own number and the Aadhaar number (the same child with a new mobile is the same

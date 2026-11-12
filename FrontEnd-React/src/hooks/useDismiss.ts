@@ -1,22 +1,20 @@
 import { useEffect, useRef } from "react";
 
-/** Closes a popover on an outside click or Escape. */
-export function useDismiss(open: boolean, onClose: () => void) {
+/** The element a small popup lives in: a press outside it, or Escape, closes the popup while it is `open`. */
+export function useDismiss(open: boolean, close: () => void) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    const outside = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) close();
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
+    const escape = (e: KeyboardEvent) => e.key === "Escape" && close();
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
     return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
     };
-  }, [open, onClose]);
+  }, [open, close]);
   return ref;
 }

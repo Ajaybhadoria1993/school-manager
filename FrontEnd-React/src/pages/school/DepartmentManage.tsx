@@ -1,9 +1,9 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, MousePointerClick, Plus, X } from "lucide-react";
+import { Archive, ArrowLeft, MousePointerClick, Plus, X } from "lucide-react";
 import { TONES } from "../../constants/tones";
 import { useClassFilters } from "../../hooks/useClassFilters";
-import { useDeleteDepartmentMutation, useGetClassesQuery, useGetStructureQuery } from "../../redux/api/academicsApi";
+import { useDeactivateDepartmentMutation, useGetClassesQuery, useGetStructureQuery } from "../../redux/api/academicsApi";
 import { getApiError } from "../../utils/apiErrors";
 import { NO_DEPARTMENT, plural, toneOf } from "../../utils/academics";
 import { cn } from "../../utils/helpers";
@@ -24,7 +24,7 @@ const pathTo = (d: { id: string } | undefined) => (d ? `/school/classes/departme
 /**
  * Manage school > Classes & Sections > one department (`/school/classes/departments/:departmentId`), or, with `none` in the
  * address, the classes that are in no department. It is for changing what exists; a new department is made on the list page.
- * Top to bottom: a plain header (as on the Students page) with the department's name (a small pencil beside it renames or deletes it),
+ * Top to bottom: a plain header (as on the Students page) with the department's name (a small pencil beside it renames it or makes it inactive),
  * what is in it (classes, sections, seats) and the neighbouring departments; one bar
  * with the search and the sort; then the classes of this department on the left, a page at a time (the server does the searching,
  * sorting and paging, see `GET /academics/classes`), and the class that is picked on the right, with its name, its department and
@@ -37,8 +37,8 @@ export default function DepartmentManagePage() {
   const { push } = useToast();
   const detail = useRef<HTMLDivElement>(null);
   const { data: res, error, isFetching, refetch } = useGetStructureQuery();
-  const [deleteDepartment] = useDeleteDepartmentMutation();
-  const [deleting, setDeleting] = useState(false);
+  const [deactivateDepartment] = useDeactivateDepartmentMutation();
+  const [deactivating, setDeactivating] = useState(false);
   const [adding, setAdding] = useState(false);
 
   const structure = res?.data;
@@ -87,7 +87,7 @@ export default function DepartmentManagePage() {
     return (
       <Card className="flex flex-col items-center gap-3 px-6 py-12 text-center">
         <h1 className="text-page-heading">This department is not in your school</h1>
-        <p className="max-w-md text-sm text-foreground-muted">It may have been deleted, or the address is not right.</p>
+        <p className="max-w-md text-sm text-foreground-muted">It may be inactive (you can make it active again on the Classes &amp; Sections page), or the address is not right.</p>
         <Link
           to="/school/classes"
           className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary-hover"
@@ -107,7 +107,9 @@ export default function DepartmentManagePage() {
   const inHere = structure.classes.filter((c) => (loose ? !c.departmentId : c.departmentId === department?.id));
   const sectionCount = inHere.reduce((sum, c) => sum + c.sections.length, 0);
   const seatCount = inHere.reduce((sum, c) => sum + (c.capacity ?? 0), 0);
-  const facts = [plural(inHere.length, "class"), plural(sectionCount, "section"), ...(seatCount > 0 ? [plural(seatCount, "seat")] : [])];
+  // The classes made inactive stay in the list below; the header counts the active ones and says how many are inactive.
+  const inactiveHere = (structure.inactiveClasses ?? []).filter((c) => (loose ? !c.departmentId : c.departmentId === department?.id)).length;
+  const facts = [plural(inHere.length, "class"), plural(sectionCount, "section"), ...(seatCount > 0 ? [plural(seatCount, "seat")] : []), ...(inactiveHere > 0 ? [`${inactiveHere} inactive`] : [])];
 
   return (
     <div className="space-y-5">
@@ -118,7 +120,7 @@ export default function DepartmentManagePage() {
         backLabel="Classes & Sections"
         previous={previous && { name: previous.name, to: pathTo(previous)! }}
         next={next && { name: next.name, to: pathTo(next)! }}
-        action={department && <DepartmentSettings key={department.id} department={department} structure={structure} onDelete={() => setDeleting(true)} />}
+        action={department && <DepartmentSettings key={department.id} department={department} structure={structure} onDeactivate={() => setDeactivating(true)} />}
       />
 
       <ClassFilters filters={filters} active={active} onChange={change} onClear={clear} />
@@ -166,7 +168,6 @@ export default function DepartmentManagePage() {
                 key={selectedId}
                 classId={selectedId}
                 structure={structure}
-                onGone={() => change({ selected: null })}
                 onMoved={() => change({ selected: selectedId })}
               />
             ) : (
@@ -181,22 +182,20 @@ export default function DepartmentManagePage() {
         </div>
       </div>
 
-      {deleting && department && (
+      {deactivating && department && (
         <ConfirmModal
-          title={`Delete ${department.name}?`}
-          confirmLabel="Delete department"
-          onClose={() => setDeleting(false)}
+          title={`Make ${department.name} inactive?`}
+          confirmLabel="Make inactive"
+          icon={Archive}
+          tone="primary"
+          onClose={() => setDeactivating(false)}
           onConfirm={async () => {
-            await deleteDepartment(department.id).unwrap();
-            push("success", `${department.name} deleted`);
+            await deactivateDepartment(department.id).unwrap();
+            push("success", `${department.name} is inactive`);
             navigate("/school/classes");
           }}
         >
-          <p>
-            {department.classCount > 0
-              ? `Its ${plural(department.classCount, "class")} stay${department.classCount === 1 ? "s" : ""} in your school, in no department.`
-              : "It has no classes."}
-          </p>
+          <p>It will no longer be offered when you add a class. Nothing is deleted, and you can make it active again from the Inactive list on the Classes &amp; Sections page.</p>
         </ConfirmModal>
       )}
     </div>

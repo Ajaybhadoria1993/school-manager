@@ -108,9 +108,10 @@ the same name, which cannot be created yet.
 Sections are year-specific records, so the API refuses to damage another year's:
 
 - Only the **current year's** sections can be changed or deleted: a section of a past (or future) year answers `409 SECTION_OTHER_YEAR`.
-- A class that holds sections of **another year** cannot be deleted (`409 CLASS_HAS_HISTORY`); deleting a class deletes its sections, and
-  those belong to a year that has its own students and attendance. The guard also counts enrolments by class across every year (a class
-  with students in another year, even without sections, answers `CLASS_HAS_HISTORY`), see `services/usage.ts`.
+- **A class and a department are never deleted** (there is no DELETE route): a class holds sections of every year and its students' history,
+  so a school makes it **inactive** (`POST /classes/:id/deactivate`) and active again. Only the students who still sit in it block that
+  (`409 CLASS_HAS_STUDENTS`: active this year, or promoted into the year that waits); students who left and the students of past years are
+  history, which stays with the class. Its sections of every year are kept. See `services/usage.ts` (`activeStudentsInClass`).
 - `modelRegistry.test.ts` fails for any school-owned model that is neither listed in `YEAR_FREE_MODELS` (with a reason) nor carries an
   `academicYearId`. A new Students, Attendance, Fees, Exams or Staff-assignment model therefore cannot be added without deciding, in
   review, whether it belongs to a session.
@@ -133,7 +134,7 @@ Rules to follow, all already supported by what is built:
 2. A unique index of a per-year record includes `academicYearId` (one enrolment per student per year, like the section index here).
 3. `tenantScope` still applies: the year is not a substitute for the school; every query names both.
 4. A record never moves between years. Promotion creates a new enrolment in the next year and leaves the old one as it was.
-5. Counts that guard a delete (`studentCountsBySection`, a class count) cover all years, as above.
+5. The counts that guard a section delete and a class's Make inactive (`studentCountsBySection`, `activeStudentsInClass`) look at the running year and the year that waits, as above.
 6. A screen that can show a past year reads its year with `AcademicYearService.shownYearId` / `shownYear` (the year being looked at, else
    the running year); a change, and the year-end work (promotion, switching a year on), keep using `activeYearId`. See the next section.
 

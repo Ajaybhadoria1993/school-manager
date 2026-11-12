@@ -19,11 +19,11 @@ export interface FormDraft {
 /**
  * Local state for one form step: the typed values, and the error shown under each field. Typing in a
  * field clears that field's error, and the errors of its parts ("boards.0.mediums" belongs to "boards").
- * Starts from the saved answers, with any unsaved draft laid over them.
+ * Starts from the saved answers, with any unsaved draft laid over them (and `initialErrors` shown, for a screen opened to say what was wrong).
  */
-export function useFormValues<T extends FormValues>(initial: T, draft?: FormDraft) {
+export function useFormValues<T extends FormValues>(initial: T, draft?: FormDraft, initialErrors?: FieldErrors) {
   const [values, setValues] = useState<T>(() => ({ ...initial, ...draft?.values }));
-  const [errors, setErrors] = useState<FieldErrors>({});
+  const [errors, setErrors] = useState<FieldErrors>(initialErrors ?? {});
   const latest = useRef(values);
 
   function set(key: keyof T & string, value: FormValue) {

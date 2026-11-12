@@ -13,14 +13,17 @@ import {
   createNextAcademicYear,
   createSection,
   currentAcademicYear,
-  deleteClass,
-  deleteDepartment,
+  deactivateClass,
+  deactivateDepartment,
   deleteSection,
+  divideClass,
   getClass,
   getStructure,
   listAcademicYears,
   listClasses,
   quickSetup,
+  reactivateClass,
+  reactivateDepartment,
   renameDepartment,
   setUpFirstAcademicYear,
   updateAcademicSettings,
@@ -34,6 +37,7 @@ import {
   createClassSchema,
   createSectionSchema,
   departmentSchema,
+  divideClassSchema,
   idParamSchema,
   listClassesQuerySchema,
   quickSetupSchema,
@@ -78,12 +82,17 @@ router.post("/departments", classMakers, validate(departmentSchema), createDepar
 router.post("/departments/assign", classMakers, validate(assignDepartmentSchema), assignDepartment);
 router.post("/departments/:id/classes", classMakers, validate(idParamSchema, "params"), validate(addClassesSchema), addClassesToDepartment);
 router.patch("/departments/:id", classMakers, validate(idParamSchema, "params"), validate(departmentSchema), renameDepartment);
-router.delete("/departments/:id", classMakers, validate(idParamSchema, "params"), deleteDepartment);
+// A department and a class are never deleted (their students and history belong to them): they are made inactive, and active again.
+router.post("/departments/:id/deactivate", classMakers, validate(idParamSchema, "params"), deactivateDepartment);
+router.post("/departments/:id/reactivate", classMakers, validate(idParamSchema, "params"), reactivateDepartment);
 
 router.post("/classes", classMakers, validate(createClassSchema), createClass);
 router.patch("/classes/:id", classMakers, validate(idParamSchema, "params"), validate(updateClassSchema), updateClass);
-router.delete("/classes/:id", classMakers, validate(idParamSchema, "params"), deleteClass);
+router.post("/classes/:id/deactivate", classMakers, validate(idParamSchema, "params"), deactivateClass);
+router.post("/classes/:id/reactivate", classMakers, validate(idParamSchema, "params"), reactivateClass);
 
+// A class with no sections, and students sitting in it, is divided into sections: they are made and the students shared out.
+router.post("/classes/:id/divide", classMakers, validate(idParamSchema, "params"), validate(divideClassSchema), divideClass);
 router.post("/classes/:id/sections", classMakers, validate(idParamSchema, "params"), validate(createSectionSchema), createSection);
 router.patch("/sections/:id", classMakers, validate(idParamSchema, "params"), validate(updateSectionSchema), updateSection);
 router.delete("/sections/:id", classMakers, validate(idParamSchema, "params"), deleteSection);

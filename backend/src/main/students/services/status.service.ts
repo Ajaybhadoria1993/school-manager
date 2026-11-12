@@ -10,7 +10,7 @@ import { actorRecord, type Actor, type ActorRecord } from "./actor";
 import { day, escapeRegex, fullName, placesOf, STUDENT_NOT_FOUND, type StudentDetailDto } from "./shared";
 import { StudentService } from "./student.service";
 import { ParentLoginService } from "./parentLogin.service";
-import { resolvePlacement, sectionFull, seatsTaken } from "./placement";
+import { resolvePlacement, seatsFull, seatsTakenIn } from "./placement";
 
 /** Who is doing it, as the session knows them (the name is read here, from their account). */
 export type StatusActor = Actor;
@@ -223,9 +223,9 @@ export class StudentStatusService {
     if (homeless.length > 0 && placement && yearId) {
       // Checked before anyone is changed: a wrong or full section refuses the whole request.
       seat = await resolvePlacement(school, yearId, placement.classId, placement.sectionId);
-      if (seat.sectionId && seat.capacity !== null) {
-        const taken = await seatsTaken(school, yearId, seat.sectionId);
-        if (taken + homeless.length > seat.capacity) throw sectionFull(seat, taken);
+      if (seat.capacity !== null) {
+        const taken = await seatsTakenIn(school, yearId, seat);
+        if (taken + homeless.length > seat.capacity) throw seatsFull(seat, taken);
       }
     }
     const students = seat ? found : found.filter((s) => !homeless.includes(s));

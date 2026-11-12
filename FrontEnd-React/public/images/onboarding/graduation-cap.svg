@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" width="160" height="120">
+  <!-- scroll / diploma -->
+  <rect x="38" y="78" width="96" height="26" rx="13" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <circle cx="40" cy="91" r="9" fill="#fde68a" stroke="#f59e0b" stroke-width="2"/>
+  <circle cx="132" cy="91" r="9" fill="#fde68a" stroke="#f59e0b" stroke-width="2"/>
+  <path d="M58 91h56" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" opacity=".5"/>
+  <path d="M110 98 l-3 14 6-4 6 4-3-14z" fill="#ef4444"/>
+  <!-- cap base -->
+  <path d="M52 48v20c0 7 13 13 30 13s30-6 30-13V48z" fill="#1e3a8a"/>
+  <!-- cap top -->
+  <path d="M82 18 L8 44 L82 68 L156 44Z" fill="#1e40af"/>
+  <path d="M82 18 L156 44 L82 68Z" fill="#2563eb" opacity=".55"/>
+  <!-- tassel -->
+  <path d="M138 50v26" stroke="#fbbf24" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="138" cy="80" r="5" fill="#fbbf24"/>
+  <circle cx="82" cy="44" r="4" fill="#fbbf24"/>
+</svg>

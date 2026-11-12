@@ -2,11 +2,13 @@ import { useRef, useState } from "react";
 import { ClipboardPaste, Download, FileSpreadsheet, Info, Loader2, Table2, TriangleAlert, Upload } from "lucide-react";
 import { MAX_IMPORT_FILE_MB, MAX_IMPORT_ROWS } from "../../../constants/students";
 import { TONES } from "../../../constants/tones";
+import type { ClassItem, ImportTarget } from "../../../types";
 import { cn } from "../../../utils/helpers";
 import { fileProblem } from "../../../utils/studentImport";
 import { Button } from "../../ui/Button";
 import { Card } from "../../ui/Card";
 import { Textarea } from "../../ui/Input";
+import { TargetPicker } from "./TargetPicker";
 
 const LEGEND = [
   { colour: "bg-[#92D050]", label: "Green columns are needed for every student" },
@@ -28,7 +30,14 @@ export function UploadStep({
   onTemplate,
   downloading,
   year,
+  classes,
+  target,
+  onTarget,
 }: {
+  /** The school's classes and who the file is for (null: the whole school): a file can be made for one class, or one section of it. */
+  classes: readonly ClassItem[];
+  target: ImportTarget | null;
+  onTarget: (target: ImportTarget | null) => void;
   onFile: (file: File) => void;
   /** Text copied from a sheet (with its heading row), as the server reads a file. */
   onPaste: (text: string) => void;
@@ -59,6 +68,9 @@ export function UploadStep({
   return (
     <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-6">
       <Card className="min-w-0 p-5 sm:p-6 lg:col-start-1 lg:row-start-1">
+        <div className="mb-5">
+          <TargetPicker classes={classes} target={target} onChange={onTarget} disabled={reading} />
+        </div>
         <input
           ref={input}
           id="students-file"
@@ -203,6 +215,7 @@ export function UploadStep({
             <li>Use the sample file, or your school's own Excel or CSV sheet as it is: its columns (Name, Class, Father's Mobile...) are recognised by their titles. No file? Paste a copied table, or type the students in an empty table.</li>
             <li>The file opens as a table. Change any cell, choose what each column is, add a missing column or leave a row out; red cells show what to fix.</li>
             <li>Every student goes into the class (and section) written in the file, in {year}. "V", "5th", "Class 5" and "5-A" are all understood.</li>
+            <li>A file for one class? Choose that class (and a section) above: the file then needs no Class column, and a row of another class is shown in red.</li>
             <li>A parent whose mobile number is already in your school is linked to the child, never added twice. Brothers and sisters in one file share their parents.</li>
             <li>The admission numbers your school already gave are kept. A row without one gets the next number (ADM-...).</li>
           </ul>

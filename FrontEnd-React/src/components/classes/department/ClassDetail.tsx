@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { CircleCheck, Plus, Rows3, Save, Trash2 } from "lucide-react";
+import { Archive, CircleCheck, Plus, Rows3, Save } from "lucide-react";
 import { TONES } from "../../../constants/tones";
 import {
-  useDeleteClassMutation,
+  useDeactivateClassMutation,
   useDeleteSectionMutation,
   useGetClassQuery,
   useUpdateAcademicSettingsMutation,
@@ -24,9 +24,11 @@ import { Switch } from "../../ui/Switch";
 import { useToast } from "../../ui/toast-context";
 import { ConfirmModal } from "../ConfirmModal";
 import { AddSectionModal } from "./AddSectionModal";
+import { DivideClassDialog } from "./DivideClassDialog";
 import { ClassNameField } from "./ClassNameField";
 import { ClassSeatsField } from "./ClassSeatsField";
 import { FIELD_TITLE } from "./fieldStyles";
+import { InactiveClassView } from "./InactiveClassView";
 import { SectionCard } from "./SectionCard";
 
 /**
@@ -46,37 +48,35 @@ function seatsSummary(c: { capacity: number | null; sections: unknown[] }, inSec
 
 /**
  * The class picked in the list: its name and each of its sections as a card. Nothing is sent to the server while you type: the one
- * Save in the header (dimmed until something is changed) saves the class name and every changed section together, next to Delete, which
- * deletes the class (it asks first).
+ * Save in the header (dimmed until something is changed) saves the class name and every changed section together, next to Make inactive.
+ * A class is never deleted (its students and their history belong to it): Make inactive asks first, and the server refuses it while
+ * students are still in the class. An inactive class is shown read-only, with Make active (`InactiveClassView`).
  * Its department is not asked for: inside a department the class is already there. Only a class that is in no department (the "Other
  * classes" screen) shows a row of the school's departments, and one click puts it in one. It is read from the server by the class's id,
- * so it stays right whatever the list shows. Deleting (the class or a section) is the one thing that asks first.
+ * so it stays right whatever the list shows. Making the class inactive, or deleting a section, is what asks first.
  */
 export function ClassDetail({
   classId,
   structure,
-  onGone,
   onMoved,
 }: {
   classId: string;
   structure: AcademicStructure;
-  /** The class was deleted. */
-  onGone: () => void;
   /** The class was put in a department, so it is about to leave the list: the page keeps it open on the right. */
   onMoved: () => void;
 }) {
   const { push } = useToast();
-  // Once the class is being deleted it stops being read: the refresh that follows the delete would only ask for a class that is gone.
-  const [leaving, setLeaving] = useState(false);
-  const { data, error } = useGetClassQuery(classId, { skip: leaving });
+  const { data, error } = useGetClassQuery(classId);
   const [updateClass] = useUpdateClassMutation();
   const dispatch = useAppDispatch();
   const [updateSettings, { isLoading: savingSettings }] = useUpdateAcademicSettingsMutation();
   const [updateSection] = useUpdateSectionMutation();
-  const [deleteClass] = useDeleteClassMutation();
+  const [deactivateClass] = useDeactivateClassMutation();
   const [deleteSection] = useDeleteSectionMutation();
   // The "Add section" dialog (it asks for the seats and the room when the school requires them).
   const [addingSection, setAddingSection] = useState(false);
+  // The divide window: the class has students sitting in it, so its first sections are made by dividing it (how many students it holds).
+  const [dividing, setDividing] = useState<number | null>(null);
   // Whether a section needs its seats and room is the school's switch, kept on the server (which enforces it): this screen follows it.
   const required = structure.settings.sectionDetailsRequired;
   // Everything typed and not saved yet: the class name and each section's boxes.
@@ -114,30 +114,23 @@ export function ClassDetail({
 
       {asking.kind === "class" && (
         <ConfirmModal
-          title={`Delete ${asking.name}?`}
-          confirmLabel="Delete class"
+          title={`Make ${asking.name} inactive?`}
+          confirmLabel="Make inactive"
+          icon={Archive}
+          tone="primary"
           onClose={() => setAsking(null)}
           onConfirm={async () => {
-            setLeaving(true);
-            try {
-              await deleteClass(classId).unwrap();
-            } catch (err) {
-              setLeaving(false);
-              throw err;
-            }
-            push("success", `${asking.name} deleted`);
-            onGone();
+            // The class stays on screen, now marked inactive (the answer re-reads it), with Make active.
+            await deactivateClass(classId).unwrap();
+            push("success", `${asking.name} is inactive. It stays in the list: open it to make it active again.`);
           }}
         >
           <p>
-            {asking.sectionCount === 1
-              ? "Its section is deleted with it. "
-              : asking.sectionCount > 1
-                ? `Its ${asking.sectionCount} sections are deleted with it. `
-                : ""}
-            This cannot be undone.
+            It will no longer be offered when you admit a student, plan the timetable or promote students. Nothing is deleted
+            {asking.sectionCount > 0 ? `: its ${asking.sectionCount === 1 ? "section" : `${asking.sectionCount} sections`}, its history and its timetable are kept` : ""}.
+            You can make it active again from the Inactive list on the Classes &amp; Sections page.
           </p>
-          <p>A class that has students cannot be deleted: move the students to another class first.</p>
+          <p>A class that still has students cannot be made inactive: move them to another class, or make them inactive, first.</p>
         </ConfirmModal>
       )}
     </>
@@ -163,6 +156,9 @@ export function ClassDetail({
       </>
     );
   }
+
+  // An inactive class is read, not changed (the server refuses a change).
+  if (classItem.status === "inactive") return <InactiveClassView classItem={classItem} />;
 
   const t = TONES[toneOf(structure, classItem.departmentId)];
   const { sections } = classItem;
@@ -266,7 +262,7 @@ export function ClassDetail({
             onChange={draft.changeClassSeats}
             onRevert={draft.revertClassSeats}
           />
-          {/* The class's actions, together and at the right: Save (dimmed until something changes) and, set apart, Delete. */}
+          {/* The class's actions, together and at the right: Save (dimmed until something changes) and, set apart, Make inactive. */}
           <div className="ml-auto flex items-center gap-2">
             <Button type="submit" loading={draft.saving} disabled={!draft.dirty} aria-label="Save changes">
               {!draft.saving && <Save className="size-4" aria-hidden />}
@@ -276,12 +272,11 @@ export function ClassDetail({
             <Button
               type="button"
               variant="ghost"
-              aria-label={`Delete ${classItem.name}`}
-              className="text-danger hover:bg-danger-soft hover:text-danger"
+              aria-label={`Make ${classItem.name} inactive`}
               onClick={() => setAsking({ kind: "class", name: classItem.name, sectionCount: sections.length })}
             >
-              <Trash2 className="size-4" aria-hidden />
-              Delete
+              <Archive className="size-4" aria-hidden />
+              Make inactive
             </Button>
           </div>
         </div>
@@ -381,7 +376,21 @@ export function ClassDetail({
         required={required}
         classSeats={classItem.capacity}
         heldBySections={inSections}
+        onDivide={(enrolled) => {
+          setAddingSection(false);
+          setDividing(enrolled);
+        }}
         onClose={() => setAddingSection(false)}
+      />
+    )}
+    {dividing !== null && (
+      <DivideClassDialog
+        classId={classId}
+        className={classItem.name}
+        enrolled={dividing}
+        classSeats={classItem.capacity}
+        needsRooms={required}
+        onClose={() => setDividing(null)}
       />
     )}
     {questions}

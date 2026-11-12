@@ -40,3 +40,15 @@ export function assertClassHolds(className: string, classSeats: number, heldBySe
     [{ path: "capacity", message: `At least ${heldBySections} seats, as its sections hold` }]
   );
 }
+
+/**
+ * A place (a section, or a class that has no sections) cannot be given fewer seats than the students already in it: it would be over its
+ * own limit the moment it was saved. Students who left do not count.
+ */
+export function assertSeatsHold(name: string, seats: number, students: number, code: "CLASS_SEATS_BELOW_STUDENTS" | "SECTION_SEATS_BELOW_STUDENTS"): void {
+  if (seats >= students) return;
+  const are = `${students} ${students === 1 ? "student is" : "students are"} in it`;
+  throw ApiError.badRequest(`${name} has ${students} student${students === 1 ? "" : "s"} in it, so it needs at least ${students} seats.`, code, [
+    { path: "capacity", message: `At least ${students} seats, as ${are}` },
+  ]);
+}

@@ -23,16 +23,18 @@ import { Button } from "../ui/Button";
 import { Field } from "../ui/Field";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
-import { DESIGNATIONS, OTHER_CHOICE, SCHOOL_TYPES, STATES, STATE_BOARD_CHOICE } from "../../constants/schoolOptions";
+import { DESIGNATIONS, OTHER_CHOICE, SCHOOL_TYPES, STATES, STATE_BOARD_CHOICE, boardLabel } from "../../constants/schoolOptions";
 import { checkAcademicYear } from "../../utils/academicYear";
 import { boardFromApi, boardToApi, planErrors } from "../../utils/mediumPlans";
 import { isIndianMobile, isPhone, isPinCode, isEmail, isUdise } from "../../utils/validators";
-import type { SchoolSteps } from "../../types";
-import { FormSection } from "../students/form/FormSection";
+import type { BoardDraft, MediumPlanDraft, SchoolSteps } from "../../types";
 import { PAGE_GRID } from "../students/form/formGrid";
 import { AcademicYearFields } from "./AcademicYearFields";
 import { BoardsField, emptyBoard } from "./BoardsField";
 import { LogoField } from "./LogoField";
+import { OnboardSection } from "./OnboardSection";
+import { PlanSections } from "./PlanSections";
+import { useHeaderSlots } from "./stage";
 import { useFormValues, str, type FieldErrors, type FormDraft } from "./useFormValues";
 
 /** A step saves its values and says what went wrong, field by field. null means it worked. */
@@ -47,18 +49,22 @@ interface StepProps<I> {
   saving: boolean;
 }
 
+/**
+ * The buttons at the end of every screen: Previous on the left, Save & Continue on the right. Only the buttons: no bar, no background, and
+ * nothing fixed to the window: they are at the bottom of the form, and are found by scrolling down to it.
+ */
 function Footer({ onBack, saving, label = "Save & Continue" }: { onBack?: () => void; saving: boolean; label?: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+    <div className="flex items-center justify-between gap-3 pt-1">
       {onBack ? (
-        <Button type="button" variant="outline" onClick={onBack} disabled={saving}>
+        <Button type="button" variant="outline" onClick={onBack} disabled={saving} className="rounded-xl border-primary! px-5 text-primary hover:bg-primary-soft">
           <ArrowLeft className="size-4" aria-hidden />
-          Back
+          Previous
         </Button>
       ) : (
         <span />
       )}
-      <Button type="submit" loading={saving}>
+      <Button type="submit" loading={saving} className="rounded-xl px-6">
         {label}
         <ArrowRight className="size-4" aria-hidden />
       </Button>
@@ -136,7 +142,7 @@ export function StepSchool({ initial, draft, onSubmit, saving }: StepProps<Schoo
 
   return (
     <form onSubmit={submit} className="space-y-6" noValidate>
-      <FormSection icon={School} title="Basics">
+      <OnboardSection icon={School} title="Basics">
         <div className={PAGE_GRID}>
           <Field id="schoolName" label="School name" error={errors.schoolName}>
             <Input id="schoolName" icon={School} value={v.schoolName} onChange={(e) => set("schoolName", e.target.value)} required autoComplete="organization" aria-invalid={!!errors.schoolName} />
@@ -146,9 +152,9 @@ export function StepSchool({ initial, draft, onSubmit, saving }: StepProps<Schoo
           </Field>
           <LogoField logoUrl={initial.logoUrl ?? ""} />
         </div>
-      </FormSection>
+      </OnboardSection>
 
-      <FormSection icon={MapPin} title="Location">
+      <OnboardSection icon={MapPin} title="Location">
         <div className={PAGE_GRID}>
           <Field id="addressLine1" label="Street address" error={errors.addressLine1} className="sm:col-span-2">
             <Input id="addressLine1" icon={MapPin} value={v.addressLine1} onChange={(e) => set("addressLine1", e.target.value)} autoComplete="address-line1" aria-invalid={!!errors.addressLine1} />
@@ -172,9 +178,9 @@ export function StepSchool({ initial, draft, onSubmit, saving }: StepProps<Schoo
             <Input id="city" icon={Building} value={v.city} onChange={(e) => set("city", e.target.value)} autoComplete="address-level2" aria-invalid={!!errors.city} />
           </Field>
         </div>
-      </FormSection>
+      </OnboardSection>
 
-      <FormSection icon={Phone} title="Contact">
+      <OnboardSection icon={Phone} title="Contact">
         <div className={PAGE_GRID}>
           <Field id="schoolPhone" label="School phone" error={errors.schoolPhone}>
             <Input id="schoolPhone" icon={Phone} prefix="+91" type="tel" value={v.schoolPhone} onChange={(e) => set("schoolPhone", e.target.value.replace(/\D/g, ""))} inputMode="numeric" maxLength={10} placeholder="10 digits" autoComplete="tel-national" aria-invalid={!!errors.schoolPhone} />
@@ -186,9 +192,9 @@ export function StepSchool({ initial, draft, onSubmit, saving }: StepProps<Schoo
             <Input id="website" icon={Globe} type="url" value={v.website} onChange={(e) => set("website", e.target.value)} placeholder="https://school.in" aria-invalid={!!errors.website} />
           </Field>
         </div>
-      </FormSection>
+      </OnboardSection>
 
-      <FormSection icon={Hash} title="Registration">
+      <OnboardSection icon={Hash} title="Registration">
         <div className={PAGE_GRID}>
           <Field id="approxStudents" label="Students (approximately)" error={errors.approxStudents}>
             <Input id="approxStudents" icon={Users} value={v.approxStudents} onChange={(e) => set("approxStudents", e.target.value)} inputMode="numeric" aria-invalid={!!errors.approxStudents} />
@@ -200,39 +206,125 @@ export function StepSchool({ initial, draft, onSubmit, saving }: StepProps<Schoo
             <Input id="establishedYear" icon={CalendarDays} value={v.establishedYear} onChange={(e) => set("establishedYear", e.target.value)} inputMode="numeric" maxLength={4} placeholder="For example 1998" aria-invalid={!!errors.establishedYear} />
           </Field>
         </div>
-      </FormSection>
+      </OnboardSection>
       <ErrorSummary message={errors._form} />
       <Footer saving={saving} />
     </form>
   );
 }
 
-/** The academic year, and what the school runs in it: its boards, the mediums of each, and for each medium its classes and timing. */
-export function StepAcademic({ initial, draft, onSubmit, onBack, saving }: StepProps<SchoolSteps[1]>) {
-  const f = useFormValues(
-    {
-      boards: initial.boards.length > 0 ? initial.boards.map(boardFromApi) : [emptyBoard()],
-      // Named like the server's error paths ("academicYear.endDate"), so its messages land under the right box.
-      "academicYear.name": initial.academicYear?.name ?? "",
-      "academicYear.startDate": initial.academicYear?.startDate ?? "",
-      "academicYear.endDate": initial.academicYear?.endDate ?? "",
-    },
-    draft
-  );
+/** What the Academic Year and Class Sections screens start from: the saved year and boards (each medium with its plan), with any unsaved draft laid over. */
+function academicInitial(initial: SchoolSteps[1]) {
+  return {
+    boards: initial.boards.length > 0 ? initial.boards.map(boardFromApi) : [emptyBoard()],
+    // Named like the server's error paths ("academicYear.endDate"), so its messages land under the right box.
+    "academicYear.name": initial.academicYear?.name ?? "",
+    "academicYear.startDate": initial.academicYear?.startDate ?? "",
+    "academicYear.endDate": initial.academicYear?.endDate ?? "",
+  };
+}
+type AcademicValues = ReturnType<typeof academicInitial>;
+
+/** What is wrong with the year and with each board's board and medium (the Academic Year screen's boxes), by the name of the box. */
+function yearAndBoardErrors(v: AcademicValues): FieldErrors {
+  const next: FieldErrors = {};
+  v.boards.forEach((entry, i) => {
+    if (!entry.board) next[`boards.${i}.board`] = "Choose the board.";
+    if (entry.board === STATE_BOARD_CHOICE && !entry.stateBoard) next[`boards.${i}.stateBoard`] = "Choose the state board.";
+    if (entry.board === OTHER_CHOICE && entry.otherBoard.trim().length < 2) next[`boards.${i}.otherBoard`] = "Enter the name of the board.";
+    if (entry.mediums.length === 0) next[`boards.${i}.mediums`] = "Choose at least one medium.";
+  });
+  const year = checkAcademicYear(v["academicYear.name"], v["academicYear.startDate"], v["academicYear.endDate"]);
+  for (const [field, message] of Object.entries(year)) if (message) next[`academicYear.${field}`] = message;
+  return next;
+}
+
+/** What is wrong with each medium's classes and timing (the Class Sections screen's boxes), by the name of the box. */
+function planProblems(v: AcademicValues): FieldErrors {
+  const next: FieldErrors = {};
+  v.boards.forEach((entry, i) => entry.plans.forEach((plan, p) => Object.assign(next, planErrors(plan, `boards.${i}.plans.${p}`))));
+  return next;
+}
+
+/** Whether a message from the server is about a box of the Academic Year screen (the year, or a board's board or medium). */
+const isAcademicBox = (path: string) => path === "boards" || path.startsWith("academicYear") || /^boards\.\d+\.(board|stateBoard|otherBoard|mediums|affiliationNumber)$/.test(path);
+
+/**
+ * The Academic Year screen: the session, and the boards the school follows with the medium(s) of each. It saves nothing by itself: the
+ * year, the boards and each medium's classes are one step on the server, saved when the next screen, Class Sections, is. Continue checks
+ * these boxes and opens it; what was typed stays (the wizard keeps it) when the person goes back and forth.
+ */
+export function StepAcademic({ initial, draft, onContinue, onBack, errorsFromNext }: Omit<StepProps<SchoolSteps[1]>, "onSubmit" | "saving"> & { onContinue: () => void; errorsFromNext?: FieldErrors }) {
+  const f = useFormValues(academicInitial(initial), draft, errorsFromNext);
   const { values: v, errors, set } = f;
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const next = yearAndBoardErrors(v);
+    f.setErrors(next);
+    if (Object.keys(next).length > 0) {
+      showFirstProblem();
+      return;
+    }
+    onContinue();
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-6" noValidate>
+      <OnboardSection icon={CalendarDays} title="Academic year">
+        <AcademicYearFields
+          idPrefix="academicYear"
+          values={{ name: v["academicYear.name"], startDate: v["academicYear.startDate"], endDate: v["academicYear.endDate"] }}
+          errors={{ name: errors["academicYear.name"] ?? errors.academicYear, startDate: errors["academicYear.startDate"], endDate: errors["academicYear.endDate"] }}
+          onChange={(field, value) => set(`academicYear.${field}`, value)}
+        />
+      </OnboardSection>
+
+      <OnboardSection icon={BookOpen} title="Board and medium">
+        <BoardsField value={v.boards} onChange={(boards) => set("boards", boards)} errors={errors} />
+      </OnboardSection>
+      <ErrorSummary message={errors._form} />
+      <Footer onBack={onBack} saving={false} />
+    </form>
+  );
+}
+
+/**
+ * The Class Sections screen: for each medium of each board, the classes it runs with their sections, seats and room, its timing and (for
+ * Class 11 and 12) its streams. Saving it saves the whole step 2: the year and the boards from the screen before, and these. A problem in
+ * the year or a board is shown on the Academic Year screen (`onFixAcademic` opens it with the messages), a problem here under its box.
+ */
+export function StepClasses({
+  initial,
+  draft,
+  onSubmit,
+  onBack,
+  onFixAcademic,
+  onEditYear,
+  saving,
+}: StepProps<SchoolSteps[1]> & { onFixAcademic: (errors: FieldErrors) => void; onEditYear: () => void }) {
+  const f = useFormValues(academicInitial(initial), draft);
+  const { values: v, errors, set } = f;
+  const rows = v.boards;
+  // Where the frame lets this screen put its bar and Quick Fill (only used when there is one medium).
+  const slots = useHeaderSlots();
+
+  const updatePlan = (boardIndex: number, planIndex: number, next: MediumPlanDraft) =>
+    set("boards", rows.map((entry, b) => (b === boardIndex ? { ...entry, plans: entry.plans.map((plan, p) => (p === planIndex ? next : plan)) } : entry)));
+  // What a medium is called: its board too, once the school follows more than one.
+  const titleOf = (entry: BoardDraft, plan: MediumPlanDraft) => `${rows.length > 1 && entry.board ? `${boardLabel(entry)} · ` : ""}${plan.medium} Medium`;
+  // How many mediums the school has: one is its own page, several are told apart by their names.
+  const count = rows.reduce((n, entry) => n + entry.plans.length, 0);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const next: FieldErrors = {};
-    v.boards.forEach((entry, i) => {
-      if (!entry.board) next[`boards.${i}.board`] = "Choose the board.";
-      if (entry.board === STATE_BOARD_CHOICE && !entry.stateBoard) next[`boards.${i}.stateBoard`] = "Choose the state board.";
-      if (entry.board === OTHER_CHOICE && entry.otherBoard.trim().length < 2) next[`boards.${i}.otherBoard`] = "Enter the name of the board.";
-      if (entry.mediums.length === 0) next[`boards.${i}.mediums`] = "Choose at least one medium.";
-      entry.plans.forEach((plan, p) => Object.assign(next, planErrors(plan, `boards.${i}.plans.${p}`)));
-    });
-    const year = checkAcademicYear(v["academicYear.name"], v["academicYear.startDate"], v["academicYear.endDate"]);
-    for (const [field, message] of Object.entries(year)) if (message) next[`academicYear.${field}`] = message;
+    // The whole step is checked again, so a board changed after the screen before is not sent wrong.
+    const academic = yearAndBoardErrors(v);
+    if (Object.keys(academic).length > 0) {
+      onFixAcademic(academic);
+      return;
+    }
+    const next = planProblems(v);
     f.setErrors(next);
     if (Object.keys(next).length > 0) {
       showFirstProblem();
@@ -243,26 +335,45 @@ export function StepAcademic({ initial, draft, onSubmit, onBack, saving }: StepP
       boards: v.boards.map(boardToApi),
       academicYear: { name: v["academicYear.name"].trim(), startDate: v["academicYear.startDate"], endDate: v["academicYear.endDate"] },
     });
-    if (serverErrors) {
-      f.setErrors(serverErrors);
-      showFirstProblem();
+    if (!serverErrors) return;
+    const fixHere = Object.fromEntries(Object.entries(serverErrors).filter(([path]) => !isAcademicBox(path)));
+    const fixThere = Object.fromEntries(Object.entries(serverErrors).filter(([path]) => isAcademicBox(path)));
+    if (Object.keys(fixThere).length > 0) {
+      onFixAcademic(fixThere);
+      return;
     }
+    f.setErrors(fixHere);
+    showFirstProblem();
   }
 
   return (
-    <form onSubmit={submit} className="space-y-6" noValidate>
-      <FormSection icon={CalendarDays} title="Academic year">
-        <AcademicYearFields
-          idPrefix="academicYear"
-          values={{ name: v["academicYear.name"], startDate: v["academicYear.startDate"], endDate: v["academicYear.endDate"] }}
-          errors={{ name: errors["academicYear.name"] ?? errors.academicYear, startDate: errors["academicYear.startDate"], endDate: errors["academicYear.endDate"] }}
-          onChange={(field, value) => set(`academicYear.${field}`, value)}
-        />
-      </FormSection>
-
-      <FormSection icon={BookOpen} title="Board and medium">
-        <BoardsField value={v.boards} onChange={(boards) => set("boards", boards)} errors={errors} />
-      </FormSection>
+    <form onSubmit={submit} className="space-y-8" noValidate>
+      {count === 0 && (
+        <p className="rounded-2xl border border-dashed border-border bg-white/70 p-5 text-center text-sm text-foreground-muted">
+          Choose a board and a medium on the Academic Year screen first: each medium gets its classes here.
+        </p>
+      )}
+      {rows.flatMap((entry, b) =>
+        entry.plans.map((plan, p) => (
+          <PlanSections
+            key={`${b}.${plan.medium}`}
+            title={titleOf(entry, plan)}
+            plan={plan}
+            prefix={`boards.${b}.plans.${p}`}
+            errors={errors}
+            yearName={v["academicYear.name"]}
+            showTitle={count > 1}
+            onChange={(next) => updatePlan(b, p, next)}
+            onEditYear={onEditYear}
+            slots={count === 1 ? slots : undefined}
+          />
+        ))
+      )}
+      {rows.map((_, b) => errors[`boards.${b}.plans`] && (
+        <p key={b} role="alert" className="text-xs font-medium text-danger">
+          {errors[`boards.${b}.plans`]}
+        </p>
+      ))}
       <ErrorSummary message={errors._form} />
       <Footer onBack={onBack} saving={saving} />
     </form>
@@ -305,7 +416,7 @@ export function StepProfile({ initial, draft, onSubmit, onBack, saving }: StepPr
 
   return (
     <form onSubmit={submit} className="space-y-6" noValidate>
-      <FormSection icon={UserRound} title="About you">
+      <OnboardSection icon={UserRound} title="About you">
         <div className={PAGE_GRID}>
           <Field id="adminName" label="Your full name" error={errors.adminName}>
             <Input id="adminName" icon={UserRound} value={v.adminName} onChange={(e) => set("adminName", e.target.value)} autoComplete="name" aria-invalid={!!errors.adminName} />
@@ -327,7 +438,7 @@ export function StepProfile({ initial, draft, onSubmit, onBack, saving }: StepPr
             <Input id="alternateMobile" icon={Smartphone} prefix="+91" type="tel" value={v.alternateMobile} onChange={(e) => set("alternateMobile", e.target.value.replace(/\D/g, ""))} inputMode="numeric" maxLength={10} placeholder="10 digits" aria-invalid={!!errors.alternateMobile} />
           </Field>
         </div>
-      </FormSection>
+      </OnboardSection>
       <ErrorSummary message={errors._form} />
       <Footer onBack={onBack} saving={saving} />
     </form>

@@ -8,11 +8,11 @@ import { fakeApi } from "../../../test/fakeApi";
 import { generateDay, DEFAULT_SETUP } from "../../../utils/timings";
 import { plannedClassNames } from "../../../utils/mediumPlans";
 import type { MediumPlan, SchoolSteps } from "../../../types";
-import { StepAcademic, StepSchool } from "../steps";
+import { StepAcademic, StepClasses, StepSchool } from "../steps";
 
 /**
- * Step 1 of the sign-up form is the school and where it is; step 2 is the academic year and the boards. Choosing a medium opens its own
- * card, right under the board, for its classes and its timing.
+ * Screen 1 of the sign-up form is the school and where it is; screen 2 is the academic year and the boards; screen 3 is Class Sections: each
+ * medium chosen on screen 2 has its own block there, for its classes, their room, and its timing.
  */
 
 const USUAL = generateDay(DEFAULT_SETUP).slots;
@@ -43,14 +43,26 @@ const initial = (over: Partial<SchoolSteps[1]> = {}): SchoolSteps[1] => ({
 
 const board = (plans: MediumPlan[]) => ({ board: "CBSE", stateBoard: "", otherBoard: "", affiliationNumber: "", mediums: plans.map((p) => p.medium), plans });
 
-/** Step 2: the academic year and the boards. */
+/** Screen 3: each medium's classes and timing (it saves the whole step 2). */
 function show(values: SchoolSteps[1], onSubmit: Mock = vi.fn(async () => null)) {
+  const onFixAcademic = vi.fn();
+  const onEditYear = vi.fn();
   render(
     <Provider store={store}>
-      <StepAcademic initial={values} onSubmit={onSubmit} saving={false} />
+      <StepClasses initial={values} onSubmit={onSubmit} saving={false} onFixAcademic={onFixAcademic} onEditYear={onEditYear} />
     </Provider>
   );
-  return { onSubmit, user: userEvent.setup() };
+  return { onSubmit, onFixAcademic, onEditYear, user: userEvent.setup() };
+}
+
+/** Screen 2: the academic year and the boards (it saves nothing: Continue opens the next screen). */
+function showAcademic(values: SchoolSteps[1], onContinue: Mock = vi.fn()) {
+  render(
+    <Provider store={store}>
+      <StepAcademic initial={values} onContinue={onContinue} />
+    </Provider>
+  );
+  return { onContinue, user: userEvent.setup() };
 }
 
 const ADDRESS: SchoolSteps[2] = { addressLine1: "", addressLine2: "", city: "", state: "", pincode: "", division: "", district: "", schoolPhone: "", schoolEmail: "", website: "" };
@@ -76,10 +88,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("each medium's card", () => {
-  it("shows no card until a medium is chosen", () => {
+describe("each medium's block", () => {
+  it("shows no block until a medium is chosen, and says where to choose one", () => {
     show(initial());
     expect(screen.queryByRole("region")).not.toBeInTheDocument();
+    expect(screen.getByText(/Choose a board and a medium on the Academic Year screen first/)).toBeInTheDocument();
   });
 
   it("gives every medium of a board its own card, with what was saved", () => {
@@ -94,21 +107,6 @@ describe("each medium's card", () => {
     fireEvent.change(within(card("English Medium")).getByLabelText("Class 1: seats"), { target: { value: "25" } });
     expect(within(card("English Medium")).getByLabelText("Class 1: seats")).toHaveValue(25);
     expect(within(card("Hindi Medium")).getByLabelText("Class 1: seats")).toHaveValue(30);
-  });
-
-  it("sets every class at once", () => {
-    show(initial({ boards: [board([savedPlan("English")])] }));
-    fireEvent.change(screen.getByLabelText("Sections in every class"), { target: { value: "3" } });
-    expect(screen.getByLabelText("Class 1: sections")).toHaveValue(3);
-    expect(screen.getByLabelText("Class 2: sections")).toHaveValue(3);
-  });
-
-  it("says when the classes differ", () => {
-    const plan = savedPlan("English");
-    plan.classes[1].sections = 5;
-    show(initial({ boards: [board([plan])] }));
-    expect(screen.getByLabelText("Sections in every class")).toHaveValue(null);
-    expect(screen.getByLabelText("Sections in every class")).toHaveAttribute("placeholder", "Different");
   });
 
   it("asks about streams only for a medium that reaches Class 11", () => {
@@ -259,9 +257,9 @@ describe("step 1: the school and where it is", () => {
   });
 });
 
-describe("step 2: the academic year and the boards", () => {
+describe("screen 2: the academic year and the boards", () => {
   it("has the academic year and the board and medium, and nothing of the school", () => {
-    show(initial());
+    showAcademic(initial());
     expect(screen.getByRole("heading", { name: "Academic year" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Board and medium" })).toBeInTheDocument();
     expect(document.getElementById("schoolName")).toBeNull();
@@ -269,17 +267,38 @@ describe("step 2: the academic year and the boards", () => {
   });
 
   it("starts with the academic year, then the boards", () => {
-    show(initial());
+    showAcademic(initial());
     const year = screen.getByRole("heading", { name: "Academic year" });
     const boards = screen.getByRole("heading", { name: "Board and medium" });
     expect(year.compareDocumentPosition(boards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("asks for the year's dates and a board before anything is sent", async () => {
-    const { user, onSubmit } = show(initial({ academicYear: { name: "", startDate: "", endDate: "", status: null } }));
+  it("asks for the year's dates and a board before it goes on", async () => {
+    const { user, onContinue } = showAcademic(initial({ academicYear: { name: "", startDate: "", endDate: "", status: null } }));
     await user.click(screen.getByRole("button", { name: /save & continue/i }));
     expect(await screen.findByText("Choose the board.")).toBeInTheDocument();
-    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onContinue).not.toHaveBeenCalled();
+  });
+
+  it("goes on to Class Sections when the year and a board are right, saving nothing by itself", async () => {
+    const { user, onContinue } = showAcademic(initial({ boards: [board([savedPlan("English")])] }));
+    await user.click(screen.getByRole("button", { name: /save & continue/i }));
+    expect(onContinue).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not show a medium's classes: they are on the next screen", () => {
+    showAcademic(initial({ boards: [board([savedPlan("English")])] }));
+    expect(screen.queryByLabelText("Class 1: sections")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region")).not.toBeInTheDocument();
+  });
+
+  it("opens with the messages it was sent back with", () => {
+    render(
+      <Provider store={store}>
+        <StepAcademic initial={initial()} onContinue={vi.fn()} errorsFromNext={{ "academicYear.endDate": "The year must end after it starts" }} />
+      </Provider>
+    );
+    expect(screen.getByText("The year must end after it starts")).toBeInTheDocument();
   });
 });
 

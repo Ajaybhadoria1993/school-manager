@@ -234,12 +234,12 @@ describe("what changes a paper once it has marks", () => {
     expect(await ExamMark.countDocuments({ tenantId: s.tenantId })).toBe(0);
   });
 
-  it("a class that is deleted takes its marks off the paper", async () => {
+  it("a class that is made inactive keeps its marks: nothing of a result is thrown away", async () => {
     const { s, addPaper, save } = await setUp();
     const spare = await addClass(s.token, "Class 9");
     const paper = await addPaper([s.class5.id, spare.id], s.maths, PAST);
     await save(paper.id, s.tokens.meena, [{ studentId: s.asha.id, marks: 45, absent: false }]);
-    expect((await request(app).delete(`/api/v1/academics/classes/${spare.id}`).set(auth(s.token))).status).toBe(200);
+    expect((await request(app).post(`/api/v1/academics/classes/${spare.id}/deactivate`).set(auth(s.token))).status).toBe(200);
     expect(await ExamMark.countDocuments({ tenantId: s.tenantId })).toBe(1);
   });
 });

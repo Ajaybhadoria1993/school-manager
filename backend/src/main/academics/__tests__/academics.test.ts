@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 
-// Stands in for the Students module's counts, so the "students are in it" guards can be checked without admitting anyone. The real
-// counts (and the guards with real students) are tested in students/__tests__/usage.test.ts.
+// Stands in for the Students module's counts, so the section guard can be checked without admitting anyone. The real counts (and the
+// class guard with real students) are tested in classStatus.test.ts and students/__tests__/usage.test.ts.
 vi.mock("../services/usage", () => ({
   studentCountsBySection: vi.fn(async () => new Map<string, number>()),
-  enrolmentCountsByClass: vi.fn(async () => ({ thisYear: 0, otherYears: 0 })),
+  activeStudentsInClass: vi.fn(async () => 0),
+  studentsInClassItself: vi.fn(async () => 0),
 }));
 
 import app from "../../../app";
@@ -104,13 +105,15 @@ describe("a new school", () => {
       settings: { sectionDetailsRequired: true },
       departments: [],
       classes: [],
+      inactiveDepartments: [],
+      inactiveClasses: [],
       totals: { departments: 0, classes: 0, sections: 0, seats: 0 },
     });
   });
 });
 
 describe("departments", () => {
-  it("are created, renamed and deleted", async () => {
+  it("are created, renamed and made inactive", async () => {
     const { token } = await school("Sunrise Public School");
 
     const created = await post(token, "/departments", { name: "  Pre   Primary " });
@@ -121,7 +124,7 @@ describe("departments", () => {
     const renamed = await patch(token, `/departments/${id}`, { name: "Kindergarten" });
     expect(renamed.body.data.name).toBe("Kindergarten");
 
-    expect((await del(token, `/departments/${id}`)).status).toBe(200);
+    expect((await post(token, `/departments/${id}/deactivate`)).status).toBe(200);
     expect((await structure(token)).departments).toEqual([]);
   });
 
@@ -144,20 +147,6 @@ describe("departments", () => {
     const { token } = await school("Sunrise Public School");
     expect((await post(token, "/departments", { name: "   " })).status).toBe(400);
     expect((await post(token, "/departments", { name: "<b>Primary</b>" })).status).toBe(400);
-  });
-
-  it("deleting one keeps its classes, now without a department", async () => {
-    const { token } = await school("Sunrise Public School");
-    const dept = (await post(token, "/departments", { name: "Primary" })).body.data;
-    await post(token, "/classes", { name: "Class 1", departmentId: dept.id });
-    await post(token, "/classes", { name: "Class 2", departmentId: dept.id });
-
-    const res = await del(token, `/departments/${dept.id}`);
-    expect(res.body.data).toEqual({ unlinkedClasses: 2 });
-
-    const s = await structure(token);
-    expect(s.departments).toEqual([]);
-    expect(s.classes.map((c: { departmentId: string | null }) => c.departmentId)).toEqual([null, null]);
   });
 });
 
@@ -566,35 +555,14 @@ describe("classes", () => {
     expect((await patch(token, `/classes/${first.id}`, {})).status).toBe(400);
   });
 
-  it("are deleted together with their sections", async () => {
-    const { token, tenantId } = await school("Sunrise Public School");
-    const klass = (await post(token, "/classes", { name: "Class 1", sectionCount: 3 })).body.data;
-    await post(token, "/classes", { name: "Class 2", sectionCount: 2 });
-
-    const res = await del(token, `/classes/${klass.id}`);
-    expect(res.body.data).toEqual({ removedSections: 3 });
-    expect(await SchoolClass.countDocuments({ tenantId })).toBe(1);
-    expect(await Section.countDocuments({ tenantId })).toBe(2);
-  });
-
-  it("cannot be deleted while students are in one of its sections", async () => {
-    const { token, tenantId } = await school("Sunrise Public School");
-    const klass = (await post(token, "/classes", { name: "Class 1", sectionCount: 2 })).body.data;
-    vi.mocked(studentCountsBySection).mockResolvedValue(new Map([[klass.sections[1].id, 3]]));
-
-    const res = await del(token, `/classes/${klass.id}`);
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe("CLASS_HAS_STUDENTS");
-    expect(res.body.message).toContain("3 students");
-    expect(await SchoolClass.countDocuments({ tenantId })).toBe(1);
-    expect(await Section.countDocuments({ tenantId })).toBe(2);
-  });
+  // A class is never deleted (classStatus.test.ts): it is made inactive, and refused while students are in it.
 
   it("report a missing class as 404", async () => {
     const { token } = await school("Sunrise Public School");
     const ghost = "64b000000000000000000000";
     expect((await patch(token, `/classes/${ghost}`, { name: "X" })).status).toBe(404);
-    expect((await del(token, `/classes/${ghost}`)).status).toBe(404);
+    expect((await post(token, `/classes/${ghost}/deactivate`)).status).toBe(404);
+    expect((await post(token, `/classes/${ghost}/reactivate`)).status).toBe(404);
     expect((await patch(token, "/classes/not-an-id", { name: "X" })).status).toBe(400);
   });
 });
@@ -853,7 +821,7 @@ describe("approving a school", () => {
 });
 
 describe("one school cannot reach another's layout", () => {
-  it("sees, changes and deletes only its own", async () => {
+  it("sees and changes only its own", async () => {
     const a = await school("Sunrise Public School");
     const b = await school("Moonrise Public School");
 
@@ -865,9 +833,9 @@ describe("one school cannot reach another's layout", () => {
     expect((await structure(b.token)).departments).toEqual([]);
 
     expect((await patch(b.token, `/departments/${dept.id}`, { name: "Hacked" })).status).toBe(404);
-    expect((await del(b.token, `/departments/${dept.id}`)).status).toBe(404);
+    expect((await post(b.token, `/departments/${dept.id}/deactivate`)).status).toBe(404);
     expect((await patch(b.token, `/classes/${klass.id}`, { name: "Hacked" })).status).toBe(404);
-    expect((await del(b.token, `/classes/${klass.id}`)).status).toBe(404);
+    expect((await post(b.token, `/classes/${klass.id}/deactivate`)).status).toBe(404);
     expect((await post(b.token, `/classes/${klass.id}/sections`, { name: "Z" })).status).toBe(404);
     expect((await patch(b.token, `/sections/${section.id}`, { name: "Z" })).status).toBe(404);
     expect((await del(b.token, `/sections/${section.id}`)).status).toBe(404);

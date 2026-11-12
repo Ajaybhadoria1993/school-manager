@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { CalendarX2, ChevronLeft, ChevronRight, FolderTree, LogOut, UserPlus } from "lucide-react";
 import { isCustomKey, type CustomFieldDef } from "../../constants/studentFields";
 import { IMPORT_ROWS_PER_PAGE, MAX_IMPORT_ROWS_PER_REQUEST } from "../../constants/students";
+import { cameFromOf } from "../../components/layout/nav-config";
 import { useSampleDownload } from "../../hooks/useSampleDownload";
 import { useAppDispatch } from "../../redux/hooks";
 import { refreshClass, useGetStructureQuery } from "../../redux/api/academicsApi";
@@ -39,20 +40,23 @@ import {
   problemsCsv,
   saveBlob,
   takenNameNote,
+  targetLabel,
   tidy,
   typedTableFields,
+  usableTarget,
   type ColumnMapping,
   type ImportField,
   type OwnColumn,
   type PreparedRow,
   type RowProblem,
 } from "../../utils/studentImport";
-import type { ImportMatch, ImportSheet, SeatsRaised } from "../../types";
+import type { ImportMatch, ImportSheet, ImportTarget, SeatsRaised } from "../../types";
 import { CustomFieldDialog } from "../../components/students/export/CustomFieldDialog";
 import { DoneCard, FileBar, ProgressCard, SeatWarning, StoppedNote } from "../../components/students/import/ImportPanels";
 import { ImportRowsTable, type ViewRow } from "../../components/students/import/ImportRowsTable";
 import { ImportStepper } from "../../components/students/import/ImportStepper";
 import { PreviewGrid, type GridRow } from "../../components/students/import/PreviewGrid";
+import { TargetPicker } from "../../components/students/import/TargetPicker";
 import { AddColumnPanel, GridHint, PreviewToolbar, SameValueOffer, type RowFilter } from "../../components/students/import/PreviewPanels";
 import { UploadStep } from "../../components/students/import/UploadStep";
 import { AskDialog } from "../../components/students/form/AskDialog";
@@ -135,7 +139,21 @@ export default function StudentImportPage() {
   const rules = settings?.fields;
   const custom = settings?.customFields ?? NO_FIELDS;
 
+  const here = useLocation();
+  const [params] = useSearchParams();
+  // Opened from a class's page (or the list filtered by a class) the way back leads there, and the file is for that class.
+  const from = cameFromOf(here.state);
   const [step, setStep] = useState(0);
+  // The class (and section) the page was opened for, from the address (`?class=&section=`); a class that is not the school's is ignored
+  // below (`usableTarget`). A plain Bulk upload has none: the whole school.
+  const [opened] = useState<ImportTarget | null>(() => {
+    const classId = params.get("class");
+    return classId ? { classId, sectionId: params.get("section") || null } : null;
+  });
+  // Who the file is for: null is the whole school (each row names its class); a class, or one section of it, for a register of one class.
+  // Not saved: after an upload the next file is for what the page was opened for (the whole school for a plain Bulk upload), so a Class 6
+  // file is never put in Class 5 by forgetting to change it.
+  const [chosen, setChosen] = useState<ImportTarget | null>(opened);
   const [file, setFile] = useState<{ name: string; size: number } | null>(null);
   const [sheet, setSheet] = useState<ImportSheet | null>(null);
   const [reading, setReading] = useState(false);
@@ -197,14 +215,16 @@ export default function StudentImportPage() {
 
   // Each row is prepared once and again only when it changes (a changed row is a new object; the others are kept as they are).
   // The cache belongs to one mapping, one class layout and one set of own columns: a new column choice prepares every row again.
-  const rowCache = useMemo(() => ({ mapping, structure, ownList, rows: new WeakMap<SheetRow, PreparedRow>() }), [mapping, structure, ownList]);
+  // The target as the school still has it (a class made inactive since is no target any more).
+  const target = useMemo(() => usableTarget(chosen, structure?.classes ?? []), [chosen, structure]);
+  const rowCache = useMemo(() => ({ mapping, structure, ownList, target, rows: new WeakMap<SheetRow, PreparedRow>() }), [mapping, structure, ownList, target]);
   const prepared = useMemo(() => {
-    const { mapping: m, structure: s, ownList: own, rows: cache } = rowCache;
+    const { mapping: m, structure: s, ownList: own, target: t, rows: cache } = rowCache;
     if (!sheet || !m || !s) return [];
     return sheet.rows.map((r) => {
       let p = cache.get(r);
       if (!p) {
-        p = prepareRow(r, m, s, own);
+        p = prepareRow(r, m, s, own, t);
         cache.set(r, p);
       }
       return p;
@@ -360,7 +380,7 @@ export default function StudentImportPage() {
     let next = autoMap(data.headers, settings?.exportColumns);
     const taken = new Set(Object.values(next).filter((c): c is number => c !== null));
     const own = ownColumnsOf(data.headers, custom.filter((f) => f.mode !== "hidden"), settings?.exportColumns ?? [], taken);
-    const add = structure ? columnsToAdd(next, data.rows, structure.classes) : [];
+    const add = structure ? columnsToAdd(next, data.rows, structure.classes, !!target) : [];
     const width = data.headers.length;
     add.forEach((field, i) => (next = assignColumn(next, width + i, field)));
     const table: ImportSheet =
@@ -396,7 +416,7 @@ export default function StudentImportPage() {
    * type the students into (no file needed).
    */
   function startTyping() {
-    const fields = typedTableFields(rules);
+    const fields = typedTableFields(rules, !!target);
     const own = custom.filter((f) => f.mode !== "hidden");
     let next = emptyMapping();
     fields.forEach((f, column) => (next = assignColumn(next, column, f.key)));
@@ -408,6 +428,13 @@ export default function StudentImportPage() {
       { name: "Typed in the table", size: 0 },
       true
     );
+  }
+
+  /** Who the file is for was changed with the table open: every row is read again for it, and what the server said about them is dropped. */
+  function changeTarget(next: ImportTarget | null) {
+    setChosen(next);
+    setAnswers(new Map());
+    setOffer(null);
   }
 
   function addBlankRows() {
@@ -629,7 +656,8 @@ export default function StudentImportPage() {
 
   // ---- The page -----------------------------------------------------------------------------------------------------------------
 
-  const leave = () => (sheet && filled.length > 0 && step === 1 && !busy ? setAsk("leave") : navigate("/school/students"));
+  const backTo = from?.href ?? "/school/students";
+  const leave = () => (sheet && filled.length > 0 && step === 1 && !busy ? setAsk("leave") : navigate(backTo));
 
   if (!structure || !capacity) {
     return (
@@ -642,7 +670,7 @@ export default function StudentImportPage() {
   }
 
   const year = capacity.academicYear?.name ?? "";
-  const header = <StudentFormHeader title="Bulk upload students" subtitle={year ? `Academic year ${year}` : undefined} crumbs={[{ label: "Students", onClick: leave }]} current="Bulk upload" onBack={leave} />;
+  const header = <StudentFormHeader title="Bulk upload students" subtitle={year ? `Academic year ${year}` : undefined} crumbs={[{ label: from?.label ?? "Students", onClick: leave }]} current="Bulk upload" onBack={leave} />;
 
   if (!capacity.academicYear || structure.classes.length === 0) {
     const noYear = !capacity.academicYear;
@@ -704,11 +732,27 @@ export default function StudentImportPage() {
           <ImportStepper current={step} />
         </div>
 
-        {step === 0 && <UploadStep onFile={(f) => void readFile(f)} onPaste={(text) => void readPasted(text)} onBlank={startTyping} reading={reading} error={readError} onTemplate={downloadTemplate} downloading={downloading} year={year} />}
+        {step === 0 && (
+          <UploadStep
+            onFile={(f) => void readFile(f)}
+            onPaste={(text) => void readPasted(text)}
+            onBlank={startTyping}
+            reading={reading}
+            error={readError}
+            onTemplate={downloadTemplate}
+            downloading={downloading}
+            year={year}
+            classes={structure.classes}
+            target={target}
+            onTarget={setChosen}
+          />
+        )}
 
         {step === 1 && sheet && mapping && file && (
           <>
-            <FileBar file={file} sheetName={sheet.sheetName} rows={filled.length} ready={ready.length} toFix={toFix} already={skipped.length} onChangeFile={startOver} disabled={!!busy} />
+            <FileBar file={file} sheetName={sheet.sheetName} rows={filled.length} ready={ready.length} toFix={toFix} already={skipped.length} onChangeFile={startOver} disabled={!!busy}>
+              <TargetPicker classes={structure.classes} target={target} onChange={changeTarget} disabled={!!busy} />
+            </FileBar>
             {checking && (
               <p role="status" className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-foreground-muted">
                 Checking the file against the students already in your school...
@@ -840,13 +884,19 @@ export default function StudentImportPage() {
               linked={linkedNow}
               raised={lastRun?.raised}
               year={year}
+              studentsTo={backTo}
+              studentsLabel={from?.label}
               onFix={() => {
                 setFilter("all");
                 setPage(1);
                 setStep(1);
               }}
               onDownloadProblems={downloadProblems}
-              onAnother={startOver}
+              onAnother={() => {
+                // The next file is for what the page was opened for again (the whole school until a class is chosen for it).
+                setChosen(opened);
+                startOver();
+              }}
             />
             <ImportRowsTable rows={doneRows} goodLabel="Admitted" badLabel="Not admitted" />
           </>
@@ -858,7 +908,12 @@ export default function StudentImportPage() {
       )}
       {ask === "upload" && (
         <AskDialog title={`Upload ${ready.length} student${ready.length === 1 ? "" : "s"}?`} icon={UserPlus} confirmLabel="Upload and admit" onClose={() => setAsk(null)} onConfirm={() => void upload()}>
-          <p>Each is admitted into the class and section of their row, in {year}, with the parents of their row (a parent already in your school is linked).</p>
+          <p>
+            {target
+              ? `Everyone is admitted into ${targetLabel(target, structure.classes)}${target.sectionId ? "" : " (the sections share them evenly)"}`
+              : "Each is admitted into the class and section of their row"}
+            , in {year}, with the parents of their row (a parent already in your school is linked).
+          </p>
           {toFix > 0 && <p>The {toFix} row{toFix === 1 ? "" : "s"} that need a fix are not uploaded; they stay in the table.</p>}
           {skipped.length > 0 && (
             <p>
@@ -868,7 +923,7 @@ export default function StudentImportPage() {
         </AskDialog>
       )}
       {ask === "leave" && (
-        <AskDialog title="Leave the bulk upload?" icon={LogOut} confirmLabel="Leave" onClose={() => setAsk(null)} onConfirm={() => navigate("/school/students")}>
+        <AskDialog title="Leave the bulk upload?" icon={LogOut} confirmLabel="Leave" onClose={() => setAsk(null)} onConfirm={() => navigate(backTo)}>
           <p>
             {admitted.length > 0
               ? "The students admitted so far stay admitted. The rows still in the table, and your changes to them, are not kept."

@@ -3,6 +3,7 @@ import { ApiError } from "../../../utils/ApiError";
 import { AcademicYear } from "../../academics/models/AcademicYear";
 import { Department } from "../../academics/models/Department";
 import { SchoolClass } from "../../academics/models/SchoolClass";
+import { NOT_INACTIVE } from "../../academics/models/status";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { viewedYear } from "../../academics/services/viewedYear";
 import { DEVELOPMENT_FEE_CAP_PERCENT, defaultMonths, yearlyCost, type AppliesTo, type FeeFrequency } from "../constants";
@@ -124,7 +125,7 @@ export class FeeStructureService {
     const school = asId(tenantId);
     const year = await FeeStructureService.readYear(school, yearId);
     const [classes, departments, heads, years] = await Promise.all([
-      SchoolClass.find({ tenantId: school }).sort({ order: 1, nameKey: 1 }).lean(),
+      SchoolClass.find({ tenantId: school, ...NOT_INACTIVE }).sort({ order: 1, nameKey: 1 }).lean(),
       Department.find({ tenantId: school }).select("name").lean(),
       FeeHead.find({ tenantId: school }).sort({ nameKey: 1 }).lean(),
       AcademicYear.find({ tenantId: school, status: { $in: ["active", "pending"] } }).sort({ startDate: 1 }).select("name status").lean(),
@@ -297,7 +298,7 @@ export class FeeStructureService {
     if (source.length === 0) throw ApiError.conflict(`${previous.name} has no fees to copy.`, "NOTHING_TO_COPY");
     const [existing, classes] = await Promise.all([
       FeeLine.find({ tenantId: school, academicYearId: year.id }).select("classId headId appliesTo").lean(),
-      SchoolClass.find({ tenantId: school }).select("_id").lean(),
+      SchoolClass.find({ tenantId: school, ...NOT_INACTIVE }).select("_id").lean(),
     ]);
     const have = new Set(existing.map((l) => lineKey(l.classId, l.headId, l.appliesTo)));
     const classIds = new Set(classes.map((c) => c._id.toString()));

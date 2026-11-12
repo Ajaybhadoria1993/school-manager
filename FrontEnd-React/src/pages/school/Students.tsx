@@ -34,7 +34,7 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { InfoTip, WithTip } from "../../components/ui/Hint";
 import { Skeleton } from "../../components/ui/Skeleton";
-import { admitLink } from "../../utils/students";
+import { admitLink, importLink } from "../../utils/students";
 import { DeactivateDialog } from "../../components/students/status/DeactivateDialog";
 
 const GUIDE_KEY = "edushiksha.students.guide-closed";
@@ -245,7 +245,7 @@ export default function StudentsPage() {
           )}
           {!noYear && !readOnly && can("students.add") && (
             <WithTip tip="Bring in many students at once from Excel: the sample file or your school's own sheet.">
-              <Link to="/school/students/import" className={outlineLink}>
+              <Link to={importLink({ classId: filters.classId, sectionId: filters.sectionId })} className={outlineLink}>
                 <FileUp className="size-4" aria-hidden />
                 Bulk upload
               </Link>

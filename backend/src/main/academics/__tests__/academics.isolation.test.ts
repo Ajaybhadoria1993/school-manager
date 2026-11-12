@@ -37,7 +37,8 @@ itKeepsSchoolsApart("academics", {
 
   probes: [
     { name: "renaming its department", method: "patch", path: (c) => `${api}/departments/${c.departmentId}`, body: () => ({ name: "Hacked" }) },
-    { name: "deleting its department", method: "delete", path: (c) => `${api}/departments/${c.departmentId}` },
+    { name: "making its department active", method: "post", path: (c) => `${api}/departments/${c.departmentId}/reactivate` },
+    { name: "making its department inactive", method: "post", path: (c) => `${api}/departments/${c.departmentId}/deactivate` },
     {
       name: "adding classes to its department",
       method: "post",
@@ -54,7 +55,8 @@ itKeepsSchoolsApart("academics", {
     { name: "reading its class", method: "get", path: (c) => `${api}/classes/${c.classId}` },
     { name: "renaming its class", method: "patch", path: (c) => `${api}/classes/${c.classId}`, body: () => ({ name: "Hacked" }) },
     { name: "changing its class's seats", method: "patch", path: (c) => `${api}/classes/${c.classId}`, body: () => ({ capacity: 1 }) },
-    { name: "deleting its class", method: "delete", path: (c) => `${api}/classes/${c.classId}` },
+    { name: "making its class active", method: "post", path: (c) => `${api}/classes/${c.classId}/reactivate` },
+    { name: "making its class inactive", method: "post", path: (c) => `${api}/classes/${c.classId}/deactivate` },
     { name: "adding a section to its class", method: "post", path: (c) => `${api}/classes/${c.classId}/sections`, body: () => ({ name: "Z" }) },
     { name: "changing its section", method: "patch", path: (c) => `${api}/sections/${c.sectionId}`, body: () => ({ capacity: 5 }) },
     { name: "deleting its section", method: "delete", path: (c) => `${api}/sections/${c.sectionId}` },

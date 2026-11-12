@@ -99,6 +99,21 @@ describe("a school with one medium", () => {
     ]);
   });
 
+  it("the room the school gave a class is its first section's room: the others are left for Classes & Sections", async () => {
+    const school = await approvedSchool([
+      cbse(plan("English", "1", "2", 8, { classes: [{ name: "Class 1", sections: 2, seats: 30, room: "101" }, { name: "Class 2", sections: 1, seats: 30 }] })),
+    ]);
+    const classes = await SchoolClass.find({ tenantId: school.tenantId }).sort({ order: 1 }).lean();
+    const roomsOf = async (classId: unknown) => (await Section.find({ tenantId: school.tenantId, classId }).sort({ name: 1 }).lean()).map((s) => [s.name, s.room ?? null]);
+    expect(await roomsOf(classes[0]._id)).toEqual([["A", "101"], ["B", null]]);
+    expect(await roomsOf(classes[1]._id)).toEqual([["A", null]]);
+  });
+
+  it("a class with no sections has no room to give", async () => {
+    const school = await approvedSchool([cbse(plan("English", "1", "1", 8, { classes: [{ name: "Class 1", sections: 0, seats: 35, room: "101" }] }))]);
+    expect(await Section.countDocuments({ tenantId: school.tenantId })).toBe(0);
+  });
+
   it("a class with no sections keeps its seats on the class", async () => {
     const school = await approvedSchool([cbse(plan("English", "1", "1", 8, { classes: [{ name: "Class 1", sections: 0, seats: 35 }] }))]);
     const [klass] = await SchoolClass.find({ tenantId: school.tenantId }).lean();

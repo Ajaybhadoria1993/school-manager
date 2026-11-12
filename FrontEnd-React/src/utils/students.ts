@@ -475,7 +475,7 @@ const recordsOf = (v: StudentFormValues) => ({
 });
 
 /** POST /students: the form as one admission. A parent the school has is sent by their id (kept as they are unless "update"). */
-export function toAdmission(v: StudentFormValues, flags: { allowOverCapacity: boolean; confirmNotDuplicate: boolean }, custom: CustomFieldDef[] = []): AdmitStudentInput {
+export function toAdmission(v: StudentFormValues, flags: { allowOverCapacity: boolean; confirmNotDuplicate: boolean; raiseSeatsTo?: number }, custom: CustomFieldDef[] = []): AdmitStudentInput {
   const answers = customAnswersOf(v.custom, custom);
   return {
     ...(Object.keys(answers).length > 0 ? { custom: answers } : {}),
@@ -584,6 +584,15 @@ export function mobileDigits(typed: string): string {
 export function admitLink({ classId, sectionId }: { classId?: string; sectionId?: string } = {}): string {
   const search = new URLSearchParams({ ...(classId ? { class: classId } : {}), ...(classId && sectionId ? { section: sectionId } : {}) }).toString();
   return `/school/students/new${search ? `?${search}` : ""}`;
+}
+
+/**
+ * The bulk upload, opened for a class (and a section of it): from a class's page or from the list filtered by a class, so the file is
+ * read as that class's students (no Class column needed). A class or section that is not the school's is ignored by the page.
+ */
+export function importLink({ classId, sectionId }: { classId?: string; sectionId?: string } = {}): string {
+  const search = new URLSearchParams({ ...(classId ? { class: classId } : {}), ...(classId && sectionId ? { section: sectionId } : {}) }).toString();
+  return `/school/students/import${search ? `?${search}` : ""}`;
 }
 
 /** The Students management page (`/school/students`), with the list's selected class and section. */

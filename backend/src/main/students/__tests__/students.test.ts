@@ -576,7 +576,7 @@ describe("seats", () => {
     expect(full.status).toBe(409);
     expect(full.body.code).toBe("SECTION_FULL");
     expect(details(full)).toEqual([
-      { path: "sectionId", message: "Class 5 - B is full (2 of 2 seats taken)", capacity: 2, enrolled: 2, seatsLeft: 0 },
+      { path: "sectionId", message: "Class 5 - B is full (2 of 2 seats taken)", capacity: 2, enrolled: 2, seatsLeft: 0, classId: s.class5.id, sectionId: s.b },
     ]);
     expect(await Student.countDocuments({ tenantId: s.tenantId })).toBe(2);
     expect(await Guardian.countDocuments({ tenantId: s.tenantId })).toBe(2);

@@ -204,6 +204,17 @@ describe("Students, a school that has students", () => {
     expect(screen.getByRole("link", { name: "Add student" })).toHaveAttribute("href", "/school/students/new?class=c6&section=c6-A");
   });
 
+  it("Bulk upload carries the class and section chosen in the list too, and is plain when none is chosen", async () => {
+    school([ASHA]);
+    openPage("/school/students?class=c6&section=c6-A");
+    await screen.findByText("Asha Verma");
+    expect(screen.getByRole("link", { name: "Bulk upload" })).toHaveAttribute("href", "/school/students/import?class=c6&section=c6-A");
+    cleanup();
+    openPage();
+    await screen.findByText("Asha Verma");
+    expect(screen.getByRole("link", { name: "Bulk upload" })).toHaveAttribute("href", "/school/students/import");
+  });
+
   it("Add student opens a plain form when no class is chosen", async () => {
     school([ASHA]);
     openPage();

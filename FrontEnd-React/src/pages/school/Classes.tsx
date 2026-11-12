@@ -9,6 +9,7 @@ import { ClassModal } from "../../components/classes/ClassModal";
 import { DepartmentGroup } from "../../components/classes/DepartmentGroup";
 import { AddDepartmentModal } from "../../components/classes/AddDepartmentModal";
 import { GuideCard } from "../../components/classes/GuideCard";
+import { InactiveList } from "../../components/classes/InactiveList";
 import { QuickSetupForm } from "../../components/classes/QuickSetupForm";
 import { QuickSetupPanel } from "../../components/classes/QuickSetupPanel";
 import { AppModal } from "../../components/ui/AppModal";
@@ -194,6 +195,8 @@ export default function ClassesPage() {
               ))}
             </div>
           )}
+
+          <InactiveList structure={structure} />
 
           {hasClasses && (
             <p className="text-center text-sm text-foreground-muted">

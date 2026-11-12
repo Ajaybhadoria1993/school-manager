@@ -40,6 +40,8 @@ export interface PlanClass {
   name: string;
   sections: number;
   seats: number;
+  /** Where the class sits ("101"): the room of its first section once the school is approved. Empty or missing: none. */
+  room?: string | null;
 }
 
 /** One medium of a board, as saved: its classes and its timing. */

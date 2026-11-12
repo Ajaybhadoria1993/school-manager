@@ -56,13 +56,13 @@ Multi-tenant School ERP, built step by step from the specs in [`docs/`](docs/) (
   seats and room. When a school is approved, its classes (from the lowest to the highest class it gave at sign-up) are created
   for it, without sections: the page opens as a ready list, and each class gets its sections (A, B, C...) with one click. A class
   may have no sections at all. A school with no classes can still create them in one click (a preview shows what will be made);
-  classes can be added, renamed, moved to a department and deleted. The page has a first-time guide and tooltips.
+  classes can be added, renamed, moved to a department and made inactive (never deleted). The page has a first-time guide and tooltips.
 - API: `/api/v1/academics/*` (structure, quick-setup, departments, classes, sections), scoped to the caller's own school.
 - **Academic years**: the school names its session (its own start and end dates) in onboarding step 1; it stays pending until
   the super admin approves, then becomes the one active year shown on the dashboard. Sections belong to a year. A school approved
   before this existed sets its year up once from the dashboard. Details, API, migration (`npm run migrate:academic-years`) and the
   planned year-end / promotion workflow: [docs/academic-years.md](docs/academic-years.md).
-  A class or section that has students cannot be deleted, and neither can a class with students in another academic year (its history).
+  A class or department is never deleted: it is made inactive, which a class allows only when no student is left in it (the students who left and past years are history and stay with it), and a department only when it has no active class. Their names stay taken. A class with no sections is held to its own seats; a full one offers "add seats" or "make sections".
 - How the page and the API work, file by file: [`FrontEnd-React/README.md`](FrontEnd-React/README.md#manage-school-classes--sections).
 
 **Manage school: Students** (school admin and principal admit; the accountant can read through the API)

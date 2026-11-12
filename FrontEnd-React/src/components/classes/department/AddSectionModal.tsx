@@ -28,6 +28,7 @@ export function AddSectionModal({
   required,
   classSeats,
   heldBySections,
+  onDivide,
   onClose,
 }: {
   classId: string;
@@ -37,6 +38,8 @@ export function AddSectionModal({
   /** The seats of the whole class (null when not set yet) and what its sections already hold: this section's seats come out of the rest. */
   classSeats: number | null;
   heldBySections: number;
+  /** The class has students sitting in the class itself, so a first section cannot be added by hand: the class is divided instead. */
+  onDivide: (enrolled: number) => void;
   onClose: () => void;
 }) {
   const seatsLeft = classSeats === null ? null : Math.max(0, classSeats - heldBySections);
@@ -45,6 +48,8 @@ export function AddSectionModal({
   const [values, setValues] = useState<Record<Box, string>>({ name: suggestedName, seats: "", room: "" });
   const [problems, setProblems] = useState<Partial<Record<Box | "form", string>>>({});
   const [busy, setBusy] = useState(false);
+  // How many students sit in the class itself, when the server says a first section would leave them in no section.
+  const [unsectioned, setUnsectioned] = useState<number | null>(null);
 
   const change = (box: Box) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setValues((v) => ({ ...v, [box]: e.target.value }));
@@ -85,6 +90,11 @@ export function AddSectionModal({
       }
       // A name already used in this class is the name box's to show.
       if (apiError?.code === "SECTION_EXISTS") next.name = apiError.message;
+      const first = (Array.isArray(apiError?.details) ? apiError.details[0] : undefined) as { enrolled?: unknown } | undefined;
+      if (apiError?.code === "CLASS_HAS_UNSECTIONED_STUDENTS" && typeof first?.enrolled === "number") {
+        setUnsectioned(first.enrolled);
+        next.form = apiError.message;
+      }
       if (Object.keys(next).length === 0) next.form = apiError?.message ?? "Could not add the section. Please try again.";
       setProblems(next);
       setBusy(false);
@@ -161,6 +171,11 @@ export function AddSectionModal({
             : "Seats and room are optional: your school made them optional with the switch above the sections."}
         </p>
         <ModalError message={problems.form ?? null} />
+        {unsectioned !== null && (
+          <Button type="button" variant="secondary" onPress={() => onDivide(unsectioned)}>
+            Divide {className} into sections
+          </Button>
+        )}
       </form>
     </AppModal>
   );

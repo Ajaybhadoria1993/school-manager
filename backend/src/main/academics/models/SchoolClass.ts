@@ -1,5 +1,6 @@
 import { Schema, model, Types } from "mongoose";
 import { tenantScope } from "../../tenants/plugins/tenantScope";
+import { ACTIVE_STATUSES, inactiveRecordSchema, type ActiveStatus, type InactiveRecord } from "./status";
 
 /**
  * One class of the school ("Nursery", "Class 5"). Named SchoolClass because `class` is a keyword.
@@ -21,6 +22,14 @@ export interface ISchoolClass {
    * The seats of its sections together fit inside it (SectionService, ClassService.update).
    */
   capacity?: number | null;
+  /**
+   * A class is never deleted (its students and their history belong to it): the school makes it inactive and, when it wants it back,
+   * active again. A class made before there was a status has none, and counts as active (always read it with `isInactive`, or filter
+   * with `NOT_INACTIVE`).
+   */
+  status?: ActiveStatus;
+  /** Set while the class is inactive: when and by whom. Null otherwise. */
+  inactive?: InactiveRecord | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,6 +41,8 @@ const schoolClassSchema = new Schema<ISchoolClass>(
     nameKey: { type: String, required: true },
     order: { type: Number, required: true, default: 0 },
     capacity: { type: Number, default: null },
+    status: { type: String, enum: ACTIVE_STATUSES, default: "active" },
+    inactive: { type: inactiveRecordSchema, default: null },
   },
   { timestamps: true }
 );

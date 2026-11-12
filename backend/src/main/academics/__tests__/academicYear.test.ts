@@ -173,20 +173,12 @@ describe("the history of other academic years is kept", () => {
     expect(await Section.findOne({ tenantId, _id: old._id }).lean()).toMatchObject({ capacity: 30, room: "Room 1" });
   });
 
-  it("will not delete a class that holds sections of another year, and says why; the other year's sections stay", async () => {
+  it("a class that holds sections of another year is made inactive, never deleted: every section of every year stays", async () => {
     const { token, tenantId, klass, old } = await schoolWithLastYear();
-    const res = await request(app).delete(`${api}/classes/${klass.id}`).set(auth(token));
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe("CLASS_HAS_HISTORY");
+    expect((await request(app).delete(`${api}/classes/${klass.id}`).set(auth(token))).status).toBe(404);
+    const res = await request(app).post(`${api}/classes/${klass.id}/deactivate`).set(auth(token));
+    expect(res.status).toBe(200);
     expect(await Section.countDocuments({ tenantId, classId: klass.id })).toBe(2);
     expect(await Section.exists({ tenantId, _id: old._id })).toBeTruthy();
-  });
-
-  it("still deletes a class whose sections are all of the current year", async () => {
-    const s = await createSchool("Moonrise Public School");
-    await post(s.token, "/academic-years/initial", YEAR);
-    const klass = (await post(s.token, "/classes", { name: "Class 6", capacity: 2000, sectionCount: 2 })).body.data;
-    expect((await request(app).delete(`${api}/classes/${klass.id}`).set(auth(s.token))).status).toBe(200);
-    expect(await Section.countDocuments({ tenantId: s.tenantId })).toBe(0);
   });
 });

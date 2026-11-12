@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { AcademicYear, type IAcademicYear } from "../../academics/models/AcademicYear";
 import { SchoolClass } from "../../academics/models/SchoolClass";
+import { NOT_INACTIVE } from "../../academics/models/status";
 import { Section } from "../../academics/models/Section";
 import { isDuplicateKey } from "../../academics/services/shared";
 import { MAX_PROMOTION_ENTRIES, type PromotionOutcome, type PromotionStatus } from "../constants";
@@ -76,7 +77,8 @@ export class PromotionService {
   /** The classes of the school in teaching order, each with the sections it has in the year that waits. */
   private static async targets(school: Types.ObjectId, toYearId: Types.ObjectId): Promise<Targets> {
     const [classes, sections] = await Promise.all([
-      SchoolClass.find({ tenantId: school }).sort({ order: 1, _id: 1 }).select("name order").lean(),
+      // A class a school made inactive is not a place to promote anyone into.
+      SchoolClass.find({ tenantId: school, ...NOT_INACTIVE }).sort({ order: 1, _id: 1 }).select("name order").lean(),
       Section.find({ tenantId: school, academicYearId: toYearId }).select("classId name nameKey capacity").lean(),
     ]);
     return classes.map((c) => {

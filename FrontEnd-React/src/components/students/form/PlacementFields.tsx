@@ -110,6 +110,8 @@ export function PlacementFields({
   capacity,
   ownSectionId,
   onPickFull,
+  onFullClass,
+  raisedTo = null,
   index = 0,
 }: {
   form: StudentForm;
@@ -119,6 +121,10 @@ export function PlacementFields({
   ownSectionId?: string | null;
   /** A full section was pressed: the page asks first, and picks it only on "yes". */
   onPickFull: (section: SectionItem, load: SectionLoad) => void;
+  /** The class that is picked has no sections and no seat left: the page asks what to do. Without it the class box only says it is full. */
+  onFullClass?: (klass: ClassItem, enrolled: number, capacity: number) => void;
+  /** The seats the picked section (or class) will be raised to when the student is admitted, because the person said so. */
+  raisedTo?: number | null;
   index?: number;
 }) {
   const name = useId();
@@ -170,10 +176,19 @@ export function PlacementFields({
   const sectionNote = picked && pickedSeat
     ? pickedSeat.capacity === null
       ? `${klass?.name} - ${picked.name}: ${pickedSeat.enrolled} student${pickedSeat.enrolled === 1 ? "" : "s"}, no seat limit.`
-      : `${klass?.name} - ${picked.name}: ${pickedSeat.enrolled} of ${pickedSeat.capacity} seats taken${pickedSeat.enrolled >= pickedSeat.capacity && picked.id !== ownSectionId ? " (over the limit, as you chose)" : `, ${Math.max(0, pickedSeat.capacity - pickedSeat.enrolled)} left`}.`
+      : raisedTo !== null && pickedSeat.enrolled >= pickedSeat.capacity
+        ? `${klass?.name} - ${picked.name}: ${pickedSeat.enrolled} of ${pickedSeat.capacity} seats taken. Its seats become ${raisedTo} when you admit.`
+        : `${klass?.name} - ${picked.name}: ${pickedSeat.enrolled} of ${pickedSeat.capacity} seats taken${pickedSeat.enrolled >= pickedSeat.capacity && picked.id !== ownSectionId ? " (over the limit, as you chose)" : `, ${Math.max(0, pickedSeat.capacity - pickedSeat.enrolled)} left`}.`
     : klass && klass.sections.length > 0
       ? `${plural(klass.sections.length, "section")} this year. Pick one.`
       : "";
+
+  // A class with no sections holds its students itself, so its own seats are the limit (none set: no limit).
+  const wholeClass =
+    klass && klass.sections.length === 0 && klass.capacity !== null
+      ? { capacity: klass.capacity, enrolled: capacity?.classes.find((c) => c.classId === klass.id)?.enrolled ?? 0 }
+      : null;
+  const wholeClassFull = wholeClass !== null && wholeClass.enrolled >= wholeClass.capacity && !(raisedTo !== null);
 
   /** The chips of the groups: a numbered class as its number, Class 11 and 12 once each (their streams are asked next). */
   const seen = new Set<number>();
@@ -296,15 +311,38 @@ export function PlacementFields({
                 {!klass ? (
                   <p className={emptyBox}>{seniorNumber !== null ? "Pick the stream to see its sections." : "Pick a class to see its sections."}</p>
                 ) : klass.sections.length === 0 ? (
-                  <div className="flex h-[5.5rem] w-full items-center gap-3 rounded-xl border border-primary/40 bg-primary-soft/50 px-4">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary-deep">
+                  <div
+                    className={cn(
+                      "flex h-[5.5rem] w-full items-center gap-3 rounded-xl border px-4",
+                      wholeClassFull ? "border-warning-line bg-warning-soft" : "border-primary/40 bg-primary-soft/50"
+                    )}
+                  >
+                    <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-full", wholeClassFull ? "bg-warning-soft text-warning" : "bg-primary-soft text-primary-deep")}>
                       <Users className="size-5" aria-hidden />
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-foreground">No section</p>
-                      <p className="mt-0.5 text-xs text-foreground-muted">{klass.name} has no sections this year: the student joins the whole class.</p>
+                      <p className="mt-0.5 text-xs text-foreground-muted">
+                        {wholeClass === null
+                          ? `${klass.name} has no sections this year: the student joins the whole class.`
+                          : wholeClassFull
+                            ? `${klass.name} is full: ${wholeClass.enrolled} of ${wholeClass.capacity} seats are taken.`
+                            : raisedTo !== null && wholeClass.enrolled >= wholeClass.capacity
+                              ? `${klass.name} has ${wholeClass.capacity} seats and they are all taken. Its seats become ${raisedTo} when you admit.`
+                              : `${klass.name} has no sections this year: the student joins the whole class. ${wholeClass.enrolled} of ${wholeClass.capacity} seats taken.`}
+                      </p>
                     </div>
-                    <CircleCheck className="size-5 shrink-0 text-primary" aria-hidden />
+                    {wholeClassFull && onFullClass ? (
+                      <button
+                        type="button"
+                        onClick={() => onFullClass(klass, wholeClass.enrolled, wholeClass.capacity)}
+                        className="shrink-0 rounded-lg border border-warning-line bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-background"
+                      >
+                        Add seats or make sections
+                      </button>
+                    ) : (
+                      <CircleCheck className="size-5 shrink-0 text-primary" aria-hidden />
+                    )}
                   </div>
                 ) : (
                   <ScrollRow key={klass.id} label={`Section of ${klass.name}`}>

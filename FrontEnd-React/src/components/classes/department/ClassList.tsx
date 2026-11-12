@@ -15,6 +15,8 @@ import { Skeleton } from "../../ui/Skeleton";
  */
 function Row({ item, structure, selected, onSelect }: { item: ClassItem; structure: AcademicStructure; selected: boolean; onSelect: () => void }) {
   const t = TONES[toneOf(structure, item.departmentId)];
+  // A class made inactive stays in the list, greyed and marked, so it can be opened and made active again.
+  const inactive = item.status === "inactive";
   return (
     <li>
       <button
@@ -29,12 +31,15 @@ function Row({ item, structure, selected, onSelect }: { item: ClassItem; structu
         {selected && <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1 rounded-r-full", t.line)} />}
         <span
           aria-hidden
-          className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold transition-transform duration-200 group-hover:scale-105", t.gradient)}
+          className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl text-sm font-bold transition-transform duration-200 group-hover:scale-105", inactive ? "bg-border text-foreground-muted" : t.gradient)}
         >
           {classMark(item.name)}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-bold text-foreground">{item.name}</span>
+          <span className="flex items-center gap-2">
+            <span className={cn("truncate text-sm font-bold", inactive ? "text-foreground-muted" : "text-foreground")}>{item.name}</span>
+            {inactive && <span className="shrink-0 rounded-full bg-surface-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-foreground-muted ring-1 ring-inset ring-border">Inactive</span>}
+          </span>
           <span className="block truncate text-xs text-foreground-muted">
             {item.sections.length === 0 ? "No sections" : plural(item.sections.length, "section")}
             {item.capacity === null ? <span className="font-semibold text-warning"> · Seats not set</span> : <> · {seatsLabel(item)}</>}

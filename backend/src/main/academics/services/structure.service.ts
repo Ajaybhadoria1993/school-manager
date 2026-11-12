@@ -6,10 +6,11 @@ import { MAX_CLASSES, MAX_DEPARTMENTS, levelToClass, plannedClasses, sectionLett
 import { Department } from "../models/Department";
 import { SchoolClass } from "../models/SchoolClass";
 import { Section } from "../models/Section";
+import { isInactive } from "../models/status";
 import type { QuickSetupInput } from "../schemas/academics.schemas";
 import { AcademicSettingsService, type AcademicSettings } from "./academicSettings.service";
 import { AcademicYearService } from "./academicYear.service";
-import { isDuplicateKey, toClassDto, type ClassDto, type DepartmentDto } from "./shared";
+import { isDuplicateKey, toClassDto, toDepartmentDto, type ClassDto, type DepartmentDto } from "./shared";
 
 /** The whole class / section layout of one school. It is small (a few dozen rows), so it travels in one piece. */
 export interface Structure {
@@ -17,10 +18,13 @@ export interface Structure {
   academicYear: { id: string; name: string } | null;
   /** The school's switches for its academic data. */
   settings: AcademicSettings;
-  /** In the order they should be shown: by their first class, empty ones last. */
+  /** The active ones, in the order they should be shown: by their first class, empty ones last. */
   departments: DepartmentDto[];
-  /** In teaching order, each with its sections. */
+  /** The active ones, in teaching order, each with its sections. (Looking at a past year, the classes that became inactive since are here too: its students are in them.) */
   classes: ClassDto[];
+  /** Made inactive (never deleted): kept apart so every picker in the app offers only what a school works with, and listed where they can be made active again. */
+  inactiveDepartments: DepartmentDto[];
+  inactiveClasses: ClassDto[];
   totals: {
     departments: number;
     classes: number;
@@ -53,7 +57,12 @@ export class StructureService {
       const key = section.classId.toString();
       sectionsByClass.set(key, [...(sectionsByClass.get(key) ?? []), section]);
     }
-    const classDtos = classes.map((c) => toClassDto(c, sectionsByClass.get(c._id.toString()) ?? []));
+    // A past year is looked at as it was: the classes (and departments) that were made inactive since still hold its students.
+    const looking = year !== null && year.status !== "active";
+    const shown = (record: { status?: "active" | "inactive" }) => looking || !isInactive(record);
+    const shownClasses = classes.filter(shown);
+    const classDtos = shownClasses.map((c) => toClassDto(c, sectionsByClass.get(c._id.toString()) ?? []));
+    const inactiveClasses = looking ? [] : classes.filter(isInactive).map((c) => toClassDto(c, sectionsByClass.get(c._id.toString()) ?? []));
 
     // A department sits where its first class sits, so the screen reads Pre-Primary, Primary, Middle...
     const firstPosition = new Map<string, number>();
@@ -64,22 +73,31 @@ export class StructureService {
       classCount.set(c.departmentId, (classCount.get(c.departmentId) ?? 0) + 1);
     });
     const departmentDtos = departments
-      .map((d) => ({ id: d._id.toString(), name: d.name, classCount: classCount.get(d._id.toString()) ?? 0 }))
+      .filter(shown)
+      .map((d) => toDepartmentDto(d, classCount.get(d._id.toString()) ?? 0))
       .sort(
         (a, b) =>
           (firstPosition.get(a.id) ?? Infinity) - (firstPosition.get(b.id) ?? Infinity) || a.name.localeCompare(b.name)
       );
+    const inactiveDepartments = looking
+      ? []
+      : departments
+          .filter(isInactive)
+          .map((d) => toDepartmentDto(d, 0))
+          .sort((a, b) => a.name.localeCompare(b.name));
 
     return {
       academicYear: year ? { id: year._id.toString(), name: year.name } : null,
       settings,
       departments: departmentDtos,
       classes: classDtos,
+      inactiveDepartments,
+      inactiveClasses,
       totals: {
-        departments: departments.length,
-        classes: classes.length,
-        sections: sections.length,
-        seats: classes.reduce((sum, c) => sum + (c.capacity ?? 0), 0),
+        departments: departmentDtos.length,
+        classes: shownClasses.length,
+        sections: sections.filter((s) => shownClasses.some((c) => c._id.equals(s.classId))).length,
+        seats: shownClasses.reduce((sum, c) => sum + (c.capacity ?? 0), 0),
       },
     };
   }
@@ -106,7 +124,7 @@ export class StructureService {
     const to = CLASS_LEVELS.indexOf(input.toClass);
     return StructureService.build(
       tenantId,
-      CLASS_LEVELS.slice(from, to + 1).map((level) => ({ ...levelToClass(level), sections: input.sectionsPerClass, capacity: null, seats: null }))
+      CLASS_LEVELS.slice(from, to + 1).map((level) => ({ ...levelToClass(level), sections: input.sectionsPerClass, capacity: null, seats: null, room: null }))
     );
   }
 
@@ -122,12 +140,12 @@ export class StructureService {
         const row = rows.get(p.name);
         const sections = row?.sections ?? 0;
         const seats = row?.seats ?? null;
-        return { ...p, sections, seats, capacity: seats === null ? null : sections > 0 ? sections * seats : seats };
+        return { ...p, sections, seats, room: row?.room ?? null, capacity: seats === null ? null : sections > 0 ? sections * seats : seats };
       })
     );
   }
 
-  private static async build(tenantId: string, plan: { name: string; department: string; sections: number; capacity: number | null; seats: number | null }[]): Promise<QuickSetupResult> {
+  private static async build(tenantId: string, plan: { name: string; department: string; sections: number; capacity: number | null; seats: number | null; room: string | null }[]): Promise<QuickSetupResult> {
     const wantedClasses = plan.map((p) => nameKeyOf(p.name));
     const wantedDepartments = [...new Set(plan.map((p) => p.department))];
 
@@ -174,7 +192,8 @@ export class StructureService {
       const sections = await Section.insertMany(
         classes.flatMap((c) => {
           const wanted = planOf.get(c.nameKey);
-          return sectionLetters(wanted?.sections ?? 0).map((name) => ({ tenantId, classId: c._id, academicYearId, name, nameKey: nameKeyOf(name), capacity: wanted?.seats ?? null }));
+          // The room the school gave the class is its first section's: the others are filled in later (Classes & Sections).
+          return sectionLetters(wanted?.sections ?? 0).map((name, i) => ({ tenantId, classId: c._id, academicYearId, name, nameKey: nameKeyOf(name), capacity: wanted?.seats ?? null, room: i === 0 ? (wanted?.room ?? null) : null }));
         })
       );
 

@@ -6,7 +6,6 @@ import {
   boardToApi,
   classSeats,
   cleanStreamName,
-  copyPlan,
   emptyPlan,
   hasSeniorClasses,
   planErrors,
@@ -93,16 +92,6 @@ describe("a medium's plan", () => {
       [1, 30],
       [1, 30],
     ]);
-  });
-
-  it("copies another medium, without sharing anything with it", () => {
-    const from = filled({ days: [1, 2] });
-    const copy = copyPlan(from, "Hindi");
-    expect(copy).toMatchObject({ medium: "Hindi", lowestClass: "1", highestClass: "3", days: [1, 2] });
-    copy.classes[0].seats = 5;
-    copy.usual.start = "12:00";
-    expect(from.classes[0].seats).toBe(40);
-    expect(from.usual.start).toBe(DEFAULT_SETUP.start);
   });
 });
 

@@ -2,26 +2,29 @@ import { Types, type PipelineStage } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { nameKeyOf } from "../../tenants/services/tenantFactory";
 import { CLASS_LEVELS } from "../../tenants/constants";
-import { TimetableCleanup } from "../../timetable/services/cleanup";
-import { ExamCleanup } from "../../exams/services/cleanup";
+import { actorRecord, type Actor } from "../../students/services/actor";
 import { MAX_CLASSES, levelToClass, sectionLetters } from "../constants";
 import { Department } from "../models/Department";
 import { SchoolClass, type ISchoolClass } from "../models/SchoolClass";
 import { Section, type ISection } from "../models/Section";
+import { NOT_INACTIVE, isInactive } from "../models/status";
 import type { CreateClassInput, ListClassesQuery, UpdateClassInput } from "../schemas/academics.schemas";
 import { AcademicYearService } from "./academicYear.service";
-import { assertClassHolds, seatsHeldBySections } from "./seats";
+import { classInactive, departmentInactive, nameTaken } from "./guards";
+import { assertClassHolds, assertSeatsHold, seatsHeldBySections } from "./seats";
 import { isDuplicateKey, toClassDto, type ClassDto } from "./shared";
-import { enrolmentCountsByClass, studentCountsBySection } from "./usage";
+import { activeStudentsInClass, studentsInClassItself } from "./usage";
 
 const NOT_FOUND = () => ApiError.notFound("Class not found", "CLASS_NOT_FOUND");
-const EXISTS = (name: string) => ApiError.conflict(`You already have a class called "${name}".`, "CLASS_EXISTS");
 
-/** The department a class is being put in must be one of this school's. */
+/** The department a class is being put in must be one of this school's, and active: an inactive department takes no class. */
 async function assertDepartment(tenantId: string, departmentId: string | null | undefined): Promise<void> {
-  if (departmentId && !(await Department.exists({ _id: departmentId, tenantId }))) {
+  if (!departmentId) return;
+  const department = await Department.findOne({ _id: departmentId, tenantId }).select("name status").lean();
+  if (!department) {
     throw ApiError.badRequest("That department no longer exists. Reload the page and pick again.", "DEPARTMENT_NOT_FOUND");
   }
+  if (isInactive(department)) throw departmentInactive(department.name);
 }
 
 /** Where each standard class sits in the teaching order: Pre-Nursery 0, Nursery 1, LKG 2, UKG 3, Class 1 4 ... Class 12 15. */
@@ -46,6 +49,11 @@ export interface ClassPage {
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export class ClassService {
+  /** The refusal for a name another class holds (in any case or spacing), saying whether that class is inactive. */
+  static async nameTaken(tenantId: string, name: string) {
+    return nameTaken("class", await SchoolClass.findOne({ tenantId, nameKey: nameKeyOf(name) }).select("name status").lean(), name);
+  }
+
   /** One class with its sections of the current session. */
   static async get(tenantId: string, id: string): Promise<ClassDto> {
     const found = await SchoolClass.findOne({ _id: id, tenantId }).lean();
@@ -64,6 +72,9 @@ export class ClassService {
     // A class's sections (and so its seats) are those of the session shown (the running one, or a past one being looked at).
     const academicYearId = await AcademicYearService.shownYearId(tenantId);
     const match: Record<string, unknown> = { tenantId: school };
+    // The active ones by default (the classes a school works with); the inactive ones are asked for, to be made active again.
+    if (query.status === "active") Object.assign(match, NOT_INACTIVE);
+    else if (query.status === "inactive") match.status = "inactive";
     if (query.departmentId) match.departmentId = query.departmentId === "none" ? null : new Types.ObjectId(query.departmentId);
     if (query.search) match.nameKey = { $regex: escapeRegex(nameKeyOf(query.search)) };
 
@@ -137,7 +148,7 @@ export class ClassService {
         capacity: input.capacity,
       });
     } catch (err) {
-      if (isDuplicateKey(err)) throw EXISTS(input.name);
+      if (isDuplicateKey(err)) throw await ClassService.nameTaken(tenantId, input.name);
       throw err;
     }
 
@@ -179,6 +190,10 @@ export class ClassService {
   }
 
   static async update(tenantId: string, id: string, input: UpdateClassInput): Promise<ClassDto> {
+    // 404 first, then an inactive class is read, not changed.
+    const current = await SchoolClass.findOne({ _id: id, tenantId }).select("name status").lean();
+    if (!current) throw NOT_FOUND();
+    if (isInactive(current)) throw classInactive(current.name);
     await assertDepartment(tenantId, input.departmentId);
 
     const changes: Record<string, unknown> = {};
@@ -186,10 +201,13 @@ export class ClassService {
     if (input.departmentId !== undefined) changes.departmentId = input.departmentId;
     if (input.capacity !== undefined) {
       // The sections of the class split its seats, so it cannot be given fewer than they hold.
-      const current = await SchoolClass.findOne({ _id: id, tenantId }).select("name").lean();
-      if (!current) throw NOT_FOUND();
       const academicYearId = await AcademicYearService.activeYearId(tenantId);
       assertClassHolds(current.name, input.capacity, await seatsHeldBySections(tenantId, id, academicYearId));
+      // A class that is not split holds its students itself: its seats cannot go below them. (With sections, each section's seats are checked
+      // against its own students, and the class's against its sections' seats above.)
+      if (!(await Section.exists({ tenantId, classId: id, academicYearId }))) {
+        assertSeatsHold(current.name, input.capacity, await studentsInClassItself(tenantId, id), "CLASS_SEATS_BELOW_STUDENTS");
+      }
       changes.capacity = input.capacity;
     }
 
@@ -199,52 +217,56 @@ export class ClassService {
       const academicYearId = await AcademicYearService.activeYearId(tenantId);
       return toClassDto(updated, await Section.find({ tenantId, classId: updated._id, academicYearId }));
     } catch (err) {
-      if (isDuplicateKey(err)) throw EXISTS(input.name ?? "");
+      if (isDuplicateKey(err)) throw await ClassService.nameTaken(tenantId, input.name ?? "");
       throw err;
     }
   }
 
   /**
-   * A class goes with all its sections, unless it has students: this year's (in a section or in the class itself) or any other
-   * year's (history). The Students module counts them, see usage.ts.
+   * A class is never deleted: its students and their history belong to it. A school that no longer teaches it, or made it by mistake,
+   * makes it inactive. It must have no student left in it (active this year, or promoted into it for the year that is waiting): they are
+   * moved to another class first, or made inactive. A student who left, and the students of past years, are history and stay with it.
+   * Nothing is thrown away: its sections, timetable and exam papers are kept for when it is made active again.
    */
-  static async remove(tenantId: string, id: string): Promise<{ removedSections: number }> {
-    if (!(await SchoolClass.exists({ _id: id, tenantId }))) throw NOT_FOUND();
+  static async deactivate(tenantId: string, actor: Actor, id: string): Promise<ClassDto> {
+    const klass = await SchoolClass.findOne({ _id: id, tenantId }).select("name status").lean();
+    if (!klass) throw NOT_FOUND();
+    if (isInactive(klass)) throw ApiError.conflict(`${klass.name} is already inactive.`, "CLASS_ALREADY_INACTIVE");
 
-    // Deleting a class deletes its sections, so it cannot be done while the class holds sections of another academic year: those are
-    // that year's records (its students, its attendance) and are kept.
-    const currentYear = await AcademicYearService.activeYearId(tenantId);
-    if (await Section.exists({ tenantId, classId: id, academicYearId: { $ne: currentYear } })) {
-      throw ApiError.conflict(
-        "This class has sections in another academic year, so it cannot be deleted. Its history is kept.",
-        "CLASS_HAS_HISTORY"
-      );
-    }
-
-    const sections = await Section.find({ tenantId, classId: id }).select("_id").lean();
-    const counts = await studentCountsBySection(tenantId, sections.map((s) => s._id.toString()));
-    // A class with no sections holds its students itself, so they are counted by class too, in every academic year.
-    const enrolments = await enrolmentCountsByClass(tenantId, id, currentYear);
-    const students = Math.max([...counts.values()].reduce((sum, n) => sum + n, 0), enrolments.thisYear);
+    const students = await activeStudentsInClass(tenantId, id);
     if (students > 0) {
       throw ApiError.conflict(
-        `This class has ${students} student${students === 1 ? "" : "s"}. Move them to another class first.`,
+        `${klass.name} has ${students} student${students === 1 ? "" : "s"}. Move them to another class, or make them inactive, first.`,
         "CLASS_HAS_STUDENTS"
       );
     }
-    if (enrolments.otherYears > 0) {
-      throw ApiError.conflict(
-        "This class has students in another academic year, so it cannot be deleted. Its history is kept.",
-        "CLASS_HAS_HISTORY"
-      );
-    }
 
-    await Section.deleteMany({ tenantId, classId: id });
-    await SchoolClass.deleteOne({ _id: id, tenantId });
-    // What the class studied, its timetables and its place in the school's timings go with it.
-    await TimetableCleanup.forClass(tenantId, id);
-    // ...and so does its place in the exam papers (a paper left for nobody is taken away).
-    await ExamCleanup.forClass(tenantId, id);
-    return { removedSections: sections.length };
+    const done = await SchoolClass.findOneAndUpdate(
+      { _id: id, tenantId, ...NOT_INACTIVE },
+      { $set: { status: "inactive", inactive: { at: new Date(), by: await actorRecord(actor) } } },
+      { new: true }
+    );
+    // Two people pressing it at the same moment: the other one won.
+    if (!done) throw ApiError.conflict(`${klass.name} is already inactive.`, "CLASS_ALREADY_INACTIVE");
+    return ClassService.get(tenantId, id);
+  }
+
+  /** Makes it active again, as it was. Its department must be active too: a class never comes back under a department that is hidden. */
+  static async reactivate(tenantId: string, id: string): Promise<ClassDto> {
+    const klass = await SchoolClass.findOne({ _id: id, tenantId }).select("name status departmentId").lean();
+    if (!klass) throw NOT_FOUND();
+    if (!isInactive(klass)) throw ApiError.conflict(`${klass.name} is already active.`, "CLASS_ALREADY_ACTIVE");
+
+    if (klass.departmentId) {
+      const department = await Department.findOne({ _id: klass.departmentId, tenantId }).select("name status").lean();
+      if (department && isInactive(department)) {
+        throw ApiError.conflict(
+          `${klass.name} belongs to ${department.name}, which is inactive. Make ${department.name} active first.`,
+          "DEPARTMENT_INACTIVE"
+        );
+      }
+    }
+    await SchoolClass.updateOne({ _id: id, tenantId }, { $set: { status: "active", inactive: null } });
+    return ClassService.get(tenantId, id);
   }
 }

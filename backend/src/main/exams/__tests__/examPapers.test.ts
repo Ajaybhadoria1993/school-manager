@@ -188,15 +188,18 @@ describe("changing and taking away a paper", () => {
     expect((await add([s.class5.id], [paper(s.maths, "2026-09-15")], again.id)).status).toBe(201);
   });
 
-  it("a class taken off the school is taken off its papers, and a paper left for nobody goes", async () => {
+  it("a class made inactive keeps its place on the papers: nothing of an exam is thrown away", async () => {
     const { s, paper, add, detail } = await setUp();
     const eight = await addClass(s.token, "Class 8");
     await add([s.class5.id, eight.id], [paper(s.maths, "2026-09-15")]);
     await add([eight.id], [paper(s.english, "2026-09-16")]);
-    expect((await request(app).delete(`/api/v1/academics/classes/${eight.id}`).set(auth(s.token))).status).toBe(200);
-    const left = (await detail()).papers as { subject: { name: string }; classes: { name: string }[] }[];
-    expect(left.map((p) => [p.subject.name, p.classes.map((c) => c.name)])).toEqual([["Mathematics", ["Class 5"]]]);
-    expect(await detail()).toMatchObject({ paperCount: 1, classCount: 1 });
+    expect((await request(app).post(`/api/v1/academics/classes/${eight.id}/deactivate`).set(auth(s.token))).status).toBe(200);
+    expect((await request(app).delete(`/api/v1/academics/classes/${eight.id}`).set(auth(s.token))).status).toBe(404);
+    const kept = (await detail()).papers as { subject: { name: string }; classes: { name: string }[] }[];
+    expect(kept.map((p) => [p.subject.name, p.classes.map((c) => c.name)])).toEqual([
+      ["Mathematics", ["Class 5", "Class 8"]],
+      ["English", ["Class 8"]],
+    ]);
   });
 
   it("is changed only by the people who run the school", async () => {

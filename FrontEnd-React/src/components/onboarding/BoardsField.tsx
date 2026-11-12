@@ -3,11 +3,10 @@ import { Button } from "../ui/Button";
 import { Field } from "../ui/Field";
 import { Input } from "../ui/Input";
 import { MultiSelect, Select } from "../ui/Select";
-import { BOARDS, MAX_BOARDS, MEDIUMS, OTHER_CHOICE, STATE_BOARDS, STATE_BOARD_CHOICE, boardLabel } from "../../constants/schoolOptions";
-import { copyPlan, syncPlans } from "../../utils/mediumPlans";
-import type { BoardDraft, BoardEntry, MediumPlanDraft } from "../../types";
+import { BOARDS, MAX_BOARDS, MEDIUMS, OTHER_CHOICE, STATE_BOARDS, STATE_BOARD_CHOICE } from "../../constants/schoolOptions";
+import { syncPlans } from "../../utils/mediumPlans";
+import type { BoardDraft, BoardEntry } from "../../types";
 import { PAGE_GRID } from "../students/form/formGrid";
-import { MediumPlanCard } from "./MediumPlanCard";
 import type { FieldErrors } from "./useFormValues";
 
 export const emptyBoard = (): BoardDraft => ({ board: "", stateBoard: "", otherBoard: "", affiliationNumber: "", mediums: [], plans: [] });
@@ -16,8 +15,8 @@ export const emptyBoard = (): BoardDraft => ({ board: "", stateBoard: "", otherB
  * The boards a school follows, each with its own medium(s) and its own affiliation number: CBSE in English,
  * the M.P. Board in Hindi and English. One row to begin with; "Add another board" adds more. A "State Board"
  * row also asks which one, an "Other" row asks its name, and a board (or state board) already taken by
- * another row is greyed out in the list. Every medium chosen opens its own card, right under the board: its
- * classes, sections and seats, and its timing.
+ * another row is greyed out in the list. Every medium chosen gets its own plan (its classes, sections, seats and
+ * timing), which is filled in on the next screen, Class Sections.
  */
 export function BoardsField({
   value,
@@ -36,12 +35,6 @@ export function BoardsField({
     onChange(rows.map((entry, i) => (i === index ? { ...entry, ...patch } : entry)));
   const others = (index: number) => rows.filter((_, i) => i !== index);
 
-  // What a medium is called: its board too, once the school follows more than one.
-  const titleOf = (entry: BoardDraft, plan: MediumPlanDraft) => `${rows.length > 1 && entry.board ? `${boardLabel(entry)} · ` : ""}${plan.medium} Medium`;
-  const updatePlan = (boardIndex: number, planIndex: number, next: MediumPlanDraft) =>
-    update(boardIndex, { plans: rows[boardIndex].plans.map((plan, j) => (j === planIndex ? next : plan)) });
-  // Every medium of the form, to start another one from its answers.
-  const allPlans = rows.flatMap((entry, b) => entry.plans.map((plan, p) => ({ value: `${b}.${p}`, label: titleOf(entry, plan), plan })));
 
   return (
     <div className="space-y-4">
@@ -139,30 +132,6 @@ export function BoardsField({
               </Field>
             </div>
 
-            {entry.plans.length > 0 && (
-              <div className="mt-4 space-y-3">
-                {entry.plans.map((plan, p) => (
-                  <MediumPlanCard
-                    key={plan.medium}
-                    title={titleOf(entry, plan)}
-                    plan={plan}
-                    prefix={`boards.${i}.plans.${p}`}
-                    errors={errors}
-                    copyFrom={allPlans.filter((other) => other.value !== `${i}.${p}`).map(({ value, label }) => ({ value, label }))}
-                    onChange={(next) => updatePlan(i, p, next)}
-                    onCopy={(value) => {
-                      const source = allPlans.find((other) => other.value === value);
-                      if (source) updatePlan(i, p, copyPlan(source.plan, plan.medium));
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-            {error("plans") && (
-              <p role="alert" className="mt-3 text-xs font-medium text-danger">
-                {error("plans")}
-              </p>
-            )}
           </div>
         );
       })}

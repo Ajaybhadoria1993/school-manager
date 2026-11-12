@@ -85,6 +85,8 @@ export const listClassesQuerySchema = z
       .optional()
       .transform((value) => value || undefined),
     departmentId: z.union([objectId, z.literal("none")]).optional(),
+    /** The classes a school works with are the active ones; the inactive ones are asked for, to be made active again. */
+    status: z.enum(["active", "inactive", "all"]).default("active"),
     seatsMin: optionalCount(MAX_CLASS_CAPACITY),
     seatsMax: optionalCount(MAX_CLASS_CAPACITY),
     sort: z.enum(["order", "name", "seats"]).default("order"),
@@ -133,6 +135,20 @@ export const updateSectionSchema = z
   .partial()
   .refine(hasAChange, NOTHING_TO_CHANGE);
 
+/**
+ * "Divide this class into sections": `count` sections (A, B...), each with `capacity` seats and a room, and the students that sit in the
+ * class are shared out between them. At least two (one section is no division).
+ */
+export const divideClassSchema = z.object({
+  count: z
+    .number({ required_error: "Choose how many sections", invalid_type_error: "Choose how many sections" })
+    .int("Choose how many sections")
+    .min(2, "A class is divided into at least 2 sections")
+    .max(MAX_NEW_SECTIONS, `You can add up to ${MAX_NEW_SECTIONS} sections at once`),
+  capacity: capacity.refine((v) => v !== null, "Enter the seats"),
+  rooms: z.array(room.nullable()).max(MAX_NEW_SECTIONS).optional(),
+});
+
 export const quickSetupSchema = z
   .object({
     fromClass: z.enum(CLASS_LEVELS),
@@ -154,4 +170,5 @@ export type UpdateClassInput = z.infer<typeof updateClassSchema>;
 export type CreateSectionInput = z.infer<typeof createSectionSchema>;
 export type AcademicSettingsInput = z.infer<typeof academicSettingsSchema>;
 export type UpdateSectionInput = z.infer<typeof updateSectionSchema>;
+export type DivideClassInput = z.infer<typeof divideClassSchema>;
 export type QuickSetupInput = z.infer<typeof quickSetupSchema>;

@@ -3,6 +3,7 @@ import { ApiError } from "../../../utils/ApiError";
 import { AcademicYear } from "../../academics/models/AcademicYear";
 import { SchoolClass } from "../../academics/models/SchoolClass";
 import { Section } from "../../academics/models/Section";
+import { NOT_INACTIVE } from "../../academics/models/status";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { isViewing } from "../../academics/services/viewedYear";
 
@@ -58,19 +59,24 @@ export async function resolveUnit(tenantId: string, classId: string, sectionId: 
 /** Every unit of the school's running year, in teaching order: each section, and each class that has none. */
 export async function activeUnits(tenantId: string): Promise<Unit[]> {
   const school = new Types.ObjectId(tenantId);
-  return unitsOf(school, await AcademicYear.findOne({ tenantId: school, status: "active" }).select("name").lean());
+  return unitsOf(school, await AcademicYear.findOne({ tenantId: school, status: "active" }).select("name").lean(), false);
 }
 
 /** The same for the year a screen is about: the running year, or a past one the school is looking at (academics/services/viewedYear.ts). */
 export async function shownUnits(tenantId: string): Promise<Unit[]> {
   const school = new Types.ObjectId(tenantId);
-  return unitsOf(school, await AcademicYearService.shownYear(school));
+  const year = await AcademicYearService.shownYear(school);
+  return unitsOf(school, year, year !== null && year.status !== "active");
 }
 
-async function unitsOf(school: Types.ObjectId, year: { _id: Types.ObjectId; name: string } | null): Promise<Unit[]> {
+/**
+ * The classes the school runs, with their sections. A class made inactive is left out, except when a past year is looked at: its
+ * students and timetable were in it then.
+ */
+async function unitsOf(school: Types.ObjectId, year: { _id: Types.ObjectId; name: string } | null, withInactive: boolean): Promise<Unit[]> {
   if (!year) return [];
   const [classes, sections] = await Promise.all([
-    SchoolClass.find({ tenantId: school }).sort({ order: 1, _id: 1 }).select("name order").lean(),
+    SchoolClass.find({ tenantId: school, ...(withInactive ? {} : NOT_INACTIVE) }).sort({ order: 1, _id: 1 }).select("name order").lean(),
     Section.find({ tenantId: school, academicYearId: year._id }).select("name classId").lean(),
   ]);
   const byClass = new Map<string, typeof sections>();

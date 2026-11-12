@@ -119,7 +119,7 @@ export interface ClassGroup {
 
 /**
  * The classes laid out wing by wing, in the order the API sends them. A school that uses no departments gets one
- * group without a heading. Departments with no class yet are kept, so they can be renamed, filled or deleted.
+ * group without a heading. Departments with no class yet are kept, so they can be renamed, filled or made inactive.
  */
 export function groupClasses(structure: AcademicStructure): ClassGroup[] {
   const groups: ClassGroup[] = structure.departments.map((department, position) => ({
@@ -195,4 +195,28 @@ export function departmentNameRows(departments: readonly DepartmentItem[], curre
 export function toneOf(structure: Pick<AcademicStructure, "departments">, departmentId: string | null): Tone {
   const position = departmentId ? structure.departments.findIndex((d) => d.id === departmentId) : -1;
   return position >= 0 ? departmentTone(position) : "navy";
+}
+
+/**
+ * How many of `students` go into each of `count` sections when they are shared out evenly: the first sections get one more when it does
+ * not divide, so 41 students in 2 sections is 21 and 20. The server shares them the same way (`splitEvenly` in
+ * backend/src/main/academics/services/divide.service.ts): the screen shows these numbers before anything is changed.
+ */
+export function splitEvenly(students: number, count: number): number[] {
+  const base = Math.floor(students / count);
+  const extra = students % count;
+  return Array.from({ length: count }, (_, i) => base + (i < extra ? 1 : 0));
+}
+
+/**
+ * Dividing a class into `count` sections: how the students would sit. With a `newcomer` (a full class, and one more student being
+ * admitted) the new student goes to the section with the fewest students (the first when equal), so every section needs seats for the
+ * students it gets and that section for one more. `minSeats` is the least each section can have for that (at least 1);
+ * `newcomerIn` is -1 when there is no newcomer.
+ */
+export function divisionPlan(enrolled: number, count: number, newcomer = true): { sizes: number[]; newcomerIn: number; minSeats: number } {
+  const sizes = splitEvenly(enrolled, count);
+  if (!newcomer) return { sizes, newcomerIn: -1, minSeats: Math.max(1, sizes[0]) };
+  const newcomerIn = sizes.indexOf(Math.min(...sizes));
+  return { sizes, newcomerIn, minSeats: Math.max(sizes[0], sizes[newcomerIn] + 1) };
 }

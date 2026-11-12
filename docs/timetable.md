@@ -107,7 +107,7 @@ classes are left alone. Rows changed by hand in the old dialog are made again fr
 read) gives them the department's classes **at the time they are read**, so a class moved in or out follows at once. A department timing
 with no rows is its **holiday**: `resolveSchedule` returns no timing when the winning one has no period, so the class has no school that day.
 They are changed only as the department's week (a PATCH or DELETE of one of them on `/schedules/:id` is refused, `SCHEDULE_OF_DEPARTMENT`),
-kept when a class is deleted, and deleted with their department. A school may have up to 60 timings. Known limit: moving a class to another
+kept when a class or its department is made inactive (nothing is deleted: a class and a department only become inactive, and come back as they were). A school may have up to 60 timings. Known limit: moving a class to another
 department changes its timing without a check, so a lesson in a period the new timing lacks shows red on its grid (and Publish refuses it).
 
 **A class's own days** (`PUT /timetable/class-day`, `ScheduleService.replaceClassDay`, 2026-11-03): `{ classId, days: [{ day, slots }], removeLessons? }`.

@@ -4,12 +4,14 @@ import { TimetableCleanup } from "../../timetable/services/cleanup";
 import { MAX_SECTIONS_PER_CLASS } from "../constants";
 import { SchoolClass } from "../models/SchoolClass";
 import { Section } from "../models/Section";
+import { isInactive } from "../models/status";
 import type { CreateSectionInput, UpdateSectionInput } from "../schemas/academics.schemas";
 import { AcademicSettingsService } from "./academicSettings.service";
 import { AcademicYearService } from "./academicYear.service";
-import { assertSectionFits, seatsHeldBySections } from "./seats";
+import { classInactive } from "./guards";
+import { assertSectionFits, assertSeatsHold, seatsHeldBySections } from "./seats";
 import { isDuplicateKey, toSectionDto, type SectionDto } from "./shared";
-import { studentCountsBySection } from "./usage";
+import { studentCountsBySection, studentsInClassItself } from "./usage";
 
 const NOT_FOUND = () => ApiError.notFound("Section not found", "SECTION_NOT_FOUND");
 const EXISTS = (name: string) => ApiError.conflict(`This class already has a section called "${name}".`, "SECTION_EXISTS");
@@ -43,15 +45,29 @@ async function assertCurrentYear(tenantId: string, sectionYear: { toString(): st
 
 export class SectionService {
   static async create(tenantId: string, classId: string, input: CreateSectionInput): Promise<SectionDto> {
-    const klass = await SchoolClass.findOne({ _id: classId, tenantId }).select("name capacity").lean();
+    const klass = await SchoolClass.findOne({ _id: classId, tenantId }).select("name capacity status").lean();
     if (!klass) throw ApiError.notFound("Class not found", "CLASS_NOT_FOUND");
+    if (isInactive(klass)) throw classInactive(klass.name);
     assertDetails((await AcademicSettingsService.get(tenantId)).sectionDetailsRequired, input.capacity ?? null, input.room ?? null);
     // A new section is for the school's current session; the limit and the "already exists" check are per session too.
     const academicYearId = await AcademicYearService.activeYearId(tenantId);
     // Its seats come out of the class's seats, with those of the sections the class already has.
     assertSectionFits(klass.name, klass.capacity, await seatsHeldBySections(tenantId, classId, academicYearId), input.capacity);
-    if ((await Section.countDocuments({ tenantId, classId, academicYearId })) >= MAX_SECTIONS_PER_CLASS) {
+    const existing = await Section.countDocuments({ tenantId, classId, academicYearId });
+    if (existing >= MAX_SECTIONS_PER_CLASS) {
       throw ApiError.conflict(`A class can have up to ${MAX_SECTIONS_PER_CLASS} sections.`, "LIMIT_REACHED");
+    }
+    // The FIRST section of a class that has students sitting in the class itself would leave them in no section: the class is divided
+    // instead, which makes the sections and shares those students out between them (divide.service.ts).
+    if (existing === 0) {
+      const inClass = await studentsInClassItself(tenantId, classId);
+      if (inClass > 0) {
+        throw ApiError.conflict(
+          `${klass.name} has ${inClass} student${inClass === 1 ? "" : "s"} who ${inClass === 1 ? "is" : "are"} not in a section. Divide the class into sections instead: the students are shared out between them.`,
+          "CLASS_HAS_UNSECTIONED_STUDENTS",
+          [{ path: "classId", message: `${inClass} ${inClass === 1 ? "student is" : "students are"} not in a section`, enrolled: inClass }]
+        );
+      }
     }
     try {
       const section = await Section.create({
@@ -73,20 +89,21 @@ export class SectionService {
   static async update(tenantId: string, id: string, input: UpdateSectionInput): Promise<SectionDto> {
     // The section as it will be after this change must have what the school requires; a section that never had its seats or
     // room (made before the rule, or in bulk with its class) is completed the first time it is changed.
-    const current = await Section.findOne({ _id: id, tenantId }).select("capacity room academicYearId classId").lean();
+    const current = await Section.findOne({ _id: id, tenantId }).select("name capacity room academicYearId classId").lean();
     if (!current) throw NOT_FOUND();
+    const klass = await SchoolClass.findOne({ _id: current.classId, tenantId }).select("name capacity status").lean();
+    if (klass && isInactive(klass)) throw classInactive(klass.name);
     await assertCurrentYear(tenantId, current.academicYearId);
     assertDetails(
       (await AcademicSettingsService.get(tenantId)).sectionDetailsRequired,
       input.capacity !== undefined ? input.capacity : (current.capacity ?? null),
       input.room !== undefined ? input.room : (current.room ?? null)
     );
-    // New seats must fit in the class with the other sections' seats; a change of anything else never trips this.
-    if (input.capacity != null) {
-      const klass = await SchoolClass.findOne({ _id: current.classId, tenantId }).select("name capacity").lean();
-      if (klass) {
-        assertSectionFits(klass.name, klass.capacity, await seatsHeldBySections(tenantId, current.classId.toString(), current.academicYearId, id), input.capacity);
-      }
+    // New seats must fit in the class with the other sections' seats, and hold the students already in the section; a change of anything
+    // else never trips this (a section that was filled past its seats "anyway" can still change its room).
+    if (input.capacity != null && klass) {
+      assertSectionFits(klass.name, klass.capacity, await seatsHeldBySections(tenantId, current.classId.toString(), current.academicYearId, id), input.capacity);
+      assertSeatsHold(`${klass.name} - ${current.name}`, input.capacity, (await studentCountsBySection(tenantId, [id])).get(id) ?? 0, "SECTION_SEATS_BELOW_STUDENTS");
     }
 
     const changes: Record<string, unknown> = {};
@@ -106,8 +123,10 @@ export class SectionService {
 
   /** A section with students cannot be deleted (the students module reports that, see usage.ts). */
   static async remove(tenantId: string, id: string): Promise<void> {
-    const section = await Section.findOne({ _id: id, tenantId }).select("academicYearId").lean();
+    const section = await Section.findOne({ _id: id, tenantId }).select("academicYearId classId").lean();
     if (!section) throw NOT_FOUND();
+    const klass = await SchoolClass.findOne({ _id: section.classId, tenantId }).select("name status").lean();
+    if (klass && isInactive(klass)) throw classInactive(klass.name);
     await assertCurrentYear(tenantId, section.academicYearId);
 
     const students = (await studentCountsBySection(tenantId, [id])).get(id) ?? 0;
