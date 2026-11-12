@@ -29,9 +29,9 @@ const arrowLink =
 
 /**
  * One class of School Class (`/school-class/:classId`), in the same plain look as the other pages: the name and numbers of the class, the
- * classes before and after it, a card for each section, and the students. A class split into sections **asks which section first**:
- * the students appear once a section (or All sections) is picked, so the page never lists a whole class by accident. A class without
- * sections shows its students at once. The picked section (`?section=`, "all" for everyone), the search, the page and the page size are
+ * classes before and after it, a card for each section, and the students. A class split into two or more sections **asks which section
+ * first**: the students appear once a section (or All sections) is picked, so the page never lists a whole class by accident. A class
+ * without sections, or with just ONE (it is the whole class: nothing to pick, no card), shows its students at once. The picked section (`?section=`, "all" for everyone), the search, the page and the page size are
  * in the address. The numbers and sections of the class come from the server (`/students/class-overview?classId=`), the students from
  * `/students`, filtered by the server; picking a section or searching asks only for the students. The class teacher is named beside the
  * title (N/A when there is none); **Timetable & teachers** opens the class's own week, timing and teachers (2026-11-04: the teachers box
@@ -49,11 +49,14 @@ export default function SchoolClassDetailPage() {
   const overview = overviewRes.data?.data.classes[0];
 
   const hasSections = (overview?.sections.length ?? 0) > 0;
+  // A class with ONE section has nothing to pick: that section is the whole class, so its students are listed at once and no section
+  // card is shown. `only` is that section; it is still the one Add student, the class teacher and the timetable go by.
+  const only = overview?.sections.length === 1 ? overview.sections[0] : undefined;
   // "" while nothing is chosen, "all" for the whole class, or one of this class's sections (a wrong id in the address is nothing chosen).
   const wanted = params.get("section") ?? "";
   const picked = wanted === ALL_SECTIONS ? ALL_SECTIONS : (overview?.sections.find((s) => s.id === wanted)?.id ?? "");
-  const section = overview?.sections.find((s) => s.id === picked);
-  const showStudents = !!overview && (!hasSections || picked !== "");
+  const section = only ? undefined : overview?.sections.find((s) => s.id === picked);
+  const showStudents = !!overview && (!hasSections || !!only || picked !== "");
   const q = params.get("q") ?? "";
   const page = Math.max(1, Number(params.get("page")) || 1);
   const limitParam = Number(params.get("limit"));
@@ -144,9 +147,11 @@ export default function SchoolClassDetailPage() {
   const after = at >= 0 && at < structure.classes.length - 1 ? structure.classes[at + 1] : undefined;
   const where = section ? `${overview.name} - ${section.name}` : overview.name;
   const exportSearch = new URLSearchParams({ class: classId, ...(section ? { section: section.id } : {}) }).toString();
-  const headTeacher = section ? section.classTeacher : overview.classTeacher;
+  // The section the page's buttons go by: the picked one, or the only one of the class.
+  const active = section ?? only;
+  const headTeacher = active ? active.classTeacher : overview.classTeacher;
   // Only this class's timetable, timing and teachers (on the picked section; a class with sections opens on its first one).
-  const timetableTo = `/school-class/${classId}/timetable${section ? `?section=${section.id}` : ""}`;
+  const timetableTo = `/school-class/${classId}/timetable${active ? `?section=${active.id}` : ""}`;
 
   return (
     <div className="space-y-6">
@@ -163,7 +168,7 @@ export default function SchoolClassDetailPage() {
         crumbs={[{ label: "Classes", to: "/school-class" }]}
         info={
           // The class teacher of the class (no sections) or of the picked section; with no section picked each section's card says its own.
-          !hasSections || section ? (
+          !hasSections || active ? (
             <Badge tone={headTeacher ? "primary" : "neutral"} className="gap-1.5">
               <UserRound className="size-3.5" aria-hidden />
               Class teacher: {headTeacher?.name ?? "N/A"}
@@ -186,9 +191,9 @@ export default function SchoolClassDetailPage() {
               <CalendarDays className="size-4" aria-hidden />
               Timetable &amp; teachers
             </Link>
-            {(!hasSections || section) && (
+            {(!hasSections || active) && (
               // The class's attendance, diary and tests (docs/parent-teacher-flow.md), for the people who run the school.
-              <Link to={`/class-work/${classId}${section ? `?section=${section.id}` : ""}`} className={outlineLink}>
+              <Link to={`/class-work/${classId}${active ? `?section=${active.id}` : ""}`} className={outlineLink}>
                 <NotebookPen className="size-4" aria-hidden />
                 Class work
               </Link>
@@ -198,7 +203,7 @@ export default function SchoolClassDetailPage() {
               Export
             </Link>
             {!readOnly && (
-              <Link to={admitLink({ classId, sectionId: section?.id })} state={cameFrom(`${here.pathname}${here.search}`, overview.name)} className={plainLink}>
+              <Link to={admitLink({ classId, sectionId: active?.id })} state={cameFrom(`${here.pathname}${here.search}`, overview.name)} className={plainLink}>
                 <UserPlus className="size-4" aria-hidden />
                 Add student
               </Link>
@@ -207,7 +212,7 @@ export default function SchoolClassDetailPage() {
         }
       />
 
-      {hasSections && <SectionPicker overview={overview} tone={tone} picked={picked} to={sectionTo} />}
+      {hasSections && !only && <SectionPicker overview={overview} tone={tone} picked={picked} to={sectionTo} />}
 
       {!showStudents ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border bg-surface px-6 py-10 text-center">
@@ -280,7 +285,7 @@ export default function SchoolClassDetailPage() {
                 title={`No students in ${where} yet`}
                 actions={
                   readOnly ? undefined : (
-                    <Link to={admitLink({ classId, sectionId: section?.id })} state={cameFrom(`${here.pathname}${here.search}`, overview.name)} className={plainLink}>
+                    <Link to={admitLink({ classId, sectionId: active?.id })} state={cameFrom(`${here.pathname}${here.search}`, overview.name)} className={plainLink}>
                       <UserPlus className="size-4" aria-hidden />
                       Add a student
                     </Link>

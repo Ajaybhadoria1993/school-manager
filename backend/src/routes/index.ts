@@ -14,6 +14,7 @@ import examRoutes from "../main/exams/routes/v1/exams.routes";
 import attendanceRoutes from "../main/attendance/routes/v1/attendance.routes";
 import dashboardRoutes from "../main/dashboard/routes/v1/dashboard.routes";
 import transportRoutes from "../main/transport/routes/v1/transport.routes";
+import feesRoutes from "../main/fees/routes/v1/fees.routes";
 import permissionRoutes from "../main/permissions/routes/v1/permissions.routes";
 import publicRoutes from "../main/tenants/routes/v1/public.routes";
 
@@ -42,6 +43,8 @@ router.use("/attendance", attendanceRoutes);
 router.use("/dashboard", dashboardRoutes);
 // Transport: the school's vehicles, drivers and attendants, and routes with their stops.
 router.use("/transport", transportRoutes);
+// Fees (set-up only): the fee heads, each class's fee chart for a session, the concessions and the fee rules.
+router.use("/fees", feesRoutes);
 // What each kind of person of the school (Receptionist, Teacher, Parent...) may do: the Permissions page.
 router.use("/permissions", permissionRoutes);
 // What needs no sign-in: a school's logo, for an image tag.

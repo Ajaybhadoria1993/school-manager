@@ -104,7 +104,8 @@ describe("the Add student form, as Manage fields shows it", () => {
     open();
     const aadhaar = rowOf("Academic", "aadhaarNumber");
     expect(within(aadhaar).getByRole("switch", { name: "Aadhaar number asked" })).toBeChecked();
-    expect(within(aadhaar).getByRole("switch", { name: "Aadhaar number mandatory" })).toBeChecked();
+    // A new school asks for it and does not insist on it.
+    expect(within(aadhaar).getByRole("switch", { name: "Aadhaar number mandatory" })).not.toBeChecked();
     const blood = rowOf("Personal info", "bloodGroup");
     expect(within(blood).getByRole("switch", { name: "Blood group asked" })).toBeChecked();
     expect(within(blood).getByRole("switch", { name: "Blood group mandatory" })).not.toBeChecked();
@@ -114,9 +115,13 @@ describe("the Add student form, as Manage fields shows it", () => {
     expect(within(religion).queryByRole("switch", { name: "Religion mandatory" })).not.toBeInTheDocument();
   });
 
-  it("Mandatory is optional again with one press, for the form and the Excel alike (the column stays)", async () => {
+  it("Mandatory is one press either way, for the form and the Excel alike (the column stays when it is optional again)", async () => {
     const { latest, user } = open();
-    await user.click(within(rowOf("Academic", "aadhaarNumber")).getByRole("switch", { name: "Aadhaar number mandatory" }));
+    const aadhaar = () => within(rowOf("Academic", "aadhaarNumber")).getByRole("switch", { name: "Aadhaar number mandatory" });
+    expect(latest.current.rules.aadhaarNumber).toBe("optional");
+    await user.click(aadhaar());
+    expect(latest.current.rules.aadhaarNumber).toBe("required");
+    await user.click(aadhaar());
     expect(latest.current.rules.aadhaarNumber).toBe("optional");
     expect(latest.current.rows.find((r) => r.key === "aadhaarNumber")?.on).toBe(true);
     await user.click(within(rowOf("Personal info", "bloodGroup")).getByRole("switch", { name: "Blood group mandatory" }));

@@ -68,7 +68,7 @@ AdmissionCounter (one per school and academic year: the running number behind ad
 | `address` | `line1`, `line2` (area or landmark), `city`, `state` (from `INDIAN_STATES`), `pincode` (6 digits); each part null when not given (whether it is needed is the school's choice) |
 | `bloodGroup`, `category` | A+ ... O-; General, OBC, SC, ST, EWS, Prefer not to say |
 | `previousSchool` | `{ name, lastClass, tcNumber, tcDate }`; once anything is filled the name is required |
-| `aadhaarNumber` | 12 digits with Verhoeff's check digit (spaces and dashes typed between are dropped; the message says what is wrong: "The Aadhaar number has 12 digits", "An Aadhaar number does not start with 0 or 1", or "This Aadhaar number is not valid: its last digit (the check digit) does not match the other digits", the last for 12 digits that start right but whose last digit does not fit, like the random numbers of a dummy file), **stored as it is** (the school chose to see it whole); unique in the school (`AADHAAR_TAKEN` names whose it is) |
+| `aadhaarNumber` | any 12 digits (2026-11-12: spaces and dashes typed between are dropped; the only message is "The Aadhaar number has 12 digits". There is NO first-digit rule and NO Verhoeff check digit any more: a school types what is on the card, a dummy file has made-up numbers, and only UIDAI can verify one. The box takes digits only and stops at 12). **Optional by default** (asked, may be left empty: a child may have no Aadhaar yet and an admission cannot be refused for it); a school can make it mandatory on Manage fields. **Stored as it is** (the school chose to see it whole); unique in the school (`AADHAAR_TAKEN` names whose it is) |
 | `samagraId`, `apaarId`, `pen`, `srNumber` | 8 or 9 digits; 12 digits; 11 digits (UDISE+); text up to 30 |
 | `religion`, `disability` | from `RELIGIONS` and `DISABILITIES` ("None" first) |
 | `nationality`, `emergencyMobile`, `medicalNotes` | text up to 40; 10 digits starting 6 to 9; text up to 300 |
@@ -270,7 +270,11 @@ or hidden, never required.
 - **The school's own fields** (a house, a bus pass number...: *Add your own field* on Manage fields or on the last step of Add student). Each has a name (2 to 40
   characters, not one of the list's names, once), a kind (`CUSTOM_FIELD_TYPES`: text up to 200, a number, a day 1900 to 2100, yes /
   no, a list of 1 to 30 choices) fixed once added (the answers kept would not fit another kind; the server refuses a change), and
-  needed / optional / not asked like the others (a yes / no is never needed). Up to 20. Keys are `c_` and letters and digits, made by
+  needed / optional / not asked like the others (a yes / no is never needed), and (2026-11-12) the classes it is asked for: every class, or
+  `classNumbers: [11, 12]` ("Class 11 and 12 only"; numbers 1 to 12, a stream or section does not matter, `classNumber()`). A field for some
+  classes only is not shown, not needed and not checked for any other class: the form narrows `form.custom` by the class chosen
+  (`customForClass`; before a class is picked none of them), the server's `needsForClass` makes it optional for another class, a bulk row
+  of another class is not told it lacks it, the student's page lists it for those classes and for any student with an answer. Up to 20. Keys are `c_` and letters and digits, made by
   the screen. They are asked on Add student and Edit (the card *Your school's own details*), shown on the student's page, checked by
   the server with the form's words (`customIssues`: "Choose the House", "Choose the House from the list", "Enter a number for
   Height (cm)", "This is not one of your school's fields"), and are columns of the export and its preview (a day as DD-MM-YYYY, a tick
@@ -328,7 +332,7 @@ or hidden, never required.
 | `GET /import/template` | the sample file `.xlsx`, made with the school's own classes and sections | writers |
 | `POST /import/read` | `multipart/form-data`, one `file` (`.xlsx` or `.csv`, up to 5 MB, up to 1000 rows): `{ fileName, sheetName, headerRow, headers, rows: [{ row, cells }] }`. Nothing is kept | writers |
 | `POST /import/match` | `{ rows: [{ row, firstName, lastName, dateOfBirth, mobile?, admissionNumber?, aadhaarNumber? }] }`, 1 to 1000 rows: which rows of a file are students the school already has, in ONE request, before anything is uploaded. `{ matches: [{ row, kind, student: { id, name, admissionNumber, dateOfBirth, className, sectionName, inactive } }] }`, only the rows that meet somebody; nothing is written. `kind`: `same` (the same child), `maybe` (same name and birthday, another parent's mobile), `number` / `aadhaar` (the admission number, or the Aadhaar number, of ANOTHER child). 400 for a bad day or more than 1000 rows | writers |
-| `POST /import` | `{ dryRun, allowOverCapacity, rows: [{ row, admissionNumber?, student }] }`, 1 to 100 rows: `{ dryRun, results: [{ row, ok, errors, warnings, student? }], ok, failed }` | writers |
+| `POST /import` | `{ dryRun, allowOverCapacity, rows: [{ row, admissionNumber?, student }] }`, 1 to 100 rows: `{ dryRun, results: [{ row, ok, errors, warnings, student? }], ok, failed, seatsRaised }`. With `allowOverCapacity` (not a check) a section left with more students than seats gets as many seats as it has students, and its class as many as its sections hold when they no longer fit: `seatsRaised: [{ classId, className, sectionId, sectionName, from, to, classFrom, classTo }]` (`classFrom/classTo` null when the class was not changed; empty otherwise) | writers |
 | `POST /deactivate` | `{ ids, reason? }` (1 to 200; the reason up to 200 letters): makes active students inactive. `{ deactivated, skipped }` | writers |
 | `GET /inactive` | the inactive students: `q`, `page`, `limit` (1 to 50, default 20); newest first. A row has the student, the class and section they were in, the roll number they had, the primary parent, `reason`, `inactiveAt` and `inactiveBy: { name, role }` | writers |
 | `POST /reactivate` | `{ ids, placement?: { classId, sectionId? } }`: active again, in their class and section. A student with no place in the running year (they left in an earlier year) needs the `placement`; without it they are left as they are and counted in `needsPlacement`. `{ reactivated, skipped, rollNumbersLost, needsPlacement? }` | writers |
@@ -485,8 +489,9 @@ row; it checks each row with the admission form's own `checkStudentForm`. The **
      admission number, Aadhaar number or roll number twice in the file is found too (the same name and birthday twice with another
      parent's mobile is a note on the later row, "Maybe the same student as row 4"). Tabs show all rows, the ones to fix or the ready ones; **Need a
      fix** keeps the rows it opened with while they are fixed (a fixed row shows Ready there until the tab is opened again). The rows to
-     fix can be downloaded as CSV. Seats are counted for the whole file on screen; sections that would go over ask the person
-     (`allowOverCapacity`). Nothing is sent while the table is changed (only a new field of the school's own is saved).
+     fix can be downloaded as CSV. Seats are counted for the whole file on screen; a section that would go over is only TOLD (a note,
+     no question): everyone is admitted and the section's seats are raised to fit (2026-11-12: the upload always sends `allowOverCapacity: true`),
+     with the advice to divide the class into more sections. Nothing is sent while the table is changed (only a new field of the school's own is saved).
    - **students the school already has** are found when the file opens: ONE request (`POST /import/match`, all the rows, only what tells
      one child from another: the name, the birthday, the primary parent's mobile, the admission number, the Aadhaar number). A row whose
      student is already there (`same`) says **Already in your school** with who they are and where (name, admission number, class and
@@ -499,8 +504,8 @@ row; it checks each row with the admission form's own `checkStudentForm`. The **
      before and says so;
 3. *Done.* **Upload** admits the ready rows, 100 a request (`dryRun: false`); the list and the seats are refreshed once
    (`refreshAfterImport`). Admitted rows leave the table. A row the server refuses (a child already admitted, a taken admission
-   number, a full section) stays in the table with the server's reason (each result carries the refusal's `code`; a `SECTION_FULL` row
-   is ready again once the person says to go over the seats), and **Fix the N rows** goes back to it. The rows already admitted from the
+   number) stays in the table with the server's reason (each result carries the refusal's `code`), and **Fix the N rows** goes back to it. A full
+   section is no reason any more: the server admits everyone and raises the seats, and the Done card lists `seatsRaised` with "Recommended: divide ... into more sections". The rows already admitted from the
    file are still compared with the rows left ("The same student as row 4"). A failed request stops the run; Upload sends the rest.
    The API's `dryRun: true` (check without saving) is kept for other screens; this one uploads directly.
 

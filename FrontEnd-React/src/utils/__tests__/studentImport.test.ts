@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { STATES } from "../../constants/schoolOptions";
 import { GENDERS } from "../../constants/students";
 import { DEFAULT_FIELD_RULES, type CustomFieldDef, type FieldRules } from "../../constants/studentFields";
-import type { AcademicStructure, ClassItem, ExportColumn, ImportMatch } from "../../types";
+import type { AcademicStructure, ClassItem, ExportColumn, ImportMatch, SeatsRaised } from "../../types";
 import {
   ADMISSION_NUMBER_MESSAGE,
   alreadyOf,
@@ -16,6 +16,7 @@ import {
   fieldsOf,
   fileProblem,
   headerKey,
+  joinNames,
   labelOf,
   lookAlikes,
   maskDayInput,
@@ -23,6 +24,7 @@ import {
   matchNoteOf,
   matchProblemOf,
   matchClass,
+  mergeSeatsRaised,
   placeInSections,
   normaliseBloodGroup,
   normaliseCategory,
@@ -919,5 +921,37 @@ describe("files", () => {
     expect(fileProblem(file("big.csv", "x".repeat(2 * 1024 * 1024)), 1)).toBe("The file is bigger than 1 MB. Split it into smaller files.");
     expect(fileProblem(file("Students.XLSX"), 5)).toBeNull();
     expect(fileProblem(file("list.csv"), 5)).toBeNull();
+  });
+});
+
+describe("the seats an upload raised", () => {
+  const raised = (sectionId: string, from: number, to: number, classFrom: number | null = null, classTo: number | null = null): SeatsRaised => ({
+    classId: "c6",
+    className: "Class 6",
+    sectionId,
+    sectionName: sectionId.slice(-1),
+    from,
+    to,
+    classFrom,
+    classTo,
+  });
+
+  it("joins the parts of one upload: a section once, from the seats it had at first to the seats it has now", () => {
+    const first = [raised("c6-A", 30, 32), raised("c6-B", 30, 31)];
+    const next = [raised("c6-A", 32, 35, 70, 75)];
+    expect(mergeSeatsRaised(first, next)).toEqual([raised("c6-A", 30, 35, 70, 75), raised("c6-B", 30, 31)]);
+    // The class's seats too: from the first time the class grew to the last.
+    expect(mergeSeatsRaised([raised("c6-A", 30, 32, 60, 62)], [raised("c6-A", 32, 35, 62, 65)])).toEqual([raised("c6-A", 30, 35, 60, 65)]);
+    expect(mergeSeatsRaised([], [])).toEqual([]);
+    // Nothing is changed in what was given.
+    expect(first[0].to).toBe(32);
+  });
+
+  it("names classes in a sentence: each once, with 'and' before the last", () => {
+    expect(joinNames(["Class 6"])).toBe("Class 6");
+    expect(joinNames(["Class 6", "Class 6"])).toBe("Class 6");
+    expect(joinNames(["Class 6", "Class 7"])).toBe("Class 6 and Class 7");
+    expect(joinNames(["Class 6", "Class 7", "UKG", "Class 6"])).toBe("Class 6, Class 7 and UKG");
+    expect(joinNames([])).toBe("");
   });
 });

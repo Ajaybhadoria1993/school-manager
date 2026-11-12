@@ -1,6 +1,8 @@
 import { Plus, UsersRound } from "lucide-react";
 import { MAX_GUARDIANS } from "../../../constants/students";
 import { fieldId, type StudentForm } from "../../../hooks/useStudentForm";
+import { modeOf } from "../../../utils/fieldRules";
+import { freeRelation } from "../../../utils/students";
 import { Button } from "../../ui/Button";
 import { WithTip } from "../../ui/Hint";
 import { FormSection } from "./FormSection";
@@ -10,6 +12,9 @@ import { GuardianFields } from "./GuardianFields";
 export function GuardiansCard({ form, mode, index = 0 }: { form: StudentForm; mode: "admit" | "edit"; index?: number }) {
   const { guardians } = form.values;
   const problem = form.errorOf("guardians");
+  // A school that needs both parents has only the father and the mother to add: once both are there, there is no one else.
+  const onlyParents = modeOf(form.rules, "secondParent") === "required";
+  const canAdd = guardians.length < MAX_GUARDIANS && !(onlyParents && freeRelation(guardians) === "Guardian");
 
   return (
     <FormSection
@@ -19,8 +24,8 @@ export function GuardiansCard({ form, mode, index = 0 }: { form: StudentForm; mo
       tip="One parent is one record, however many children they have here: a brother or sister is linked to the same parent. The primary contact's mobile number will be their sign-in to the parent app later."
       action={
         mode === "admit" &&
-        guardians.length < MAX_GUARDIANS && (
-          <WithTip tip={`Add a second parent or another guardian (up to ${MAX_GUARDIANS}).`}>
+        canAdd && (
+          <WithTip tip={onlyParents ? "Add the father or the mother." : `Add a second parent or another guardian (up to ${MAX_GUARDIANS}).`}>
             <Button type="button" variant="outline" size="sm" onClick={form.addGuardian}>
               <Plus className="size-4" aria-hidden />
               Add another guardian

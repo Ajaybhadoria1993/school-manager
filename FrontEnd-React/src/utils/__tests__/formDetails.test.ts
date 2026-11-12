@@ -59,7 +59,8 @@ describe("the Add student form, step by step, as the form shows it", () => {
     expect(row(steps.personal.fixed, "addressArea")).toMatchObject({ control: "asked", asked: true, mandatory: true });
     expect(row(steps.academic.fixed, "admissionDate")).toMatchObject({ control: "asked", asked: false, mandatory: false });
     expect(row(steps.parents.fixed, "guardianOccupation")).toMatchObject({ control: "asked", asked: true, mandatory: true });
-    expect(row(steps.academic.asked, "aadhaarNumber")).toMatchObject({ control: "asked", asked: true, mandatory: true, movable: true, own: false });
+    // The Aadhaar number is asked and optional for a new school (a child may have none yet).
+    expect(row(steps.academic.asked, "aadhaarNumber")).toMatchObject({ control: "asked", asked: true, mandatory: false, movable: true, own: false });
   });
 
   it("a yes / no detail (RTE seat, BPL, an own tick) can be asked but never mandatory", () => {

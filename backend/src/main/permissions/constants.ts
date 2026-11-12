@@ -73,6 +73,14 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
     ],
   },
   {
+    key: "fees",
+    label: "Fees",
+    items: [
+      { key: "fees.view", label: "See the fee heads, each class's fee chart, the concessions and the fee rules", for: ["staff"] },
+      { key: "fees.manage", label: "Set up the fees: the fee heads, each class's fee chart, the concessions and the fee rules", for: ["staff"] },
+    ],
+  },
+  {
     key: "attendance",
     label: "Attendance",
     items: [
@@ -161,6 +169,7 @@ export const IMPLIES: Readonly<Record<string, string>> = {
   "classes.manage": "classes.view",
   "years.manage": "classes.view",
   "transport.manage": "transport.view",
+  "fees.manage": "fees.view",
 };
 
 /** The people who can do everything: no checkbox for them. */
@@ -204,7 +213,8 @@ export const DEFAULT_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
     "timetable.view",
   ],
   parent: ["calendar.view", "child.attendance", "child.timetable", "child.exams", "child.diary", "child.leave"],
-  accountant: ["dashboard.view", "students.view", "students.export", "calendar.view"],
+  // Fees are new: the accountant starts with them (the fee chart is their work), so nobody loses anything.
+  accountant: ["dashboard.view", "students.view", "students.export", "calendar.view", "fees.view", "fees.manage"],
   // Transport is new: the transport in-charge starts with it (nobody had it before, so nothing is taken away from anyone).
   transport: ["calendar.view", "transport.view", "transport.manage"],
   ...Object.fromEntries(PROFILES.filter((p) => p.kind === "staff" && p.key !== "accountant" && p.key !== "transport").map((p) => [p.key, SCHOOL_DEFAULT])),

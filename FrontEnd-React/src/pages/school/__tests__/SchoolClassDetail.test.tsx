@@ -6,11 +6,11 @@ import { RouterProvider, createMemoryRouter } from "react-router";
 import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
-import { fakeApi, type Call } from "../../../test/fakeApi";
-import { STRUCTURE, classOverviewFor, studentsFor } from "../../../test/schoolClass";
+import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
+import { ASHA, STRUCTURE, classOverviewFor, studentsFor } from "../../../test/schoolClass";
 import SchoolClassDetailPage from "../SchoolClassDetail";
 
-function openPage(path = "/school-class/c5") {
+function openPage(path = "/school-class/c5", extra: Record<string, Handler> = {}) {
   const calls = fakeApi({
     "GET /academics/structure": () => STRUCTURE,
     "GET /students/class-overview": (_body, query) => classOverviewFor(query),
@@ -19,6 +19,7 @@ function openPage(path = "/school-class/c5") {
     "GET /subjects/allotments": () => ({ unit: null, rows: [], siblings: [], totals: { periods: 0, available: null } }),
     "GET /staff/teachers": () => ({ items: [] }),
     "GET /subjects": () => ({ items: [] }),
+    ...extra,
   });
   const router = createMemoryRouter(
     [
@@ -133,6 +134,23 @@ describe("one class of School Class", () => {
     expect(screen.getByText("1 student · no sections · Primary")).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: /Sections of/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Which section's students?" })).not.toBeInTheDocument();
+  });
+
+  it("a class with ONE section needs no section card and asks nothing: its students are listed at once, and the buttons still use that section", async () => {
+    const gita = { ...ASHA, id: "s3", firstName: "Gita", lastName: "Nair", name: "Gita Nair", place: { ...ASHA.place!, classId: "c6", className: "Class 6", sectionId: "c6-A", sectionName: "A" } };
+    const { calls } = openPage("/school-class/c6", { "GET /students": (_body, query) => ({ ...studentsFor(query), items: [gita], total: 1 }) });
+    expect(await screen.findByText("Gita Nair")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: /Sections of/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Which section's students?" })).not.toBeInTheDocument();
+    // "Students of Class 6" and the count, with no "- A": the one section is the class.
+    expect(screen.getByRole("heading", { name: "Students of Class 61" })).toBeInTheDocument();
+    // The whole class is listed (the one section is all of it) ...
+    expect(lists(calls)).toHaveLength(1);
+    expect(lists(calls)[0].query).toContain("classId=c6");
+    expect(lists(calls)[0].query).not.toContain("sectionId");
+    // ... and a student is still admitted into that one section, and its class teacher is named.
+    expect(screen.getByRole("link", { name: "Add student" })).toHaveAttribute("href", "/school/students/new?class=c6&section=c6-A");
+    expect(screen.getByText("Class teacher: N/A")).toBeInTheDocument();
   });
 
   it("a class that is not in the school says so, with a way back", async () => {

@@ -25,6 +25,7 @@ import { formatDay } from "../../../utils/academicYear";
 import { cn } from "../../../utils/helpers";
 import { GuardianLogin } from "./GuardianLogin";
 import { MovesList } from "./MovesList";
+import { customFieldIsFor } from "../../../utils/fieldRules";
 import { ageText, avatarTone, formatAadhaar, formatMobile, placeLabel } from "../../../utils/students";
 import type { StudentDetail } from "../../../types";
 import { Card } from "../../ui/Card";
@@ -73,7 +74,8 @@ function ownAnswer(field: CustomFieldDef, answer: string | number | boolean | un
  * the school's own fields (`custom`: the ones asked, and any other this student has an answer for).
  */
 export function StudentOverview({ student, custom = [] }: { student: StudentDetail; custom?: CustomFieldDef[] }) {
-  const own = custom.filter((f) => f.mode !== "hidden" || student.custom?.[f.key] !== undefined);
+  // A field for some classes only (Subject group: Class 11 and 12) is listed for a student of those, and for any student who has an answer to it.
+  const own = custom.filter((f) => (f.mode !== "hidden" && customFieldIsFor(f, student.place?.className)) || student.custom?.[f.key] !== undefined);
   const t = TONES[avatarTone(student.admissionNumber)];
   const place = student.place;
   const a = student.address;

@@ -5,7 +5,7 @@ import { isCustomKey, type CustomFieldDef } from "../../constants/studentFields"
 import { IMPORT_ROWS_PER_PAGE, MAX_IMPORT_ROWS_PER_REQUEST } from "../../constants/students";
 import { useSampleDownload } from "../../hooks/useSampleDownload";
 import { useAppDispatch } from "../../redux/hooks";
-import { useGetStructureQuery } from "../../redux/api/academicsApi";
+import { refreshClass, useGetStructureQuery } from "../../redux/api/academicsApi";
 import {
   refreshAfterImport,
   studentsApi,
@@ -29,6 +29,7 @@ import {
   fieldDef,
   fieldsByColumn,
   lookAlikes,
+  mergeSeatsRaised,
   matchInputOf,
   matchNoteOf,
   matchProblemOf,
@@ -46,7 +47,7 @@ import {
   type PreparedRow,
   type RowProblem,
 } from "../../utils/studentImport";
-import type { ImportMatch, ImportSheet } from "../../types";
+import type { ImportMatch, ImportSheet, SeatsRaised } from "../../types";
 import { CustomFieldDialog } from "../../components/students/export/CustomFieldDialog";
 import { DoneCard, FileBar, ProgressCard, SeatWarning, StoppedNote } from "../../components/students/import/ImportPanels";
 import { ImportRowsTable, type ViewRow } from "../../components/students/import/ImportRowsTable";
@@ -149,7 +150,7 @@ export default function StudentImportPage() {
   const [checkFor, setCheckFor] = useState(0);
   const checked = useRef(0);
   const [admitted, setAdmitted] = useState<Admitted[]>([]);
-  const [lastRun, setLastRun] = useState<{ admitted: Admitted[] } | null>(null);
+  const [lastRun, setLastRun] = useState<{ admitted: Admitted[]; raised: SeatsRaised[] } | null>(null);
   const [filter, setFilter] = useState<RowFilter>("all");
   // The rows that needed a fix when "Need a fix" was opened: they stay in it while they are fixed (a fixed row shows Ready there).
   const [fixing, setFixing] = useState<ReadonlySet<number>>(() => new Set());
@@ -160,7 +161,6 @@ export default function StudentImportPage() {
   const [offer, setOffer] = useState<Offer | null>(null);
   const [busy, setBusy] = useState<{ done: number; total: number } | null>(null);
   const [stopped, setStopped] = useState<string | null>(null);
-  const [allowOver, setAllowOver] = useState(false);
   // The table was typed here, not read from a file: it can grow by rows, and its empty rows are waiting for a student.
   const [typed, setTyped] = useState(false);
   const [ask, setAsk] = useState<"upload" | "leave" | null>(null);
@@ -227,8 +227,8 @@ export default function StudentImportPage() {
   const wholeName = !!mapping && mapping.firstName === null && mapping.lastName === null && mapping.fullName !== null;
 
   /**
-   * Every problem of a row: the form's rules, the file as a whole, and what the server said at the last upload (a full section is no
-   * problem any more once the person said to go over the seats).
+   * Every problem of a row: the form's rules, the file as a whole, and what the server said at the last upload. A section's seats are
+   * never a problem: students past the last seat are admitted and the section's seats are raised to fit them.
    */
   const rows = placed.map((p, i) => {
     const cells = sheet!.rows[i].cells;
@@ -244,7 +244,7 @@ export default function StudentImportPage() {
     // about the row needs a fix.
     const already = blank ? undefined : meets?.kind === "same" ? alreadyOf(meets) : answer?.already ? { label: "Already in your school", detail: answer.problems[0]?.message ?? "" } : undefined;
     const own = blank || already ? [] : [...p.problems, ...(crossed.get(p.row) ?? []), ...(meetsProblem ? [meetsProblem] : [])];
-    const server = !already && answer && !(answer.seats && allowOver) ? answer.problems : [];
+    const server = !already && answer ? answer.problems : [];
     // The school's own needs never stop a row (a student is admitted without them): the server's word about them is left out.
     const serverWarnings = (answer?.warnings ?? []).filter((w) => !w.startsWith(SCHOOL_NEEDS));
     const notes = [...p.warnings, ...(meetsNote ? [meetsNote] : []), ...(alike.has(p.row) ? [alike.get(p.row)!] : []), ...serverWarnings];
@@ -298,7 +298,7 @@ export default function StudentImportPage() {
     if (!load || load.seatsLeft === null || count <= load.seatsLeft) return [];
     const klass = structure?.classes.find((c) => c.id === load.classId);
     const section = klass?.sections.find((s) => s.id === sectionId);
-    return [{ label: `${klass?.name ?? "Class"} - ${section?.name ?? ""}`, coming: count, seatsLeft: load.seatsLeft }];
+    return [{ label: `${klass?.name ?? "Class"} - ${section?.name ?? ""}`, className: klass?.name ?? "Class", coming: count, seatsLeft: load.seatsLeft }];
   });
 
   // Which students of a new file the school already has: ONE request for the whole file, once its rows are prepared. A failed check
@@ -349,7 +349,6 @@ export default function StudentImportPage() {
     setAddOpen(false);
     setOffer(null);
     setStopped(null);
-    setAllowOver(false);
     setStep(1);
   }
 
@@ -562,10 +561,13 @@ export default function StudentImportPage() {
     setBusy({ done, total: sending.length });
     const made: Admitted[] = [];
     const refused = new Map<number, ServerAnswer>();
+    let raised: SeatsRaised[] = [];
     let failure: string | null = null;
     try {
       for (const part of inParts(sending)) {
-        const res = await importRows({ dryRun: false, allowOverCapacity: allowOver, rows: part.map((p) => p.input) }).unwrap();
+        // Nobody is turned away for a full section: the server admits them and raises the seats to fit.
+        const res = await importRows({ dryRun: false, allowOverCapacity: true, rows: part.map((p) => p.input) }).unwrap();
+        raised = mergeSeatsRaised(raised, res.data.seatsRaised ?? []);
         for (const result of res.data.results) {
           const p = part.find((x) => x.row === result.row);
           if (!p) continue;
@@ -605,11 +607,13 @@ export default function StudentImportPage() {
     setAnswers((a) => new Map([...[...a].filter(([row]) => !gone.has(row)), ...refused]));
     setAdmitted((list) => [...list, ...made]);
     if (made.length > 0) dispatch(refreshAfterImport());
+    // The seats of a section (and of its class) changed: the class pages and the structure are read again.
+    if (raised.length > 0) dispatch(refreshClass());
     if (failure) {
       setStopped(failure);
       return;
     }
-    setLastRun({ admitted: made });
+    setLastRun({ admitted: made, raised });
     setFilter("all");
     setPage(1);
     setStep(2);
@@ -727,7 +731,7 @@ export default function StudentImportPage() {
                 need a fix.
               </p>
             )}
-            {over.length > 0 && <SeatWarning over={over} allow={allowOver} onAllow={setAllowOver} disabled={!!busy} />}
+            {over.length > 0 && <SeatWarning over={over} />}
             {busy && <ProgressCard label="Admitting the students..." done={busy.done} total={busy.total} note="Keep this page open until it finishes." />}
             {stopped && !busy && <StoppedNote message={stopped} />}
 
@@ -834,6 +838,7 @@ export default function StudentImportPage() {
               notAdmitted={filled.length - skipped.length}
               already={skipped.length}
               linked={linkedNow}
+              raised={lastRun?.raised}
               year={year}
               onFix={() => {
                 setFilter("all");
@@ -860,7 +865,6 @@ export default function StudentImportPage() {
               The {skipped.length} row{skipped.length === 1 ? " already in your school is" : "s already in your school are"} not uploaded again.
             </p>
           )}
-          {over.length > 0 && !allowOver && <p className="font-semibold text-warning">Full sections take students only up to their seats; the others are not admitted.</p>}
         </AskDialog>
       )}
       {ask === "leave" && (

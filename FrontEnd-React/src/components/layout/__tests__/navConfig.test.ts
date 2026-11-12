@@ -27,6 +27,10 @@ describe("the menu of the people who run a school", () => {
       ["Vehicles", "/transport/vehicles"],
       ["Drivers", "/transport/drivers"],
       ["Routes", "/transport/routes"],
+      ["Fee structure", "/fees/structure"],
+      ["Fee heads", "/fees/heads"],
+      ["Concessions", "/fees/concessions"],
+      ["Fee rules", "/fees/rules"],
       ["Permissions", "/permissions"],
       ["Calendar", "/calendar"],
       ["Leave requests", "/leaves"],
@@ -111,6 +115,23 @@ describe("the menu of the people who run a school", () => {
     expect(labelsOf(person("teacher", ["transport.view", "calendar.view"]))).toEqual(["Dashboard", "Calendar", "Settings"]);
     expect(labelsOf(person("parent", ["transport.view"]))).toEqual(["Dashboard", "Settings"]);
     expect(activeNavItem("/transport/routes", menuOf(person("school_admin")))?.label).toBe("Routes");
+  });
+
+  it("Fees is one row that opens Fee structure, Fee heads, Concessions and Fee rules (2026-11-12), for the people allowed fees.view; not for teachers or parents", () => {
+    const pages = NAV_ITEMS.filter((i) => i.submenu === "Fees");
+    expect(pages.map((i) => [i.label, i.href])).toEqual([
+      ["Fee structure", "/fees/structure"],
+      ["Fee heads", "/fees/heads"],
+      ["Concessions", "/fees/concessions"],
+      ["Fee rules", "/fees/rules"],
+    ]);
+    expect(SUBMENUS.Fees).toBeDefined();
+    expect(NAV_ITEMS.some((i) => i.label === "Fees")).toBe(false);
+    expect(labelsOf(person("accountant", ["fees.view"]))).toEqual(["Dashboard", "Fee structure", "Fee heads", "Concessions", "Fee rules", "Settings"]);
+    expect(labelsOf(person("receptionist", ["calendar.view"]))).not.toContain("Fee structure");
+    expect(labelsOf(person("teacher", ["fees.view", "calendar.view"]))).toEqual(["Dashboard", "Calendar", "Settings"]);
+    expect(labelsOf(person("parent", ["fees.view"]))).toEqual(["Dashboard", "Settings"]);
+    expect(activeNavItem("/fees/heads", menuOf(person("school_admin")))?.label).toBe("Fee heads");
   });
 
   it("a parent's Calendar and a teacher's pages go when the school takes the boxes away", () => {

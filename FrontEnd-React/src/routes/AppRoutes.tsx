@@ -208,6 +208,17 @@ const routes: RouteObject[] = [
               { path: "transport/routes", ...lazyRoute(() => import("../pages/transport/Routes")) },
             ],
           },
+          // Fees (set-up only): the fee chart of each class, the list of fees, the concessions, the fee rules (one row of the menu; /fees leads to the first).
+          {
+            element: <PermissionRoute keys={["fees.view"]} />,
+            children: [
+              { path: "fees", element: <Navigate to="/fees/structure" replace /> },
+              { path: "fees/structure", ...lazyRoute(() => import("../pages/fees/FeeStructure")) },
+              { path: "fees/heads", ...lazyRoute(() => import("../pages/fees/FeeHeads")) },
+              { path: "fees/concessions", ...lazyRoute(() => import("../pages/fees/Concessions")) },
+              { path: "fees/rules", ...lazyRoute(() => import("../pages/fees/FeeRules")) },
+            ],
+          },
           {
             element: <PermissionRoute keys={["attendance.view"]} />,
             children: [{ path: "attendance/students", ...lazyRoute(() => import("../pages/attendance/StudentAttendance")) }],

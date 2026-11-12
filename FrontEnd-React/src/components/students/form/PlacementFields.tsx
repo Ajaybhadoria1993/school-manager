@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { Check, CircleCheck, FolderTree, Hash, Info, Users, Wand2 } from "lucide-react";
+import { Check, CircleCheck, FolderTree, Hash, Users, Wand2 } from "lucide-react";
 import { MAX_ROLL_NUMBER } from "../../../constants/students";
 import { fieldId, type StudentForm } from "../../../hooks/useStudentForm";
 import { plural } from "../../../utils/academics";
@@ -193,7 +193,7 @@ export function PlacementFields({
       <span
         className={cn(
           "inline-flex h-10 cursor-pointer select-none items-center justify-center gap-1 rounded-lg border text-sm font-semibold transition-all duration-150",
-          opts.short ? "min-w-11 px-3" : "px-4",
+          opts.short ? "w-[3.25rem]" : "px-4",
           "peer-focus-visible:ring-4 peer-focus-visible:ring-primary/20",
           on ? "border-primary bg-primary text-primary-foreground shadow-card" : "border-border bg-surface text-foreground hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-card"
         )}
@@ -245,12 +245,14 @@ export function PlacementFields({
               tabIndex={-1}
               role="radiogroup"
               aria-label="Class"
-              className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background/60 outline-none"
+              className="flex flex-wrap gap-x-9 gap-y-4 rounded-xl border border-border bg-background/60 px-4 py-3.5 outline-none"
             >
+              {/* The groups sit side by side (Pre-primary, Primary, Middle, Secondary...) and wrap on a narrow screen: the whole picker is
+                  one or two short lines, so the section and the roll number are on the screen at the same time. */}
               {classGroups(structure).map((group) => (
-                <div key={group.key} className="grid min-w-0 items-center gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-[8.5rem_minmax(0,1fr)]">
-                  {group.title && <p className="text-[11px] font-bold uppercase tracking-wider text-foreground-muted sm:col-start-1">{group.title}</p>}
-                  <div className={cn("flex flex-wrap gap-2", !group.title && "sm:col-span-2")}>
+                <div key={group.key} className="min-w-0">
+                  {group.title && <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-foreground-muted">{group.title}</p>}
+                  <div className="flex flex-wrap gap-2">
                     {chipsOf(group.classes).map((entry) =>
                       entry.kind === "senior"
                         ? chip(`senior-${entry.number}`, `Class ${entry.number}`, seniorNumber === entry.number, () => pickSenior(entry.number), { short: String(entry.number) })
@@ -280,20 +282,16 @@ export function PlacementFields({
             </Field>
           )}
 
-          {/* The section (one row whose height never changes), then the roll number under it. */}
-          <div className="space-y-5">
+          {/* The section (one row whose height never changes) with the roll number beside it; under each other on a narrow screen. */}
+          <div className="grid gap-x-8 gap-y-5 lg:grid-cols-[minmax(0,1fr)_17rem]">
             <Field
               id={fieldId("sectionId")}
               label={klass ? `Section of ${klass.name}` : "Section"}
               optional={!!klass && klass.sections.length === 0}
               error={form.errorOf("sectionId")}
               hint={<span className="block truncate">{sectionNote || " "}</span>}
-              className="relative min-w-0"
+              className="min-w-0"
             >
-              <span className="pointer-events-none absolute right-0 top-0 hidden items-center gap-1 text-[11px] font-semibold text-foreground-muted sm:inline-flex">
-                <Info className="size-3" aria-hidden />
-                Seats shown live
-              </span>
               <div id={fieldId("sectionId")} tabIndex={-1} className="outline-none">
                 {!klass ? (
                   <p className={emptyBox}>{seniorNumber !== null ? "Pick the stream to see its sections." : "Pick a class to see its sections."}</p>
@@ -353,28 +351,28 @@ export function PlacementFields({
             </Field>
 
             <Field id={fieldId("rollNumber")} label="Roll number" optional error={form.errorOf("rollNumber")} hint={`1 to ${MAX_ROLL_NUMBER}, once in a section.`}>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <div className="relative w-full sm:w-56">
+              <div className="space-y-2">
+                <div className="relative">
                   <Input {...form.bind("rollNumber", "digits")} icon={Hash} inputMode="numeric" maxLength={3} placeholder="For example 12" className="pr-9" />
                   {rollOk && <CircleCheck className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-success" aria-hidden />}
                 </div>
-                <div className="flex h-12 items-center gap-2">
-                <span className="rounded-md bg-surface-muted px-2 py-1 text-xs font-semibold text-foreground-muted">
-                  Next free: <span className="text-foreground">{nextFree ?? "-"}</span>
-                </span>
-                <button
-                  type="button"
-                  disabled={nextFree === null || roll === String(nextFree)}
-                  onClick={() => {
-                    if (nextFree === null) return;
-                    form.set("rollNumber", String(nextFree));
-                    form.touch("rollNumber");
-                  }}
-                  className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-semibold text-primary-deep transition-colors hover:border-primary/50 hover:bg-primary-soft disabled:pointer-events-none disabled:opacity-50"
-                >
-                  <Wand2 className="size-3.5" aria-hidden />
-                  Auto-assign
-                </button>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="rounded-md bg-surface-muted px-2 py-1 text-xs font-semibold text-foreground-muted">
+                    Next free: <span className="text-foreground">{nextFree ?? "-"}</span>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={nextFree === null || roll === String(nextFree)}
+                    onClick={() => {
+                      if (nextFree === null) return;
+                      form.set("rollNumber", String(nextFree));
+                      form.touch("rollNumber");
+                    }}
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-semibold text-primary-deep transition-colors hover:border-primary/50 hover:bg-primary-soft disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    <Wand2 className="size-3.5" aria-hidden />
+                    Auto-assign
+                  </button>
                 </div>
               </div>
             </Field>

@@ -43,7 +43,7 @@ export function IdFields({ form, index = 0 }: { form: StudentForm; index?: numbe
       index={index}
       icon={Fingerprint}
       title="IDs and records"
-      tip="Aadhaar is checked as you type (12 digits with its check digit) and is kept once per student: a number already in your school is refused, with whose it is."
+      tip="An Aadhaar number is 12 digits (any 12 digits are accepted) and is kept once per student: a number already in your school is refused, with whose it is."
     >
       <div className={FORM_GRID}>
         {ID_RULES.map((rule) => (

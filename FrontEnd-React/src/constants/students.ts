@@ -13,6 +13,8 @@ export const STUDENT_APPROVERS: readonly UserRole[] = ["school_admin"];
 
 export const GENDERS: readonly Gender[] = ["Male", "Female", "Other"];
 export const RELATIONS: readonly Relation[] = ["Father", "Mother", "Guardian", "Other"];
+/** What Relation offers when the school needs both parents: a child has a father and a mother, nobody else is asked for. */
+export const PARENT_RELATIONS: readonly Relation[] = ["Father", "Mother"];
 export const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"] as const;
 export const CATEGORIES = ["General", "OBC", "SC", "ST", "EWS", "Prefer not to say"] as const;
 
@@ -64,10 +66,8 @@ export const MESSAGES = {
   email: "Enter a valid email address",
   previousSchool: "Enter the previous school's name",
   tcInFuture: "The TC date cannot be in the future",
-  // What is wrong with an Aadhaar number is said by what is wrong: the digits, the first digit, or the last (check) digit.
+  // An Aadhaar number is wrong only in its number of digits (nothing else is checked).
   aadhaarLength: "The Aadhaar number has 12 digits",
-  aadhaarStart: "An Aadhaar number does not start with 0 or 1",
-  aadhaarCheck: "This Aadhaar number is not valid: its last digit (the check digit) does not match the other digits",
   samagra: "Samagra ID is 8 or 9 digits",
   apaar: "APAAR ID is 12 digits",
   pen: "PEN is 11 digits",

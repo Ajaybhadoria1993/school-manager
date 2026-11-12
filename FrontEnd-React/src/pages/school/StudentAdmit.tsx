@@ -12,6 +12,7 @@ import { USUAL_STEPS, effectivePlacements, effectiveSteps, type CustomFieldDef, 
 import { useFieldsEditor } from "../../hooks/useFieldsEditor";
 import { stepKeyOfPath, stepsFor, problemPathsOf, firstStepWithProblems, type AdmitStepKey } from "../../utils/admitSteps";
 import { getApiError } from "../../utils/apiErrors";
+import { cn } from "../../utils/helpers";
 import { emptyGuardian, emptyStudentForm, formatMobile, placeLabel, toAdmission, type StudentFormValues } from "../../utils/students";
 import { isIndianMobile, isPasswordValid, isUsername } from "../../utils/validators";
 import type { AcademicStructure, GuardianMatch, Relation, SectionItem, SectionLoad, StudentAddress, StudentCapacity } from "../../types";
@@ -146,6 +147,9 @@ export default function StudentAdmitPage() {
   return <AdmitForm structure={structure} capacity={capacity} rules={rules} custom={custom} placements={placements} steps={steps} family={family} crumbs={crumbs} place={placeFromLink(params, structure)} year={capacity.academicYear.name} />;
 }
 
+/** The form's id: the bar of buttons stands outside the form (in the layout's bottom slot), so its Next / Admit button names the form. */
+const ADMIT_FORM_ID = "admit-student-form";
+
 function AdmitForm({
   structure,
   capacity,
@@ -226,7 +230,8 @@ function AdmitForm({
 
   // The steps: Personal info, Academic, Parents and (when the school asks anything of it) More details. The form's values live in
   // `form`, so going back and forth loses nothing; a step is passed when Next is pressed with its boxes right.
-  const stepList = useMemo(() => stepsFor(form.rules ?? rules, custom, placements, steps), [form.rules, rules, custom, placements, steps]);
+  // (the school's own fields of the class picked: a field for Class 11 and 12 only makes no step for a student of LKG)
+  const stepList = useMemo(() => stepsFor(form.rules ?? rules, form.custom, placements, steps), [form.rules, rules, form.custom, placements, steps]);
   const [position, setPosition] = useState(0);
   const [furthest, setFurthest] = useState(0);
   const [passed, setPassed] = useState<AdmitStepKey[]>([]);
@@ -296,7 +301,7 @@ function AdmitForm({
       return;
     }
     try {
-      const res = await admit(toAdmission(form.values, flags, custom.filter((f) => f.mode !== "hidden"))).unwrap();
+      const res = await admit(toAdmission(form.values, flags, form.custom.filter((f) => f.mode !== "hidden"))).unwrap();
       push("success", res.message ?? `${res.data.name} admitted`);
       const arrived: Arrived = { admitted: true };
       // The student is in: the primary parent's login is made now (a refusal is said on the student's page, where it can be made again).
@@ -367,7 +372,7 @@ function AdmitForm({
   return (
     <>
       <BoxedControls>
-      <form onSubmit={submit} noValidate className="space-y-4 lg:-mx-4 lg:-mt-3">
+      <form id={ADMIT_FORM_ID} onSubmit={submit} noValidate className="space-y-4 lg:-mx-4 lg:-mt-3">
         <StudentFormHeader
           title="Add student"
           crumbs={crumbs}
@@ -420,15 +425,26 @@ function AdmitForm({
             )}
         </Card>
 
-        <FormActionBar wide>
+        <FormActionBar dock>
           <Button type="button" variant="ghost" className="text-foreground-muted hover:text-danger" disabled={!form.dirty || sending} onClick={() => setAsk({ kind: "clear" })}>
             <Trash2 className="size-4" aria-hidden />
             Clear all
           </Button>
+          {/* Where the student is in the steps (the stepper above scrolls away); the keys it answers to are in the tooltip, not on the page. */}
+          <div
+            className="hidden min-w-0 flex-1 items-center justify-center gap-3 md:flex"
+            title={last ? "Enter in any box also admits. Escape puts a box back." : "Enter in a box goes to the next step. Escape puts a box back."}
+          >
+            <span className="whitespace-nowrap text-xs font-semibold text-foreground-muted">
+              Step {at + 1} of {stepList.length} <span aria-hidden>·</span> <span className="text-foreground">{stepList[at].label}</span>
+            </span>
+            <span aria-hidden className="flex gap-1">
+              {stepList.map((s, i) => (
+                <span key={s.key} className={cn("h-1.5 w-7 rounded-full transition-colors", i < at ? "bg-primary/50" : i === at ? "bg-primary" : "bg-border")} />
+              ))}
+            </span>
+          </div>
           <div className="flex items-center gap-3">
-            <p className="hidden text-xs text-foreground-muted xl:block">
-              {last ? "Enter in any box also admits. Escape puts a box back." : "Enter in a box goes to the next step. Escape puts a box back."}
-            </p>
             {at > 0 && (
               <Button type="button" variant="outline" size="lg" disabled={sending} aria-label="Previous step" onClick={() => openStep(at - 1)}>
                 <ArrowLeft className="size-4" aria-hidden />
@@ -436,12 +452,12 @@ function AdmitForm({
               </Button>
             )}
             {last ? (
-              <Button type="submit" size="lg" loading={sending} disabled={!form.dirty} aria-label="Admit the student">
+              <Button type="submit" form={ADMIT_FORM_ID} size="lg" loading={sending} disabled={!form.dirty} aria-label="Admit the student">
                 {!sending && <UserPlus className="size-4" aria-hidden />}
                 Admit student
               </Button>
             ) : (
-              <Button type="submit" size="lg">
+              <Button type="submit" form={ADMIT_FORM_ID} size="lg">
                 Next step
                 <ArrowRight className="size-4" aria-hidden />
               </Button>

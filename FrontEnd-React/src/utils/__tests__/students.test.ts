@@ -117,21 +117,27 @@ describe("the day in India of a moment", () => {
   });
 });
 
-describe("what is wrong with an Aadhaar number is said by what is wrong", () => {
-  const CHECK_DIGIT = "This Aadhaar number is not valid: its last digit (the check digit) does not match the other digits";
+describe("an Aadhaar number is 12 digits, and nothing else is checked", () => {
   const aadhaarOf = (value: string) => check({ ...admission([{ relation: "Father" }]), admissionDate: "2026-06-01", aadhaarNumber: value }).aadhaarNumber;
 
-  it("a good number (spaces and dashes between the digits do not matter) has nothing said", () => {
-    expect(aadhaarOf("234567890124")).toBeUndefined();
+  it("any 12 digits are fine (a school types what is on the card, and a test file has made-up numbers): no first-digit rule, no check digit", () => {
+    for (const any of ["234567890124", "999900000003", "123456789012", "023456789012", "000000000000", "234567890120", "596001338908"]) {
+      expect(aadhaarOf(any), any).toBeUndefined();
+    }
+  });
+
+  it("spaces and dashes between the digits do not matter", () => {
     expect(aadhaarOf("2345 6789 0124")).toBeUndefined();
     expect(aadhaarOf("2345-6789-0124")).toBeUndefined();
   });
 
-  it("the number of digits, the first digit and the check digit each have their own message", () => {
-    for (const short of ["12345", "23456789012", "2345678901234", "abcdefghijkl"]) expect(aadhaarOf(short), short).toBe("The Aadhaar number has 12 digits");
-    for (const start of ["123456789012", "023456789012"]) expect(aadhaarOf(start), start).toBe("An Aadhaar number does not start with 0 or 1");
-    // 12 digits that look right (a number from a dummy file): the last digit does not fit the others.
-    for (const wrong of ["234567890120", "596001338908"]) expect(aadhaarOf(wrong), wrong).toBe(CHECK_DIGIT);
+  it("only the number of digits is wrong", () => {
+    for (const bad of ["12345", "23456789012", "2345678901234", "abcdefghijkl"]) expect(aadhaarOf(bad), bad).toBe("The Aadhaar number has 12 digits");
+  });
+
+  it("a new school does not need it: the Aadhaar number is asked, and may be left empty", () => {
+    expect(DEFAULT_FIELD_RULES.aadhaarNumber).toBe("optional");
+    expect(aadhaarOf("")).toBeUndefined();
   });
 });
 

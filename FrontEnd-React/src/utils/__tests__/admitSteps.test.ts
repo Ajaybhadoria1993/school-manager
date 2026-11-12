@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_FIELD_RULES, effectivePlacements, type CustomFieldDef, type StepDef } from "../../constants/studentFields";
 import { firstStepWithProblems, problemPathsOf, stepKeyOfPath, stepsFor } from "../admitSteps";
+import { customForClass } from "../fieldRules";
 import { placeIn } from "../placement";
 
 const own = (mode: CustomFieldDef["mode"]): CustomFieldDef => ({ key: "c_house1", label: "House", type: "text", options: [], mode });
@@ -8,6 +9,13 @@ const MORE: StepDef = { key: "more", name: "More details" };
 const HEALTH: StepDef = { key: "s_health1", name: "Health" };
 
 describe("the steps of Add student", () => {
+  it("More details is not a step for a class that is not asked the only field in it", () => {
+    const group: CustomFieldDef = { ...own("required"), classNumbers: [11, 12] };
+    // The form hands over the fields of the class picked: none of them for LKG, so no More details step.
+    expect(stepsFor(DEFAULT_FIELD_RULES, customForClass([group], "LKG")).map((s) => s.label)).toEqual(["Personal info", "Academic", "Parents"]);
+    expect(stepsFor(DEFAULT_FIELD_RULES, customForClass([group], "Class 11 Science")).map((s) => s.label)).toEqual(["Personal info", "Academic", "Parents", "More details"]);
+  });
+
   it("are Personal info, Academic and Parents; More details only when the school asks for anything there", () => {
     expect(stepsFor(DEFAULT_FIELD_RULES, []).map((s) => s.label)).toEqual(["Personal info", "Academic", "Parents"]);
     // Health, fees, the bus, the religion, a nationality: any one of them brings the step.

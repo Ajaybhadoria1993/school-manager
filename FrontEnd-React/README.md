@@ -765,7 +765,7 @@ download, fill and upload), but any sheet opens as an editable table first, beca
 1  [ drop your file here, or browse ]            | Start from the sample file  [ Download sample template ]
    How it works / Note                           | Already have a students sheet? Upload it as it is.
 2  sunrise-list.xlsx . 14 rows . 7 ready . 7 need a fix                                   [ Choose another file ]
-   One section would go over its seats: Class 5 - B ...  [ ] Admit them all anyway          (only when it would)
+   Class 5 - B will get more seats: 3 students in the file, 1 seat left. Recommended: divide Class 5 into more sections.   (a note, only when it would)
    [ All rows 14 | Need a fix 7 | Ready 7 ]                                                [ Rows to fix (CSV) ]
    (1 more row has "Class 9" in Class. Change it to "Class 8" too?  [ Change it ] [ No ])  (after a fix, when others match)
    +-----+-----------------+-------------+--------------------+---------------------+---------------------+-------------------+
@@ -818,7 +818,7 @@ download, fill and upload), but any sheet opens as an editable table first, beca
   column).
 - **Step 3**: **Upload** sends the ready rows, 100 a request; then `refreshAfterImport()` marks the list, the seats and the cached student
   pages stale once. Admitted rows leave the table; refused ones stay with the server's reason until they are changed (a `SECTION_FULL`
-  one is ready again when Admit them all anyway is ticked). The rows to fix are a CSV made in the browser (`problemsCsv`: the file's
+  one is ready again once the person says to go over the seats; the bulk upload no longer asks). The rows to fix are a CSV made in the browser (`problemsCsv`: the file's
   columns plus *Problem*). Closing the tab while uploading asks first; **Back** asks while rows are in the table.
 - The school's settings (`GET /students/settings`, read once) give the export headings and own fields a file is read with, and the
   typed table's columns (`typedTableFields(rules)`: the usual ones plus every detail the school needs, then its own fields). Its needs

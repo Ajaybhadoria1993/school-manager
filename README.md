@@ -79,8 +79,8 @@ Multi-tenant School ERP, built step by step from the specs in [`docs/`](docs/) (
   **current academic year** (each section chip says how many seats are left; a full one asks before it is picked); the parents, every box there
   from the start in the order Full name, Relation, Mobile number, Another number, Occupation, Email (when 10 digits are typed in the
   mobile box the school's parents are searched once: a parent who already has a child here is shown with their children in place of the
-  boxes and **linked**, as is or with updated details, never typed twice; a number changed again gives back what was typed); the address; the IDs (Aadhaar, checked
-  by its check digit and once per school; Samagra, APAAR, PEN, SR number); the previous school and TC (needed for Class 1 to 12, optional
+  boxes and **linked**, as is or with updated details, never typed twice; a number changed again gives back what was typed); the address; the IDs (Aadhaar, any 12 digits,
+  optional until the school makes it mandatory, and once per school; Samagra, APAAR, PEN, SR number); the previous school and TC (needed for Class 1 to 12, optional
   for Nursery, LKG and UKG); and more details (religion,
   nationality, emergency / WhatsApp number, disability, medical notes, RTE / BPL, fee concession, transport). The **admission number**
   (`ADM-2026-0001`) is made by the server. Every school keeps the same core details on this form and as columns of its Excel: name, gender,
@@ -139,6 +139,15 @@ Multi-tenant School ERP, built step by step from the specs in [`docs/`](docs/) (
   periods, no teacher, too many in a day).
 - Design, the API, the rules, what is and is not covered, the problems found and fixed: [docs/timetable.md](docs/timetable.md); the
   screens: [`FrontEnd-React/README.md`](FrontEnd-React/README.md#manage-school-timetable).
+
+## Fees (the set-up of what a school charges; nothing is collected yet)
+
+- Menu **Fees** (one row, four pages): **Fee structure** (each class's fee chart for a session: registration, admission, tuition, exam, uniform...; amount, how often,
+  the months, who pays, optional or not; add a fee to many classes at once, copy a class to others, copy last session's fees with a raise, set the **upcoming** session up
+  before it starts), **Fee heads** (the school's list of fees, with "Add the usual fees"), **Concessions** (sibling, staff child, RTE seat, merit...) and **Fee rules** (due day,
+  grace, late fine, what is held while fees are due). Backend module `fees`; permissions `fees.view` / `fees.manage` (the accountant starts with both).
+- Design, API, the researched list of what Indian schools charge, the legal limits (development fee 15%, Madhya Pradesh's 10% rule) and what is not built (a student's fee account,
+  collecting, receipts, dues, refunds): [docs/fees.md](docs/fees.md).
 
 ## Next steps (planned, in order)
 

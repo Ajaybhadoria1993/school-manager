@@ -11,17 +11,19 @@ import { ChoiceSelect } from "./ChoiceSelect";
 /** How each detail a school may place in any step is asked: the kind of box and its words. One place for every card that shows it. */
 type Box =
   | { kind: "choice"; options: readonly string[]; placeholder: string }
-  | { kind: "text"; maxLength: number; placeholder?: string; numeric?: boolean }
+  | { kind: "text"; maxLength: number; placeholder?: string }
+  /** An ID made of digits only, no more than `digits` of them (what is pasted with spaces keeps its digits). */
+  | { kind: "digits"; digits: number; placeholder: string }
   | { kind: "mobile" }
   | { kind: "tick"; hint: string };
 
 const BOXES: Record<MovableKey, Box> = {
   bloodGroup: { kind: "choice", options: BLOOD_GROUPS, placeholder: "Select blood group" },
   religion: { kind: "choice", options: RELIGIONS, placeholder: "Select religion" },
-  aadhaarNumber: { kind: "text", maxLength: 14, placeholder: "1234 5678 9012", numeric: true },
-  samagraId: { kind: "text", maxLength: 9, placeholder: "8 or 9 digits", numeric: true },
-  apaarId: { kind: "text", maxLength: 12, placeholder: "12 digits", numeric: true },
-  pen: { kind: "text", maxLength: 11, placeholder: "11 digits", numeric: true },
+  aadhaarNumber: { kind: "digits", digits: 12, placeholder: "12 digits" },
+  samagraId: { kind: "digits", digits: 9, placeholder: "8 or 9 digits" },
+  apaarId: { kind: "digits", digits: 12, placeholder: "12 digits" },
+  pen: { kind: "digits", digits: 11, placeholder: "11 digits" },
   srNumber: { kind: "text", maxLength: 30, placeholder: "From the old register" },
   nationality: { kind: "text", maxLength: 40, placeholder: "Indian" },
   emergencyMobile: { kind: "mobile" },
@@ -45,8 +47,10 @@ export function FieldBox({ form, rule }: { form: StudentForm; rule: MovableKey }
         <ChoiceSelect form={form} path={rule} options={box.options} placeholder={box.placeholder} />
       ) : box.kind === "mobile" ? (
         <Input {...form.bind(rule, "digits")} icon={Phone} prefix="+91" type="tel" inputMode="numeric" maxLength={10} />
+      ) : box.kind === "digits" ? (
+        <Input {...form.bind(rule, "digits", box.digits)} placeholder={box.placeholder} inputMode="numeric" autoComplete="off" />
       ) : (
-        <Input {...form.bind(rule)} maxLength={box.maxLength} placeholder={box.placeholder} inputMode={box.numeric ? "numeric" : undefined} autoComplete="off" />
+        <Input {...form.bind(rule)} maxLength={box.maxLength} placeholder={box.placeholder} autoComplete="off" />
       )}
     </Field>
   );

@@ -36,7 +36,8 @@ describe("the catalogue of what a person may be allowed", () => {
       for (const key of DEFAULT_PERMISSIONS[profile.key]) expect(offered, `${profile.key} ${key}`).toContain(key);
     }
     expect(DEFAULT_PERMISSIONS.receptionist).toEqual(["calendar.view"]);
-    expect(DEFAULT_PERMISSIONS.accountant).toEqual(["dashboard.view", "students.view", "students.export", "calendar.view"]);
+    // Fees are new, so the accountant starts with them (their fee chart is their work).
+    expect(DEFAULT_PERMISSIONS.accountant).toEqual(["dashboard.view", "students.view", "students.export", "calendar.view", "fees.view", "fees.manage"]);
     expect(DEFAULT_PERMISSIONS.parent).toContain("child.attendance");
     expect(permissionsFor("parent")).toEqual(["calendar.view", "child.attendance", "child.timetable", "child.exams", "child.diary", "child.leave"]);
     expect(permissionsFor("staff")).not.toContain("child.attendance");

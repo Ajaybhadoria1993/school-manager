@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_FIELD_RULES, type FieldRules } from "../../constants/studentFields";
-import { asks, effectiveRules, mayLeave } from "../fieldRules";
+import { DEFAULT_FIELD_RULES, type CustomFieldDef, type FieldRules } from "../../constants/studentFields";
+import { asks, classesNote, customFieldIsFor, customForClass, effectiveRules, mayLeave } from "../fieldRules";
 
 const school = (over: Partial<FieldRules>): FieldRules => ({ ...DEFAULT_FIELD_RULES, ...over });
 
@@ -40,5 +40,36 @@ describe("what a school needs of ONE admission (its rules with the details every
   it("nothing else changes", () => {
     const rules = effectiveRules(school({ aadhaarNumber: "optional", religion: "required", rteSeat: "optional" }), "Class 5");
     expect(rules).toMatchObject({ aadhaarNumber: "optional", religion: "required", rteSeat: "optional", bloodGroup: "optional", secondParent: "required" });
+  });
+});
+
+describe("a field of the school's own for some classes only", () => {
+  const group = (classNumbers?: number[]): CustomFieldDef => ({ key: "c_group1", label: "Subject group", type: "text", options: [], mode: "required", ...(classNumbers ? { classNumbers } : {}) });
+
+  it("is for the classes it names (by their number, a stream or a section does not matter); a field with no list is for every class", () => {
+    const senior = group([11, 12]);
+    for (const className of ["Class 11", "Class 11 Science", "XII Commerce", "12th Arts"]) expect(customFieldIsFor(senior, className), className).toBe(true);
+    for (const className of ["LKG", "Nursery", "Class 5", "Class 10 A", undefined, null]) expect(customFieldIsFor(senior, className), String(className)).toBe(false);
+    for (const className of ["LKG", "Class 5", undefined]) {
+      expect(customFieldIsFor(group(), className)).toBe(true);
+      expect(customFieldIsFor(group([]), className)).toBe(true);
+    }
+  });
+
+  it("says which classes a field is for under its name, and nothing for every class", () => {
+    expect(classesNote([11, 12])).toBe("Class 11 and 12 only");
+    expect(classesNote([11])).toBe("Class 11 only");
+    expect(classesNote([9, 10, 11])).toBe("Class 9, 10 and 11 only");
+    expect(classesNote([])).toBeUndefined();
+    expect(classesNote(undefined)).toBeUndefined();
+  });
+
+  it("customForClass keeps the fields of that class, in the school's order", () => {
+    const every = { ...group(), key: "c_every01", label: "House" };
+    const list = [group([11, 12]), every];
+    expect(customForClass(list, "Class 5").map((f) => f.key)).toEqual(["c_every01"]);
+    expect(customForClass(list, "Class 12 Science").map((f) => f.key)).toEqual(["c_group1", "c_every01"]);
+    expect(customForClass(list, undefined).map((f) => f.key)).toEqual(["c_every01"]);
+    expect(customForClass(undefined, "Class 5")).toEqual([]);
   });
 });

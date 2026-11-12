@@ -1,6 +1,7 @@
 import { fieldOf, isMovableKey, type AdmitStepKey, type FormFieldKey } from "../constants/studentFields";
 import { isAskedDetail, isRequiredDetail, isTick, type Detail, type FieldsDraft } from "./exportLayout";
 import { allSteps, keysIn, labelOfPlaced } from "./placement";
+import { classesNote } from "./fieldRules";
 
 /**
  * What the school can do with a row of the Add student form: nothing (the form always asks it), only mandatory or optional (the
@@ -107,7 +108,7 @@ export function formSteps(draft: FieldsDraft): Record<string, StepRows> {
     });
     const placed = keysIn(draft.placements, step).map((key): FormRow => {
       const own = draft.custom.find((f) => f.key === key);
-      if (own) return stateRow(draft, { id: key, label: own.label, step, control: "asked", movable: true, own: true }, { kind: "custom", key }, own.type !== "yesNo");
+      if (own) return stateRow(draft, { id: key, label: own.label, step, control: "asked", movable: true, own: true, note: classesNote(own.classNumbers) }, { kind: "custom", key }, own.type !== "yesNo");
       const rule = key as FormFieldKey;
       return stateRow(draft, { id: key, label: labelOfPlaced(key, draft.custom), step, control: "asked", movable: isMovableKey(key), own: false }, ruleDetail(rule), !isTick(rule));
     });

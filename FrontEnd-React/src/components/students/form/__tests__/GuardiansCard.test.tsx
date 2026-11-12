@@ -19,13 +19,10 @@ const SURESH: GuardianMatch = {
 };
 
 /** The admission form's parents card with a real form behind it (the mobile lookup is wired only when a `lookup` is given). */
-function Card({ lookup }: { lookup?: (mobile: string) => Promise<GuardianMatch | null> }) {
-  const form = useStudentForm(emptyStudentForm({ ...DEFAULT_FIELD_RULES, secondParent: "optional" }), {
-    mode: "admit",
-    classHasSections: () => false,
-    rules: { ...DEFAULT_FIELD_RULES, secondParent: "optional" },
-    lookup,
-  });
+function Card({ lookup, both = false }: { lookup?: (mobile: string) => Promise<GuardianMatch | null>; both?: boolean }) {
+  // `both`: the school needs both parents (father and mother), which is the usual rule; the other tests here run with it optional.
+  const rules = { ...DEFAULT_FIELD_RULES, secondParent: both ? ("required" as const) : ("optional" as const) };
+  const form = useStudentForm(emptyStudentForm(rules), { mode: "admit", classHasSections: () => false, rules, lookup });
   return <GuardiansCard form={form} mode="admit" />;
 }
 
@@ -166,6 +163,31 @@ describe("the parents card of Add student", () => {
     list = await screen.findByRole("listbox");
     expect(within(list).getByRole("option", { name: "Father" })).toHaveAttribute("aria-disabled", "true");
     expect(within(list).getByRole("option", { name: "Mother" })).not.toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("when the school needs both parents: a father and a mother from the start, and Relation offers only those two", async () => {
+    render(<Card both />);
+    const user = userEvent.setup();
+    expect(relations()).toEqual(["Father", "Mother"]);
+    for (const at of [0, 1]) {
+      await user.click(relationButtons()[at]);
+      const list = await screen.findByRole("listbox");
+      // Guardian and Other are not offered: they are how a child ended up with no father (or no mother) and the form refused.
+      expect(within(list).getAllByRole("option").map((o) => o.textContent)).toEqual(["Father", "Mother"]);
+      await user.keyboard("{Escape}");
+    }
+    // Both are there: there is no one else to add.
+    expect(screen.queryByRole("button", { name: "Add another guardian" })).not.toBeInTheDocument();
+  });
+
+  it("when the school needs both parents, a parent removed can be added again, as the father or the mother who is missing", async () => {
+    render(<Card both />);
+    const user = userEvent.setup();
+    await user.click(screen.getAllByRole("button", { name: "Remove this guardian" })[0]);
+    expect(relations()).toEqual(["Mother"]);
+    await user.click(screen.getByRole("button", { name: "Add another guardian" }));
+    expect(relations()).toEqual(["Mother", "Father"]);
+    expect(screen.queryByRole("button", { name: "Add another guardian" })).not.toBeInTheDocument();
   });
 
   it("removing the mother frees her place again", async () => {

@@ -1,5 +1,5 @@
 import { AtSign, BriefcaseBusiness, Loader2, Phone, Star, Trash2, UserRoundCheck, UserRoundPlus } from "lucide-react";
-import { RELATIONS } from "../../../constants/students";
+import { PARENT_RELATIONS, RELATIONS } from "../../../constants/students";
 import { fieldId, type StudentForm } from "../../../hooks/useStudentForm";
 import { cn } from "../../../utils/helpers";
 import { formatMobile, keepsDetails, placeLabel, takenRelations } from "../../../utils/students";
@@ -8,7 +8,7 @@ import type { Relation } from "../../../types";
 import { ChipPicker } from "../../ui/ChipPicker";
 import { Field } from "../../ui/Field";
 import { InfoTip, TipButton } from "../../ui/Hint";
-import { asks, mayLeave } from "../../../utils/fieldRules";
+import { asks, mayLeave, modeOf } from "../../../utils/fieldRules";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
 import { FORM_GRID } from "./formGrid";
@@ -90,7 +90,8 @@ export function GuardianFields({
             <Select
               id={fieldId(at("relation"))}
               value={g.relation}
-              options={RELATIONS}
+              // A school that needs both parents (father and mother) is offered those two only; otherwise Guardian and Other too.
+              options={modeOf(form.rules, "secondParent") === "required" ? PARENT_RELATIONS : RELATIONS}
               // A child has one father and one mother: the one another guardian already is cannot be chosen again.
               disabledValues={[...takenRelations(form.values.guardians, index)]}
               placeholder="Select relation"

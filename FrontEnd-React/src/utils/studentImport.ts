@@ -1,7 +1,7 @@
 import { STATES } from "../constants/schoolOptions";
 import { BLOOD_GROUPS, CATEGORIES, GENDERS } from "../constants/students";
 import { DISABILITIES, LENIENT_FIELD_RULES, RELIGIONS, isCustomKey, listFieldNamed, type CustomFieldDef, type ExportColumnKey, type FieldRules, type FormFieldKey } from "../constants/studentFields";
-import type { AcademicStructure, ClassItem, ExportColumn, Gender, ImportMatch, ImportMatchRow, ImportRowInput, Relation, SectionItem } from "../types";
+import type { AcademicStructure, ClassItem, ExportColumn, Gender, ImportMatch, ImportMatchRow, ImportRowInput, Relation, SectionItem, SeatsRaised } from "../types";
 import { classNumber, needsStream, streamOf } from "./classNumber";
 import { checkStudentForm, emptyGuardian, emptyStudentForm, placeLabel, todayInIndia, toAdmission, type GuardianDraft, type StudentFormValues } from "./students";
 
@@ -161,7 +161,7 @@ const RULE_OF_FIELD: Partial<Record<ImportField, FormFieldKey>> = {
 };
 
 /** The columns the typed table starts with: the ones a sheet has always had, and every detail the school's form needs. */
-const TYPED_CORE = new Set<ImportField>(["admissionNumber", "firstName", "lastName", "gender", "dateOfBirth", "className", "sectionName", "rollNumber", "admissionDate", "fatherName", "fatherMobile", "motherName", "motherMobile", "guardianName", "guardianMobile", "guardianRelation", "parentEmail", "address", "city", "state", "pincode", "bloodGroup", "category", "previousSchool"]);
+const TYPED_CORE = new Set<ImportField>(["admissionNumber", "firstName", "lastName", "gender", "dateOfBirth", "className", "sectionName", "rollNumber", "admissionDate", "fatherName", "fatherMobile", "motherName", "motherMobile", "guardianName", "guardianMobile", "guardianRelation", "parentEmail", "address", "city", "state", "pincode", "bloodGroup", "category", "previousSchool", "aadhaarNumber"]);
 export function typedTableFields(rules: FieldRules | undefined): FieldDef[] {
   return IMPORT_FIELDS.filter((f) => {
     if (f.key === "fullName") return false;
@@ -877,6 +877,33 @@ export function prepareRow(
     warnings,
     guardianSources: sources,
   };
+}
+
+/**
+ * Joins what each request of one upload raised: a section is listed once, from the seats it had before the first request to the seats it
+ * has after the last (the class's seats the same way). Pure: the lists given are not changed.
+ */
+export function mergeSeatsRaised(into: readonly SeatsRaised[], more: readonly SeatsRaised[]): SeatsRaised[] {
+  const merged = into.map((r) => ({ ...r }));
+  for (const next of more) {
+    const have = merged.find((r) => r.sectionId === next.sectionId);
+    if (!have) {
+      merged.push({ ...next });
+      continue;
+    }
+    have.to = next.to;
+    if (next.classTo !== null) {
+      have.classFrom = have.classFrom ?? next.classFrom;
+      have.classTo = next.classTo;
+    }
+  }
+  return merged;
+}
+
+/** Names in a sentence, each once: "Class 6", "Class 6 and Class 7", "Class 6, Class 7 and UKG". */
+export function joinNames(names: readonly string[]): string {
+  const each = [...new Set(names)];
+  return each.length <= 1 ? (each[0] ?? "") : `${each.slice(0, -1).join(", ")} and ${each[each.length - 1]}`;
 }
 
 /**

@@ -76,13 +76,14 @@ describe("the Excel's columns", () => {
 
   it("the column of a mandatory detail cannot be taken out either: the switch says to make it optional first", () => {
     card();
-    for (const name of ["Aadhaar No.", "Father's Occupation", "Area or Landmark", "Last Class"]) {
+    for (const name of ["Father's Occupation", "Area or Landmark", "Last Class"]) {
       const toggle = within(rowByName(name)).getByRole("switch", { name: `${name} in the Excel` });
       expect(toggle, name).toBeChecked();
       expect(toggle, name).toBeDisabled();
       expect(toggle, name).toHaveAttribute("title", expect.stringContaining("Make it optional first"));
     }
-    // Optional ones can go.
+    // Optional ones can go (the Aadhaar number is optional for a new school).
+    expect(within(rowByName("Aadhaar No.")).getByRole("switch", { name: "Aadhaar No. in the Excel" })).toBeEnabled();
     expect(within(rowByName("Blood Group")).getByRole("switch", { name: "Blood Group in the Excel" })).toHaveAttribute("title", expect.stringContaining("Add student is not changed"));
   });
 
@@ -96,7 +97,7 @@ describe("the Excel's columns", () => {
     // The school decides about these (the form asks them).
     expect(cell("Category").getByRole("switch", { name: "Category mandatory" })).toBeChecked();
     expect(cell("Mother's Name").getByRole("switch", { name: "Mother's Name mandatory" })).toBeChecked();
-    expect(cell("Aadhaar No.").getByRole("switch", { name: "Aadhaar No. mandatory" })).toBeChecked();
+    expect(cell("Aadhaar No.").getByRole("switch", { name: "Aadhaar No. mandatory" })).not.toBeChecked();
     expect(cell("Blood Group").getByRole("switch", { name: "Blood Group mandatory" })).not.toBeChecked();
     // What the form asks but may be left empty.
     expect(cell("Mother's Mobile").getByText("Optional")).toBeInTheDocument();

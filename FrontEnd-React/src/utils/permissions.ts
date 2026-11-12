@@ -49,6 +49,7 @@ export const IMPLIES: Readonly<Record<string, string>> = {
   "classes.manage": "classes.view",
   "years.manage": "classes.view",
   "transport.manage": "transport.view",
+  "fees.manage": "fees.view",
 };
 
 /** The list after one box is ticked or cleared: ticking brings what it needs, clearing takes away what needed it. */

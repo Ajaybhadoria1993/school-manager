@@ -30,9 +30,7 @@ const LOCKED_KEYS = [
   "studentName", "gender", "dateOfBirth", "age", "category", "className", "sectionName", "fatherName", "fatherMobile", "motherName", "motherMobile",
   "address", "city", "state", "pincode", "previousSchool",
 ];
-/** What is said when 12 digits start right but the last (check) digit does not fit the others. */
-const CHECK_DIGIT = "This Aadhaar number is not valid: its last digit (the check digit) does not match the other digits";
-/** Valid Aadhaar numbers (their last digit is the Verhoeff check digit). */
+/** Aadhaar numbers (any 12 digits are accepted: nothing but the number of digits is checked). */
 const AADHAAR = ["234567890124", "345678901238", "456789012341"];
 
 /** A school with its year and Class 5 (no sections); `fields` "default" keeps a new school's needs (the rest of the tests relax them). */
@@ -72,7 +70,7 @@ describe("a school's needs (its fields, set on Manage school > Students > Export
     const res = await get(s.token, "/settings");
     expect(res.status).toBe(200);
     expect(res.body.data.fields).toEqual(DEFAULT_FIELD_RULES);
-    expect(res.body.data.fields).toMatchObject({ aadhaarNumber: "required", category: "required", previousSchoolTcNumber: "required", bloodGroup: "optional" });
+    expect(res.body.data.fields).toMatchObject({ aadhaarNumber: "optional", category: "required", previousSchoolTcNumber: "required", bloodGroup: "optional" });
     // What is not in the default export is not asked until the school turns it on (one list for the form and the file).
     expect(res.body.data.fields).toMatchObject({ admissionDate: "hidden", samagraId: "hidden", religion: "hidden", rteSeat: "hidden", previousSchoolTcDate: "optional" });
     expect(res.body.data.exportIsDefault).toBe(true);
@@ -100,7 +98,6 @@ describe("a school's needs (its fields, set on Manage school > Students > Export
     expect(details(bare)).toEqual(
       expect.arrayContaining([
         { path: "category", message: "Choose the category" },
-        { path: "aadhaarNumber", message: "Enter the Aadhaar number" },
         { path: "address.line1", message: "Enter the street address" },
         { path: "address.line2", message: "Enter the area or landmark" },
         { path: "address.city", message: "Enter the city" },
@@ -113,8 +110,9 @@ describe("a school's needs (its fields, set on Manage school > Students > Export
         { path: "guardians", message: "Add both parents: the father and the mother (a name is enough for the one without a mobile number)" },
       ])
     );
-    // Optional by default: not asked for.
+    // Optional by default: not asked for (a child may have no Aadhaar number yet, and a school cannot refuse admission for it).
     expect(details(bare).map((d) => d.path)).not.toContain("bloodGroup");
+    expect(details(bare).map((d) => d.path)).not.toContain("aadhaarNumber");
     expect(await Student.countDocuments({ tenantId: s.tenantId })).toBe(0);
 
     const ok = await post(s.token, "", complete(s.class5));
@@ -124,6 +122,8 @@ describe("a school's needs (its fields, set on Manage school > Students > Export
 
   it("says what the school needs in the same answer as a wrong box (as the form does), and one message per box", async () => {
     const s = await school();
+    // A school that made the Aadhaar number mandatory (a new school does not).
+    await put(s.token, "/settings", { fields: { aadhaarNumber: "required" } });
     const res = await post(s.token, "", {
       ...complete(s.class5, { gender: undefined, aadhaarNumber: undefined, address: { line1: "", city: "Bhopal", state: "Madhya Pradesh", pincode: "1" } }),
     });
@@ -150,15 +150,19 @@ describe("a school's needs (its fields, set on Manage school > Students > Export
 
   it("follows what the school changes: a detail made optional is not asked, one made needed is", async () => {
     const s = await school();
-    const saved = await put(s.token, "/settings", { fields: { aadhaarNumber: "optional", previousSchoolLastClass: "optional", previousSchoolTcNumber: "optional", bloodGroup: "required" } });
+    const saved = await put(s.token, "/settings", { fields: { aadhaarNumber: "required", previousSchoolLastClass: "optional", previousSchoolTcNumber: "optional", bloodGroup: "required" } });
     expect(saved.status).toBe(200);
-    expect(saved.body.data.fields).toMatchObject({ aadhaarNumber: "optional", previousSchoolLastClass: "optional", bloodGroup: "required", category: "required" });
+    expect(saved.body.data.fields).toMatchObject({ aadhaarNumber: "required", previousSchoolLastClass: "optional", bloodGroup: "required", category: "required" });
 
     // The previous school's name is always needed in Class 1 to 12; its last class and TC number are what the school made optional.
     const res = await post(s.token, "", complete(s.class5, { aadhaarNumber: undefined, previousSchool: { name: "Little Flower School" } }));
     expect(res.status).toBe(400);
-    expect(details(res)).toEqual([{ path: "bloodGroup", message: "Choose the blood group" }]);
-    expect((await post(s.token, "", complete(s.class5, { aadhaarNumber: undefined, previousSchool: { name: "Little Flower School" }, bloodGroup: "B+" }))).status).toBe(201);
+    expect(details(res)).toHaveLength(2);
+    expect(details(res)).toEqual(expect.arrayContaining([{ path: "bloodGroup", message: "Choose the blood group" }, { path: "aadhaarNumber", message: "Enter the Aadhaar number" }]));
+    expect((await post(s.token, "", complete(s.class5, { previousSchool: { name: "Little Flower School" }, bloodGroup: "B+" }))).status).toBe(201);
+    // Made optional again, the Aadhaar number is left empty without a word.
+    await put(s.token, "/settings", { fields: { aadhaarNumber: "optional" } });
+    expect((await post(s.token, "", complete(s.class5, { firstName: "Bina", aadhaarNumber: undefined, previousSchool: { name: "Little Flower School" }, bloodGroup: "B+", guardians: [{ name: "Anil Rao", relation: "Father", isPrimary: true, mobile: "9111111111", occupation: "Driver" }, { name: "Gita Rao", relation: "Mother", isPrimary: false, occupation: "Nurse" }] }))).status).toBe(201);
   });
 
   it("refuses a needs list it cannot follow, and lets only the people who admit change it", async () => {
@@ -187,13 +191,14 @@ describe("a school's needs (its fields, set on Manage school > Students > Export
     const b = await school("Moonrise Public School");
     await put(a.token, "/settings", { fields: { aadhaarNumber: "hidden" }, exportColumns: [{ key: "studentName", heading: "Naam" }, { key: "className", heading: "Kaksha" }] });
     const theirs = (await get(b.token, "/settings")).body.data;
-    expect(theirs.fields.aadhaarNumber).toBe("required");
+    expect(theirs.fields.aadhaarNumber).toBe("optional");
     expect(theirs.exportIsDefault).toBe(true);
     expect(await StudentSettings.countDocuments({ tenantId: b.tenantId })).toBe(0);
   });
 
   it("does not let a change empty a needed detail, but changes the rest", async () => {
     const s = await school();
+    await put(s.token, "/settings", { fields: { aadhaarNumber: "required" } });
     const asha = (await post(s.token, "", complete(s.class5))).body.data;
     const cleared = await patch(s.token, `/${asha.id}`, { aadhaarNumber: "", category: null });
     expect(cleared.status).toBe(400);
@@ -353,16 +358,11 @@ describe("the student's records", () => {
     expect(res.body.data).toMatchObject({ ...records, aadhaarNumber: "234567890124", emergencyMobile: "9811122233" });
 
     const cases: [Record<string, unknown>, string, string][] = [
-      // Each way an Aadhaar number can be wrong says which: the number of digits, the first digit, or the check digit.
-      [{ aadhaarNumber: "234567890120" }, "aadhaarNumber", CHECK_DIGIT],
+      // An Aadhaar number is wrong only in its number of digits.
       [{ aadhaarNumber: "12345" }, "aadhaarNumber", "The Aadhaar number has 12 digits"],
       [{ aadhaarNumber: "23456789012" }, "aadhaarNumber", "The Aadhaar number has 12 digits"],
       [{ aadhaarNumber: "2345678901234" }, "aadhaarNumber", "The Aadhaar number has 12 digits"],
       [{ aadhaarNumber: "abcdefghijkl" }, "aadhaarNumber", "The Aadhaar number has 12 digits"],
-      [{ aadhaarNumber: "123456789012" }, "aadhaarNumber", "An Aadhaar number does not start with 0 or 1"],
-      [{ aadhaarNumber: "023456789012" }, "aadhaarNumber", "An Aadhaar number does not start with 0 or 1"],
-      // 12 digits that look right, a random number from a dummy file: the check digit does not fit.
-      [{ aadhaarNumber: "596001338908" }, "aadhaarNumber", CHECK_DIGIT],
       [{ samagraId: "1234" }, "samagraId", "Samagra ID is 8 or 9 digits"],
       [{ apaarId: "12345" }, "apaarId", "APAAR ID is 12 digits"],
       [{ pen: "123" }, "pen", "PEN is 11 digits"],
@@ -376,6 +376,17 @@ describe("the student's records", () => {
       const bad = await post(s.token, "", complete(s.class5, { firstName: "Other", aadhaarNumber: AADHAAR[1], ...over }));
       expect(bad.status, JSON.stringify(over)).toBe(400);
       expect(details(bad), JSON.stringify(over)).toContainEqual({ path, message });
+    }
+  });
+
+  it("takes any 12 digits as an Aadhaar number: no first-digit rule and no check digit (a school types what the card says, a test file has made-up ones)", async () => {
+    const s = await school("Sunrise Public School", "classic");
+    const numbers = ["999900000003", "123456789012", "023456789012", "000000000000", "234567890120", "596001338908", "9999 0000 0004"];
+    for (const [i, aadhaarNumber] of numbers.entries()) {
+      const father = { name: "Ravi Verma", relation: "Father", isPrimary: true, mobile: `9111111${100 + i}`, occupation: "Farmer" };
+      const res = await post(s.token, "", complete(s.class5, { firstName: `Child${i}`, aadhaarNumber, guardians: [father, { name: "Sita Verma", relation: "Mother", isPrimary: false, occupation: "Teacher" }] }));
+      expect(res.status, `${aadhaarNumber}: ${JSON.stringify(res.body)}`).toBe(201);
+      expect(res.body.data.aadhaarNumber).toBe(aadhaarNumber.replace(/\s/g, ""));
     }
   });
 
@@ -560,6 +571,59 @@ describe("the export in the school's own layout", () => {
     expect(details(elsewhere)).toContainEqual({ path: "custom.c_bus001", message: "This is not one of your school's fields" });
   });
 
+  it("a field of the school's own can be asked only for some classes (Class 11 and 12): needed there, never asked of the others", async () => {
+    const s = await school("Sunrise Public School", "classic");
+    const lkg = (await request(app).post(`${academics}/classes`).set(auth(s.token)).send({ name: "LKG", capacity: 2000, sectionCount: 0 })).body.data.id as string;
+    const eleven = (await request(app).post(`${academics}/classes`).set(auth(s.token)).send({ name: "Class 11 Science", capacity: 2000, sectionCount: 0 })).body.data.id as string;
+    const group = { key: "c_group1", label: "Subject group", type: "text", mode: "required", classNumbers: [12, 11, 11] };
+    const saved = await put(s.token, "/settings", { customFields: [group] });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    // Kept as the classes asked for, in order and once each; a field for every class has no list at all.
+    expect(saved.body.data.customFields).toEqual([{ ...group, options: [], classNumbers: [11, 12] }]);
+    expect((await get(s.token, "/settings")).body.data.customFields[0].classNumbers).toEqual([11, 12]);
+
+    // Class 5 and LKG are not asked it: admitted without it.
+    const small = await post(s.token, "", complete(lkg, { previousSchool: undefined }));
+    expect(small.status, JSON.stringify(small.body)).toBe(201);
+    const five = await post(s.token, "", complete(s.class5, { firstName: "Bina", aadhaarNumber: AADHAAR[1], guardians: [{ name: "Anil Rao", relation: "Father", isPrimary: true, mobile: "9111111111", occupation: "Driver" }] }));
+    expect(five.status, JSON.stringify(five.body)).toBe(201);
+
+    // Class 11 needs it, with the form's words.
+    const other = { aadhaarNumber: AADHAAR[2], guardians: [{ name: "Imran Ali", relation: "Father", isPrimary: true, mobile: "9222222222", occupation: "Driver" }] };
+    const missing = await post(s.token, "", complete(eleven, { firstName: "Cara", ...other }));
+    expect(details(missing)).toEqual([{ path: "custom.c_group1", message: "Enter the Subject group" }]);
+    const ok = await post(s.token, "", complete(eleven, { firstName: "Cara", ...other, custom: { c_group1: "PCM" } }));
+    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+    expect(ok.body.data.custom).toEqual({ c_group1: "PCM" });
+
+    // A change follows the student's class: the answer of a Class 11 student cannot be emptied, the other classes have none to empty.
+    expect(details(await patch(s.token, `/${ok.body.data.id}`, { custom: { c_group1: null } }))).toContainEqual({ path: "custom.c_group1", message: "Enter the Subject group" });
+    expect((await patch(s.token, `/${five.body.data.id}`, { custom: { c_group1: null } })).status).toBe(200);
+
+    // A file's row lacking it is told so for Class 11 only.
+    const row = (n: number, classId: string, mobile: string, name: string) => ({
+      row: n,
+      student: { firstName: name, lastName: "Das", gender: "Male", dateOfBirth: "2016-01-01", classId, sectionId: null, guardians: [{ name: "Anil Das", relation: "Father", isPrimary: true, mobile }] },
+    });
+    const file = await post(s.token, "/import", { dryRun: true, rows: [row(3, lkg, "9333333333", "Dev"), row(4, eleven, "9444444444", "Eli")] });
+    expect(file.body.data.results[0].warnings.join(" ")).not.toContain("Subject group");
+    expect(file.body.data.results[1].warnings.join(" ")).toContain("Subject group");
+  });
+
+  it("refuses classes that are not Class 1 to 12 for a field of the school's own; an empty list means every class", async () => {
+    const s = await school("Sunrise Public School", "classic");
+    const own = (classNumbers: unknown) => ({ key: "c_group1", label: "Subject group", type: "text", mode: "optional", classNumbers });
+    for (const bad of [[13], [0], [1.5], ["11"], "11", [11, null]]) {
+      const res = await put(s.token, "/settings", { customFields: [own(bad)] });
+      expect(res.status, JSON.stringify(bad)).toBe(400);
+      expect(details(res)).toEqual([{ path: "customFields.0.classNumbers", message: "Choose classes from 1 to 12" }]);
+    }
+    // Empty means every class: nothing is kept.
+    const every = await put(s.token, "/settings", { customFields: [own([])] });
+    expect(every.status).toBe(200);
+    expect(every.body.data.customFields).toEqual([{ key: "c_group1", label: "Subject group", type: "text", mode: "optional", options: [] }]);
+  });
+
   it("keeps the fixed columns in every layout (the name, the class...), and two columns from sharing a heading", async () => {
     const s = await school("Sunrise Public School", "classic");
     const noName = await put(s.token, "/settings", { exportColumns: [{ key: "className", heading: "Class" }] });
@@ -614,7 +678,7 @@ describe("a bulk import and the school's needs", () => {
     expect(res.body.data.results[0].ok).toBe(true);
     // The address and the previous school (Class 1 to 12) are not said here: a row without them is refused, not admitted with a warning.
     expect(res.body.data.results[0].warnings).toEqual([
-      "Not in the file, but your school needs it: Category, Aadhaar number, Area or landmark, Last class there, TC number, Parent's occupation, Both parents (father and mother), House.",
+      "Not in the file, but your school needs it: Category, Area or landmark, Last class there, TC number, Parent's occupation, Both parents (father and mother), House.",
     ]);
     // An answer to a field of the school's own that is given wrong refuses the row.
     const wrong = await post(s.token, "/import", {

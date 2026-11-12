@@ -14,3 +14,4 @@ export * from "./notifications";
 export * from "./dashboard";
 export * from "./permissions";
 export * from "./transport";
+export * from "./fees";

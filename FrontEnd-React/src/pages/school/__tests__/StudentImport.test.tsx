@@ -733,3 +733,57 @@ describe("Bulk upload: students the school already has", () => {
     expect(uploadButton()).toHaveTextContent("Upload 2 students");
   });
 });
+
+describe("Bulk upload: more students than seats", () => {
+  // Class 6 has one section (A, 30 seats) with 29 students already: one seat left, and three come in this file.
+  const BIG: ImportSheet = {
+    ...SHEET,
+    fileName: "big.csv",
+    rows: [
+      { row: 2, cells: ["Sara Khan", "Class 6", "F", "03-03-2015", "Imran Khan", "9866677788", ...HOME] },
+      { row: 3, cells: ["Tina Das", "Class 6", "F", "04-04-2015", "Amit Das", "9866677799", ...HOME] },
+      { row: 4, cells: ["Uma Rao", "Class 6", "F", "05-05-2015", "Anil Rao", "9111111111", ...HOME] },
+    ],
+  };
+  const almostFull = () => ({ ...CAPACITY, sections: [{ sectionId: "c6-A", classId: "c6", capacity: 30, enrolled: 29, seatsLeft: 1, nextRollNumber: 30 }] });
+  const raised = { classId: "c6", className: "Class 6", sectionId: "c6-A", sectionName: "A", from: 30, to: 32, classFrom: null, classTo: null };
+
+  it("asks nothing about seats: the note says the seats will grow, the upload goes over them, and the end says what was raised and to divide the class", async () => {
+    const calls = fakeApi({
+      "POST /students/import/read": () => BIG,
+      "GET /students/capacity": almostFull,
+      "POST /students/import": () => ({ dryRun: false, ok: 3, failed: 0, seatsRaised: [raised], results: [okRow(2, "Sara Khan"), okRow(3, "Tina Das"), okRow(4, "Uma Rao")] }),
+    });
+    const user = openPage();
+    await openFile(user);
+    // Before the upload: a note, no question and no checkbox.
+    expect(screen.getByText("Class 6 - A will get more seats")).toBeInTheDocument();
+    expect(screen.getByText(/3 students in the file, 1 seat left/)).toBeInTheDocument();
+    expect(screen.getByText(/Recommended: divide Class 6 into more sections/)).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(uploadButton()).toHaveTextContent("Upload 3 students");
+
+    await user.click(uploadButton());
+    expect(screen.queryByText(/only up to their seats/)).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Upload and admit" }));
+    await screen.findByRole("heading", { name: "3 students admitted to 2026-2027" });
+    // Every row was sent with the yes already given, and none was refused for the seats.
+    expect(importCalls(calls)[0].body).toMatchObject({ dryRun: false, allowOverCapacity: true });
+    expect(screen.getByText("Class 6 - A: seats raised from 30 to 32.")).toBeInTheDocument();
+    expect(screen.getByText(/Recommended: divide Class 6 into more sections/)).toBeInTheDocument();
+  });
+
+  it("a section that has room for everyone shows no note, and the end says nothing about seats", async () => {
+    fakeApi({
+      "POST /students/import/read": () => BIG,
+      "POST /students/import": () => ({ dryRun: false, ok: 3, failed: 0, seatsRaised: [], results: [okRow(2, "Sara Khan"), okRow(3, "Tina Das"), okRow(4, "Uma Rao")] }),
+    });
+    const user = openPage();
+    await openFile(user);
+    expect(screen.queryByText(/will get more seats/)).not.toBeInTheDocument();
+    await user.click(uploadButton());
+    await user.click(await screen.findByRole("button", { name: "Upload and admit" }));
+    await screen.findByRole("heading", { name: "3 students admitted to 2026-2027" });
+    expect(screen.queryByText(/Recommended: divide/)).not.toBeInTheDocument();
+  });
+});

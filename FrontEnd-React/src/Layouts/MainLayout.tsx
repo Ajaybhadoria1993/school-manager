@@ -6,6 +6,7 @@ import { useLiveNotifications } from "../hooks/useLiveNotifications";
 import { usePermissionRefresh } from "../hooks/usePermissionRefresh";
 import { postLoginPath } from "../utils/postLoginPath";
 import { Sidebar } from "../components/layout/Sidebar";
+import { FormBarSlotContext } from "../components/layout/FormBarSlot";
 import { Topbar } from "../components/layout/Topbar";
 import { YearViewBanner } from "../components/layout/YearViewBanner";
 import { NAV_ITEMS, activeNavItem, navVisible, pageTitleOf, pathForMenu } from "../components/layout/nav-config";
@@ -19,6 +20,8 @@ export default function MainLayout() {
   const { pathname } = location;
   const [mobileOpen, setMobileOpen] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
+  // Where a form's bar of buttons stands (see FormBarSlot): the last thing in the scroll pane, always at its bottom.
+  const [barSlot, setBarSlot] = useState<HTMLElement | null>(null);
   const appearance = useAppTheme();
   // New notifications, live on the socket, for the bell in the top bar (docs/notifications.md).
   useLiveNotifications();
@@ -67,12 +70,21 @@ export default function MainLayout() {
         {/* Only while a year that is over is open (read only): which year it is, and the way back. */}
         <YearViewBanner />
         {/* Full width, like Infinity Medisetu: no empty bands at the left and right of a wide screen. */}
-        <main ref={mainRef} className="min-h-0 w-full flex-1 overflow-y-auto p-4 lg:px-8 lg:py-5 print:overflow-visible print:p-0">
-          {/* A new key on every page, so each page eases in instead of snapping. */}
-          <div key={pathname} className="rise-in">
-            <Outlet />
-          </div>
-        </main>
+        <FormBarSlotContext.Provider value={barSlot}>
+          <main ref={mainRef} className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto p-4 lg:px-8 lg:py-5 print:block print:overflow-visible print:p-0">
+            {/* A new key on every page, so each page eases in instead of snapping. */}
+            <div key={pathname} className="rise-in shrink-0">
+              <Outlet />
+            </div>
+            {/* The bar of a form's buttons (student forms): pushed to the bottom of the pane when the page is short and kept there while
+                it scrolls (`sticky`), at the same distance from the edge as the pane's own padding, so it never jumps at the end of the
+                page. The fade under it hides the form's lines where they pass behind. Empty, it takes no room. */}
+            <div
+              ref={setBarSlot}
+              className="sticky bottom-4 z-20 mt-auto pt-4 empty:hidden lg:bottom-5 print:hidden before:pointer-events-none before:absolute before:-inset-x-4 before:-top-3 before:-bottom-4 before:-z-10 before:bg-gradient-to-t before:from-background before:from-70% before:to-transparent lg:before:-inset-x-8 lg:before:-bottom-5"
+            />
+          </main>
+        </FormBarSlotContext.Provider>
       </div>
     </div>
   );

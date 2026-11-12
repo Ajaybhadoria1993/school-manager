@@ -10,7 +10,7 @@ const academics = "/api/v1/academics";
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 const YEAR = { name: "2026-2027", startDate: "2026-04-01", endDate: "2027-03-31" };
 
-/** Valid Aadhaar numbers (their last digit is the Verhoeff check digit). */
+/** Aadhaar numbers (any 12 digits are accepted). */
 const AADHAAR = ["234567890124", "345678901238", "456789012341"];
 
 async function school(name = "Sunrise Public School") {

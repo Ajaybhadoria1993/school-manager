@@ -1,5 +1,6 @@
 import {
   Backpack,
+  BadgePercent,
   Building2,
   CalendarCheck2,
   CalendarClock,
@@ -13,7 +14,9 @@ import {
   MailCheck,
   Rocket,
   School,
+  ScrollText,
   Settings2,
+  Tags,
   UserCheck,
   UserCog,
   UserRoundCheck,
@@ -23,6 +26,8 @@ import {
   Route,
   UserRoundCog,
   UsersRound,
+  IndianRupee,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import type { AuthUser, UserRole } from "../../types";
@@ -230,6 +235,48 @@ export const NAV_ITEMS: NavItem[] = [
     submenu: "Transport",
   },
   {
+    // Fees (2026-11-12): the set-up of what the school charges: the fee chart of each class, the list of fees, the concessions and the fee rules.
+    // One row of the menu that opens these four pages; for the people the school allowed (fees.view / fees.manage). Collecting fees comes later.
+    label: "Fee structure",
+    href: "/fees/structure",
+    icon: IndianRupee,
+    roles: ["school_admin", "principal"],
+    permission: ["fees.view"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Fees",
+  },
+  {
+    label: "Fee heads",
+    href: "/fees/heads",
+    icon: Tags,
+    roles: ["school_admin", "principal"],
+    permission: ["fees.view"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Fees",
+  },
+  {
+    label: "Concessions",
+    href: "/fees/concessions",
+    icon: BadgePercent,
+    roles: ["school_admin", "principal"],
+    permission: ["fees.view"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Fees",
+  },
+  {
+    label: "Fee rules",
+    href: "/fees/rules",
+    icon: ScrollText,
+    roles: ["school_admin", "principal"],
+    permission: ["fees.view"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Fees",
+  },
+  {
     // What each kind of person of the school (Receptionist, Teacher, Parent...) may do, with checkboxes (2026-11-10). Only the school admin changes it.
     label: "Permissions",
     href: "/permissions",
@@ -377,6 +424,7 @@ export const SUBMENUS: Record<string, { icon: LucideIcon }> = {
   Timetable: { icon: CalendarClock },
   Attendance: { icon: CalendarCheck2 },
   Transport: { icon: Bus },
+  Fees: { icon: Wallet },
   Students: { icon: Backpack },
   Teachers: { icon: UsersRound },
 };

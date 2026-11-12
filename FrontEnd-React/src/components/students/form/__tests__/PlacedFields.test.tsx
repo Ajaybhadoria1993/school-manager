@@ -97,6 +97,38 @@ describe("the details placed in a step of Add student", () => {
     expect(screen.getByText("House").parentElement).toHaveTextContent("*");
   });
 
+  it("an own field for Class 11 and 12 only is asked once such a class is picked, and not before or for any other class", async () => {
+    const user = userEvent.setup();
+    const GROUP: CustomFieldDef = { key: "c_group1", label: "Subject group", type: "text", options: [], mode: "required", classNumbers: [11, 12] };
+    const names: Record<string, string> = { lkg: "LKG", five: "Class 5", eleven: "Class 11 Science" };
+    function Scoped() {
+      const form = useStudentForm(emptyStudentForm(DEFAULT_FIELD_RULES), { mode: "admit", classHasSections: () => false, rules: DEFAULT_FIELD_RULES, custom: [GROUP], classNameOf: (id) => names[id] });
+      return (
+        <>
+          {Object.keys(names).map((id) => (
+            <button key={id} type="button" onClick={() => form.set("classId", id)}>
+              {names[id]}
+            </button>
+          ))}
+          <p>{form.problems["custom.c_group1"] ?? "no problem"}</p>
+          <PlacedFields form={form} step="more" placements={effectivePlacements(null, [GROUP])} />
+        </>
+      );
+    }
+    render(<Scoped />);
+    // No class yet: not asked, and nothing is missing.
+    expect(screen.queryByLabelText(/^Subject group/)).not.toBeInTheDocument();
+    expect(screen.getByText("no problem")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Class 11 Science" }));
+    expect(screen.getByLabelText(/^Subject group/)).toBeInTheDocument();
+    expect(screen.getByText("Enter the Subject group")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "LKG" }));
+    expect(screen.queryByLabelText(/^Subject group/)).not.toBeInTheDocument();
+    expect(screen.getByText("no problem")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Class 5" }));
+    expect(screen.queryByLabelText(/^Subject group/)).not.toBeInTheDocument();
+  });
+
   it("an own field placed in Academic is asked there and not in More details", () => {
     const placements = placeIn(effectivePlacements(null, [ROOM]), "c_roomno1", "academic");
     const { unmount } = render(<Step step="more" rules={DEFAULT_FIELD_RULES} custom={[ROOM]} placements={placements} />);
@@ -113,6 +145,35 @@ describe("the details placed in a step of Add student", () => {
     expect(ids.indexOf("student-nationality")).toBeLessThan(ids.indexOf("student-transportRoute"));
     const tick = screen.getByRole("switch", { name: /RTE seat/ });
     expect(screen.getByLabelText(/^Transport route/).compareDocumentPosition(tick) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("the Aadhaar box takes digits only and never more than 12 (a number pasted with its spaces keeps every digit)", async () => {
+    const user = userEvent.setup();
+    render(<Step step="academic" rules={DEFAULT_FIELD_RULES} />);
+    const box = screen.getByLabelText(/^Aadhaar number/) as HTMLInputElement;
+    await user.type(box, "2345 6789-0124 99ab");
+    expect(box.value).toBe("234567890124");
+    await user.clear(box);
+    await user.click(box);
+    await user.paste("2345 6789 0124");
+    expect(box.value).toBe("234567890124");
+    await user.clear(box);
+    await user.paste("1234567890123456");
+    expect(box.value).toBe("123456789012");
+  });
+
+  it("the Samagra, APAAR and PEN boxes stop at their own length too", async () => {
+    const user = userEvent.setup();
+    const rules = asking("samagraId", "apaarId", "pen");
+    const { unmount } = render(<Step step="academic" rules={rules} />);
+    await user.type(screen.getByLabelText(/^PEN/), "1234567890123");
+    expect((screen.getByLabelText(/^PEN/) as HTMLInputElement).value).toBe("12345678901");
+    unmount();
+    render(<Step step="more" rules={rules} />);
+    await user.type(screen.getByLabelText(/^Samagra ID/), "1234567890123");
+    await user.type(screen.getByLabelText(/^APAAR ID/), "1234567890123456");
+    expect((screen.getByLabelText(/^Samagra ID/) as HTMLInputElement).value).toBe("123456789");
+    expect((screen.getByLabelText(/^APAAR ID/) as HTMLInputElement).value).toBe("123456789012");
   });
 
   it("offers Add your own field when the page gives a way, and not otherwise", async () => {

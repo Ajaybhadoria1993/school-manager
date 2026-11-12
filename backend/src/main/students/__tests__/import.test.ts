@@ -4,6 +4,8 @@ import ExcelJS from "exceljs";
 import app from "../../../app";
 import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { addColleague, createSchool } from "../../../test/schools";
+import { SchoolClass } from "../../academics/models/SchoolClass";
+import { Section } from "../../academics/models/Section";
 import { Guardian } from "../models/Guardian";
 import { Student } from "../models/Student";
 import { todayInIndia } from "../schemas/students.schemas";
@@ -303,6 +305,19 @@ describe("importing the rows", () => {
     expect(await Student.countDocuments({ tenantId: s.tenantId })).toBe(4);
   });
 
+  it("admits rows whose Aadhaar numbers are any 12 digits (a file of made-up or old numbers is not stopped); only a wrong number of digits is refused", async () => {
+    const s = await school();
+    const numbers = ["999900000003", "999900000004", "123456789012", "000000000000", "9999 0000 0008"];
+    const rows = numbers.map((aadhaarNumber, i) => row(i + 3, studentBody(s.class5, s.a, { firstName: `Kid${String.fromCharCode(65 + i)}`, aadhaarNumber, ...family(`Parent ${i}`, `91000000${10 + i}`) })));
+    const bad = row(10, studentBody(s.class5, s.a, { firstName: "Short", aadhaarNumber: "99990000", ...family("Parent X", "9100000099") }));
+    const res = await importRows(s.token, { dryRun: false, rows: [...rows, bad] });
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ ok: 5, failed: 1 });
+    expect(res.body.data.results[5]).toMatchObject({ row: 10, ok: false });
+    expect(JSON.stringify(res.body.data.results[5])).toContain("The Aadhaar number has 12 digits");
+    expect((await Student.find({ tenantId: s.tenantId }).select("aadhaarNumber").lean()).map((x) => x.aadhaarNumber).sort()).toEqual(["000000000000", "123456789012", "999900000003", "999900000004", "999900000008"]);
+  });
+
   it("keeps a full section full unless the person said to go over, and then goes over", async () => {
     const s = await school();
     const rows = [1, 2, 3].map((i) => row(i + 2, studentBody(s.class5, s.b, { firstName: `Kid${String.fromCharCode(64 + i)}`, ...family(`Parent ${i}`, `900000000${i}`) })));
@@ -315,6 +330,56 @@ describe("importing the rows", () => {
     const anyway = await importRows(s.token, { dryRun: false, allowOverCapacity: true, rows: rows.slice(1) });
     expect(anyway.body.data.ok).toBe(2);
     expect(await Student.countDocuments({ tenantId: s.tenantId })).toBe(3);
+  });
+
+  const seatsOf = async (tenantId: string, id: string) => (await Section.findOne({ _id: id, tenantId }).select("capacity").lean())?.capacity;
+  const classSeatsOf = async (tenantId: string, id: string) => (await SchoolClass.findOne({ _id: id, tenantId }).select("capacity").lean())?.capacity;
+  /** `count` different children (and parents) for one section; `from` makes another set of them. */
+  const kids = (classId: string, sectionId: string, count: number, from = 0) =>
+    Array.from({ length: count }, (_, k) => {
+      const i = from + k;
+      return row(i + 2, studentBody(classId, sectionId, { firstName: `Kid${String.fromCharCode(65 + i)}`, ...family(`Parent ${i}`, `90000001${String(i).padStart(2, "0")}`) }));
+    });
+
+  it("students past the last seat are admitted and the section's seats grow to hold them; the answer says what was raised", async () => {
+    const s = await school();
+    // Class 5 - B has 1 seat; three students come. Class 5 has 2000 seats, so only the section needs more.
+    const res = await importRows(s.token, { dryRun: false, allowOverCapacity: true, rows: kids(s.class5, s.b, 3) });
+    expect(res.body.data).toMatchObject({ ok: 3, failed: 0 });
+    expect(res.body.data.seatsRaised).toEqual([
+      { classId: s.class5, className: "Class 5", sectionId: s.b, sectionName: "B", from: 1, to: 3, classFrom: null, classTo: null },
+    ]);
+    expect(await seatsOf(s.tenantId, s.b)).toBe(3);
+    expect(await classSeatsOf(s.tenantId, s.class5)).toBe(2000);
+  });
+
+  it("the seats of the class grow too when its sections no longer fit in them", async () => {
+    const s = await school();
+    const six = (await request(app).post(`${academics}/classes`).set(auth(s.token)).send({ name: "Class 6", capacity: 3, sectionCount: 0 })).body.data;
+    const a = (await request(app).post(`${academics}/classes/${six.id}/sections`).set(auth(s.token)).send({ name: "A", capacity: 2, room: "6A" })).body.data;
+    await request(app).post(`${academics}/classes/${six.id}/sections`).set(auth(s.token)).send({ name: "B", capacity: 1, room: "6B" });
+    // A holds 2 and takes 3 students: A needs 3 seats, and A + B (3 + 1) no longer fit in the class's 3.
+    const res = await importRows(s.token, { dryRun: false, allowOverCapacity: true, rows: kids(six.id, a.id, 3) });
+    expect(res.body.data.ok).toBe(3);
+    expect(res.body.data.seatsRaised).toEqual([
+      { classId: six.id, className: "Class 6", sectionId: a.id, sectionName: "A", from: 2, to: 3, classFrom: 3, classTo: 4 },
+    ]);
+    expect(await seatsOf(s.tenantId, a.id)).toBe(3);
+    expect(await classSeatsOf(s.tenantId, six.id)).toBe(4);
+  });
+
+  it("raises nothing when everyone fits, in a check, or when the person did not say to go over", async () => {
+    const s = await school();
+    const fits = await importRows(s.token, { dryRun: false, allowOverCapacity: true, rows: kids(s.class5, s.a, 2) });
+    expect(fits.body.data).toMatchObject({ ok: 2, seatsRaised: [] });
+    expect(await seatsOf(s.tenantId, s.a)).toBe(40);
+
+    const check = await importRows(s.token, { dryRun: true, allowOverCapacity: true, rows: kids(s.class5, s.b, 3, 5) });
+    expect(check.body.data.seatsRaised).toEqual([]);
+    // Without the person's yes only the one seat is taken (the other two are refused, as before) and no seat is added.
+    const strict = await importRows(s.token, { dryRun: false, rows: kids(s.class5, s.b, 3, 10) });
+    expect(strict.body.data).toMatchObject({ ok: 1, failed: 2, seatsRaised: [] });
+    expect(await seatsOf(s.tenantId, s.b)).toBe(1);
   });
 });
 

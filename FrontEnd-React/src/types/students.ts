@@ -322,11 +322,25 @@ export interface ImportRowResult {
   student?: { id: string; name: string; admissionNumber: string };
 }
 
+/** A section whose seats were raised by an upload that brought more students than it had seats (the class's too, when its sections no longer fitted). */
+export interface SeatsRaised {
+  classId: string;
+  className: string;
+  sectionId: string;
+  sectionName: string;
+  from: number;
+  to: number;
+  /** The class's seats before and after; null when the class was not changed. */
+  classFrom: number | null;
+  classTo: number | null;
+}
+
 export interface ImportResult {
   dryRun: boolean;
   results: ImportRowResult[];
   ok: number;
   failed: number;
+  seatsRaised: SeatsRaised[];
 }
 
 /**

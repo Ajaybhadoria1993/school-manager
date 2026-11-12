@@ -32,6 +32,8 @@ import { EditSidebar } from "./EditSidebar";
 
 const PROFILE_PATHS = ["firstName", "lastName", "gender", "dateOfBirth", "admissionDate", "address", "bloodGroup", "category", "previousSchool"];
 const PLACEMENT_PATHS = ["classId", "sectionId", "rollNumber"];
+/** The form's id: the bar of buttons stands outside the form (in the layout's bottom slot), so its Save button names the form. */
+const EDIT_FORM_ID = "edit-student-form";
 
 type ServerDetail = { path: string; message: string };
 
@@ -106,7 +108,7 @@ export function EditStudentForm({
     const guardianEdits = v.guardians
       .map((g, i) => ({ g, i, changes: guardianChanges(g, saved.guardians[i]) }))
       .filter((edit) => Object.keys(edit.changes).length > 0);
-    const profile = profileChanges(v, saved, ownFields.filter((f) => f.mode !== "hidden"));
+    const profile = profileChanges(v, saved, form.custom.filter((f) => f.mode !== "hidden"));
     const placement = placementChanges(v, saved, allowOverCapacity);
     if (guardianEdits.length === 0 && Object.keys(profile).length === 0 && !placement) return;
 
@@ -191,7 +193,7 @@ export function EditStudentForm({
 
   return (
     <>
-      <form onSubmit={submit} noValidate className="space-y-4 lg:-mx-4 lg:-mt-3">
+      <form id={EDIT_FORM_ID} onSubmit={submit} noValidate className="space-y-4 lg:-mx-4 lg:-mt-3">
         <StudentFormHeader
           title="Edit student"
           subtitle={`${student.name} · ${student.admissionNumber}`}
@@ -225,14 +227,13 @@ export function EditStudentForm({
           <EditSidebar student={student} />
         </div>
 
-        <FormActionBar wide>
+        <FormActionBar dock>
           <Button type="button" variant="ghost" className="text-foreground-muted hover:text-danger" disabled={!form.dirty || saving} onClick={() => setAsk({ kind: "undo" })}>
             <RotateCcw className="size-4" aria-hidden />
             Undo changes
           </Button>
-          <div className="flex items-center gap-3">
-            <p className="hidden text-xs text-foreground-muted md:block">Enter in any box also saves. Escape puts a box back.</p>
-            <Button type="submit" size="lg" loading={saving} disabled={!form.dirty} aria-label="Save changes">
+          <div className="flex items-center gap-3" title="Enter in any box also saves. Escape puts a box back.">
+            <Button type="submit" form={EDIT_FORM_ID} size="lg" loading={saving} disabled={!form.dirty} aria-label="Save changes">
               {!saving && <Save className="size-4" aria-hidden />}
               Save changes
             </Button>

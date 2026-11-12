@@ -115,6 +115,9 @@ describe("Export students: the Excel's columns and the file on one page", () => 
     school(3);
     const user = openPage();
     await openFields(user);
+    // Optional for a new school, so its column can go; made mandatory, it cannot.
+    expect(screen.getByRole("switch", { name: "Aadhaar No. in the Excel" })).toBeEnabled();
+    await user.click(screen.getByRole("switch", { name: "Aadhaar No. mandatory" }));
     expect(screen.getByRole("switch", { name: "Aadhaar No. in the Excel" })).toBeDisabled();
     await user.click(screen.getByRole("switch", { name: "Aadhaar No. mandatory" }));
     expect(screen.getByRole("switch", { name: "Aadhaar No. in the Excel" })).toBeEnabled();

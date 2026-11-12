@@ -92,7 +92,14 @@ export class StudentSettingsService {
     const stored = { ...DEFAULT_FIELD_RULES };
     for (const f of doc?.fields ?? []) if (f.key in stored) stored[f.key] = f.mode;
     const fields = normaliseRules(stored);
-    const customFields = (doc?.customFields ?? []).map((f) => ({ key: f.key, label: f.label, type: f.type, options: [...(f.options ?? [])], mode: f.mode }));
+    const customFields = (doc?.customFields ?? []).map((f) => ({
+      key: f.key,
+      label: f.label,
+      type: f.type,
+      options: [...(f.options ?? [])],
+      mode: f.mode,
+      ...(f.classNumbers && f.classNumbers.length > 0 ? { classNumbers: [...f.classNumbers] } : {}),
+    }));
     // A field the school deleted leaves the export with it.
     const columns = doc?.exportColumns?.filter((c) => knownColumn(c.key, customFields));
     // Likewise its place on Add student; every detail is listed (the ones never placed at the end of their usual step).
