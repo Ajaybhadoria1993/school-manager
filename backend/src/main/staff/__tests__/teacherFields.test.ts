@@ -38,7 +38,7 @@ beforeEach(async () => {
 describe("a school's own fields for its teachers: the list", () => {
   it("starts empty, is kept as it is saved (in order), and is for the people who run the school only", async () => {
     const s = await createSchool("Sunrise Public School");
-    expect((await getSettings(s.token)).body.data).toEqual({ customFields: [] });
+    expect((await getSettings(s.token)).body.data).toMatchObject({ customFields: [] });
     const saved = await putSettings(s.token, [BLOOD, PAN]);
     expect(saved.status).toBe(200);
     expect(saved.body.data.customFields.map((f: { key: string }) => f.key)).toEqual(["c_blood001", "c_pan00001"]);

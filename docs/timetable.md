@@ -91,7 +91,7 @@ School timings, `/class-subjects` and `/class/:classId/:sectionId` to Class time
    (`StudentFormHeader current`). The **filter** (All classes / Not started / Draft / Published, with their numbers) is **four buttons in one line at the right of the title**
    (a radiogroup "Which timetables to show") instead of the dropdown above the list, which keeps only its search box. In the class workspace the old title block is gone
    and **the toolbar and the class's buttons are ONE line** (user's second round: the first version wrapped to two lines): at the left Fill the empty periods, Periods & time
-   (Pre-Primary: Mother teacher), at the right Print, Add a teacher, Copy to other sections, Publish. What used to crowd it moved: the **count of periods, Not saved and "No teacher
+   (Pre-Primary: Mother teacher), at the right Print, Add a teacher, Copy to other sections, Save the timetable (which publishes a draft too; 2026-11-14). What used to crowd it moved: the **count of periods, Not saved and "No teacher
    available in your school"** are a line of facts under the filter in the page's title row (`StudentFormHeader meta`; the workspace reports them with `onStatus` / `ClassWeekStatus`),
    and **Empty the whole week** is with Save under the week.
    **Small classes and teachers, 2026-11-13** (user, with UKG - A open: "ek din mein ek cheez, kabhi 2"; "teacher ki list; aage ki class mein bhi"). In a
@@ -104,6 +104,21 @@ School timings, `/class-subjects` and `/class/:classId/:sectionId` to Class time
    `shrink-0`, the whole box scrolls on a short screen): it had overlapped its own buttons. **Add a teacher** is a button in the header of the class, between Print
    and Copy/Publish (`/teachers/new`, to whoever may add teachers; not inside the box); with no teacher in the school the toolbar and the box say so. The name of
    the teacher was already on every filled period. Tests: `TimetableDayTeacher.test.tsx`, `utils/__tests__/timetable.test.ts`.
+   **One Save button, and a two-step box (2026-11-14,** user, with a class's timetable open: "save the time table upar hi rakho aur save kar di to publish ho jaye, alag alag
+   button zaruri nahi"; "subject assign karun to wahi teacher dikhe jo wo subject padha leta hai"; "ui accha karo, subject click karun to select ho jaye, niche teacher select kar pau"):
+   **(1) Save is one button at the top** of the class's toolbar (right group, with Print / Add a teacher / Copy), no longer under the week. **Save the timetable keeps the
+   week and, for a draft that has lessons, publishes it too** (`PUT /timetable/grid` then `POST /timetable/grid/publish`; "Timetable saved and published"); a published
+   timetable stays published (a change is live at once, one request); a week with nothing in it is saved and not published. A draft that was saved earlier and never published is
+   published by the same button, which then says **Publish the timetable**. If the week is saved but the checks refuse to publish it, the page says "The timetable is saved, but it
+   could not be published: ..." (the week is kept). **Take back to a draft** is the one thing left of the old Publish toggle (beside the button, only while published). There is
+   no Publish button and no Save under the week; **Throw away my changes** is at the top beside Save, **Empty the whole week** alone under the week. (`ClassWeek.submit`.)
+   **(2) The box of a period has two steps** (`PeriodPicker`): **the subject** (search + list, the one the period has is outlined and ticked, the keys' highlight is a grey row so it
+   no longer looks like the chosen one), and **the teacher**: a click on a subject puts it in the period and the box shows it on top ("Subject  English  Change") with the teachers
+   under it; a period that already has a lesson opens on the teacher step, **Change** goes to the list and **Keep {subject}** comes back. **Only the teachers who teach the
+   subject are listed** (`TeacherChoice.teaches`: the subject is among their subjects; always the usual teacher / No teacher, the class's mother teacher and the teacher the period
+   has now); the school's others are behind **Show all teachers (N more)** (**Only teachers of English** undoes it); when nobody teaches the subject it says "No teacher is set to
+   teach English yet." The teacher rows are radios with a round mark. Escape closes the box from wherever the focus is (the search box is gone on the teacher step, so the focus
+   goes to the box itself). A choice of several subjects still closes the box (they have the window). Tests: `TimetableClassWeek.test.tsx` (81), `utils/__tests__/timetable.test.ts`.
    **A class's day follows its lessons** (2026-11-09, user: "jis class ko jitne periods assign hain uss din ke, uska time wahi rahega; end time
    select karna faltu"): nothing is set for a class. The grid has the school's rows, and its last row, **Class ends**, says for each day the end
    of the last period that has a lesson (`dayEnds` in `utils/timetable.ts`; it follows lessons put in before they are saved; "–" for a day with
@@ -202,6 +217,7 @@ All under `/api/v1`. Writers: school admin, principal. Readers add teachers (pub
 | `DELETE /timetable/school-day/:departmentId` | the department follows the school's timing again (refused while a lesson would lose its period) |
 | `GET /timetable/grid?classId&sectionId` | one unit's week: its days and rows, lessons, subjects, teachers, what other classes take, the checks |
 | `PUT /timetable/grid` | save the whole grid (409 `TIMETABLE_CLASHES` with `dXpY` paths when it cannot be) |
+| `PUT /timetable/teacher-periods` | (2026-11-13, `timetable.edit`) a teacher is given a subject of a class AND its days and periods in one request: `{ classId, sectionId, subjectId, teacherId, periodsPerWeek?, slots: [{day, period}] }` (`periodsPerWeek` only for a subject the class does not study yet; left out, the slots say it). Everything is checked first and a refusal changes nothing: 400 `teacherId` (not the school's / left), 400 `periodsPerWeek`, 400 `slots` (more periods than the subject has a week, counting those already in the timetable; the same period twice), 409 `PERIOD_TAKEN` (the class has another subject there: "Monday period 3 already has Mathematics"), 409 `TIMETABLE_CLASHES` (the teacher is teaching another class then, does not come that day, the class has no such period). Then the subject goes to the teacher (`AllotmentService.assignTeacher`) and the lessons are kept (`GridService.save`); the lessons name nobody, they follow the subject's teacher. Answers the class's grid. `services/teacherPeriods.service.ts` |
 | `POST /timetable/grid/publish`, `/unpublish` | publish / take back |
 | `POST /timetable/grid/autofill` | the program's proposal for the empty periods (not saved) |
 | `POST /timetable/grid/copy` | give a saved timetable to the class's other sections |

@@ -78,6 +78,52 @@ describe("the class teacher", () => {
     expect((await list(r.token)).body.data.items.find((t: { id: string }) => t.id === r.meena).classTeacherOf).toEqual(["Class 5 - A", "Class 5 - B"]);
   });
 
+  it("with releaseOthers the teacher moves: they leave every other class they were the class teacher of (this year), and the answer names them", async () => {
+    const r = await ready();
+    await setClassTeacher(r.token, { ...r.a, teacherId: r.meena });
+    await setClassTeacher(r.token, { ...r.one, teacherId: r.meena });
+    const moved = await setClassTeacher(r.token, { ...r.b, teacherId: r.meena, releaseOthers: true });
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    expect(moved.body.data).toMatchObject({ ...r.b, label: "Class 5 - B", teacher: { id: r.meena, name: "Meena Singh" } });
+    expect([...(moved.body.data.released as string[])].sort()).toEqual(["Class 1", "Class 5 - A"]);
+    // Only Class 5 - B is hers now: the others have no class teacher.
+    expect((await classesOf(r.token, r.meena)).body.data.classTeacherOf).toEqual([expect.objectContaining({ ...r.b, label: "Class 5 - B" })]);
+    const sections = (await overview(r.token, r.class5.id)).body.data.classes[0].sections;
+    expect(sections.map((s: { name: string; classTeacher: unknown }) => [s.name, s.classTeacher])).toEqual([["A", null], ["B", { id: r.meena, name: "Meena Singh" }]]);
+    expect((await overview(r.token, r.class1.id)).body.data.classes[0].classTeacher).toBeNull();
+  });
+
+  it("releaseOthers also replaces the class teacher who was there, and leaves other teachers' classes alone", async () => {
+    const r = await ready();
+    await setClassTeacher(r.token, { ...r.a, teacherId: r.meena });
+    await setClassTeacher(r.token, { ...r.b, teacherId: r.dev });
+    const moved = await setClassTeacher(r.token, { ...r.b, teacherId: r.meena, releaseOthers: true });
+    expect(moved.body.data.released).toEqual(["Class 5 - A"]);
+    expect((await classesOf(r.token, r.dev)).body.data.classTeacherOf).toEqual([]);
+    expect((await classesOf(r.token, r.meena)).body.data.classTeacherOf.map((u: { label: string }) => u.label)).toEqual(["Class 5 - B"]);
+  });
+
+  it("releaseOthers for a teacher with no other class releases nothing; without it a teacher keeps all their classes (a small school)", async () => {
+    const r = await ready();
+    const first = await setClassTeacher(r.token, { ...r.a, teacherId: r.meena, releaseOthers: true });
+    expect(first.body.data.released).toEqual([]);
+    const second = await setClassTeacher(r.token, { ...r.b, teacherId: r.meena });
+    expect(second.body.data.released).toBeUndefined();
+    expect((await classesOf(r.token, r.meena)).body.data.classTeacherOf).toHaveLength(2);
+  });
+
+  it("a refused request releases nothing: a teacher who has left is not made the class teacher, and the others keep their classes", async () => {
+    const r = await ready();
+    await setClassTeacher(r.token, { ...r.a, teacherId: r.dev });
+    await setClassTeacher(r.token, { ...r.one, teacherId: r.meena });
+    // Meena has a class, so she cannot leave: give it up, then she leaves.
+    await setClassTeacher(r.token, { ...r.one, teacherId: null });
+    await request(app).patch(`/api/v1/staff/teachers/${r.meena}`).set(auth(r.token)).send({ isActive: false });
+    const refused = await setClassTeacher(r.token, { ...r.b, teacherId: r.meena, releaseOthers: true });
+    expect(refused.status).toBe(400);
+    expect((await classesOf(r.token, r.dev)).body.data.classTeacherOf).toHaveLength(1);
+  });
+
   it("refuses a teacher who has left, one of another school, a class with sections without one, and a section of another class", async () => {
     const r = await ready();
     const other = await timetableSchool("Moonrise Public School");
@@ -142,6 +188,32 @@ describe("giving a teacher a subject of a class", () => {
     const res = await assign(r.token, { ...r.a, subjectId: r.maths, teacherId: r.meena, periodsPerWeek: 6 });
     expect(res.status).toBe(200);
     expect(res.body.data.rows).toEqual([expect.objectContaining({ subjectName: "Mathematics", periodsPerWeek: 6, teacherName: "Meena Singh" })]);
+  });
+
+  it("says how many of a subject's periods a lesson of the class's timetable has been placed in (the teacher's page shows what is still to place)", async () => {
+    const r = await ready();
+    await addTiming(r.token);
+    await saveAllotments(r.token, r.a, [{ subjectId: r.maths, periodsPerWeek: 6 }, { subjectId: r.english, periodsPerWeek: 5 }]);
+    await assign(r.token, { ...r.a, subjectId: r.maths, teacherId: r.meena });
+    await assign(r.token, { ...r.a, subjectId: r.english, teacherId: r.meena });
+    const placed = async () => Object.fromEntries((await classesOf(r.token, r.meena)).body.data.subjects.map((s: { subjectName: string; placedPeriods: number }) => [s.subjectName, s.placedPeriods]));
+    // Given, but no period of the class's week has a lesson of it yet: nothing is in the teacher's week.
+    expect(await placed()).toEqual({ Mathematics: 0, English: 0 });
+
+    const grid = request(app).put("/api/v1/timetable/grid").set(auth(r.token)).send({
+      ...r.a,
+      cells: [
+        { day: 1, period: 1, lessons: [{ subjectId: r.maths }] },
+        { day: 2, period: 1, lessons: [{ subjectId: r.maths }] },
+        { day: 3, period: 2, lessons: [{ subjectId: r.english }] },
+      ],
+    });
+    expect((await grid).status).toBe(200);
+    expect(await placed()).toEqual({ Mathematics: 2, English: 1 });
+    // Another section's timetable does not count for this one.
+    expect((await assign(r.token, { ...r.b, subjectId: r.maths, teacherId: r.meena, periodsPerWeek: 4 })).status).toBe(200);
+    const sections = (await classesOf(r.token, r.meena)).body.data.subjects as { label: string; subjectName: string; placedPeriods: number }[];
+    expect(sections.find((s) => s.label === "Class 5 - B" && s.subjectName === "Mathematics")?.placedPeriods).toBe(0);
   });
 
   it("works for a class without sections", async () => {

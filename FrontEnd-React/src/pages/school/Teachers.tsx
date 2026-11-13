@@ -70,7 +70,7 @@ export default function TeachersPage() {
                 Fields
               </Link>
             )}
-            <ExportTeachersButton query={{ status, ...(typed ? { search: typed } : {}) }} empty={teachers.length === 0} />
+            <ExportTeachersButton query={{ status, ...(typed ? { search: typed } : {}) }} base="/school/teachers" />
             {!readOnly && bulkLink}
             {!readOnly && addLink}
           </>

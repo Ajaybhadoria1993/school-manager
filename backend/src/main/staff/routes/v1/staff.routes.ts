@@ -13,6 +13,7 @@ import {
   createStaffMember,
   createTeacherLogin,
   exportTeachers,
+  exportTeachersPreview,
   getMyTeacher,
   getTeacher,
   getTeacherClasses,
@@ -92,6 +93,8 @@ router.get("/teachers/settings", requirePermission("teachers.view"), getTeacherS
 router.put("/teachers/settings", requirePermission("teachers.settings"), validate(updateTeacherSettingsSchema), updateTeacherSettings);
 // The teachers as an Excel file, with the list's own filters (the sample file's columns first, so it can be uploaded back).
 router.get("/teachers/export", requirePermission("teachers.export"), validate(listTeachersQuerySchema, "query"), exportTeachers);
+// What the Export page shows before the file is made: the first teachers (or a sample row) in every column.
+router.get("/teachers/export/preview", requirePermission("teachers.export"), validate(listTeachersQuerySchema, "query"), exportTeachersPreview);
 // Bringing many teachers in at once: the sample file, reading an uploaded file, then making its rows in parts (fixed paths before ":id").
 router.get("/teachers/import/template", addTeachers, teachersTemplate);
 router.post("/teachers/import/read", addTeachers, importFile, readTeachersFile);

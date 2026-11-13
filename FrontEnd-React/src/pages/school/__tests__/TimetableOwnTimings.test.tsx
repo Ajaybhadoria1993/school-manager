@@ -217,10 +217,17 @@ describe("School timings: every department can have its own timing", () => {
     expect(windowSave(dialog)).toBeDisabled();
   });
 
-  it("Same as school (only in the window of a department that has its own timing) takes its own timing away at once", async () => {
+  it("Same as school (only in the window of a department that has its own timing) asks first, then takes its own timing away", async () => {
     const { calls, user } = openPage([SIX, PRIMARY_OWN]);
     const dialog = await openWindow(user, "Primary");
     await user.click(within(dialog).getByRole("button", { name: "Same as school" }));
+    // The window asks first: Back keeps everything, nothing is sent.
+    expect(await within(dialog).findByText("Primary will follow the school's timing again.")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Back" }));
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    expect(within(dialog).getByRole("button", { name: "Same as school" })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Same as school" }));
+    await user.click(within(dialog).getByRole("button", { name: "Use the school's timing" }));
     await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.path === "/timetable/school-day/d2")).toBe(true));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(await region("Primary timing")).toHaveTextContent("Same as school");

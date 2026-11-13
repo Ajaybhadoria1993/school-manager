@@ -159,6 +159,68 @@ describe("the teachers of a class, on its Timetable & teachers page (2026-11-06:
     expect(within(box).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 
+  it("Save asks before another teacher takes the class teacher's place: it names who is there now, Cancel sends nothing and keeps the boxes", async () => {
+    const { calls, user } = openPage("/school-class/c5/timetable?section=c5-A");
+    const box = await panel();
+    await within(box).findByRole("button", { name: /(^|\s)English teacher$/ });
+    await choose(user, box, "Class teacher", "Dev Patel");
+    await choose(user, box, "English teacher", "Kiran Rao");
+    await user.click(save(box));
+    const ask = await screen.findByRole("dialog", { name: "Class 5 - A already has a class teacher" });
+    expect(ask).toHaveTextContent("Meena Singh is the class teacher of Class 5 - A now.");
+    expect(ask).toHaveTextContent("Dev Patel becomes the class teacher instead and Meena Singh no longer is.");
+    expect(writes(calls)).toHaveLength(0);
+
+    await user.click(within(ask).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Class 5 - A already has a class teacher" })).not.toBeInTheDocument());
+    expect(writes(calls)).toHaveLength(0);
+    // Everything picked is still there, not saved.
+    expect(within(box).getByRole("button", { name: /(^|\s)Class teacher$/ })).toHaveTextContent("Dev Patel");
+    expect(within(box).getByRole("button", { name: /(^|\s)English teacher$/ })).toHaveTextContent("Kiran Rao");
+    expect(save(box)).toBeEnabled();
+
+    await user.click(save(box));
+    await user.click(within(await screen.findByRole("dialog", { name: "Class 5 - A already has a class teacher" })).getByRole("button", { name: "Change class teacher" }));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0].body).toMatchObject({ classId: "c5", sectionId: "c5-A", classTeacherId: "dev" });
+    expect(await screen.findByRole("dialog", { name: "Teachers saved" })).toBeInTheDocument();
+  });
+
+  it("taking the class teacher away (No class teacher) asks too, and says the subjects stay; a section with nobody asks nothing", async () => {
+    const { calls, user } = openPage("/school-class/c5/timetable?section=c5-A");
+    const box = await panel();
+    await within(box).findByRole("button", { name: /(^|\s)English teacher$/ });
+    await choose(user, box, "Class teacher", "No class teacher");
+    await user.click(save(box));
+    const ask = await screen.findByRole("dialog", { name: "Take Meena Singh off as class teacher of Class 5 - A?" });
+    expect(ask).toHaveTextContent("Class 5 - A will have no class teacher until you choose one.");
+    expect(writes(calls)).toHaveLength(0);
+    await user.click(within(ask).getByRole("button", { name: "Take off" }));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0].body).toMatchObject({ classTeacherId: null });
+  });
+
+  it("a section with no class teacher yet is given one without being asked", async () => {
+    const { calls, user } = openPage("/school-class/c5/timetable?section=c5-B");
+    const box = await screen.findByRole("region", { name: "Teachers of Class 5 - B" });
+    await within(box).findByRole("button", { name: /(^|\s)Class teacher$/ });
+    await choose(user, box, "Class teacher", "Dev Patel");
+    await user.click(save(box));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(screen.queryByRole("dialog", { name: /already has a class teacher/ })).not.toBeInTheDocument();
+    expect(writes(calls)[0].body).toMatchObject({ classId: "c5", sectionId: "c5-B", classTeacherId: "dev" });
+  });
+
+  it("only the subjects changed: the class teacher is left alone, so nothing is asked", async () => {
+    const { calls, user } = openPage("/school-class/c5/timetable?section=c5-A");
+    const box = await panel();
+    await within(box).findByRole("button", { name: /(^|\s)English teacher$/ });
+    await choose(user, box, "English teacher", "Kiran Rao");
+    await user.click(save(box));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(screen.queryByRole("dialog", { name: /class teacher/i })).not.toBeInTheDocument();
+  });
+
   it("Save sends the class teacher and the subjects that changed in ONE request, then a window says it is saved", async () => {
     const { calls, user } = openPage("/school-class/c5/timetable?section=c5-A");
     const box = await panel();
@@ -166,6 +228,7 @@ describe("the teachers of a class, on its Timetable & teachers page (2026-11-06:
     await choose(user, box, "Class teacher", "Dev Patel");
     await choose(user, box, "English teacher", "Kiran Rao");
     await user.click(save(box));
+    await user.click(within(await screen.findByRole("dialog", { name: "Class 5 - A already has a class teacher" })).getByRole("button", { name: "Change class teacher" }));
     await waitFor(() => expect(writes(calls)).toHaveLength(1));
     expect(writes(calls)[0]).toMatchObject({ method: "PUT", path: "/subjects/allotments/teachers" });
     expect(writes(calls)[0].body).toEqual({ classId: "c5", sectionId: "c5-A", classTeacherId: "dev", subjects: [{ subjectId: "english", teacherId: "kiran", backupTeacherIds: [] }] });

@@ -332,6 +332,8 @@ export interface TeacherChoice {
   /** Cannot be picked: they cannot take the period and the period does not have them already. */
   disabled: boolean;
   selected: boolean;
+  /** Teaches this subject (it is among their subjects), or is the usual teacher, the class's mother teacher or the period's teacher now: the box shows these first and the rest on request. */
+  teaches: boolean;
 }
 
 /**
@@ -352,6 +354,7 @@ export function teacherChoices(model: GridModel, subjectId: string, day: number,
     bad: !!usualTrouble,
     disabled: false,
     selected: current === null || current === usualId,
+    teaches: true,
   };
   const teachesIt = (t: GridTeacher) => t.subjectIds.includes(subjectId);
   const rest = others.filter((t) => t.id !== mother);
@@ -360,7 +363,15 @@ export function teacherChoices(model: GridModel, subjectId: string, day: number,
     first,
     ...ordered.map((t): TeacherChoice => {
       const trouble = teacherTrouble(model, t.id, day, period);
-      return { value: t.id, label: t.name, note: trouble ?? (t.id === mother ? "Mother teacher" : null), bad: !!trouble, disabled: !!trouble && t.id !== current, selected: t.id === current };
+      return {
+        value: t.id,
+        label: t.name,
+        note: trouble ?? (t.id === mother ? "Mother teacher" : null),
+        bad: !!trouble,
+        disabled: !!trouble && t.id !== current,
+        selected: t.id === current,
+        teaches: t.id === mother || t.id === current || teachesIt(t),
+      };
     }),
   ];
 }

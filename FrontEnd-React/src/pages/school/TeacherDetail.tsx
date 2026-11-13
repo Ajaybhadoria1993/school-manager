@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { AtSign, BookOpen, Briefcase, CalendarDays, KeyRound, ListPlus, LogOut, Pencil, Repeat2, RotateCcw, UserRound, UserRoundCog } from "lucide-react";
 import { employmentLabel } from "../../constants/teachers";
 import { useMedium } from "../../hooks/useMedium";
@@ -12,7 +12,6 @@ import { getApiError } from "../../utils/apiErrors";
 import { askedFields, ownAnswerText } from "../../utils/teacherOwn";
 import { formatMobile } from "../../utils/students";
 import type { Teacher } from "../../types";
-import { AssignClassDialog } from "../../components/teachers/AssignClassDialog";
 import { ChangeUsernameDialog } from "../../components/teachers/ChangeUsernameDialog";
 import { Block, None, Row } from "../../components/teachers/DetailBlocks";
 import { LeaveTeacherModal } from "../../components/teachers/LeaveTeacherModal";
@@ -55,7 +54,8 @@ export default function TeacherDetailPage() {
   // The school's own fields the school asks (Teacher > Fields): a card of their answers.
   const own = askedFields(useGetTeacherSettingsQuery().data?.data.customFields);
   const { push } = useToast();
-  const [dialog, setDialog] = useState<"password" | "login" | "leave" | "replace" | "username" | "assign" | null>(null);
+  const navigate = useNavigate();
+  const [dialog, setDialog] = useState<"password" | "login" | "leave" | "replace" | "username" | null>(null);
   const t = res.data?.data;
   const crumbs = [{ label, to: base }];
 
@@ -138,7 +138,7 @@ export default function TeacherDetailPage() {
         }
       />
 
-      <TeacherClassesBlock teacher={t} onAssign={() => setDialog("assign")} canChange={mayChange} />
+      <TeacherClassesBlock teacher={t} onAssign={() => navigate(`${base}/${t.id}/assign-class`)} canChange={mayChange} />
 
       <div className="grid items-start gap-6 md:grid-cols-2">
         <Block icon={UserRound} tone="primary" title="Personal" index={0}>
@@ -225,7 +225,6 @@ export default function TeacherDetailPage() {
       {dialog === "leave" && <LeaveTeacherModal teacher={t} onClose={() => setDialog(null)} />}
       {dialog === "replace" && <ReplaceTeacherDialog teacher={t} onClose={() => setDialog(null)} />}
       {dialog === "username" && <ChangeUsernameDialog teacher={t} onClose={() => setDialog(null)} />}
-      {dialog === "assign" && <AssignClassDialog teacher={t} onClose={() => setDialog(null)} />}
     </div>
   );
 }

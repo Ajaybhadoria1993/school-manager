@@ -16,13 +16,15 @@ import { DayFields, HoursFields } from "./DayFields";
  * day (Pre-Primary: school starts, school ends and a lunch, since periods do not matter there), starting from what the department has now,
  * or from the school's day when it has no timing of its own, so only what differs has to be changed. Save writes it for the school's
  * usual days (`PUT /timetable/school-day {departmentId}`) and closes the window; it waits until something is different. **Same as school**
- * (only for a department that has its own timing) takes its own timing away (`DELETE`). `plan` is the school's week as it is saved.
+ * (only for a department that has its own timing) takes its own timing away (`DELETE`), after asking. `plan` is the school's week as it is saved.
  */
 export function DepartmentTimingDialog({ department, schedules, plan, onClose }: { department: DepartmentItem; schedules: Schedule[]; plan: WeekPlan; onClose: () => void }) {
   const { push } = useToast();
   const [saveWeek] = useSaveSchoolDayMutation();
   const [removeOwn] = useRemoveDepartmentDayMutation();
   const { busy, error, run, clearError } = useSave(onClose);
+  // "Same as school" takes the department's own timing away: the window asks first, in place of the boxes.
+  const [asking, setAsking] = useState(false);
 
   const periodMinutes = plan.usual.periodMinutes;
   const have = useMemo(() => storedSetup(department, schedules, plan.usual), [department, schedules, plan.usual]);
@@ -55,16 +57,37 @@ export function DepartmentTimingDialog({ department, schedules, plan, onClose }:
       size="lg"
       onClose={onClose}
       footer={
-        <>
-          <Button variant="secondary" onPress={onClose} isDisabled={busy}>
-            Cancel
-          </Button>
-          <Button variant="primary" isPending={busy} isDisabled={!changed || problem !== undefined} onPress={() => void save()}>
-            Save
-          </Button>
-        </>
+        asking ? (
+          <>
+            <Button variant="secondary" onPress={() => setAsking(false)} isDisabled={busy}>
+              Back
+            </Button>
+            <Button variant="primary" isPending={busy} onPress={() => void sameAsSchool()}>
+              Use the school's timing
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="secondary" onPress={onClose} isDisabled={busy}>
+              Cancel
+            </Button>
+            <Button variant="primary" isPending={busy} isDisabled={!changed || problem !== undefined} onPress={() => void save()}>
+              Save
+            </Button>
+          </>
+        )
       }
     >
+      {asking ? (
+        <div className="space-y-3 text-sm">
+          <p className="font-semibold text-foreground">{department.name} will follow the school's timing again.</p>
+          <p>
+            Its own timing is taken away. A class with a timing of its own keeps it. You can give {department.name} a timing of its own again at any time.
+          </p>
+          <ModalError message={error ? error.message : null} />
+        </div>
+      ) : (
+      <>
       {setup.kind === "hours" ? (
         <HoursFields idPrefix="dept-window" name={department.name} value={setup.hours} onChange={(hours) => edit({ kind: "hours", hours })} />
       ) : (
@@ -83,11 +106,13 @@ export function DepartmentTimingDialog({ department, schedules, plan, onClose }:
       <ModalError message={error ? error.message : null} />
       {have.stored && (
         <div>
-          <Button variant="ghost" size="sm" isDisabled={busy} onPress={() => void sameAsSchool()}>
+          <Button variant="ghost" size="sm" isDisabled={busy} onPress={() => setAsking(true)}>
             <Undo2 className="size-4" aria-hidden />
             Same as school
           </Button>
         </div>
+      )}
+      </>
       )}
     </AppModal>
   );

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ArrowLeft, ArrowRight, CircleCheck, UserPlus } from "lucide-react";
+import { DEFAULT_TEACHER_RULES } from "../../constants/teacherFields";
 import { teacherFieldId, useTeacherForm } from "../../hooks/useTeacherForm";
 import { useFreeUsername, useUsernameCheck } from "../../hooks/useUsernameCheck";
 import { useTeacherBase } from "../../hooks/useTeacherBase";
 import { useCreateTeacherMutation, useGetTeacherSettingsQuery } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
-import { TEACHER_STEPS, emptyTeacherForm, generatePassword, problemKeysOf, stepOfKey, toTeacherInput, usernameFor, type TeacherFormKey } from "../../utils/teachers";
+import { TEACHER_STEPS, emptyTeacherForm, generatePassword, jobAsked, problemKeysOf, stepOfKey, toTeacherInput, usernameFor, type TeacherFormKey } from "../../utils/teachers";
 import { askedFields, ownAnswersOf, ownFieldId, ownProblems, refusedOwn, type OwnValues } from "../../utils/teacherOwn";
 import type { Teacher } from "../../types";
 import { CredentialsCard } from "../../components/teachers/CredentialsCard";
@@ -35,9 +36,15 @@ export default function TeacherAddPage() {
   const { base, label } = useTeacherBase();
   const crumbs = [{ label, to: base }];
   const [create, { isLoading: sending }] = useCreateTeacherMutation();
-  const form = useTeacherForm(useMemo(emptyTeacherForm, []), WITH_LOGIN);
-  // The school's own fields the school asks (Teacher > Fields): asked in the Job step, sent with the teacher.
-  const own = askedFields(useGetTeacherSettingsQuery().data?.data.customFields);
+  // What the school asks (Teacher > Manage fields): the usual details (needed, optional or not asked) and its own fields.
+  const settings = useGetTeacherSettingsQuery().data?.data;
+  const rules = useMemo(() => ({ ...DEFAULT_TEACHER_RULES, ...settings?.fields }), [settings?.fields]);
+  const options = useMemo(() => ({ ...WITH_LOGIN, rules }), [rules]);
+  const form = useTeacherForm(useMemo(emptyTeacherForm, []), options);
+  // The school's own fields the school asks: asked in the Job step, sent with the teacher.
+  const own = askedFields(settings?.customFields);
+  // The Job step is left out when the school asks none of its details and has no field of its own.
+  const steps = useMemo(() => TEACHER_STEPS.filter((s) => s.key !== "job" || jobAsked(rules) || own.length > 0), [rules, own.length]);
   const [ownValues, setOwnValues] = useState<OwnValues>({});
   const [ownShown, setOwnShown] = useState(false);
   const [ownServer, setOwnServer] = useState<Record<string, string>>({});
@@ -50,8 +57,8 @@ export default function TeacherAddPage() {
   const [focusKeys, setFocusKeys] = useState<TeacherFormKey[] | null>(null);
   const [added, setAdded] = useState<{ teacher: Teacher; password: string } | null>(null);
 
-  const step = TEACHER_STEPS[position];
-  const last = position === TEACHER_STEPS.length - 1;
+  const step = steps[Math.min(position, steps.length - 1)];
+  const last = position === steps.length - 1;
   const usernameCheck = useUsernameCheck(form.values.username, step.key === "login");
   // The username made from the name is swapped for a free one when somebody (any school) already has it.
   useFreeUsername(usernameCheck, form.wasTyped("username"), (free) => form.set("username", free));
@@ -60,14 +67,14 @@ export default function TeacherAddPage() {
     (index: number) => {
       // Arriving at the Login step: a username from the name (with a number; the same one again for the same name) and a password
       // already made, unless the person has typed their own. (Not when it is already open: a refused username must stay as it is.)
-      if (TEACHER_STEPS[index].key === "login" && index !== position) {
+      if (steps[index].key === "login" && index !== position) {
         if (!form.wasTyped("username")) form.set("username", usernameFor(form.values.username, form.values.name));
         if (form.values.password === "") form.set("password", generatePassword());
       }
       setPosition(index);
       setFurthest((f) => Math.max(f, index));
     },
-    [form, position]
+    [form, position, steps]
   );
 
   // A new step starts at the top of the page; a refused box gets the cursor once its step is on the screen.
@@ -82,10 +89,10 @@ export default function TeacherAddPage() {
 
   /** Opens the first step that has a wrong box in `keys` and puts the cursor in it. */
   function showStepOf(keys: readonly TeacherFormKey[]) {
-    const index = TEACHER_STEPS.findIndex((s) => keys.some((k) => stepOfKey(k) === s.key));
+    const index = steps.findIndex((s) => keys.some((k) => stepOfKey(k) === s.key));
     if (index < 0) return;
     openStep(index);
-    setFocusKeys(keys.filter((k) => stepOfKey(k) === TEACHER_STEPS[index].key));
+    setFocusKeys(keys.filter((k) => stepOfKey(k) === steps[index].key));
   }
 
   function goNext() {
@@ -118,7 +125,7 @@ export default function TeacherAddPage() {
       if (Object.keys(ownRefused).length > 0) {
         setOwnServer(ownRefused);
         setFormError("Some boxes need a change: see the messages in red.");
-        openStep(TEACHER_STEPS.findIndex((s) => s.key === "job"));
+        openStep(steps.findIndex((s) => s.key === "job"));
       } else if (keys.length > 0) {
         setFormError("Some boxes need a change: see the messages in red.");
         showStepOf(keys);
@@ -141,7 +148,7 @@ export default function TeacherAddPage() {
     if (wrong.length > 0) {
       form.reveal(wrong);
       setFormError("Some boxes need a change: see the messages in red.");
-      const first = TEACHER_STEPS.find((s) => problemKeysOf(form.problems, s.key).length > 0);
+      const first = steps.find((s) => problemKeysOf(form.problems, s.key).length > 0);
       if (first && first.key !== step.key) showStepOf(problemKeysOf(form.problems, first.key));
       else form.focusFirst(problemKeysOf(form.problems, step.key));
       return;
@@ -151,7 +158,7 @@ export default function TeacherAddPage() {
     if (ownWrong.length > 0) {
       setOwnShown(true);
       setFormError("Some boxes need a change: see the messages in red.");
-      if (step.key !== "job") openStep(TEACHER_STEPS.findIndex((s) => s.key === "job"));
+      if (step.key !== "job") openStep(steps.findIndex((s) => s.key === "job"));
       return;
     }
     // Taken, as the box already says (with free ones under it): nothing is sent.
@@ -203,7 +210,7 @@ export default function TeacherAddPage() {
       {formError && <ModalError message={formError} />}
 
       <Card className="px-5 py-4 sm:px-7 sm:py-5">
-        <Steps steps={TEACHER_STEPS} active={position} completed={passed} furthest={furthest} onSelect={openStep} />
+        <Steps steps={steps} active={position} completed={passed} furthest={furthest} onSelect={openStep} />
       </Card>
 
       {/* `key` gives each step a fresh start; the values are the form's, so nothing typed is lost by moving. */}

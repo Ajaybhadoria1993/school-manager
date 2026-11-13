@@ -52,6 +52,7 @@ export const ALLOTMENT: AllotmentView = {
     { subjectId: "english", subjectName: "English", subjectCode: "ENG", category: "academic", subjectActive: true, periodsPerWeek: 5, blockSize: 1, teacherId: null, teacherName: null, backups: [], group: null },
   ],
   siblings: [{ id: "c5-B", name: "B" }],
+  classTeacher: null,
   totals: { periods: 11, available: 40 },
 };
 

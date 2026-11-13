@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker, Link } from "react-router";
-import { BookOpen, CircleAlert, Clock3, Copy, HeartHandshake, ListOrdered, Printer, Send, Sparkles, TriangleAlert, Undo2, UserPlus } from "lucide-react";
+import { BookOpen, CircleAlert, Clock3, Copy, HeartHandshake, ListOrdered, Printer, Save, Sparkles, TriangleAlert, Undo2, UserMinus, UserPlus } from "lucide-react";
 import { DAY_NAMES, SUBJECT_PRESETS } from "../../constants/timetable";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import {
@@ -92,6 +92,8 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
   const prePrimary = !!structure?.departments.some((d) => d.id === klass?.departmentId && isPrePrimaryName(d.name));
   // The mother teacher chosen here, until the page reads the week again (the server then says the same).
   const [motherChosen, setMotherChosen] = useState<string | null | undefined>(undefined);
+  // A mother teacher who is there already is replaced (or taken away) by a new choice: a window asks first, naming her.
+  const [askingMother, setAskingMother] = useState<{ next: string | null } | null>(null);
   const mother = prePrimary ? (motherChosen !== undefined ? motherChosen : (saved.classTeacher?.id ?? null)) : null;
   const motherName = mother ? (model.teachers.get(mother)?.name ?? saved.classTeacher?.name ?? null) : null;
   // A small class has one thing a day (or two): the whole day is what a picked subject fills, until the toolbar says otherwise.
@@ -186,21 +188,43 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
     }
   }
 
+  /**
+   * The one button at the top (2026-11-13: "save kar di to publish ho jaye, alag alag button zaruri nahi"): **Save the timetable** keeps the week and,
+   * for a draft that has lessons, publishes it too (a published timetable stays published: a change is live at once). A saved draft that was never
+   * published (older ones) is published by the same button, which then says **Publish the timetable**. A refusal to publish (a clash the checks found)
+   * is said after "saved": the week is kept either way.
+   */
   async function submit() {
     setFailure(null);
-    try {
-      await save({ ...unit, cells }).unwrap();
-      push("success", "Timetable saved");
-    } catch (err) {
-      const e = getApiError(err);
-      const found = new Map<string, string[]>();
-      for (const d of Array.isArray(e?.details) ? (e.details as { path?: string; message?: string }[]) : []) {
-        const match = /^d(\d+)p(\d+)$/.exec(d.path ?? "");
-        if (match && d.message) found.set(cellKey(Number(match[1]), Number(match[2])), [...(found.get(cellKey(Number(match[1]), Number(match[2]))) ?? []), d.message]);
+    if (dirty) {
+      try {
+        await save({ ...unit, cells }).unwrap();
+      } catch (err) {
+        const e = getApiError(err);
+        const found = new Map<string, string[]>();
+        for (const d of Array.isArray(e?.details) ? (e.details as { path?: string; message?: string }[]) : []) {
+          const match = /^d(\d+)p(\d+)$/.exec(d.path ?? "");
+          if (match && d.message) found.set(cellKey(Number(match[1]), Number(match[2])), [...(found.get(cellKey(Number(match[1]), Number(match[2]))) ?? []), d.message]);
+        }
+        setClashes(found);
+        setFailure(e?.message ?? "Could not save. Please try again.");
+        return;
       }
-      setClashes(found);
-      setFailure(e?.message ?? "Could not save. Please try again.");
     }
+    if (view.status === "published" || (dirty ? cells.length : view.cells.length) === 0) return void push("success", "Timetable saved");
+    try {
+      await publish(unit).unwrap();
+      push("success", dirty ? "Timetable saved and published" : "Timetable published");
+    } catch (err) {
+      setFailure(`${dirty ? "The timetable is saved, but it" : "It"} could not be published: ${getApiError(err)?.message ?? "please try again."}`);
+    }
+  }
+
+  /** A choice in the Mother teacher box: with a mother teacher in place already, the window asks first; with none, it is kept at once. */
+  function pickMother(next: string | null) {
+    if (next === mother) return;
+    if (mother !== null) return setAskingMother({ next });
+    void chooseMother(next);
   }
 
   /** The mother teacher of a Pre-Primary class: kept at once as its class teacher, and put on the periods with no teacher (saved with the week). */
@@ -222,16 +246,12 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
     }
   }
 
-  async function toggle() {
+  /** A published timetable goes back to a draft (teachers and parents no longer see it): the only thing left of the old Publish toggle. */
+  async function takeBack() {
     setFailure(null);
     try {
-      if (view.status === "published") {
-        await unpublish(unit).unwrap();
-        push("success", "Taken back to a draft");
-      } else {
-        await publish(unit).unwrap();
-        push("success", "Published");
-      }
+      await unpublish(unit).unwrap();
+      push("success", "Taken back to a draft");
     } catch (err) {
       setFailure(getApiError(err)?.message ?? "Could not do that. Please try again.");
     }
@@ -293,6 +313,9 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
 
   const openCell = open ? cells.find((c) => c.day === open.day && c.period === open.period) : undefined;
   const noTiming = view.days.length === 0;
+  // The one Save button: changes to keep, or a saved draft with lessons that was never published.
+  const publishSaved = !dirty && view.exists && view.status !== "published" && view.cells.length > 0;
+  const saveLabel = publishSaved ? "Publish the timetable" : "Save the timetable";
   // What the box of a period offers: the class's subjects first, then the school's other subjects, then the usual ones the school does not
   // have yet (added when picked).
   const choices = useMemo(() => subjectChoices({ allotments: view.allotments, school: allSubjects ?? [], presets: SUBJECT_PRESETS, placed: counts }), [view.allotments, allSubjects, counts]);
@@ -355,17 +378,6 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
           Copy to other sections
         </Button>
       )}
-      {view.status === "published" ? (
-        <Button variant="outline" onClick={() => void toggle()} loading={unpublishing} disabled={dirty}>
-          <Undo2 className="size-4" aria-hidden />
-          Take back to a draft
-        </Button>
-      ) : (
-        <Button onClick={() => void toggle()} loading={publishing} disabled={dirty || view.cells.length === 0} title={dirty ? "Save first" : view.cells.length === 0 ? "Put some lessons in first" : undefined}>
-          <Send className="size-4" aria-hidden />
-          Publish
-        </Button>
-      )}
 
           </div>
         <Card className="space-y-3 p-5">
@@ -417,7 +429,7 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
                     value={mother ?? ""}
                     disabled={choosingMother}
                     options={[{ value: "", label: "No mother teacher" }, ...activeTeachers.map((t) => ({ value: t.id, label: t.name }))]}
-                    onChange={(v) => void chooseMother(v || null)}
+                    onChange={(v) => pickMother(v || null)}
                   />
                 </div>
               </div>
@@ -448,17 +460,21 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
                   Copy to other sections
                 </Button>
               )}
-              {view.status === "published" ? (
-                <Button variant="outline" onClick={() => void toggle()} loading={unpublishing} disabled={dirty}>
+              {dirty && (
+                <Button variant="ghost" onClick={() => edit(view.cells)}>
+                  Throw away my changes
+                </Button>
+              )}
+              {view.status === "published" && !dirty && (
+                <Button variant="outline" onClick={() => void takeBack()} loading={unpublishing}>
                   <Undo2 className="size-4" aria-hidden />
                   Take back to a draft
                 </Button>
-              ) : (
-                <Button onClick={() => void toggle()} loading={publishing} disabled={dirty || view.cells.length === 0} title={dirty ? "Save first" : view.cells.length === 0 ? "Put some lessons in first" : undefined}>
-                  <Send className="size-4" aria-hidden />
-                  Publish
-                </Button>
               )}
+              <Button onClick={() => void submit()} loading={saving || publishing} disabled={!dirty && !publishSaved} title={!dirty && !publishSaved ? "Everything is saved" : undefined}>
+                <Save className="size-4" aria-hidden />
+                {saveLabel}
+              </Button>
             </div>
           </div>
 
@@ -490,22 +506,13 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
 
           <GridTable view={view} model={model} cells={cells} colors={colors} problems={problems} looks={looks} openKey={picking ? cellKey(picking.day, picking.period) : null} onCell={openPeriod} />
 
-          <div className="flex flex-wrap items-center gap-3 print:hidden">
-            <Button onClick={() => void submit()} loading={saving} disabled={!dirty}>
-              Save the timetable
-            </Button>
-            {!dirty && view.exists && <span className="text-sm text-foreground-muted">Everything is saved.</span>}
-            {dirty && (
-              <Button variant="ghost" onClick={() => edit(view.cells)}>
-                Throw away my changes
-              </Button>
-            )}
-            {cells.length > 0 && (
-              <Button variant="ghost" className="sm:ml-auto" onClick={() => setClearing(true)}>
+          {cells.length > 0 && (
+            <div className="flex justify-end print:hidden">
+              <Button variant="ghost" onClick={() => setClearing(true)}>
                 Empty the whole week
               </Button>
-            )}
-          </div>
+            </div>
+          )}
 
           {(dirty || errors.length > 0 || warnings.length > 0) && (
             <Card className="space-y-2 p-4 print:hidden" aria-label="Checks">
@@ -622,6 +629,43 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
           <p>Every lesson is taken out of the grid. Nothing is saved until you press Save, so you can still throw this away.</p>
         </ConfirmModal>
       )}
+      {askingMother && mother && askingMother.next !== null && (
+        <ConfirmModal
+          title={`${view.unit.label} already has a mother teacher`}
+          confirmLabel="Change mother teacher"
+          icon={HeartHandshake}
+          tone="primary"
+          onClose={() => setAskingMother(null)}
+          onConfirm={async () => {
+            setAskingMother(null);
+            await chooseMother(askingMother.next);
+          }}
+        >
+          <p>
+            <strong>{motherName ?? "The mother teacher"}</strong> is the mother teacher (the class teacher) of {view.unit.label} now.
+          </p>
+          <p>
+            If you go on, {model.teachers.get(askingMother.next)?.name ?? "The new teacher"} becomes the mother teacher instead and {motherName ?? "she"} no longer is. The periods that had{" "}
+            {motherName ?? "her"} go to the new one; press Save the timetable to keep them.
+          </p>
+        </ConfirmModal>
+      )}
+      {askingMother && mother && askingMother.next === null && (
+        <ConfirmModal
+          title={`Take ${motherName ?? "the mother teacher"} off as mother teacher of ${view.unit.label}?`}
+          confirmLabel="Take off"
+          icon={UserMinus}
+          onClose={() => setAskingMother(null)}
+          onConfirm={async () => {
+            setAskingMother(null);
+            await chooseMother(null);
+          }}
+        >
+          <p>
+            {view.unit.label} will have <strong>no mother teacher</strong> until you choose one. The periods that had {motherName ?? "her"} have no teacher until you choose another.
+          </p>
+        </ConfirmModal>
+      )}
       {blocker.state === "blocked" && (
         <ConfirmModal title="Leave without saving?" confirmLabel="Leave without saving" onClose={() => blocker.reset()} onConfirm={async () => blocker.proceed()}>
           <p>You have changed this timetable and not saved it. If you leave now, the changes are lost.</p>
@@ -633,7 +677,7 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
 
 /**
  * One class's (or section's) week inside Timetable > Class timetables: what it studies (edited here), the week as a table with the
- * subjects to put in it, the program's help in filling it, the checks, Save and Publish. Everything done in the grid stays on the screen
+ * subjects to put in it, the program's help in filling it, the checks, Save (which publishes a draft too, one button at the top). Everything done in the grid stays on the screen
  * until "Save the timetable" (one request); the server checks it again and refuses a clash.
  */
 export function ClassWeek({ unit, onGoTimings, onStatus }: { unit: UnitRef; onGoTimings: () => void; onStatus?: (status: ClassWeekStatus | null) => void }) {

@@ -64,7 +64,17 @@ describe("A teacher's week", () => {
 
   it("says what they teach this year, or how to give them something", async () => {
     openPage();
-    expect(await screen.findByText("Class 5 - A · Mathematics · 6 a week")).toBeInTheDocument();
+    // Each is a link to the class's timetable, with how many of its periods a lesson has been placed in.
+    const chip = await screen.findByRole("link", { name: /Class 5 - A · Mathematics · 6 a week/ });
+    expect(chip).toHaveAttribute("href", "/school/timetable/class/c5/c5-A");
+    expect(chip).toHaveTextContent(/in timetable/);
+  });
+
+  it("says when a subject's periods are not in the timetable yet, and why they are not in the week", async () => {
+    openPage({ ...WEEK, lessons: [], perDay: {}, week: 0 });
+    const chip = await screen.findByRole("link", { name: /Class 5 - A · Mathematics · 6 a week · Not in timetable yet/ });
+    expect(chip).toBeInTheDocument();
+    expect(screen.getByText(/A period that is not in the timetable yet has no day and time/)).toBeInTheDocument();
   });
 
   it("leads to the class timetables (where a class's subjects get their teachers) when nothing is given to them", async () => {

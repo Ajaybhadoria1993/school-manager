@@ -6,6 +6,18 @@ import type { ExportColumn, ExportPreview } from "../../../types";
 import { Card } from "../../ui/Card";
 import { Skeleton } from "../../ui/Skeleton";
 
+export interface PreviewWords {
+  one: string;
+  many: string;
+  sampleNote: string;
+}
+
+const STUDENT_PREVIEW_WORDS: PreviewWords = {
+  one: "student",
+  many: "students",
+  sampleNote: "No student is admitted yet, so the file has this one sample row. It is only for trying the file: it is not saved anywhere.",
+};
+
 /**
  * The file before it is made, under the fields: the sheet's letters, the headings of the fields that are on (in their order), and the
  * first students' rows (the headings even when no student matches). The rows were read once with the page (every column's value comes
@@ -18,6 +30,8 @@ export function ExportPreviewCard({
   preview,
   loading,
   uploadNote,
+  words = STUDENT_PREVIEW_WORDS,
+  headingOf,
 }: {
   layout: ExportColumn[];
   /** The school's own fields (a field added and not saved yet has no answers in the preview: its column is empty). */
@@ -25,7 +39,12 @@ export function ExportPreviewCard({
   preview: ExportPreview | undefined;
   loading: boolean;
   uploadNote: string | null;
+  /** What the rows are called, for the sentences (the students' by default; the teachers' pass theirs). */
+  words?: PreviewWords;
+  /** A column's usual heading, for one whose heading was emptied (the students' list by default). */
+  headingOf?: (key: string) => string;
 }) {
+  const usualHeading = headingOf ?? ((key: string) => infoOf(key, custom).heading);
   return (
     <Card className="p-4 sm:p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -38,8 +57,8 @@ export function ExportPreviewCard({
             {preview.sample
               ? `Sample row · ${layout.length} column${layout.length === 1 ? "" : "s"}`
               : preview.total === 0
-              ? `No student to export · ${layout.length} column${layout.length === 1 ? "" : "s"}`
-              : `The first ${Math.min(preview.rows.length, preview.total)} of ${preview.total} student${preview.total === 1 ? "" : "s"} · ${layout.length} column${layout.length === 1 ? "" : "s"}, exactly as the file will have them`}
+              ? `No ${words.one} to export · ${layout.length} column${layout.length === 1 ? "" : "s"}`
+              : `The first ${Math.min(preview.rows.length, preview.total)} of ${preview.total} ${preview.total === 1 ? words.one : words.many} · ${layout.length} column${layout.length === 1 ? "" : "s"}, exactly as the file will have them`}
           </p>
         )}
       </div>
@@ -70,7 +89,7 @@ export function ExportPreviewCard({
                 </th>
                 {layout.map((c) => (
                   <th key={c.key} scope="col" className="max-w-56 whitespace-nowrap border-b border-r border-border px-3 py-2 text-left text-xs font-bold text-primary-deep last:border-r-0">
-                    {c.heading.trim() || <span className="italic text-danger">{infoOf(c.key, custom).heading}?</span>}
+                    {c.heading.trim() || <span className="italic text-danger">{usualHeading(c.key)}?</span>}
                   </th>
                 ))}
               </tr>
@@ -95,13 +114,13 @@ export function ExportPreviewCard({
       {preview?.sample && (
         <p className="mt-3 flex items-center gap-2 rounded-xl bg-primary-soft px-4 py-3 text-sm text-primary-deep">
           <FileSpreadsheet className="size-4 shrink-0" aria-hidden />
-          No student is admitted yet, so the file has this one sample row. It is only for trying the file: it is not saved anywhere.
+          {words.sampleNote}
         </p>
       )}
       {preview && preview.rows.length === 0 && (
         <p className="mt-3 flex items-center justify-center gap-2 rounded-xl border border-dashed border-border py-6 text-sm text-foreground-muted">
           <FileSpreadsheet className="size-4" aria-hidden />
-          No student matches, so the file would only have the headings.
+          No {words.one} matches, so the file would only have the headings.
         </p>
       )}
       {uploadNote && <p className="mt-2 text-xs text-foreground-muted">{uploadNote}</p>}

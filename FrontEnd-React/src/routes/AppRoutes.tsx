@@ -59,6 +59,7 @@ const routes: RouteObject[] = [
               { path: "permissions", ...lazyRoute(() => import("../pages/permissions/Permissions")) },
               // Keep old bookmarks working while the teacher directory and management now share one page.
               { path: "school/teachers", element: <Navigate to="/teachers" replace /> },
+              { path: "school/teachers/export", ...lazyRoute(() => import("../pages/school/TeacherExport")) },
               { path: "school/teachers/:id", ...lazyRoute(() => import("../pages/school/TeacherDetail")) },
               {
                 ...lazyRoute(() => import("./RunningYearRoute")),
@@ -67,6 +68,7 @@ const routes: RouteObject[] = [
                   { path: "school/teachers/import", ...lazyRoute(() => import("../pages/school/TeacherImport")) },
                   { path: "school/teachers/fields", ...lazyRoute(() => import("../pages/school/TeacherFields")) },
                   { path: "school/teachers/:id/edit", ...lazyRoute(() => import("../pages/school/TeacherEdit")) },
+                  { path: "school/teachers/:id/assign-class", ...lazyRoute(() => import("../pages/school/TeacherAssignClass")) },
                 ],
               },
             ],
@@ -134,6 +136,11 @@ const routes: RouteObject[] = [
               { path: "teachers/:id", ...lazyRoute(() => import("../pages/school/TeacherDetail")) },
             ],
           },
+          // Export: the Excel's columns and the file before it is made (a closed year can be exported too).
+          {
+            element: <PermissionRoute keys={["teachers.export"]} />,
+            children: [{ path: "teachers/export", ...lazyRoute(() => import("../pages/school/TeacherExport")) }],
+          },
           {
             element: <PermissionRoute keys={["teachers.add"]} />,
             children: [
@@ -148,7 +155,16 @@ const routes: RouteObject[] = [
           },
           {
             element: <PermissionRoute keys={["teachers.edit"]} />,
-            children: [{ ...lazyRoute(() => import("./RunningYearRoute")), children: [{ path: "teachers/:id/edit", ...lazyRoute(() => import("../pages/school/TeacherEdit")) }] }],
+            children: [
+              {
+                ...lazyRoute(() => import("./RunningYearRoute")),
+                children: [
+                  { path: "teachers/:id/edit", ...lazyRoute(() => import("../pages/school/TeacherEdit")) },
+                  // Assign class: a page of its own (it was a window), the same permission as Change teacher.
+                  { path: "teachers/:id/assign-class", ...lazyRoute(() => import("../pages/school/TeacherAssignClass")) },
+                ],
+              },
+            ],
           },
           {
             element: <PermissionRoute keys={["teachers.settings"]} />,

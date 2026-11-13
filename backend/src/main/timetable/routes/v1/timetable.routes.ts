@@ -15,6 +15,7 @@ import {
   getTeacherWeek,
   listPublished,
   listSchedules,
+  placeTeacherPeriods,
   publishGrid,
   removeDepartmentDay,
   saveClassDay,
@@ -36,6 +37,7 @@ import {
   replaceTeacherSchema,
   saveGridSchema,
   schoolDaySchema,
+  teacherPeriodsSchema,
   unitBodySchema,
   updateScheduleSchema,
 } from "../../schemas/timetable.schemas";
@@ -67,6 +69,8 @@ router.put("/class-day", validate(classDaySchema), saveClassDay);
 router.delete("/school-day/:id", validate(idParamSchema, "params"), removeDepartmentDay);
 
 router.put("/grid", validate(saveGridSchema), saveGrid);
+// A teacher is given a subject of a class and its days and periods in one request: the subject's teacher and the lessons, all or nothing.
+router.put("/teacher-periods", validate(teacherPeriodsSchema), placeTeacherPeriods);
 router.post("/grid/publish", validate(unitBodySchema), publishGrid);
 router.post("/grid/unpublish", validate(unitBodySchema), unpublishGrid);
 // The program fills the empty periods (nothing is saved); one section's timetable is given to the class's other sections.

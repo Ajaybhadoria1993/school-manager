@@ -1,5 +1,7 @@
 /** The shapes of the Staff (teachers) API (backend/src/main/staff). */
 import type { CustomFieldDef } from "../constants/studentFields";
+import type { TeacherFieldRules } from "../constants/teacherFields";
+import type { ExportColumn } from "./students";
 
 export type TeacherGender = "Male" | "Female" | "Other";
 export type EmploymentType = "full_time" | "part_time" | "contract";
@@ -131,6 +133,8 @@ export interface TeacherTeaching extends TeacherUnit {
   subjectId: string;
   subjectName: string;
   periodsPerWeek: number;
+  /** How many of those periods a lesson of the class's timetable has been placed in (the others are in nobody's week yet). */
+  placedPeriods: number;
 }
 
 /** `GET /staff/teachers/:id/classes`: what the teacher has been given this year (and the next). */
@@ -144,6 +148,8 @@ export interface ClassTeacherInput {
   classId: string;
   sectionId: string | null;
   teacherId: string | null;
+  /** The teacher also leaves every other class they are the class teacher of in the same year (a class's page: "make them the class teacher here"). */
+  releaseOthers?: boolean;
 }
 
 export interface ClassTeacherAnswer {
@@ -151,6 +157,8 @@ export interface ClassTeacherAnswer {
   sectionId: string | null;
   label: string;
   teacher: { id: string; name: string } | null;
+  /** Only with `releaseOthers`: the classes the teacher left ("Class 5 - A"). */
+  released?: string[];
 }
 
 /** `PUT /subjects/allotments/teacher`: the teacher of one subject of a unit; a subject it does not study yet needs its periods a week. */
@@ -204,9 +212,24 @@ export interface TeacherImportResult {
   failed: number;
 }
 
-/** How the school keeps its teachers' details beyond the usual ones: its own fields (`GET` / `PUT /staff/teachers/settings`). */
+/**
+ * How the school keeps its teachers' details (`GET` / `PUT /staff/teachers/settings`): what Add teacher needs of each usual detail, its own
+ * fields, and the columns of its Excel (in order, under its headings).
+ */
 export interface TeacherSettings {
+  fields: TeacherFieldRules;
   customFields: CustomFieldDef[];
+  exportColumns: ExportColumn[];
+  /** The Excel is still the usual layout (nothing of the school's own saved). */
+  exportIsDefault: boolean;
+}
+
+/** What `PUT /staff/teachers/settings` takes: any of the three (the usual details not sent stay as they are; null columns = the usual layout). */
+export interface UpdateTeacherSettingsInput {
+  fields?: Partial<TeacherFieldRules>;
+  /** The whole list of the school's own fields (one left out is deleted). */
+  customFields?: CustomFieldDef[];
+  exportColumns?: ExportColumn[] | null;
 }
 
 /**

@@ -57,6 +57,8 @@ export interface TeachingDto extends UnitRefDto {
   subjectId: string;
   subjectName: string;
   periodsPerWeek: number;
+  /** How many of those periods a lesson of the class's timetable has been placed in (the periods not placed yet are not in anyone's week). */
+  placedPeriods: number;
 }
 
 /** What a teacher has been given, from their page: the classes they are the class teacher of and the subjects they teach. */
@@ -260,10 +262,34 @@ export class TeacherService {
     const subjects = await Subject.find({ tenantId: school, _id: { $in: rows.map((r) => r.subjectId) } }).select("name").lean();
     const subjectName = new Map(subjects.map((s) => [s._id.toString(), s.name]));
     const named = await describeUnits(tenantId, rows);
+    // How many periods of each subject a lesson has been placed in, in the timetable of its class or section.
+    const placed = new Map<string, number>();
+    if (rows.length > 0) {
+      const timetables = await Timetable.find({ tenantId: school, academicYearId: { $in: years }, classId: { $in: [...new Set(rows.map((r) => r.classId.toString()))].map((c) => new Types.ObjectId(c)) } })
+        .select("academicYearId classId sectionId cells")
+        .lean();
+      for (const t of timetables) {
+        for (const cell of t.cells) {
+          for (const lesson of cell.lessons) {
+            const key = `${t.academicYearId}:${t.classId}:${t.sectionId ?? "-"}:${lesson.subjectId}`;
+            placed.set(key, (placed.get(key) ?? 0) + 1);
+          }
+        }
+      }
+    }
     return {
       classTeacherOf,
       subjects: named
-        .map((r) => ({ row: r, dto: { ...r.ref, subjectId: r.subjectId.toString(), subjectName: subjectName.get(r.subjectId.toString()) ?? "A subject", periodsPerWeek: r.periodsPerWeek } }))
+        .map((r) => ({
+          row: r,
+          dto: {
+            ...r.ref,
+            subjectId: r.subjectId.toString(),
+            subjectName: subjectName.get(r.subjectId.toString()) ?? "A subject",
+            periodsPerWeek: r.periodsPerWeek,
+            placedPeriods: placed.get(`${r.academicYearId}:${r.classId}:${r.sectionId ?? "-"}:${r.subjectId}`) ?? 0,
+          },
+        }))
         // In teaching order (the year, the class's place, the section), then by subject within one unit.
         .sort(
           (a, b) =>
@@ -298,6 +324,8 @@ export class TeacherService {
    */
   static async create(tenantId: string, input: CreateTeacherInput, options: { custom?: "admit" | "format" } = {}): Promise<TeacherDto> {
     if ((await Teacher.countDocuments({ tenantId })) >= MAX_TEACHERS) throw LIMIT();
+    // The usual details the school needs are held to for a teacher who is added by hand; a bulk upload row is only read.
+    if ((options.custom ?? "admit") === "admit") await TeacherSettingsService.checkDetails(tenantId, input, "admit");
     const answers = await TeacherSettingsService.check(tenantId, input.custom, options.custom ?? "admit");
     await TeacherService.assertSubjects(tenantId, input.subjectIds);
     await TeacherService.assertFree(tenantId, input.mobile ?? null, input.employeeCode ?? null, null);
@@ -370,6 +398,7 @@ export class TeacherService {
         throw ApiError.conflict(`${current.name} is named on lessons of a timetable. Give those lessons to another teacher first.`, "TEACHER_HAS_LESSONS");
       }
     }
+    await TeacherSettingsService.checkDetails(tenantId, input, "change");
     if (input.subjectIds) await TeacherService.assertSubjects(tenantId, input.subjectIds);
     await TeacherService.assertFree(tenantId, input.mobile ?? null, input.employeeCode ?? null, id);
     // The login repeats the email: it must be free before the teacher is changed.

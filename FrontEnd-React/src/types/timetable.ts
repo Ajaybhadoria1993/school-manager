@@ -107,6 +107,8 @@ export interface AllotmentView {
   unit: AllotmentUnit;
   rows: AllotmentRow[];
   siblings: { id: string; name: string }[];
+  /** The unit's class teacher this year, null when nobody is: said before another teacher is put in their place. */
+  classTeacher: { id: string; name: string } | null;
   totals: { periods: number; available: number | null };
 }
 
@@ -198,6 +200,17 @@ export interface GridView {
   stats: { total: number; filled: number; free: number; placed: Record<string, number> };
   /** The unit's class teacher (in a Pre-Primary class, the mother teacher put on its periods); missing from an older server. */
   classTeacher?: { id: string; name: string } | null;
+}
+
+/**
+ * `PUT /timetable/teacher-periods`: a teacher is given a subject of a class and its periods in one request (Assign class). `slots` are the days
+ * (1 = Monday) and period numbers the subject goes in; `periodsPerWeek` is for a subject the class does not study yet (the slots say it when left out).
+ */
+export interface TeacherPeriodsInput extends UnitRef {
+  subjectId: string;
+  teacherId: string;
+  periodsPerWeek?: number;
+  slots: { day: number; period: number }[];
 }
 
 export interface AutofillAnswer {

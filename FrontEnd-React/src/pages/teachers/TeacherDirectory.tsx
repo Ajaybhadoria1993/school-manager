@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useCan } from "../../hooks/useCan";
-import { BookX, CalendarDays, FileUp, FilterX, ListPlus, LogOut, Pencil, Plus, Repeat2, RotateCcw, Search, SearchX, UserRoundCheck, UserRoundMinus, UsersRound } from "lucide-react";
+import { BookX, FileUp, FilterX, ListPlus, Pencil, Plus, Search, SearchX, UserRoundCheck, UserRoundMinus, UsersRound } from "lucide-react";
 import { DESIGNATIONS } from "../../constants/teachers";
-import { DAY_SHORT } from "../../constants/timetable";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
-import { useGetSubjectsQuery, useGetTeacherSummaryQuery, useGetTeachersQuery, useUpdateTeacherMutation } from "../../redux/api/timetableApi";
+import { useGetSubjectsQuery, useGetTeacherSummaryQuery, useGetTeachersQuery } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
 import { formatMobile } from "../../utils/students";
@@ -22,9 +21,6 @@ import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
 import { FilterBar, FilterSearch, FilterSelect } from "../../components/ui/FilterBar";
 import { Skeleton } from "../../components/ui/Skeleton";
-import { LeaveTeacherModal } from "../../components/teachers/LeaveTeacherModal";
-import { ReplaceTeacherDialog } from "../../components/teachers/ReplaceTeacherDialog";
-import { useToast } from "../../components/ui/toast-context";
 import { cameFrom } from "../../components/layout/nav-config";
 
 /** The words of the address for each filter, in the order of the dropdowns (the user kept these three on 2026-11-03). */
@@ -33,6 +29,8 @@ const FILTER_KEYS = ["subject", "class", "designation"] as const;
 const TH = "whitespace-nowrap px-4 py-3 text-left text-[13.5px] font-semibold text-foreground";
 const outlineLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:border-[#cbd5e1] hover:bg-background focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
+const iconLink =
+  "inline-flex size-9 items-center justify-center rounded-lg border border-border bg-surface text-foreground-muted shadow-sm transition-all duration-150 hover:border-primary/30 hover:bg-primary-soft hover:text-primary-deep focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 const primaryLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_4px_10px_-2px_rgb(37_99_235/0.4)] transition-all duration-150 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 
@@ -83,69 +81,26 @@ function Classes({ teacher: t }: { teacher: Teacher }) {
   );
 }
 
-/** The day-to-day controls that used to be separated on the Manage Teacher page. */
-function TeacherActions({ teacher }: { teacher: Teacher }) {
+/**
+ * The one control on a row: a pencil that opens Change teacher. Week, Give classes, Has left and Bring back are on the teacher's own page
+ * (a row opens it), so the list stays quiet and never grows wider than the screen.
+ */
+function EditPencil({ teacher }: { teacher: Teacher }) {
   const can = useCan();
   const readOnly = useReadOnlyYear();
-  const { push } = useToast();
-  const [update] = useUpdateTeacherMutation();
-  const [replacing, setReplacing] = useState(false);
-  const [leaving, setLeaving] = useState(false);
-
+  if (readOnly || !can("teachers.edit") || !teacher.isActive) return null;
   return (
-    <>
-      <div className="flex min-w-max flex-wrap justify-end gap-1.5">
-        {teacher.isActive && can("timetable.edit") && (
-          <Link to={`/school/timetable/teacher/${teacher.id}`} className={outlineLink} aria-label={`${teacher.name}'s week`}>
-            <CalendarDays className="size-4" aria-hidden />
-            Week
-          </Link>
-        )}
-        {!readOnly && can("teachers.edit") && (
-          teacher.isActive ? (
-            <>
-              <Link to={`/teachers/${teacher.id}/edit`} className={outlineLink} aria-label={`Edit ${teacher.name}`}>
-                <Pencil className="size-4" aria-hidden />
-                Change
-              </Link>
-              {teacher.load.sections > 0 ? (
-                <Button variant="ghost" size="sm" onClick={() => setReplacing(true)} aria-label={`Give ${teacher.name}'s classes to another teacher`}>
-                  <Repeat2 className="size-4" aria-hidden />
-                  Give classes
-                </Button>
-              ) : (
-                <Button variant="ghost" size="sm" onClick={() => setLeaving(true)} aria-label={`${teacher.name} has left`}>
-                  <LogOut className="size-4" aria-hidden />
-                  Has left
-                </Button>
-              )}
-            </>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label={`Bring back ${teacher.name}`}
-              onClick={() => void update({ id: teacher.id, isActive: true }).unwrap().then(
-                () => push("success", `${teacher.name} is teaching again`),
-                (err) => push("error", getApiError(err)?.message ?? "Could not bring them back."),
-              )}
-            >
-              <RotateCcw className="size-4" aria-hidden />
-              Bring back
-            </Button>
-          )
-        )}
-      </div>
-      {replacing && <ReplaceTeacherDialog teacher={teacher} onClose={() => setReplacing(false)} />}
-      {leaving && <LeaveTeacherModal teacher={teacher} onClose={() => setLeaving(false)} />}
-    </>
+    <Link to={`/teachers/${teacher.id}/edit`} aria-label={`Edit ${teacher.name}`} title="Change teacher" className={iconLink}>
+      <Pencil className="size-4" aria-hidden />
+    </Link>
   );
 }
 
 /**
- * One teacher. The columns give way as the screen narrows (Can teach below 1536px, Contact below 1280px: the mobile then goes under the
- * name, Classes below 1024px, Login below 768px; on a phone the status and the pencil too: a row still opens the teacher, and a teacher
- * who has left says so under the name).
+ * One teacher: who they are, how to reach them, what they can teach and their classes, and one pencil. The columns give way as the screen
+ * narrows (Can teach below 1536px, Contact below 1280px: the mobile then goes under the name, Classes below 1024px; on a phone the pencil
+ * too: a row still opens the teacher, and a teacher who has left says so under the name). The login, the days off and whether they teach
+ * are on the teacher's own page, so the table keeps to what a school reads at a glance.
  */
 function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName: Map<string, string> }) {
   const navigate = useNavigate();
@@ -174,7 +129,7 @@ function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName
             {about && <span className="block truncate text-xs text-foreground-muted">{about}</span>}
             {t.mobile && <span className="block text-xs text-foreground-muted xl:hidden">{formatMobile(t.mobile)}</span>}
             {!t.isActive && (
-              <span className="mt-1 block sm:hidden">
+              <span className="mt-1 block">
                 <StatusPill active={false} />
               </span>
             )}
@@ -197,21 +152,8 @@ function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName
       <td className="hidden px-4 py-3 align-middle lg:table-cell">
         <Classes teacher={t} />
       </td>
-      <td className="hidden px-4 py-3 align-middle md:table-cell">
-        {t.login ? (
-          <span className={cn("font-mono text-xs", t.login.isActive ? "text-foreground" : "text-foreground-muted line-through")}>{t.login.username}</span>
-        ) : (
-          <span className="text-foreground-muted">No login</span>
-        )}
-      </td>
-      <td className="hidden px-4 py-3 align-middle sm:table-cell">
-        <StatusPill active={t.isActive} />
-      </td>
-      <td className="hidden px-4 py-3 align-middle xl:table-cell">
-        {t.offDays.length === 0 ? <span className="text-foreground-muted">Comes every day</span> : <span className="flex flex-wrap gap-1">{t.offDays.map((day) => <Badge key={day}>{DAY_SHORT[day]}</Badge>)}</span>}
-      </td>
-      <td className="hidden py-3 pl-2 pr-4 text-right align-middle sm:table-cell">
-        <TeacherActions teacher={t} />
+      <td className="hidden w-14 py-3 pl-2 pr-4 text-right align-middle sm:table-cell">
+        <EditPencil teacher={t} />
       </td>
     </tr>
   );
@@ -297,7 +239,7 @@ export default function TeacherDirectoryPage() {
                 Fields
               </Link>
             )}
-            {can("teachers.export") && <ExportTeachersButton query={query} empty={teachers.length === 0} />}
+            {can("teachers.export") && <ExportTeachersButton query={query} base="/teachers" />}
             {!readOnly && can("teachers.add") && (
               <Link to="/teachers/import" className={outlineLink}>
                 <FileUp className="size-4" aria-hidden />
@@ -389,17 +331,8 @@ export default function TeacherDirectoryPage() {
                   <th scope="col" className={cn(TH, "hidden lg:table-cell")}>
                     Classes
                   </th>
-                  <th scope="col" className={cn(TH, "hidden md:table-cell")}>
-                    Login
-                  </th>
-                  <th scope="col" className={cn(TH, "hidden sm:table-cell")}>
-                    Status
-                  </th>
-                  <th scope="col" className={cn(TH, "hidden xl:table-cell")}>
-                    Days off
-                  </th>
-                  <th scope="col" className={cn(TH, "hidden pr-4 text-right sm:table-cell")}>
-                    Action
+                  <th scope="col" className={cn(TH, "hidden w-14 pr-4 text-right sm:table-cell")}>
+                    <span className="sr-only">Change</span>
                   </th>
                 </tr>
               </thead>

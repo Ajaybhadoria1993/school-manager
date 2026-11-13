@@ -335,6 +335,16 @@ describe("the teachers a period can be given", () => {
     expect(rows("art", 1, 1, null, mm).map((c) => c.value)).toEqual([null, "dev", "meena"]);
   });
 
+  it("each teacher says whether they teach the subject: the usual teacher, the mother teacher, the one the period has and those who teach it do; the rest do not", () => {
+    const mm = buildModel({ ...VIEW2, teachers: VIEW2.teachers.map((t) => (t.id === "dev" ? { ...t, subjectIds: ["art"] } : t)) } as unknown as GridView);
+    const art = rows("art", 1, 1, null, mm);
+    expect(art.map((c) => [c.value, c.teaches])).toEqual([[null, true], ["dev", true], ["meena", false]]);
+    // Whoever the period has now is always among those shown, and so is the mother teacher.
+    expect(rows("art", 1, 1, "meena", mm).find((c) => c.value === "meena")!.teaches).toBe(true);
+    // The subject's usual teacher heads the list whether or not they have it among their subjects.
+    expect(rows("maths", 1, 1)[0]).toMatchObject({ value: null, teaches: true });
+  });
+
   it("one who cannot take the period is shown with why and cannot be picked", () => {
     const off = rows("art", 2, 1).find((c) => c.value === "meena")!;
     expect(off).toMatchObject({ disabled: true, bad: true, note: "Meena Singh does not come on Tuesday" });
@@ -411,6 +421,8 @@ describe("Pre-Primary (2026-11-10): the mother teacher and a whole day of one su
     const list = teacherChoices(PP, "art", 1, 1, null, "dev");
     expect(list.map((c) => c.value)).toEqual([null, "dev", "meena"]);
     expect(list[1].note).toBe("Mother teacher");
+    // She is shown with the teachers of the subject whether or not it is one of her subjects (it is her class); the others are not.
+    expect(list.map((c) => c.teaches)).toEqual([true, true, false]);
   });
 });
 

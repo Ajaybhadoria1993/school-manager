@@ -2,9 +2,15 @@ import { z } from "zod";
 import { INDIAN_MOBILE, nationalNumber } from "../../../utils/formFields";
 import { passwordSchema, usernameSchema } from "../../auth/schemas/auth.schemas";
 import { idParamSchema, label, objectId } from "../../subjects/schemas/subjects.schemas";
+import { CUSTOM_KEY, FIELD_MODES, MAX_CUSTOM_FIELDS, MAX_EXPORT_HEADING } from "../../students/constants";
 import { ageOn, customFieldListSchema, todayInIndia } from "../../students/schemas/students.schemas";
 import { INDIAN_STATES } from "../../tenants/constants";
 import {
+  LOCKED_TEACHER_COLUMNS,
+  TEACHER_COLUMN_KEYS,
+  TEACHER_DETAIL_KEYS,
+  TEACHER_EXPORT_COLUMNS,
+  type TeacherFieldRules,
   EMPLOYMENT_TYPES,
   MAX_DAYS_BEFORE_JOINING,
   MAX_DESIGNATION,
@@ -226,11 +232,16 @@ export const listTeachersQuerySchema = z.object({
 });
 export type ListTeachersQuery = z.infer<typeof listTeachersQuerySchema>;
 
-/** `PUT /staff/class-teachers`: the class teacher of a section (or of a class without sections); null takes it away. */
+/**
+ * `PUT /staff/class-teachers`: the class teacher of a section (or of a class without sections); null takes it away. `releaseOthers` (2026-11-13, a
+ * class's page "make them the class teacher here": the teacher moves) also takes this teacher off every other class they are the class teacher of in
+ * the same year; without it a teacher keeps all their classes (a small school).
+ */
 export const setClassTeacherSchema = z.object({
   classId: objectId,
   sectionId: objectId.nullable(),
   teacherId: objectId.nullable(),
+  releaseOthers: z.boolean().optional(),
 });
 export type SetClassTeacherInput = z.infer<typeof setClassTeacherSchema>;
 
@@ -263,14 +274,64 @@ export const importTeachersSchema = z.object({
 });
 export type ImportTeachersInput = z.infer<typeof importTeachersSchema>;
 
+/** "Name and Mobile": the columns that are in every export, as a sentence. */
+const LOCKED_TEACHER_HEADINGS = (() => {
+  const names = LOCKED_TEACHER_COLUMNS.map((k) => TEACHER_EXPORT_COLUMNS.find((c) => c.key === k)!.heading);
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "");
+})();
+
 /**
- * `PUT /staff/teachers/settings`: the school's own fields for its teachers, the whole list as it should be (a field left out is deleted).
- * Each entry is judged on its own, as the students' own fields are; a name may not be one of the usual details'.
+ * `PUT /staff/teachers/settings`: how the school keeps its teachers' details, as the students' settings do. Any of three, each judged
+ * on its own (one wrong entry never hides another's message): `fields` (a usual detail and needed / optional / not asked; the details not
+ * sent stay as they are), `customFields` (the school's own fields, the whole list as it should be: a field left out is deleted; a name may
+ * not be one of the usual details') and `exportColumns` (the Excel's columns, in order, each with its heading; null = the usual layout;
+ * the Name and the Mobile are in every export and two columns cannot share a heading: a sheet read back would not know which).
  */
-export const updateTeacherSettingsSchema = z.object({
-  customFields: customFieldListSchema(new Map(TEACHER_FIELD_NAMES.map((n) => [n.toLowerCase(), n] as [string, string])), (listed) => `There is already a field called ${listed}`),
-});
+export const updateTeacherSettingsSchema = z
+  .object({
+    fields: z
+      .record(z.string(), z.unknown(), { invalid_type_error: "Choose the details" })
+      .superRefine((fields, ctx) => {
+        for (const [key, mode] of Object.entries(fields)) {
+          const say = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message });
+          if (!TEACHER_DETAIL_KEYS.includes(key)) say("This detail cannot be changed");
+          else if (!(FIELD_MODES as readonly unknown[]).includes(mode)) say("Choose needed, optional or not asked");
+        }
+      })
+      .transform((fields) => fields as Partial<TeacherFieldRules>)
+      .optional(),
+    customFields: customFieldListSchema(new Map(TEACHER_FIELD_NAMES.map((n) => [n.toLowerCase(), n] as [string, string])), (listed) => `There is already a field called ${listed}`).optional(),
+    exportColumns: z
+      .array(z.object({ key: z.unknown(), heading: z.unknown() }), { invalid_type_error: "Choose the columns" })
+      .min(1, "Choose at least one column")
+      .max(TEACHER_EXPORT_COLUMNS.length + MAX_CUSTOM_FIELDS, "A column is in the export once")
+      .superRefine((columns, ctx) => {
+        const say = (path: (string | number)[], message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, path, message });
+        const keys = new Set<string>();
+        const headings = new Set<string>();
+        columns.forEach((c, i) => {
+          // A field of the school's own is checked by the service against the fields it has.
+          if (typeof c.key !== "string" || !(TEACHER_COLUMN_KEYS.has(c.key) || CUSTOM_KEY.test(c.key))) say([i, "key"], "Choose a column from the list");
+          else if (keys.has(c.key)) say([i, "key"], "This column is already in the export");
+          else keys.add(c.key);
+          const heading = typeof c.heading === "string" ? c.heading.trim().replace(/\s+/g, " ") : "";
+          if (!heading) say([i, "heading"], "Enter the heading");
+          else if (heading.length > MAX_EXPORT_HEADING) say([i, "heading"], `Keep the heading under ${MAX_EXPORT_HEADING} characters`);
+          else if (/[<>]/.test(heading)) say([i, "heading"], "The heading cannot contain < or >");
+          else if (headings.has(heading.toLowerCase())) say([i, "heading"], "Two columns cannot have the same heading");
+          headings.add(heading.toLowerCase());
+        });
+        if (LOCKED_TEACHER_COLUMNS.some((k) => !keys.has(k))) say([], `${LOCKED_TEACHER_HEADINGS} are in every export`);
+      })
+      .transform((columns) => columns.map((c) => ({ key: c.key as string, heading: (c.heading as string).trim().replace(/\s+/g, " ") })))
+      .nullable()
+      .optional(),
+  })
+  .refine((value) => value.fields !== undefined || value.customFields !== undefined || value.exportColumns !== undefined, { message: "Nothing to change" });
 export type UpdateTeacherSettingsInput = z.infer<typeof updateTeacherSettingsSchema>;
+
+/** `GET /staff/teachers/export/preview`: the list's own filters, as the export takes them. */
+export const exportPreviewQuerySchema = listTeachersQuerySchema;
 
 // ---- Staff: the people who work for the school without teaching ---------------------------------------------------------------------------
 

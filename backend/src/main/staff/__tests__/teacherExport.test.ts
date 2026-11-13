@@ -159,11 +159,13 @@ describe("exporting the teachers", () => {
     expect(tableOf(await sheetOf((await exportOf(b.token)).body)).rows.map((r) => r.Name)).toEqual(["Kabir Khan"]);
   });
 
-  it("is a file with titles even when the school has no teacher", async () => {
+  it("is a file with titles and one sample row when the school has no teacher yet, and only titles for a search that finds nobody", async () => {
     const s = await createSchool("Sunrise Public School");
     const { titles, rows } = tableOf(await sheetOf((await exportOf(s.token)).body));
     expect(titles[0]).toBe("Name");
-    expect(rows).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].Name).toBe("Sample Teacher");
+    expect(tableOf(await sheetOf((await exportOf(s.token, "?search=zzz")).body)).rows).toEqual([]);
   });
 
   it("refuses a filter that could not be one", async () => {

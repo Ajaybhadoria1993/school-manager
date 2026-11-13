@@ -205,6 +205,21 @@ describe("the logo", () => {
     expect(screen.getByRole("button", { name: "Change logo" })).toBeInTheDocument();
   });
 
+  it("asks before the logo is taken away: Cancel sends nothing, Remove the logo does it, and a refusal is said in the window", async () => {
+    const calls = fakeApi({ "DELETE /onboarding/logo": () => ({ steps: { 1: { logoUrl: "" } } }) });
+    const { user } = showSchool(initial({ logoUrl: "/public/schools/t1/logo?v=1" }));
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+    const ask = await screen.findByRole("dialog", { name: "Remove the school logo?" });
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    await user.click(within(ask).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Remove the school logo?" })).not.toBeInTheDocument());
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+    await user.click(within(await screen.findByRole("dialog", { name: "Remove the school logo?" })).getByRole("button", { name: "Remove the logo" }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "DELETE" && c.path === "/onboarding/logo")).toHaveLength(1));
+  });
+
   it("shows what the server refused", async () => {
     fakeApi({ "PUT /onboarding/logo": () => new Response(JSON.stringify({ success: false, message: "The logo must be a PNG, JPG or WebP picture.", code: "LOGO_NOT_IMAGE" }), { status: 400, headers: { "Content-Type": "application/json" } }) });
     const { user } = showSchool(initial());

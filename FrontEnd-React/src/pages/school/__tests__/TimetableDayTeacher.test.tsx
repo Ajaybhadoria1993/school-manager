@@ -16,7 +16,8 @@ import ClassTimetablesPage from "../ClassTimetables";
  * Class timetables, 2026-11-13 (user, with the Pre-Primary class UKG - A open): a small class has one thing a day, or two, so the box of a
  * period in a Pre-Primary class says how far a picked subject goes (this period all week / half a day / the whole day, the whole day first; the
  * toolbar does NOT repeat it), and for every class the box that picks the subject goes on to the teachers of the school (it used to close, and
- * the period had to be clicked again). **Add a teacher** is a button in the header of the class, between Print and Publish.
+ * the period had to be clicked again). **Add a teacher** is a button in the header of the class, between Print and Save the timetable (2026-11-14: Save is
+ * the one button at the top and publishes a draft; the box lists the teachers who teach the subject, the school's others behind Show all teachers).
  */
 
 const STRUCTURE: AcademicStructure = {
@@ -76,6 +77,8 @@ function openPage(view: GridView = GRID, extra: Record<string, Handler> = {}, st
   return { calls, router, user: userEvent.setup() };
 }
 const openPP = (view: GridView = GRID) => openPage(view, {}, PP_STRUCTURE);
+// Meena teaches Mathematics and English (the box lists the teachers who teach the subject); Dev teaches nothing yet.
+const MEENA_ENGLISH = (view: GridView): GridView => ({ ...view, teachers: view.teachers.map((t) => (t.id === "meena" ? { ...t, subjectIds: ["maths", "english"] } : t)) });
 
 afterEach(() => {
   cleanup();
@@ -92,8 +95,16 @@ const MON4 = () => slot("Monday", 4, "11:00 to 11:40");
 const MON5 = () => slot("Monday", 5, "11:40 to 12:20");
 const MON8 = () => slot("Monday", 8, "13:40 to 14:20");
 const TUE1 = () => slot("Tuesday", 1, "08:30 to 09:10");
-const put = async (user: User, period: HTMLElement, name: string) => {
+/** A period that has a lesson opens on its teacher (the box has two steps): Change goes to the list of subjects. */
+const subjectsOf = async (user: User, period: HTMLElement) => {
   await user.click(period);
+  const dialog = await screen.findByRole("dialog");
+  const change = within(dialog).queryByRole("button", { name: "Change" });
+  if (change) await user.click(change);
+  await screen.findAllByRole("option");
+};
+const put = async (user: User, period: HTMLElement, name: string) => {
+  await subjectsOf(user, period);
   await user.click(await screen.findByRole("option", { name }));
 };
 const ready = () => screen.findByRole("table", { name: "Weekly timetable" });
@@ -103,6 +114,8 @@ const howFar = () => screen.findByRole("radiogroup", { name: "Put the subject in
 async function putHow(user: User, period: HTMLElement, how: string, name: string) {
   await user.click(period);
   await user.click(within(await howFar()).getByRole("radio", { name: how }));
+  const change = within(screen.getByRole("dialog")).queryByRole("button", { name: "Change" });
+  if (change) await user.click(change);
   await user.click(await screen.findByRole("option", { name }));
 }
 
@@ -164,14 +177,16 @@ describe("A Pre-Primary class: how far a picked subject goes (in the box of the 
 describe("The teachers of the school, in the box that picks the subject", () => {
   const teacherBox = (subject: string) => screen.findByRole("radiogroup", { name: `Teacher for ${subject}` });
 
-  it("choosing a subject does not close the box: the teachers to pick from are there, and picking one closes it and names them on the period", async () => {
-    const { user } = openPage();
+  it("choosing a subject does not close the box: the teachers who teach it are there, and picking one closes it and names them on the period", async () => {
+    const { user } = openPage(MEENA_ENGLISH(GRID));
     await ready();
     await put(user, MON1(), "English");
     const teachers = await teacherBox("English");
-    // Dev Patel does not come on Mondays: he is listed, with the reason. The order is the page's (those who teach it first).
-    expect(within(teachers).getAllByRole("radio").map((r) => r.getAttribute("aria-label")).sort()).toEqual(["Dev Patel", "Meena Singh", "No teacher"]);
-    await user.click(within(teachers).getByRole("radio", { name: "Meena Singh" }));
+    // Meena teaches English; Dev does not (he is one click away, Show all teachers, with why he cannot take Mondays).
+    expect(within(teachers).getAllByRole("radio").map((r) => r.getAttribute("aria-label"))).toEqual(["No teacher", "Meena Singh"]);
+    await user.click(screen.getByRole("button", { name: "Show all teachers (1 more)" }));
+    expect(within(await teacherBox("English")).getAllByRole("radio").map((r) => r.getAttribute("aria-label")).sort()).toEqual(["Dev Patel", "Meena Singh", "No teacher"]);
+    await user.click(within(await teacherBox("English")).getByRole("radio", { name: "Meena Singh" }));
     expect(MON1()).toHaveTextContent("Meena Singh");
     await waitFor(() => expect(screen.queryByRole("dialog", { name: /: choose the subject$/ })).not.toBeInTheDocument());
   });
@@ -187,7 +202,7 @@ describe("The teachers of the school, in the box that picks the subject", () => 
   });
 
   it("in a class that puts a subject on that period of every day, the teacher chosen is for that period only", async () => {
-    const { user } = openPage();
+    const { user } = openPage(MEENA_ENGLISH(GRID));
     await ready();
     await put(user, MON1(), "English");
     await user.click(within(await teacherBox("English")).getByRole("radio", { name: "Meena Singh" }));
@@ -204,20 +219,24 @@ describe("The teachers of the school, in the box that picks the subject", () => 
     expect(within(box).queryByRole("link")).not.toBeInTheDocument();
   });
 
-  it("the box keeps its parts apart: the list of subjects gives way first, the teachers and the buttons under them are not squeezed or overlapped", async () => {
-    const { user } = openPage();
+  it("the box keeps its parts apart: the list of subjects does not shrink to nothing, the teachers and the buttons under them are not squeezed or overlapped", async () => {
+    const { user } = openPage(MEENA_ENGLISH(GRID));
     await ready();
-    await put(user, MON1(), "English");
+    await user.click(MON1());
+    // The subject step: the list has room to be seen and scrolls on its own when it is long.
+    const list = await screen.findByRole("listbox", { name: "Subjects" });
+    expect(list.className).toContain("min-h-");
+    expect(list.className).toContain("max-h-64");
+    await user.click(screen.getByRole("option", { name: "English" }));
+    // The teacher step: the teachers' part never shrinks into the buttons below it, and the whole box scrolls when the screen is too short.
     const teachers = await teacherBox("English");
     const box = await screen.findByRole("dialog", { name: /: choose the subject$/ });
-    // The whole box scrolls when the screen is too short for all of it, and the teachers' part never shrinks into the buttons below it.
     expect(box.className).toContain("overflow-y-auto");
     expect(teachers.parentElement?.className).toContain("shrink-0");
-    expect(screen.getByRole("listbox", { name: "Subjects" }).className).toContain("min-h-");
   });
 
   it("in a Pre-Primary class the teacher chosen is for the whole day of that subject", async () => {
-    const { user } = openPP();
+    const { user } = openPP(MEENA_ENGLISH(GRID));
     await ready();
     await put(user, MON1(), "English");
     await user.click(within(await teacherBox("English")).getByRole("radio", { name: "Meena Singh" }));
@@ -228,7 +247,7 @@ describe("The teachers of the school, in the box that picks the subject", () => 
   });
 
   it("in a half day the teacher is for that half only, so the other half can have another", async () => {
-    const { user } = openPP();
+    const { user } = openPP(MEENA_ENGLISH(GRID));
     await ready();
     await putHow(user, MON1(), "Half Monday", "English");
     await user.click(within(await teacherBox("English")).getByRole("radio", { name: "Meena Singh" }));
@@ -243,14 +262,14 @@ describe("The teachers of the school, in the box that picks the subject", () => 
 describe("The class's buttons are one line (2026-11-13)", () => {
   const headerOf = async () => (await screen.findByRole("heading", { level: 1, name: "Class 5 - A" })).closest("header")!;
 
-  it("Fill, Periods & time, Print, Add a teacher and Publish stand in one row, the actions at its right, and nothing else crowds the row", async () => {
+  it("Fill, Periods & time, Print, Add a teacher and Save the timetable stand in one row, the actions at its right, and nothing else crowds the row", async () => {
     openPage();
     await ready();
     const row = screen.getByRole("button", { name: "Fill the empty periods" }).parentElement!;
-    for (const name of ["Periods & time", "Print", "Publish"]) expect(row).toContainElement(screen.getByRole("button", { name }));
+    for (const name of ["Periods & time", "Print", "Save the timetable"]) expect(row).toContainElement(screen.getByRole("button", { name }));
     expect(row).toContainElement(await screen.findByRole("link", { name: "Add a teacher" }));
     // The actions are pushed to the right of the row.
-    expect(screen.getByRole("button", { name: "Publish" }).parentElement?.className ?? "").toContain("ml-auto");
+    expect(screen.getByRole("button", { name: "Save the timetable" }).parentElement?.className ?? "").toContain("ml-auto");
     // The count, Not saved, the note about teachers and Empty the whole week are elsewhere (below), so the row stays one line.
     expect(within(row).queryByText(/periods have a lesson/)).not.toBeInTheDocument();
     expect(within(row).queryByText("Not saved")).not.toBeInTheDocument();
@@ -276,25 +295,29 @@ describe("The class's buttons are one line (2026-11-13)", () => {
     expect(await within(header).findByText(/^5 of 40 periods have a lesson$/)).toBeInTheDocument();
   });
 
-  it("Empty the whole week is with Save, under the week", async () => {
+  it("Save is at the top, in the row; Empty the whole week is alone under the week", async () => {
     const { user } = openPage();
     await ready();
     await put(user, MON1(), "English");
+    const table = screen.getByRole("table", { name: "Weekly timetable" });
     const save = screen.getByRole("button", { name: "Save the timetable" });
-    expect(save.parentElement).toContainElement(await screen.findByRole("button", { name: "Empty the whole week" }));
+    const empty = await screen.findByRole("button", { name: "Empty the whole week" });
+    expect(save.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(table.compareDocumentPosition(empty) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(save.parentElement).not.toContainElement(empty);
   });
 });
 
-describe("Add a teacher: a button in the header of the class, between Print and Publish", () => {
+describe("Add a teacher: a button in the header of the class, between Print and Save the timetable", () => {
   it("is there for whoever may add a teacher, in every class, whether or not the school has teachers", async () => {
     openPage();
     await ready();
     const link = await screen.findByRole("link", { name: "Add a teacher" });
     expect(link).toHaveAttribute("href", "/teachers/new");
     const print = screen.getByRole("button", { name: "Print" });
-    const publish = screen.getByRole("button", { name: "Publish" });
+    const save = screen.getByRole("button", { name: "Save the timetable" });
     expect(print.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(link.compareDocumentPosition(publish) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(link.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("is not offered to someone who may not add teachers", async () => {

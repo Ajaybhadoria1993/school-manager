@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { Save } from "lucide-react";
+import { DEFAULT_TEACHER_RULES, type TeacherFieldRules } from "../../constants/teacherFields";
 import { useTeacherBase } from "../../hooks/useTeacherBase";
 import { useTeacherForm } from "../../hooks/useTeacherForm";
 import type { CustomFieldDef } from "../../constants/studentFields";
@@ -60,17 +61,21 @@ export default function TeacherEditPage() {
       </div>
     );
   }
-  return <EditForm teacher={teacher} fields={askedFields(settings.data?.data.customFields)} />;
+  return <EditForm teacher={teacher} fields={askedFields(settings.data?.data.customFields)} rules={{ ...DEFAULT_TEACHER_RULES, ...settings.data?.data.fields }} />;
 }
 
-function EditForm({ teacher, fields }: { teacher: Teacher; fields: CustomFieldDef[] }) {
+function EditForm({ teacher, fields, rules }: { teacher: Teacher; fields: CustomFieldDef[]; rules: TeacherFieldRules }) {
   const navigate = useNavigate();
   const { base, label } = useTeacherBase();
   const { push } = useToast();
   const [update, { isLoading: saving }] = useUpdateTeacherMutation();
   const initial = useMemo(() => formFromTeacher(teacher), [teacher]);
   const hasLogin = teacher.login !== null;
-  const form = useTeacherForm(initial, hasLogin ? WITH_LOGIN_BOXES : WITHOUT_LOGIN);
+  // What the school asks (Teacher > Manage fields) is held in the form: a detail not asked has no box, a needed one must be answered.
+  const rulesKey = JSON.stringify(rules);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const options = useMemo(() => ({ ...(hasLogin ? WITH_LOGIN_BOXES : WITHOUT_LOGIN), rules }), [hasLogin, rulesKey]);
+  const form = useTeacherForm(initial, options);
   const [formError, setFormError] = useState<string | null>(null);
   // The school's own fields the school asks: their boxes, kept apart from the form's own (the page sends both).
   const initialOwn = useMemo(() => ownValuesOf(fields, teacher.custom), [fields, teacher.custom]);

@@ -6,7 +6,7 @@ import { RouterProvider, createMemoryRouter } from "react-router";
 import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
-import { fakeApi, spreadsheet, type Call, type Handler } from "../../../test/fakeApi";
+import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
 import { signInAs, signOut } from "../../../test/session";
 import { STRUCTURE } from "../../../test/schoolClass";
 import { DEV, ENGLISH, MATHS, MEENA } from "../../../test/timetableFixtures";
@@ -97,63 +97,36 @@ describe("Teacher (the menu entry on top)", () => {
     expect(router.state.location.pathname).toBe("/teachers/import");
   });
 
-  it("offers Export, before Bulk upload and Add teacher: the teachers the list shows, with its search and filters, as one Excel file (2026-11-07)", async () => {
-    const saved: string[] = [];
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
-      saved.push(this.download);
-    });
-    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:teachers", revokeObjectURL: () => {} }));
-    const { calls, user } = openPage("/teachers?status=all&q=asha&subject=maths&class=c5&designation=PGT%20(Post%20graduate%20teacher)", {
-      "GET /staff/teachers/export": () => spreadsheet("teachers-sunrise-public-school-2026-11-07.xlsx"),
-    });
+  it("offers Export, before Bulk upload and Add teacher: it opens the Export page with the list's search and filters (2026-11-13)", async () => {
+    const { user, router } = openPage("/teachers?status=all&q=asha&subject=maths&class=c5&designation=PGT%20(Post%20graduate%20teacher)");
     await screen.findByRole("heading", { name: "All Teachers", level: 1 });
-    const exportButton = screen.getByRole("button", { name: "Export" });
-    expect(exportButton.nextElementSibling).toBe(screen.getByRole("link", { name: "Bulk upload" }));
-    await waitFor(() => expect(exportButton).toBeEnabled());
-    expect(calls.filter((c) => c.path === "/staff/teachers/export")).toHaveLength(0);
-    await user.click(exportButton);
-    await waitFor(() => expect(saved).toEqual(["teachers-sunrise-public-school-2026-11-07.xlsx"]));
-    const asked = calls.filter((c) => c.path === "/staff/teachers/export");
-    expect(asked).toHaveLength(1);
-    const query = new URLSearchParams(asked[0].query);
-    expect(Object.fromEntries(query)).toEqual({ status: "all", search: "asha", subjectId: "maths", classId: "c5", designation: "PGT (Post graduate teacher)" });
+    const exportLink = screen.getByRole("link", { name: "Export" });
+    expect(exportLink.nextElementSibling).toBe(screen.getByRole("link", { name: "Bulk upload" }));
+    const href = new URL(exportLink.getAttribute("href")!, "http://x");
+    expect(href.pathname).toBe("/teachers/export");
+    expect(Object.fromEntries(href.searchParams)).toEqual({ status: "all", q: "asha", subject: "maths", class: "c5", designation: "PGT (Post graduate teacher)" });
+    await user.click(exportLink);
+    expect(router.state.location.pathname).toBe("/teachers/export");
   });
 
-  it("says why the Export failed, and saves nothing", async () => {
-    const saved: string[] = [];
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
-      saved.push(this.download);
-    });
-    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:teachers", revokeObjectURL: () => {} }));
-    const { user } = openPage("/teachers", {
-      "GET /staff/teachers/export": () => new Response(JSON.stringify({ success: false, message: "The file could not be made. Try again in a minute." }), { status: 500, headers: { "Content-Type": "application/json" } }),
-    });
-    await screen.findByRole("heading", { name: "All Teachers", level: 1 });
-    const exportButton = screen.getByRole("button", { name: "Export" });
-    await waitFor(() => expect(exportButton).toBeEnabled());
-    await user.click(exportButton);
-    expect(await screen.findByText("The file could not be made. Try again in a minute.")).toBeInTheDocument();
-    expect(saved).toEqual([]);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Export" })).toBeEnabled());
-  });
-
-  it("has a Fields button, first in the header: the school's own fields for its teachers (2026-11-07)", async () => {
+  it("has a Fields button, first in the header: the school's fields for its teachers (Manage fields)", async () => {
     const { user, router } = openPage();
     await screen.findByRole("heading", { name: "All Teachers", level: 1 });
     const fields = screen.getByRole("link", { name: "Fields" });
     expect(fields).toHaveAttribute("href", "/teachers/fields");
-    expect(fields.nextElementSibling).toBe(screen.getByRole("button", { name: "Export" }));
+    expect(fields.nextElementSibling).toBe(screen.getByRole("link", { name: "Export" }));
     await user.click(fields);
     expect(router.state.location.pathname).toBe("/teachers/fields");
   });
 
-  it("has nothing to export while the list shows nobody", async () => {
+  it("opens Export even while the list shows nobody: the Export page shows the file with a sample row (2026-11-13)", async () => {
     openPage("/teachers", { "GET /staff/teachers": () => ({ items: [] }) });
     expect(await screen.findByText("No teachers yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+    const exportLink = screen.getByRole("link", { name: "Export" });
+    expect(exportLink).toHaveAttribute("href", "/teachers/export?status=active");
   });
 
-  it("lists every teacher: who they are, how to reach them, what they teach, their class, their username and whether they teach here", async () => {
+  it("lists every teacher: who they are, how to reach them, what they teach and their class (no Login, Status or Days off column: they are on the teacher's page)", async () => {
     openPage();
     const table = await screen.findByRole("table", { name: "Teachers" });
     const rows = rowsOf(table);
@@ -163,11 +136,13 @@ describe("Teacher (the menu entry on top)", () => {
     expect(rows[0]).toHaveTextContent("90000 00011");
     expect(rows[0]).toHaveTextContent("asha@school.example");
     expect(rows[0]).toHaveTextContent("Class 5 - A");
-    expect(rows[0]).toHaveTextContent("asha.rao_12");
-    expect(within(rows[0]).getByText("Teaching")).toBeInTheDocument();
+    // The table is who, contact, what they teach and their classes, and the pencil: nothing wider than the screen.
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Teacher", "Contact", "Can teach", "Classes", "Change"]);
+    expect(rows[0]).not.toHaveTextContent("asha.rao_12");
+    expect(rows[0]).not.toHaveTextContent("Teaching");
+    expect(rows[0]).not.toHaveTextContent("Comes every day");
     expect(rows[2]).toHaveTextContent("Mathematics");
     expect(rows[2]).toHaveTextContent("2 classes · 12 periods a week");
-    expect(rows[1]).toHaveTextContent("No login");
     expect(rows[1]).toHaveTextContent("Nothing yet");
     expect(screen.getByText("3 teachers")).toBeInTheDocument();
   });
@@ -187,6 +162,31 @@ describe("Teacher (the menu entry on top)", () => {
     expect(pencil).toHaveAttribute("href", "/teachers/asha/edit");
     await user.click(pencil);
     expect(router.state.location.pathname).toBe("/teachers/asha/edit");
+  });
+
+  it("keeps one icon on a row, a pencil: Week, Give classes, Has left and Bring back are on the teacher's own page (2026-11-13)", async () => {
+    openPage();
+    const table = await screen.findByRole("table", { name: "Teachers" });
+    const rows = rowsOf(table);
+    for (const row of rows) {
+      for (const name of [/^Week$/, /Give .* classes/, /has left/i, /^Bring back/, /^Change$/]) {
+        expect(within(row).queryByRole("link", { name })).not.toBeInTheDocument();
+        expect(within(row).queryByRole("button", { name })).not.toBeInTheDocument();
+      }
+    }
+    // The pencil is an icon only (no word beside it): its name is for a screen reader.
+    const pencil = within(rows[0]).getByRole("link", { name: "Edit Asha Rao" });
+    expect(pencil.textContent).toBe("");
+    expect(within(rows[0]).getAllByRole("link")).toHaveLength(2);
+  });
+
+  it("has no pencil on a teacher who has left: the teacher's page brings them back", async () => {
+    openPage("/teachers/inactive", { "GET /staff/teachers": () => ({ items: [{ ...ASHA, isActive: false, login: { username: "asha.rao_12", isActive: false } }] }) });
+    const table = await screen.findByRole("table", { name: "Teachers" });
+    expect(within(table).queryByRole("link", { name: "Edit Asha Rao" })).not.toBeInTheDocument();
+    expect(within(table).queryByRole("button", { name: /Bring back/ })).not.toBeInTheDocument();
+    // With no Status column, a teacher who has left says so under the name.
+    expect(within(table).getByText("Left")).toBeInTheDocument();
   });
 
   it("loads teaching teachers first and opens the inactive list from its own address", async () => {

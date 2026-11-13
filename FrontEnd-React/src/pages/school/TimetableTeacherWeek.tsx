@@ -4,6 +4,7 @@ import { DAY_NAMES } from "../../constants/timetable";
 import { useGetTeacherWeekQuery } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
+import { placementText } from "../../utils/timetablePlacement";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -37,6 +38,10 @@ export default function TimetableTeacherWeekPage() {
   // Monday to Saturday always; Sunday only when someone has a lesson then.
   const days = [1, 2, 3, 4, 5, 6, ...(week.lessons.some((l) => l.day === 7) ? [7] : [])];
   const over = (day: number) => teacher.maxPerDay !== null && (week.perDay[String(day)] ?? 0) > teacher.maxPerDay;
+  // How many periods of each subject a lesson of the class's timetable has been placed in: the others are in nobody's week yet.
+  const placedOf = (t: { classId: string; sectionId: string | null; subjectId: string }) =>
+    week.lessons.filter((l) => l.classId === t.classId && l.sectionId === t.sectionId && l.subjectId === t.subjectId).length;
+  const toPlace = week.teaches.filter((t) => placedOf(t) < t.periodsPerWeek);
 
   return (
     <div className="space-y-5">
@@ -92,13 +97,28 @@ export default function TimetableTeacherWeekPage() {
             Nothing is given to them yet. Choose them as the teacher of a subject in a class's <Link to="/school/timetable" className="font-semibold text-primary-deep underline">timetable</Link> (Edit subjects).
           </p>
         ) : (
-          <ul className="flex flex-wrap gap-2">
-            {week.teaches.map((t) => (
-              <li key={`${t.classId}:${t.sectionId}:${t.subjectId}`}>
-                <Badge tone="primary">{t.label} · {t.subjectName} · {t.periodsPerWeek} a week</Badge>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="flex flex-wrap gap-2">
+              {week.teaches.map((t) => {
+                const placed = placedOf(t);
+                const done = placed >= t.periodsPerWeek;
+                return (
+                  <li key={`${t.classId}:${t.sectionId}:${t.subjectId}`}>
+                    <Link to={`/school/timetable/class/${t.classId}/${t.sectionId ?? "none"}`} title={`Open the timetable of ${t.label}`} className="rounded-full focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20">
+                      <Badge tone={done ? "primary" : "warning"}>
+                        {t.label} · {t.subjectName} · {t.periodsPerWeek} a week · {placementText(placed, t.periodsPerWeek)}
+                      </Badge>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+            {toPlace.length > 0 && (
+              <p className="mt-3 text-xs text-foreground-muted">
+                A period that is not in the timetable yet has no day and time, so it is not in the week above. Press the class to put it in its timetable.
+              </p>
+            )}
+          </>
         )}
       </Card>
     </div>

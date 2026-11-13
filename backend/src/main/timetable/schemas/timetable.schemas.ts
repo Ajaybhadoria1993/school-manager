@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { MAX_LABEL, MAX_LESSONS_PER_CELL, MAX_PERIODS, MAX_ROOM, MAX_SCHEDULE_NAME, SCHEDULE_SCOPES, SLOT_KINDS } from "../constants";
+import { DAY_NAMES, MAX_LABEL, MAX_LESSONS_PER_CELL, MAX_PERIODS, MAX_ROOM, MAX_SCHEDULE_NAME, SCHEDULE_SCOPES, SLOT_KINDS } from "../constants";
+import { MAX_PERIODS_PER_WEEK } from "../../subjects/constants";
 import { clockToMinutes } from "../time";
 import { idParamSchema, label, objectId } from "../../subjects/schemas/subjects.schemas";
 
@@ -141,6 +142,39 @@ const unit = { classId: objectId, sectionId: objectId.nullable().default(null) }
 
 export const saveGridSchema = z.object({ ...unit, cells: z.array(cellSchema).max(7 * MAX_PERIODS, "Too many periods") });
 export type SaveGridInput = z.infer<typeof saveGridSchema>;
+
+/**
+ * `PUT /timetable/teacher-periods`: a teacher is given a subject of a class and its periods, in one request. `slots` are the days (1 = Monday)
+ * and period numbers to put the subject in; `periodsPerWeek` is asked of a subject the class does not study yet (the days say it when it is left out).
+ */
+export const teacherPeriodsSchema = z.object({
+  ...unit,
+  subjectId: objectId,
+  teacherId: objectId,
+  periodsPerWeek: z
+    .number({ invalid_type_error: "Enter the periods a week as a number" })
+    .int("Enter whole periods")
+    .min(1, "At least 1 period a week")
+    .max(MAX_PERIODS_PER_WEEK, `Up to ${MAX_PERIODS_PER_WEEK} periods a week`)
+    .optional(),
+  slots: z
+    .array(
+      z.object({
+        day: z.number().int().min(1, "Choose a day from 1 to 7").max(7, "Choose a day from 1 to 7"),
+        period: z.number().int().min(1, "The first period is 1").max(MAX_PERIODS, `A day has up to ${MAX_PERIODS} periods`),
+      })
+    )
+    .max(7 * MAX_PERIODS, "Too many periods")
+    .superRefine((slots, ctx) => {
+      const seen = new Set<string>();
+      for (const s of slots) {
+        const at = `${s.day}:${s.period}`;
+        if (seen.has(at)) return void ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${DAY_NAMES[s.day]} period ${s.period} is in the list twice` });
+        seen.add(at);
+      }
+    }),
+});
+export type TeacherPeriodsInput = z.infer<typeof teacherPeriodsSchema>;
 
 export const unitBodySchema = z.object(unit);
 export type UnitBody = z.infer<typeof unitBodySchema>;

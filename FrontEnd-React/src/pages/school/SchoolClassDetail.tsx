@@ -11,6 +11,7 @@ import { plural, toneOf } from "../../utils/academics";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
 import { admitLink, importLink } from "../../utils/students";
+import { ClassTeacherButton } from "../../components/schoolClass/ClassTeacherButton";
 import { ALL_SECTIONS, SectionPicker } from "../../components/schoolClass/SectionPicker";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentPager } from "../../components/students/StudentPager";
@@ -36,7 +37,8 @@ const arrowLink =
  * without sections, or with just ONE (it is the whole class: nothing to pick, no card), shows its students at once. The picked section (`?section=`, "all" for everyone), the search, the page and the page size are
  * in the address. The numbers and sections of the class come from the server (`/students/class-overview?classId=`), the students from
  * `/students`, filtered by the server; picking a section or searching asks only for the students. The class teacher is named beside the
- * title (N/A when there is none); **Timetable & teachers** opens the class's own week, timing and teachers (2026-11-04: the teachers box
+ * title (N/A when there is none; for the people who may change it a button: **Add class teacher**, or the name, which replaces them: 2026-11-13);
+ * **Timetable & teachers** opens the class's own week, timing and teachers (2026-11-04: the teachers box
  * that was on this page moved there).
  */
 export default function SchoolClassDetailPage() {
@@ -48,6 +50,8 @@ export default function SchoolClassDetailPage() {
   // Bulk upload for this class: for the people who may admit students, in a year that is still running.
   const can = useCan();
   const mayUpload = !readOnly && can("students.add");
+  // The class teacher is changed from here by the people who may (Teacher > Change, or Classes), in a year that is still running.
+  const mayChangeHead = !readOnly && can("teachers.edit", "classes.manage");
   const structureRes = useGetStructureQuery();
   const overviewRes = useGetClassOverviewQuery({ classId });
   const structure = structureRes.data?.data;
@@ -187,12 +191,15 @@ export default function SchoolClassDetailPage() {
                 </span>
               )}
             </span>
-            {(!hasSections || active) && (
-              <Badge tone={headTeacher ? "primary" : "neutral"} className="gap-1.5">
-                <UserRound className="size-3.5" aria-hidden />
-                Class teacher: {headTeacher?.name ?? "N/A"}
-              </Badge>
-            )}
+            {(!hasSections || active) &&
+              (mayChangeHead ? (
+                <ClassTeacherButton classId={classId} sectionId={active?.id ?? null} label={active ? `${overview.name} - ${active.name}` : overview.name} current={headTeacher} />
+              ) : (
+                <Badge tone={headTeacher ? "primary" : "neutral"} className="gap-1.5">
+                  <UserRound className="size-3.5" aria-hidden />
+                  Class teacher: {headTeacher?.name ?? "N/A"}
+                </Badge>
+              ))}
           </span>
         }
       />

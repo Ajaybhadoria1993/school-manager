@@ -3,18 +3,20 @@ import { ImagePlus, Trash2 } from "lucide-react";
 import { useRemoveLogoMutation, useSaveLogoMutation } from "../../redux/api/onboardingApi";
 import { API_URL } from "../../redux/api/baseQueryWithReauth";
 import { getApiError } from "../../utils/apiErrors";
+import { ConfirmModal } from "../classes/ConfirmModal";
 import { Button } from "../ui/Button";
 
 const TOO_BIG_BYTES = 500 * 1024;
 
 /**
  * The school's logo, for its report cards, certificates and receipts. Optional. It saves as soon as a picture is chosen, on its own (it is
- * not a box of the form), so going Back and forth never loses it.
+ * not a box of the form), so going Back and forth never loses it. Taking it away asks first (a window).
  */
 export function LogoField({ logoUrl }: { logoUrl: string }) {
   const input = useRef<HTMLInputElement>(null);
   const [saveLogo, saving] = useSaveLogoMutation();
   const [removeLogo, removing] = useRemoveLogoMutation();
+  const [asking, setAsking] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const busy = saving.isLoading || removing.isLoading;
 
@@ -35,13 +37,10 @@ export function LogoField({ logoUrl }: { logoUrl: string }) {
     }
   }
 
+  /** The window's answer: the logo goes (a refusal is said in the window, which stays open). */
   async function remove() {
     setProblem(null);
-    try {
-      await removeLogo().unwrap();
-    } catch (err) {
-      setProblem(getApiError(err)?.message ?? "The logo could not be removed. Please try again.");
-    }
+    await removeLogo().unwrap();
   }
 
   return (
@@ -59,7 +58,7 @@ export function LogoField({ logoUrl }: { logoUrl: string }) {
             {logoUrl ? "Change logo" : "Upload logo"}
           </Button>
           {logoUrl && (
-            <Button type="button" variant="outline" size="sm" loading={removing.isLoading} disabled={busy} onClick={remove}>
+            <Button type="button" variant="outline" size="sm" loading={removing.isLoading} disabled={busy} onClick={() => setAsking(true)}>
               <Trash2 className="size-4" aria-hidden />
               Remove
             </Button>
@@ -70,6 +69,11 @@ export function LogoField({ logoUrl }: { logoUrl: string }) {
         <p role="alert" className="mt-1.5 text-xs font-medium text-danger">
           {problem}
         </p>
+      )}
+      {asking && (
+        <ConfirmModal title="Remove the school logo?" confirmLabel="Remove the logo" onClose={() => setAsking(false)} onConfirm={remove}>
+          <p>The logo is taken off the report cards, certificates and receipts. You can upload one again at any time.</p>
+        </ConfirmModal>
       )}
     </div>
   );

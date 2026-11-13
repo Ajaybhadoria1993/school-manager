@@ -9,6 +9,7 @@ import type { TeacherMedium,
   ClassDayInput,
   CopyAnswer,
   CopyInput,
+  ExportPreview,
   GridCell,
   GridView,
   ImportSheet,
@@ -27,6 +28,7 @@ import type { TeacherMedium,
   TeacherImportResult,
   TeacherSettings,
   TeacherImportRowInput,
+  TeacherPeriodsInput,
   Teacher,
   TeacherClasses,
   TeacherInput,
@@ -35,6 +37,7 @@ import type { TeacherMedium,
   TeacherWeek,
   TimetableOverview,
   UnitRef,
+  UpdateTeacherSettingsInput,
   UsernameCheck,
 } from "../../types";
 import { baseQueryWithReauth } from "./baseQueryWithReauth";
@@ -155,12 +158,22 @@ export const timetableApi = createApi({
       query: (body) => ({ url: "/subjects/allotments/teacher", method: "PUT", body }),
       invalidatesTags: ["Teacher", "Allotment", "Overview", "Subject", "TeacherWeek", "Grid"],
     }),
+    // A teacher given a subject of a class AND its days and periods in one request (Assign class): the answer is the class's timetable as it is now.
+    placeTeacherPeriods: build.mutation<ApiResponse<GridView>, TeacherPeriodsInput>({
+      query: (body) => ({ url: "/timetable/teacher-periods", method: "PUT", body }),
+      invalidatesTags: ["Teacher", "Allotment", "Overview", "Subject", "TeacherWeek", "Grid"],
+    }),
     // The school's own fields for its teachers (one read, kept until they are changed).
     getTeacherSettings: build.query<ApiResponse<TeacherSettings>, void>({
       query: () => "/staff/teachers/settings",
       providesTags: ["TeacherSettings"],
     }),
-    updateTeacherSettings: build.mutation<ApiResponse<TeacherSettings>, TeacherSettings>({
+    // What the Export page shows before the file is made: the first teachers (or one sample row for a school with none) in every column.
+    getTeacherExportPreview: build.query<ApiResponse<ExportPreview>, TeacherQuery>({
+      query: (params) => ({ url: "/staff/teachers/export/preview", params: Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== "")) }),
+      providesTags: ["Teacher"],
+    }),
+    updateTeacherSettings: build.mutation<ApiResponse<TeacherSettings>, UpdateTeacherSettingsInput>({
       query: (body) => ({ url: "/staff/teachers/settings", method: "PUT", body }),
       // The answer is the list as it is now: it is put into the read.
       async onQueryStarted(_input, { dispatch, queryFulfilled }) {
@@ -371,9 +384,11 @@ export const {
   useGetTeacherClassesQuery,
   useSetClassTeacherMutation,
   useAssignTeacherMutation,
+  usePlaceTeacherPeriodsMutation,
   useSaveUnitTeachersMutation,
   useReadTeacherFileMutation,
   useGetTeacherSettingsQuery,
+  useGetTeacherExportPreviewQuery,
   useUpdateTeacherSettingsMutation,
   useImportTeachersMutation,
   useCreateTeacherMutation,

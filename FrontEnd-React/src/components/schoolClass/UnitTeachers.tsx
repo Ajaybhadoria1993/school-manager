@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useBlocker } from "react-router";
-import { Plus, UsersRound, X } from "lucide-react";
+import { Plus, UserMinus, UserRoundCheck, UsersRound, X } from "lucide-react";
 import { MAX_BACKUP_TEACHERS, MAX_PERIODS_PER_WEEK } from "../../constants/timetable";
 import { useAssignTeacherMutation, useGetAllotmentsQuery, useGetSubjectsQuery, useGetTeachersQuery, useSaveUnitTeachersMutation } from "../../redux/api/timetableApi";
 import type { AllotmentRow, SaveUnitTeachersInput } from "../../types";
@@ -40,7 +40,9 @@ const tile = (changed: boolean) =>
  * ticked in is their priority (2, 3...), shown on their chips, and they manage the subject when the main teacher cannot come.
  *
  * Nothing is sent when a teacher is picked: it stays on the screen until **Save** (one request for everything changed, all or nothing; the
- * server checks it again and may refuse), **Cancel** puts it all back, and leaving with changes not saved asks first. **Add subject** is its
+ * server checks it again and may refuse), **Cancel** puts it all back, and leaving with changes not saved asks first. When the section has
+ * a class teacher already and Save would put another one in their place (or take them away), a window asks first and names them (2026-11-13;
+ * Cancel there keeps every box as it is). **Add subject** is its
  * own action (it is saved at once). It is the timetable's own list: the main teacher picked here is who teaches those periods there.
  */
 export function UnitTeachers({ classId, sectionId, label, classTeacher }: { classId: string; sectionId: string | null; label: string; classTeacher: { id: string; name: string } | null }) {
@@ -93,9 +95,22 @@ export function UnitTeachers({ classId, sectionId, label, classTeacher }: { clas
     setHeadEdit(undefined);
   }
 
+  // A class teacher who is there already is replaced (or taken away) by Save: a window asks first, naming them.
+  const [askingHead, setAskingHead] = useState(false);
+  const nameOfTeacher = (id: string | null) => (id === null ? null : (teachers.find((t) => t.id === id)?.name ?? (classTeacher?.id === id ? classTeacher.name : "A teacher")));
+  const savedHeadName = nameOfTeacher(savedHead);
+  const newHeadName = nameOfTeacher(head);
+
+  /** "Yes" in either window: it closes at once and Save goes on (a refusal is said by the result window, as for any Save). */
+  async function agree() {
+    setAskingHead(false);
+    await save(true);
+  }
+
   const busy = useRef(false);
-  async function save() {
+  async function save(agreed = false) {
     if (!dirty || busy.current) return;
+    if (headChanged && savedHead !== null && !agreed) return setAskingHead(true);
     busy.current = true;
     const body: SaveUnitTeachersInput = {
       classId,
@@ -310,6 +325,23 @@ export function UnitTeachers({ classId, sectionId, label, classTeacher }: { clas
       )}
 
       {result.modal}
+      {askingHead && head !== null && (
+        <ConfirmModal title={`${label} already has a class teacher`} confirmLabel="Change class teacher" icon={UserRoundCheck} tone="primary" onClose={() => setAskingHead(false)} onConfirm={agree}>
+          <p>
+            <strong>{savedHeadName}</strong> is the class teacher of {label} now.
+          </p>
+          <p>
+            If you go on, {newHeadName} becomes the class teacher instead and {savedHeadName} no longer is. The subjects {savedHeadName} teaches there are not changed.
+          </p>
+        </ConfirmModal>
+      )}
+      {askingHead && head === null && (
+        <ConfirmModal title={`Take ${savedHeadName} off as class teacher of ${label}?`} confirmLabel="Take off" icon={UserMinus} onClose={() => setAskingHead(false)} onConfirm={agree}>
+          <p>
+            {label} will have <strong>no class teacher</strong> until you choose one. The subjects {savedHeadName} teaches there are not changed.
+          </p>
+        </ConfirmModal>
+      )}
       {blocker.state === "blocked" && (
         <ConfirmModal title="Leave without saving?" confirmLabel="Leave without saving" onClose={() => blocker.reset()} onConfirm={async () => blocker.proceed()}>
           <p>{`You have changed the teachers of ${label} and not saved them. If you leave now, the changes are lost.`}</p>
