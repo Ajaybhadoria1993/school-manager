@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETUP, generateDay } from "../timings";
-import { dayProblem, daySummary, departmentDayBody, readWeek, weekBody, weekProblems, type WeekPlan } from "../schoolWeek";
+import { dayProblem, daySummary, departmentDayBody, departmentRows, departmentRowsBody, readWeek, rowsSummary, usualDays, weekBody, weekProblems, type WeekPlan } from "../schoolWeek";
 import type { Schedule } from "../../types";
 
 const usualSlots = generateDay(DEFAULT_SETUP).slots;
@@ -126,5 +126,41 @@ describe("Pre-Primary's own day (2026-11-10)", () => {
     expect(dayProblem(DEFAULT_SETUP)).toBeUndefined();
     expect(dayProblem({ ...DEFAULT_SETUP, periods: 0 })).toBe("Add at least one period");
     expect(dayProblem({ ...DEFAULT_SETUP, lunchStart: "11:00", lunchEnd: "10:30" })).toBe("The lunch must end after it starts");
+  });
+});
+
+describe("a timing in a few words, and which days a department follows", () => {
+  it("says the first and last time, the periods, the lunch and the short break of rows", () => {
+    expect(rowsSummary(usualSlots)).toBe("08:30 to 14:20 · 8 periods · lunch 10:30 to 11:00");
+    expect(rowsSummary(saturday)).toBe("08:30 to 11:10 · 4 periods · no lunch");
+    const withBreak = generateDay({ ...DEFAULT_SETUP, breakStart: "09:50", breakEnd: "10:05" }).slots;
+    expect(rowsSummary(withBreak)).toContain("short break 09:50 to 10:05");
+    expect(rowsSummary([])).toBe("No periods");
+    expect(rowsSummary(generateDay({ ...DEFAULT_SETUP, periods: 1 }).slots)).toContain("1 period ·");
+  });
+
+  it("a department's days are the school's usual days: a different day and a holiday are left to the school", () => {
+    const { plan } = readWeek([timing({ days: [1, 2, 3, 4, 5] }), timing({ id: "t2", name: "Saturday", days: [6], slots: saturday, periods: 4 })]);
+    expect(usualDays(plan)).toEqual([1, 2, 3, 4, 5]);
+  });
+});
+
+describe("a department's own rows", () => {
+  const dept = (over: Partial<Schedule>) => timing({ id: "d", name: "Primary", scope: "only", classIds: ["c1"], departmentId: "d1", ...over });
+
+  it("takes the usual day of a department from the timing that covers most of its days", () => {
+    const monday = dept({ id: "a", days: [1], slots: saturday, periods: 4 });
+    const rest = dept({ id: "b", days: [2, 3, 4, 5] });
+    expect(departmentRows([timing({}), monday, rest], "d1")).toEqual(usualSlots);
+    expect(departmentRows([timing({})], "d1")).toEqual([]);
+    expect(departmentRows([timing({}), dept({ id: "off", days: [6], slots: [], periods: 0 })], "d1")).toEqual([]);
+  });
+
+  it("sends the given rows on the school's usual days only", () => {
+    const { plan } = readWeek([timing({ days: [1, 2, 3, 4, 5] }), timing({ id: "t2", name: "Saturday", days: [6], slots: saturday, periods: 4 })]);
+    const body = departmentRowsBody(plan, saturday, "d1");
+    expect(body.departmentId).toBe("d1");
+    expect(body.days.map((d) => d.day)).toEqual([1, 2, 3, 4, 5]);
+    expect(body.days[0].slots).toEqual(saturday);
   });
 });

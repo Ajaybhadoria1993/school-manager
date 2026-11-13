@@ -97,7 +97,7 @@ const lesson = (subjectId: string) => ({ subjectId, teacherId: null, room: null 
 describe("A class's timetable: the page", () => {
   it("shows the days as columns, the periods as rows with their times, the lunch between, and what the class studies with how many periods are in", async () => {
     openPage();
-    expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 2 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 1 })).toBeInTheDocument();
     const table = screen.getByRole("table", { name: "Weekly timetable" });
     expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Period", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]);
     expect(within(table).getByRole("rowheader", { name: /^Period 1/ })).toHaveTextContent("08:30 to 09:10");
@@ -195,9 +195,9 @@ describe("A class's timetable: the page", () => {
     await waitFor(() => expect(posts(calls, "/subjects/quick-add")).toHaveLength(1));
     expect(posts(calls, "/subjects/quick-add")[0].body).toEqual({ names: ["Hindi"] });
     expect(await screen.findByText("Hindi is added to your school's subjects")).toBeInTheDocument();
-    // It goes into the period that was clicked, and the box closes.
+    // It goes into the period that was clicked, and the box stays to ask for the teacher.
     await waitFor(() => expect(MON1()).toHaveAccessibleName("Monday, Period 1, 08:30 to 09:10: Hindi"));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByRole("radiogroup", { name: "Teacher for Hindi" })).toBeInTheDocument();
   });
 
   it("adds a subject typed that is in no list", async () => {
@@ -289,11 +289,11 @@ describe("A class's timetable: the page", () => {
 });
 
 describe("A class's timetable: putting subjects in", () => {
-  it("a subject picked in the box of a period goes into that period, the counts follow, and the box closes", async () => {
+  it("a subject picked in the box of a period goes into that period, the counts follow, and the box goes on to the teachers", async () => {
     const { user } = openPage();
     await screen.findByRole("table", { name: "Weekly timetable" });
     await put(user, MON1(), "Mathematics");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByRole("radiogroup", { name: "Teacher for Mathematics" })).toBeInTheDocument();
     expect(MON1()).toHaveAccessibleName("Monday, Period 1, 08:30 to 09:10: Mathematics");
     expect(MON1()).toHaveTextContent("Meena");
     expect(screen.getByText("5 of 40 periods have a lesson")).toBeInTheDocument();
@@ -309,7 +309,7 @@ describe("A class's timetable: putting subjects in", () => {
     await user.click(MON1());
     await user.type(search(), "eng{Enter}");
     expect(MON1()).toHaveAccessibleName("Monday, Period 1, 08:30 to 09:10: ENG");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByRole("radiogroup", { name: "Teacher for English" })).toBeInTheDocument();
     // With nothing typed the first row is the class's first subject; one arrow down is the second.
     await user.click(TUE1());
     await screen.findAllByRole("option");
@@ -331,8 +331,11 @@ describe("A class's timetable: putting subjects in", () => {
       await screen.findByRole("dialog", { name: "Monday, Period 1: choose the subject" });
       expect(search()).not.toHaveFocus();
       await user.click(screen.getByRole("option", { name: "Mathematics" }));
+      // The box (a modal one on a phone) stays for the teacher; it is closed to see the week behind it.
+      expect(await screen.findByRole("radiogroup", { name: "Teacher for Mathematics" })).toBeInTheDocument();
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: /choose the subject$/ })).not.toBeInTheDocument());
       expect(MON1()).toHaveAccessibleName("Monday, Period 1, 08:30 to 09:10: Mathematics");
-      expect(screen.queryByRole("dialog", { name: /choose the subject$/ })).not.toBeInTheDocument();
     } finally {
       media.mockRestore();
     }
@@ -378,7 +381,7 @@ describe("A class's timetable: putting subjects in", () => {
     await screen.findByRole("table", { name: "Weekly timetable" });
     await user.click(MON1());
     await user.click(await screen.findByRole("option", { name: "Mathematics" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByRole("radiogroup", { name: "Teacher for Mathematics" })).toBeInTheDocument();
     expect(MON1()).toHaveTextContent("Lab 2");
     expect(screen.queryByText("Not saved")).not.toBeInTheDocument();
   });
@@ -420,6 +423,9 @@ describe("A class's timetable: putting subjects in", () => {
     const { user } = openPage({ ...GRID, busy });
     await screen.findByRole("table", { name: "Weekly timetable" });
     await put(user, TUE1(), "Mathematics");
+    // The period whose box is open has the blue ring; the red edge shows once the box is closed.
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /choose the subject$/ })).not.toBeInTheDocument());
     expect(TUE1()).toHaveAttribute("title", "Meena Singh is teaching Class 5 - B (Mathematics) at the same time");
     expect(TUE1().className).toContain("border-danger");
     await put(user, MON1(), "Mathematics");
@@ -636,7 +642,7 @@ describe("A class's timetable: publishing and copying", () => {
       "POST /timetable/grid/publish": () => ({ ...draft, status: "published", publishedAt: "2026-10-31T10:00:00.000Z" }),
       "POST /timetable/grid/unpublish": () => draft,
     });
-    const header = async () => within((await screen.findByRole("heading", { name: "Class 5 - A", level: 2 })).parentElement!);
+    const header = async () => within((await screen.findByRole("heading", { name: "Class 5 - A", level: 1 })).closest("header")!);
     expect((await header()).getByText("Draft")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Publish" }));
     expect(await (await header()).findByText("Published")).toBeInTheDocument();
@@ -832,8 +838,10 @@ describe("A class's timetable: choosing the teacher in the box of a period", () 
     const { user } = openPage({ ...GRID, teachers: [], exists: true, cells: [{ day: 1, period: 1, lessons: [lesson("english")] }] });
     await screen.findByRole("table", { name: "Weekly timetable" });
     await user.click(MON1());
-    expect(await screen.findByText("No teacher available in your school")).toBeInTheDocument();
-    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    // Said in the toolbar too (with Add a teacher); the box says it where the teachers would be.
+    const inBox = await screen.findByRole("dialog", { name: /: choose the subject$/ });
+    expect(await within(inBox).findByText("No teacher available in your school")).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: /^Teacher for / })).not.toBeInTheDocument();
   });
 
   it("an empty period asks only for the subject", async () => {
@@ -841,7 +849,7 @@ describe("A class's timetable: choosing the teacher in the box of a period", () 
     await screen.findByRole("table", { name: "Weekly timetable" });
     await user.click(MON1());
     await screen.findByRole("option", { name: "English" });
-    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: /^Teacher for / })).not.toBeInTheDocument();
     expect(screen.queryByText("No teacher available in your school")).not.toBeInTheDocument();
   });
 
@@ -852,7 +860,7 @@ describe("A class's timetable: choosing the teacher in the box of a period", () 
     await screen.findByRole("table", { name: "Weekly timetable" });
     await user.click(MON1());
     expect(await screen.findByRole("button", { name: "Teacher & room" })).toBeInTheDocument();
-    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: /^Teacher for / })).not.toBeInTheDocument();
   });
 });
 
@@ -903,19 +911,23 @@ describe("A Pre-Primary class: the mother teacher and a whole day of one subject
     expect(sent[1].lessons[0]).toMatchObject({ subjectId: "maths", teacherId: null });
   });
 
-  it("with a mother teacher, a subject put in has her on every day it goes on", async () => {
+  it("with a mother teacher, a subject put in (this period, all week) has her on every day it goes on", async () => {
     const { user } = openPP(withMeena(GRID));
     await screen.findByRole("table", { name: "Weekly timetable" });
-    await put(user, MON1(), "English");
+    // The box says how far the subject goes (the whole day is the usual answer in a Pre-Primary class).
+    await user.click(MON1());
+    await user.click(within(await screen.findByRole("radiogroup", { name: "Put the subject in" })).getByRole("radio", { name: "This period" }));
+    await user.click(await screen.findByRole("option", { name: "English" }));
     for (const d of ["Monday", "Tuesday", "Friday"]) expect(slot(d, 1, "08:30 to 09:10")).toHaveTextContent("Meena Singh");
   });
 
-  it("the box can put a subject in the whole day: every period of that day, the other days left as they are; one period all week is the first choice", async () => {
+  it("the box puts a subject in the whole day by default: every period of that day, the other days left as they are", async () => {
     const { user } = openPP(withMeena(GRID));
     await screen.findByRole("table", { name: "Weekly timetable" });
     await user.click(MON1());
     const how = await screen.findByRole("radiogroup", { name: "Put the subject in" });
-    expect(within(how).getByRole("radio", { name: "This period, all week" })).toBeChecked();
+    expect(within(how).getAllByRole("radio").map((r) => r.textContent)).toEqual(["This period", "Half Monday", "Whole Monday"]);
+    expect(within(how).getByRole("radio", { name: "Whole Monday" })).toBeChecked();
     await user.click(within(how).getByRole("radio", { name: "Whole Monday" }));
     await user.click(screen.getByRole("option", { name: "English" }));
     expect(slot("Monday", 1, "08:30 to 09:10")).toHaveAccessibleName(/ENG$/);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GridCell, GridView } from "../../types";
-import { applyMotherTeacher, buildModel, changeLesson, choiceOf, clearCell, dayEnds, isPrePrimaryName, placeAcrossWeek, placeWholeDay, teacherChoices, localProblems, matchChoices, missingPeriods, periodsInARow, placeSubject, placedCounts, sameGrid, subjectChoices, teacherOf, teacherTrouble } from "../timetable";
+import { applyMotherTeacher, buildModel, changeLesson, choiceOf, clearCell, dayEnds, isPrePrimaryName, halfOf, placeAcrossWeek, placeHalfDay, placeWholeDay, teacherChoices, teacherOnRange, localProblems, matchChoices, missingPeriods, periodsInARow, placeSubject, placedCounts, sameGrid, subjectChoices, teacherOf, teacherTrouble } from "../timetable";
 
 const day = (n: number, name: string) => ({
   day: n,
@@ -411,5 +411,83 @@ describe("Pre-Primary (2026-11-10): the mother teacher and a whole day of one su
     const list = teacherChoices(PP, "art", 1, 1, null, "dev");
     expect(list.map((c) => c.value)).toEqual([null, "dev", "meena"]);
     expect(list[1].note).toBe("Mother teacher");
+  });
+});
+
+describe("a Pre-Primary day in halves (before the lunch, after it)", () => {
+  const free = (id: string, name: string, over: object = {}) => ({ subjectId: id, subjectName: name, subjectCode: null, category: "academic", periodsPerWeek: 0, blockSize: 1, teacherId: null, group: null, ...over });
+  const HALF_VIEW = {
+    ...VIEW,
+    // Monday and Tuesday: periods 1-3, the lunch, periods 4-5. Wednesday: four periods and no lunch. Thursday: five periods and no lunch.
+    days: [
+      day(1, "Monday"),
+      day(2, "Tuesday"),
+      { day: 3, name: "Wednesday", slots: [1, 2, 3, 4].map((p) => ({ kind: "period" as const, label: `Period ${p}`, start: "08:00", end: "08:40", period: p })) },
+      { day: 4, name: "Thursday", slots: [1, 2, 3, 4, 5].map((p) => ({ kind: "period" as const, label: `Period ${p}`, start: "08:00", end: "08:40", period: p })) },
+    ],
+    allotments: [...VIEW.allotments, free("art", "Art"), free("rhymes", "Rhymes")],
+  } as unknown as GridView;
+  const HALF = buildModel(HALF_VIEW);
+  const who = (cells: GridCell[]) => cells.map((c) => `${c.day}.${c.period}:${c.lessons.map((l) => `${l.subjectId}/${l.teacherId ?? "-"}`).join("+")}`);
+
+  it("knows the half a period is in: the periods on its side of the lunch", () => {
+    expect(halfOf(HALF, 1, 2)).toEqual([1, 2, 3]);
+    expect(halfOf(HALF, 1, 4)).toEqual([4, 5]);
+    expect(halfOf(HALF, 1, 9)).toEqual([]);
+    expect(halfOf(HALF, 7, 1)).toEqual([]);
+  });
+
+  it("a day without a lunch is cut in the middle: the bigger half first", () => {
+    expect(halfOf(HALF, 3, 1)).toEqual([1, 2]);
+    expect(halfOf(HALF, 3, 4)).toEqual([3, 4]);
+    expect(halfOf(HALF, 4, 3)).toEqual([1, 2, 3]);
+    expect(halfOf(HALF, 4, 4)).toEqual([4, 5]);
+  });
+
+  it("puts the subject in every period of that half, in place of what was there; the other half and the other days stay", () => {
+    const before = [cell(1, 2, "maths"), cell(1, 4, "maths"), cell(2, 1, "maths")];
+    const { cells, placed } = placeHalfDay(HALF, before, "rhymes", 1, 2, "meena");
+    expect(who(cells)).toEqual(["1.1:rhymes/meena", "1.2:rhymes/meena", "1.3:rhymes/meena", "1.4:maths/-", "2.1:maths/-"]);
+    expect(placed).toBe(3);
+  });
+
+  it("two subjects in a day: one for each half", () => {
+    const first = placeHalfDay(HALF, [], "rhymes", 1, 1, null).cells;
+    const both = placeHalfDay(HALF, first, "art", 1, 5, null).cells;
+    expect(who(both)).toEqual(["1.1:rhymes/-", "1.2:rhymes/-", "1.3:rhymes/-", "1.4:art/-", "1.5:art/-"]);
+  });
+
+  it("the mother teacher goes on a subject with no usual teacher; a choice puts all its subjects; an unknown subject changes nothing", () => {
+    expect(who(placeHalfDay(HALF, [], "art", 1, 1, "meena").cells)[0]).toBe("1.1:art/meena");
+    expect(who(placeHalfDay(HALF, [], "maths", 1, 1, "dev").cells)[0]).toBe("1.1:maths/-");
+    expect(who(placeHalfDay(HALF, [], "sanskrit", 1, 1, null).cells)[0]).toBe("1.1:sanskrit/-+french/-");
+    expect(placeHalfDay(HALF, [cell(1, 1, "maths")], "nothing", 1, 1, "meena")).toEqual({ cells: [cell(1, 1, "maths")], placed: 0, note: null });
+    expect(placeHalfDay(HALF, [], "art", 9, 1, null)).toEqual({ cells: [], placed: 0, note: null });
+  });
+});
+
+describe("a teacher chosen for a subject in a period, a half or a day", () => {
+  const lessonOf = (d: number, p: number, subjectId: string, teacherId: string | null = null): GridCell => ({ day: d, period: p, lessons: [{ subjectId, teacherId, room: null }] });
+  const free = (id: string, name: string) => ({ subjectId: id, subjectName: name, subjectCode: null, category: "academic", periodsPerWeek: 0, blockSize: 1, teacherId: null, group: null });
+  const M = buildModel({ ...VIEW, allotments: [...VIEW.allotments, free("art", "Art"), free("rhymes", "Rhymes")] } as unknown as GridView);
+  const grid = [lessonOf(1, 1, "art"), lessonOf(1, 2, "art"), lessonOf(1, 3, "rhymes"), lessonOf(1, 4, "art"), lessonOf(1, 5, "art"), lessonOf(2, 1, "art")];
+  const teachers = (cells: GridCell[]) => cells.map((c) => `${c.day}.${c.period}:${c.lessons[0].teacherId ?? "-"}`);
+
+  it("for one period: only that period gets the teacher", () => {
+    expect(teachers(teacherOnRange(M, grid, 1, 1, "art", "dev", "period"))).toEqual(["1.1:dev", "1.2:-", "1.3:-", "1.4:-", "1.5:-", "2.1:-"]);
+  });
+
+  it("for a half: that subject's periods on that side of the lunch, that day only", () => {
+    expect(teachers(teacherOnRange(M, grid, 1, 1, "art", "dev", "half"))).toEqual(["1.1:dev", "1.2:dev", "1.3:-", "1.4:-", "1.5:-", "2.1:-"]);
+    expect(teachers(teacherOnRange(M, grid, 1, 5, "art", "dev", "half"))).toEqual(["1.1:-", "1.2:-", "1.3:-", "1.4:dev", "1.5:dev", "2.1:-"]);
+  });
+
+  it("for a whole day: every period of that subject on that day, no other day", () => {
+    expect(teachers(teacherOnRange(M, grid, 1, 1, "art", "dev", "day"))).toEqual(["1.1:dev", "1.2:dev", "1.3:-", "1.4:dev", "1.5:dev", "2.1:-"]);
+  });
+
+  it("takes the teacher off again with null", () => {
+    const given = teacherOnRange(M, grid, 1, 1, "art", "dev", "day");
+    expect(teachers(teacherOnRange(M, given, 1, 1, "art", null, "day"))).toEqual(teachers(grid));
   });
 });

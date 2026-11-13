@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { MemoryRouter, useLocation } from "react-router";
@@ -188,5 +188,18 @@ describe("the medium switch in the top bar", () => {
     openApp();
     await screen.findByText("Classes: 7");
     expect(store.getState().medium.mediumId).toBeNull();
+  });
+});
+
+describe("the medium list is in the look of the top bar's menus", () => {
+  it("opens under a small heading, with the medium in use ticked", async () => {
+    signIn("school_admin");
+    const { user } = openApp();
+    await user.click(await switcher());
+    const menu = screen.getByRole("menu", { name: "Mediums" });
+    expect(within(menu).getByText("Switch medium")).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitemradio", { name: "English Medium" })).toHaveAttribute("aria-checked", "true");
+    expect(within(menu).getByRole("menuitemradio", { name: "Hindi Medium" })).toHaveAttribute("aria-checked", "false");
+    expect(await switcher()).toHaveAttribute("aria-expanded", "true");
   });
 });

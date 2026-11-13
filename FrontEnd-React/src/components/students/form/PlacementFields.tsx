@@ -112,6 +112,7 @@ export function PlacementFields({
   onPickFull,
   onFullClass,
   raisedTo = null,
+  pickOnlySection = "withRoom",
   index = 0,
 }: {
   form: StudentForm;
@@ -125,6 +126,12 @@ export function PlacementFields({
   onFullClass?: (klass: ClassItem, enrolled: number, capacity: number) => void;
   /** The seats the picked section (or class) will be raised to when the student is admitted, because the person said so. */
   raisedTo?: number | null;
+  /**
+   * A class with just one section has it picked with the class (there is nothing to choose). "always": even when it is full (Add student
+   * asks what to do when Next is pressed on the Academic step). "withRoom": only when it has a seat (a student's page and a transfer have
+   * no such question, so a full one is left for the person to press).
+   */
+  pickOnlySection?: "always" | "withRoom";
   index?: number;
 }) {
   const name = useId();
@@ -155,7 +162,10 @@ export function PlacementFields({
     if (!fromStream) setAsked(null);
     if (id === values.classId) return;
     form.set("classId", id);
-    form.set("sectionId", "");
+    const chosen = structure.classes.find((c) => c.id === id);
+    const only = chosen?.sections.length === 1 ? chosen.sections[0] : null;
+    const fits = only ? seatState(loads.get(only.id), only.id === ownSectionId).state !== "full" : false;
+    form.set("sectionId", only && (pickOnlySection === "always" || fits) ? only.id : "");
   }
 
   function pickSenior(number: 11 | 12) {
@@ -172,12 +182,19 @@ export function PlacementFields({
     else form.set("sectionId", id);
   }
 
-  const pickedSeat = picked ? seatState(loads.get(picked.id), picked.id === ownSectionId) : null;
+  // The seats the person added to the picked section (they are written when the student is admitted) are on the page already.
+  const seatsOf = (s: SectionItem) => {
+    const load = loads.get(s.id);
+    const lifted = raisedTo !== null && s.id === values.sectionId && load?.capacity != null && raisedTo > load.capacity;
+    return { seat: seatState(lifted && load ? { ...load, capacity: raisedTo } : load, s.id === ownSectionId), lifted };
+  };
+  const pickedSeats = picked ? seatsOf(picked) : null;
+  const pickedSeat = pickedSeats?.seat ?? null;
   const sectionNote = picked && pickedSeat
     ? pickedSeat.capacity === null
       ? `${klass?.name} - ${picked.name}: ${pickedSeat.enrolled} student${pickedSeat.enrolled === 1 ? "" : "s"}, no seat limit.`
-      : raisedTo !== null && pickedSeat.enrolled >= pickedSeat.capacity
-        ? `${klass?.name} - ${picked.name}: ${pickedSeat.enrolled} of ${pickedSeat.capacity} seats taken. Its seats become ${raisedTo} when you admit.`
+      : pickedSeats?.lifted
+        ? `${klass?.name} - ${picked.name}: ${pickedSeat.enrolled} of ${pickedSeat.capacity} seats taken, ${Math.max(0, pickedSeat.capacity - pickedSeat.enrolled)} left. Its seats become ${raisedTo} when you admit.`
         : `${klass?.name} - ${picked.name}: ${pickedSeat.enrolled} of ${pickedSeat.capacity} seats taken${pickedSeat.enrolled >= pickedSeat.capacity && picked.id !== ownSectionId ? " (over the limit, as you chose)" : `, ${Math.max(0, pickedSeat.capacity - pickedSeat.enrolled)} left`}.`
     : klass && klass.sections.length > 0
       ? `${plural(klass.sections.length, "section")} this year. Pick one.`
@@ -328,7 +345,7 @@ export function PlacementFields({
                           : wholeClassFull
                             ? `${klass.name} is full: ${wholeClass.enrolled} of ${wholeClass.capacity} seats are taken.`
                             : raisedTo !== null && wholeClass.enrolled >= wholeClass.capacity
-                              ? `${klass.name} has ${wholeClass.capacity} seats and they are all taken. Its seats become ${raisedTo} when you admit.`
+                              ? `${klass.name} has ${wholeClass.enrolled} of ${raisedTo} seats taken. Its seats become ${raisedTo} when you admit.`
                               : `${klass.name} has no sections this year: the student joins the whole class. ${wholeClass.enrolled} of ${wholeClass.capacity} seats taken.`}
                       </p>
                     </div>
@@ -347,7 +364,7 @@ export function PlacementFields({
                 ) : (
                   <ScrollRow key={klass.id} label={`Section of ${klass.name}`}>
                     {klass.sections.map((s) => {
-                      const seat = seatState(loads.get(s.id), s.id === ownSectionId);
+                      const { seat } = seatsOf(s);
                       const badge = BADGE[seat.state];
                       const on = s.id === values.sectionId;
                       const percent = seat.capacity ? Math.min(100, Math.round((seat.enrolled / seat.capacity) * 100)) : 0;

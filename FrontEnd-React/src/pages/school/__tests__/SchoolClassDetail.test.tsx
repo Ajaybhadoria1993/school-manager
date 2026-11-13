@@ -191,6 +191,40 @@ describe("one class of School Class", () => {
   });
 });
 
+describe("the arrows to the classes before and after", () => {
+  const titleRow = async (name: string) => within((await screen.findByRole("heading", { name, level: 1 })).parentElement!);
+
+  it("sit right beside the title (not alone at the far edge of the page), the one before and the one after together", async () => {
+    openPage("/school-class/c5");
+    const row = await titleRow("Class 5");
+    const before = row.getByRole("link", { name: "Previous class: Class 1" });
+    const after = row.getByRole("link", { name: "Next class: Class 6" });
+    expect(before).toHaveAttribute("href", "/school-class/c1");
+    expect(after).toHaveAttribute("href", "/school-class/c6");
+    // The previous one comes first, then the next one.
+    expect(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("the first class has a dimmed arrow where the one before would be, so the pair never moves", async () => {
+    openPage("/school-class/c1");
+    const row = await titleRow("Class 1");
+    expect(row.queryByRole("link", { name: /^Previous class/ })).toBeNull();
+    expect(row.getByLabelText("No class before this one")).toHaveAttribute("aria-disabled", "true");
+    expect(row.getByRole("link", { name: "Next class: Class 5" })).toBeInTheDocument();
+    // The class teacher's badge stays with them (a class without sections names it at once).
+    expect(row.getByText("Class teacher: N/A")).toBeInTheDocument();
+  });
+
+  it("the last class has one where the next would be", async () => {
+    // Class 6 is the last class of this school.
+    openPage("/school-class/c6", { "GET /academics/structure": () => ({ ...STRUCTURE, classes: STRUCTURE.classes.slice(0, 3) }) });
+    const row = await titleRow("Class 6");
+    expect(row.getByRole("link", { name: "Previous class: Class 5" })).toBeInTheDocument();
+    expect(row.queryByRole("link", { name: /^Next class/ })).toBeNull();
+    expect(row.getByLabelText("No class after this one")).toHaveAttribute("aria-disabled", "true");
+  });
+});
+
 describe("Bulk upload on a class page", () => {
   it("opens the bulk upload for this class and says it came from this class, so the menu stays on Classes and the way back leads here", async () => {
     signInAs();

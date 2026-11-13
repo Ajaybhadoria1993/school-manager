@@ -128,6 +128,11 @@ export const createSectionSchema = z.object({
   name: label("section name", 20),
   capacity: capacity.nullable().optional(),
   room: room.nullable().optional(),
+  /**
+   * The class's seats are shared by its sections: when this section does not fit in what its other sections leave, the class's seats grow
+   * to hold it (instead of the request being refused). Asked by the Add student window when a section is full and a new one is added.
+   */
+  raiseClassSeats: z.boolean({ invalid_type_error: "Choose yes or no" }).optional(),
 });
 
 export const updateSectionSchema = z

@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../../utils/helpers";
+import { useThemeScope } from "../../theme/themeScopeContext";
 
 export const Label = ({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) => (
   <label className={cn("mb-1.5 block text-body-label", className)} {...props} />
@@ -20,7 +21,7 @@ export const Label = ({ className, ...props }: LabelHTMLAttributes<HTMLLabelElem
  * its icon in a block of its own, for the student admission form (BoxedControls).
  */
 /** "soft" is the sign-up form's look: a tall white box with rounded corners, a light border and a blue icon inside it (SoftControls). */
-type ControlStyle = "outline" | "filled" | "boxed" | "soft";
+type ControlStyle = "outline" | "filled" | "boxed" | "soft" | "round";
 const ControlStyleContext = createContext<ControlStyle>("outline");
 
 /** Wrap a form in this and every Input, Select and Textarea inside it takes the soft "filled" look. */
@@ -39,7 +40,18 @@ export function SoftControls({ children }: { children: React.ReactNode }) {
   return <ControlStyleContext.Provider value="soft">{children}</ControlStyleContext.Provider>;
 }
 
-export const useControlStyle = () => useContext(ControlStyleContext);
+/**
+ * The look a box wears here. In Classic it is the one its form asked for. In a look of the sign-up form (Onboarding, Evergreen: the signed-in
+ * shell says so through ThemeScope) every box is soft and rounded: a form's tall boxed box becomes the soft box of the sign-up form, and a
+ * plain box becomes "round" (the same soft look at its own size, so toolbars and tables do not grow). The sign-in boxes (filled) and the
+ * sign-up form's own boxes (soft) are what they were.
+ */
+export function useControlStyle(): ControlStyle {
+  const style = useContext(ControlStyleContext);
+  const theme = useThemeScope();
+  if (theme === "classic") return style;
+  return style === "boxed" ? "soft" : style === "outline" ? "round" : style;
+}
 
 export function controlClass(style: ControlStyle) {
   return cn(
@@ -49,6 +61,9 @@ export function controlClass(style: ControlStyle) {
       : style === "soft"
         ? // "!": the same reason as below (index.css colours every border from outside Tailwind's layers).
           "rounded-xl border border-border bg-white text-[15px] shadow-card hover:border-primary/40! focus:border-primary! focus:ring-4 focus:ring-primary/15 disabled:bg-surface-muted aria-[invalid=true]:border-danger!"
+        : style === "round"
+        ? // A plain box in a look of the sign-up form: the soft look at the plain size.
+          "rounded-xl border border-border bg-surface shadow-card hover:border-primary/40! focus:border-primary! focus:ring-4 focus:ring-primary/15 disabled:bg-surface-muted aria-[invalid=true]:border-danger!"
         : style === "boxed"
         ? // "!": index.css colours every border from outside Tailwind's layers, which beats any plain border colour written here.
           "rounded-[10px] border border-foreground/60! bg-surface text-[15px] hover:border-foreground/80! focus:border-primary! focus:ring-4 focus:ring-primary/15 disabled:bg-surface-muted aria-[invalid=true]:border-danger!"

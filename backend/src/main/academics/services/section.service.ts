@@ -1,7 +1,7 @@
 import { ApiError } from "../../../utils/ApiError";
 import { nameKeyOf } from "../../tenants/services/tenantFactory";
 import { TimetableCleanup } from "../../timetable/services/cleanup";
-import { MAX_SECTIONS_PER_CLASS } from "../constants";
+import { MAX_CLASS_CAPACITY, MAX_SECTIONS_PER_CLASS } from "../constants";
 import { SchoolClass } from "../models/SchoolClass";
 import { Section } from "../models/Section";
 import { isInactive } from "../models/status";
@@ -51,8 +51,17 @@ export class SectionService {
     assertDetails((await AcademicSettingsService.get(tenantId)).sectionDetailsRequired, input.capacity ?? null, input.room ?? null);
     // A new section is for the school's current session; the limit and the "already exists" check are per session too.
     const academicYearId = await AcademicYearService.activeYearId(tenantId);
-    // Its seats come out of the class's seats, with those of the sections the class already has.
-    assertSectionFits(klass.name, klass.capacity, await seatsHeldBySections(tenantId, classId, academicYearId), input.capacity);
+    // Its seats come out of the class's seats, with those of the sections the class already has. With `raiseClassSeats` a section that does not
+    // fit makes the class's seats grow (written below, once nothing else can refuse the section).
+    const held = await seatsHeldBySections(tenantId, classId, academicYearId);
+    const growsTo =
+      input.raiseClassSeats && klass.capacity != null && input.capacity != null && held + input.capacity > klass.capacity ? held + input.capacity : null;
+    if (growsTo === null) assertSectionFits(klass.name, klass.capacity, held, input.capacity);
+    else if (growsTo > MAX_CLASS_CAPACITY) {
+      throw ApiError.badRequest(`${klass.name} would need ${growsTo} seats: a class can have at most ${MAX_CLASS_CAPACITY}.`, "CLASS_SEATS_TOO_MANY", [
+        { path: "capacity", message: `At most ${MAX_CLASS_CAPACITY - held} seats for this section` },
+      ]);
+    }
     const existing = await Section.countDocuments({ tenantId, classId, academicYearId });
     if (existing >= MAX_SECTIONS_PER_CLASS) {
       throw ApiError.conflict(`A class can have up to ${MAX_SECTIONS_PER_CLASS} sections.`, "LIMIT_REACHED");
@@ -69,6 +78,8 @@ export class SectionService {
         );
       }
     }
+    // The class's seats grow first and are put back when the section cannot be made (no transactions: check, write, undo).
+    if (growsTo !== null) await SchoolClass.updateOne({ _id: classId, tenantId }, { $set: { capacity: growsTo } });
     try {
       const section = await Section.create({
         tenantId,
@@ -81,6 +92,7 @@ export class SectionService {
       });
       return toSectionDto(section);
     } catch (err) {
+      if (growsTo !== null) await SchoolClass.updateOne({ _id: classId, tenantId }, { $set: { capacity: klass.capacity } });
       if (isDuplicateKey(err)) throw EXISTS(input.name);
       throw err;
     }

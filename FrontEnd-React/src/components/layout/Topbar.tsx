@@ -1,18 +1,20 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Building2, CalendarDays, Check, ChevronDown, LogOut, Menu, Moon, Sun } from "lucide-react";
+import { Building2, Check, ChevronDown, LogOut, Menu, Moon, Sun } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { useDismiss } from "../../hooks/useDismiss";
 import { useAppTheme } from "../../theme/AppThemeProvider";
 import { cn, initials } from "../../utils/helpers";
 import { ROLE_LABELS } from "./nav-config";
 import { NotificationsBell } from "./NotificationsBell";
+import { HeaderClock } from "./HeaderClock";
 import { MediumSwitcher } from "./MediumSwitcher";
+import { NewMenu } from "./NewMenu";
 import { YearSwitcher } from "./YearSwitcher";
 
 function UserMenu() {
   const { user, logout } = useAuth();
-  const { mode, setMode } = useAppTheme();
+  const { mode, setMode, theme } = useAppTheme();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useDismiss(open, () => setOpen(false));
@@ -71,6 +73,9 @@ function UserMenu() {
               <span>School Details</span>
             </button>
           )}
+          {/* The light / dark switch is Classic's: the other looks (Settings > Appearance > Theme) are light only. */}
+          {theme === "classic" && (
+          <>
           <div className="my-1 h-px bg-border" />
           <div className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wider text-foreground-muted">
             Appearance
@@ -103,6 +108,8 @@ function UserMenu() {
               {mode === "dark" && <Check className="size-3.5" aria-hidden />}
             </button>
           </div>
+          </>
+          )}
           <div className="my-1 h-px bg-border" />
           <button
             role="menuitem"
@@ -118,7 +125,10 @@ function UserMenu() {
   );
 }
 
-/** The bar above every page: menu button (phones), the school and page name, today's date, notifications, and the account menu. */
+/**
+ * The bar above every page: the menu button (phones) and the school and page name at the left; at the right, as in Infinity Medisetu, the
+ * New button (what can be added, with its shortcuts), the time and date, the medium (and the year), the notifications and the account menu.
+ */
 export function Topbar({
   onMenuClick,
   title,
@@ -127,7 +137,6 @@ export function Topbar({
   title: string;
 }) {
   const { user, tenant } = useAuth();
-  const [today] = useState(() => new Date());
   if (!user) return null;
 
   const context =
@@ -156,17 +165,10 @@ export function Topbar({
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
+        <NewMenu />
+        <HeaderClock />
         <MediumSwitcher />
         <YearSwitcher />
-        <span className="hidden items-center gap-2 rounded-full bg-primary-soft px-3.5 py-1.5 text-xs font-semibold text-primary-deep md:inline-flex">
-          <CalendarDays className="size-3.5" aria-hidden />
-          {new Intl.DateTimeFormat("en-IN", {
-            weekday: "short",
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-          }).format(today)}
-        </span>
         <NotificationsBell />
         <UserMenu />
       </div>

@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { DEFAULT_THEME, isThemeName, themeStyle, type ThemeName } from "./themes";
 
 const STORAGE_KEY = "edushiksha.appearance.v1";
 
@@ -6,6 +7,8 @@ export type ThemeMode = "light" | "dark";
 export interface Appearance {
   mode: ThemeMode;
   accent: string;
+  /** The look (Settings > Appearance > Theme). Classic uses `accent` and `mode`; every other look has colours of its own. */
+  theme: ThemeName;
 }
 
 export const ACCENT_PRESETS = [
@@ -19,9 +22,10 @@ export const ACCENT_PRESETS = [
 interface AppearanceContextValue extends Appearance {
   setMode: (mode: ThemeMode) => void;
   setAccent: (accent: string) => void;
+  setTheme: (theme: ThemeName) => void;
 }
 
-const DEFAULT_APPEARANCE: Appearance = { mode: "light", accent: ACCENT_PRESETS[0].color };
+const DEFAULT_APPEARANCE: Appearance = { mode: "light", accent: ACCENT_PRESETS[0].color, theme: DEFAULT_THEME };
 const AppearanceContext = createContext<AppearanceContextValue | null>(null);
 const isHexColor = (value: unknown): value is string => typeof value === "string" && /^#[\da-f]{6}$/i.test(value);
 
@@ -33,6 +37,8 @@ function readAppearance(): Appearance {
     return {
       mode: value.mode === "dark" ? "dark" : "light",
       accent: isHexColor(value.accent) ? value.accent : DEFAULT_APPEARANCE.accent,
+      // An appearance saved before themes existed has none: it is Classic, exactly as it was.
+      theme: isThemeName(value.theme) ? value.theme : DEFAULT_THEME,
     };
   } catch {
     return DEFAULT_APPEARANCE;
@@ -55,6 +61,8 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
       ...appearance,
       setMode: (mode) => setAppearance((current) => ({ ...current, mode })),
       setAccent: (accent) => setAppearance((current) => ({ ...current, accent: isHexColor(accent) ? accent : current.accent })),
+      // The accent and the mode are kept as they are, so going back to Classic finds them.
+      setTheme: (theme) => setAppearance((current) => ({ ...current, theme: isThemeName(theme) ? theme : current.theme })),
     }),
     [appearance],
   );
@@ -69,7 +77,9 @@ export function useAppTheme(): AppearanceContextValue {
 }
 
 /** The theme lives on the signed-in shell so its sidebar, header, cards and forms all change together. */
-export function appearanceStyle({ mode, accent }: Appearance): CSSProperties {
+export function appearanceStyle({ mode, accent, theme = DEFAULT_THEME }: Appearance): CSSProperties {
+  // Another look has colours of its own (light only): the accent and the mode are for Classic.
+  if (theme !== "classic") return themeStyle(theme);
   const dark = mode === "dark";
   const primary = dark ? `color-mix(in srgb, ${accent} 70%, white)` : accent;
   const hover = dark ? `color-mix(in srgb, ${accent} 58%, white)` : `color-mix(in srgb, ${accent} 84%, black)`;

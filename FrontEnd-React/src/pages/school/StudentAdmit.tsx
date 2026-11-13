@@ -13,6 +13,7 @@ import { useFieldsEditor } from "../../hooks/useFieldsEditor";
 import { stepKeyOfPath, stepsFor, problemPathsOf, firstStepWithProblems, type AdmitStepKey } from "../../utils/admitSteps";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
+import { fullPlaceOf } from "../../utils/placeSeats";
 import { emptyGuardian, emptyStudentForm, formatMobile, placeLabel, toAdmission, type StudentFormValues } from "../../utils/students";
 import { isIndianMobile, isPasswordValid, isUsername } from "../../utils/validators";
 import type { AcademicStructure, GuardianMatch, Relation, StudentAddress, StudentCapacity } from "../../types";
@@ -46,14 +47,16 @@ export interface SiblingOf {
 type Ask =
   | { kind: "clear" }
   | { kind: "fields" }
-  | { kind: "seats"; unit: SeatsUnit; admitting: boolean }
+  // `next`: asked when Next was pressed on the Academic step, so the form goes on to the next step once it is answered.
+  | { kind: "seats"; unit: SeatsUnit; admitting: boolean; next?: boolean }
   | { kind: "duplicate"; message: string; student: { id: string; name: string; admissionNumber: string; className: string | null; sectionName: string | null; inactive?: boolean } };
 
 /** The class (and section) a link chose (`?class=&section=`), when they are the school's: the section only if it is one of that class. */
 function placeFromLink(params: URLSearchParams, structure: AcademicStructure): { classId: string; sectionId: string } | null {
   const klass = structure.classes.find((c) => c.id === params.get("class"));
   if (!klass) return null;
-  return { classId: klass.id, sectionId: klass.sections.find((x) => x.id === params.get("section"))?.id ?? "" };
+  // A class with just one section has it picked (there is nothing to choose); a class with several asks.
+  return { classId: klass.id, sectionId: klass.sections.find((x) => x.id === params.get("section"))?.id ?? (klass.sections.length === 1 ? klass.sections[0].id : "") };
 }
 
 function initialValues(family: SiblingOf | undefined, rules: FieldRules, place: { classId: string; sectionId: string } | null): StudentFormValues {
@@ -274,6 +277,20 @@ function AdmitForm({
       form.reveal(wrong);
       return;
     }
+    // The place that is picked has no seat left (a link from a class's page can pick one, so it was never asked at a pick): it is asked
+    // about here, in the Academic step, and the form goes on once it is answered (a seat added, or sections made). Cancel stays here.
+    if (stepKey === "academic" && raisedTo === null) {
+      const full = fullPlaceOf(form.values, structure, capacity);
+      if (full) {
+        setAsk({ kind: "seats", admitting: false, next: true, unit: unitOf(full.classId, full.sectionId, full.enrolled, full.capacity) });
+        return;
+      }
+    }
+    advance();
+  }
+
+  /** The step is passed: the next one opens. */
+  function advance() {
     setPassed((p) => (p.includes(stepKey) ? p : [...p, stepKey]));
     openStep(at + 1);
   }
@@ -531,14 +548,25 @@ function AdmitForm({
             // A full section that was only picked is picked now; the seats are raised when the student is admitted.
             if (unit.sectionId) form.set("sectionId", unit.sectionId);
             if (ask.admitting) void send({ ...flags(), raiseSeatsTo: to });
+            else if (ask.next) advance();
+          }}
+          onSectionAdded={(section) => {
+            const { admitting, next: goOn, unit } = ask;
+            setAsk(null);
+            setRaise(null);
+            form.set("sectionId", section.id);
+            push("success", `${unit.className} - ${section.name} added.`);
+            if (admitting) void send({ allowOverCapacity: false, confirmNotDuplicate: false }, { sectionId: section.id });
+            else if (goOn) advance();
           }}
           onDivided={(section, result) => {
-            const admitting = ask.admitting;
+            const { admitting, next: goOn } = ask;
             setAsk(null);
             setRaise(null);
             form.set("sectionId", section.id);
             push("success", `${result.class.name} is divided into ${result.sections.map((x) => x.name).join(", ")}.`);
             if (admitting) void send({ allowOverCapacity: false, confirmNotDuplicate: false }, { sectionId: section.id });
+            else if (goOn) advance();
           }}
         />
       )}

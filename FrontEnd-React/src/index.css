@@ -473,3 +473,20 @@ body {
   font-family: "Segoe Script", "Snell Roundhand", "Lucida Handwriting", "Brush Script MT", cursive;
   font-style: italic;
 }
+
+/*
+ * A look of the sign-up form (Settings > Appearance > Theme: Onboarding, Evergreen): the menu is a deep panel. The menu is written with the
+ * app's own tokens (surface, foreground, border, primary), so giving them deep values inside it turns every row, icon block and hover to match
+ * without a change to the menu. Classic (data-theme="classic") is not touched.
+ */
+.app-shell:not([data-theme="classic"]) .app-sidebar {
+  --surface: var(--menu-from);
+  --surface-muted: rgb(255 255 255 / 0.1);
+  --foreground: #ffffff;
+  --foreground-muted: rgb(255 255 255 / 0.74);
+  --border: rgb(255 255 255 / 0.16);
+  --primary: var(--menu-active);
+  --primary-foreground: #ffffff;
+  background-image: linear-gradient(180deg, var(--menu-from), var(--menu-to));
+  color: #ffffff;
+}

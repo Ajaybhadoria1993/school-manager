@@ -210,9 +210,21 @@ export const academicsApi = createApi({
       },
     }),
 
-    createSection: build.mutation<ApiResponse<SectionItem>, { classId: string } & SectionInput>({
+    /**
+     * `raiseClassSeats`: a section that does not fit in what the class's other sections leave makes the class's seats grow (the Add student
+     * window, when a section is full and a new one is added). The seat counts of the school are read again, so a form shows the new section.
+     */
+    createSection: build.mutation<ApiResponse<SectionItem>, { classId: string; raiseClassSeats?: boolean } & SectionInput>({
       query: ({ classId, ...body }) => ({ url: `/academics/classes/${classId}/sections`, method: "POST", body }),
       invalidatesTags: ["Structure", "ClassList", "Class"],
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          await queryFulfilled;
+          dispatch(studentsApi.util.invalidateTags(["Capacity"]));
+        } catch {
+          // The screen shows the reason.
+        }
+      },
     }),
     /**
      * Sends only what is given: saving the seats must not put back an old room that was saved a moment ago.

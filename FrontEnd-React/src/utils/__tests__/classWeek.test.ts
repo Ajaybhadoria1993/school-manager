@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Schedule, Slot } from "../../types";
-import { classHours, classTimingBody, classWeek, daySummaryOf, periodCount, resolveSlots, rowsBetween, rowsForPeriods } from "../classWeek";
+import { classDayBody, classHours, classOwnTimings, classTimingBody, classWeek, daySummaryOf, periodCount, resolveSlots, rowsBetween, rowsForPeriods, usualRows } from "../classWeek";
 
 const p = (start: string, end: string, label = ""): Slot => ({ kind: "period", label, start, end });
 const lunch = (start: string, end: string): Slot => ({ kind: "lunch", label: "Lunch", start, end });
@@ -231,5 +231,45 @@ describe("a class's hours on a day the school keeps short", () => {
     const own = timing("Nursery Saturday", { days: [6], scope: "only", classIds: ["nursery"], slots: FOUR });
     const sent = classTimingBody("nursery", classWeek([regular, saturday, own], "nursery"), "08:30", "10:30", false);
     expect(sent.body.days.map((d) => `${d.day}:${periodCount(d.slots)}`)).toEqual(["1:3", "2:3", "3:3", "4:3", "5:3", "6:4"]);
+  });
+});
+
+describe("a class's own timing, from the School timings page (rows given, not hours)", () => {
+  const regular = timing("Regular", { days: [1, 2, 3, 4, 5] });
+  const weekOf = (schedules: Schedule[]) => classWeek(schedules, "nursery");
+  const sentDays = (r: ReturnType<typeof classDayBody>) => r.days.map((d) => `${d.day}:${periodCount(d.slots)}`);
+
+  it("sends the given rows for every day the class follows the school's usual day, and nothing for rows that are the school's own", () => {
+    expect(sentDays(classDayBody("nursery", weekOf([regular]), FOUR, false))).toEqual(["1:4", "2:4", "3:4", "4:4", "5:4"]);
+    expect(classDayBody("nursery", weekOf([regular]), FOUR, true)).toMatchObject({ classId: "nursery", removeLessons: true });
+    expect(classDayBody("nursery", weekOf([regular]), EIGHT, false).days).toEqual([]);
+  });
+
+  it("leaves a day the school keeps short alone, keeps a holiday the class has by itself, and a class with no school gets Monday to Friday", () => {
+    const saturday = timing("Saturday", { days: [6], slots: FOUR });
+    expect(sentDays(classDayBody("nursery", weekOf([regular, saturday]), FIVE, false))).toEqual(["1:5", "2:5", "3:5", "4:5", "5:5"]);
+    const off = timing("Nursery Wednesday", { days: [3], scope: "only", classIds: ["nursery"], slots: [] });
+    expect(sentDays(classDayBody("nursery", weekOf([regular, off]), FOUR, false))).toEqual(["1:4", "2:4", "3:0", "4:4", "5:4"]);
+    expect(classDayBody("nursery", weekOf([]), FOUR, false).days.map((d) => d.day)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("lists the classes that have a timing made for that one class only, with the day they have most, not a department's or a few classes'", () => {
+    const own = timing("Nursery", { days: [1, 2, 3], scope: "only", classIds: ["nursery"], slots: FOUR });
+    const ownSaturday = timing("Nursery Saturday", { days: [6], scope: "only", classIds: ["nursery"], slots: FIVE });
+    const dept = timing("Primary", { scope: "only", classIds: ["c1", "c2"], departmentId: "d2", slots: FOUR });
+    const few = timing("Little ones", { scope: "only", classIds: ["lkg", "ukg"], slots: FOUR });
+    const found = classOwnTimings([timing("Regular"), own, ownSaturday, dept, few]);
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ classId: "nursery", rows: FOUR });
+    expect(classOwnTimings([timing("Regular")])).toEqual([]);
+  });
+
+  it("the usual day of a class is the rows most of its days have, so the box starts from them", () => {
+    const own = timing("Nursery", { days: [1, 2, 3, 4, 5], scope: "only", classIds: ["nursery"], slots: FOUR });
+    const saturday = timing("Saturday", { days: [6], slots: FIVE });
+    expect(usualRows(weekOf([timing("Regular", { days: [1, 2, 3, 4, 5] }), saturday, own]))).toEqual(FOUR);
+    expect(usualRows(weekOf([timing("Regular", { days: [1, 2, 3, 4, 5] })]))).toEqual(EIGHT);
+    // A class with no school at all starts from the school's default day.
+    expect(periodCount(usualRows(weekOf([])))).toBe(8);
   });
 });

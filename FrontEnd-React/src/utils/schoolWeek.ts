@@ -60,6 +60,9 @@ export function readWeek(schedules: readonly Schedule[], departmentId: string | 
   return { plan: { usual, days }, isNew: false, handMade };
 }
 
+/** The days of the week that follow the school's usual day. */
+export const usualDays = (plan: WeekPlan): number[] => WEEK_DAYS.filter((d) => plan.days[d]?.mode === "usual");
+
 /** The numbers a day of the week follows, or null for a holiday. */
 export function setupOf(plan: WeekPlan, day: number): DaySetup | null {
   const d = plan.days[day];
@@ -81,12 +84,24 @@ export function weekBody(plan: WeekPlan, departmentId: string | null = null): Sc
 }
 
 /**
- * Pre-Primary's own day (2026-11-10): sent for the school's usual days only, so a day the school keeps different (a short Saturday) and a
- * holiday follow the school's timing for its classes too. A day not sent is not covered by the department's timing (the server's rule).
+ * A department's own day (2026-11-10, any department since 2026-11-13): the given rows, sent for the school's usual days only, so a day
+ * the school keeps different (a short Saturday) and a holiday follow the school's timing for its classes too. A day not sent is not covered
+ * by the department's timing (the server's rule).
  */
+export function departmentRowsBody(school: WeekPlan, slots: Slot[], departmentId: string): SchoolDayInput {
+  return { departmentId, days: usualDays(school).map((day) => ({ day, slots })) };
+}
+
+/** A department's own day made from the numbers of a day (see `departmentRowsBody`). */
 export function departmentDayBody(school: WeekPlan, setup: DaySetup, departmentId: string): SchoolDayInput {
-  const slots = generateDay(setup).slots;
-  return { departmentId, days: WEEK_DAYS.filter((d) => school.days[d]?.mode === "usual").map((day) => ({ day, slots })) };
+  return departmentRowsBody(school, generateDay(setup).slots, departmentId);
+}
+
+/** The rows of a department's usual day: the one of its own timings that covers most days. Empty when it has none (a holiday has no periods). */
+export function departmentRows(schedules: readonly Schedule[], departmentId: string): Slot[] {
+  const working = schedules.filter((s) => s.departmentId === departmentId && s.slots.some((slot) => slot.kind === "period"));
+  if (working.length === 0) return [];
+  return working.reduce((best, s) => (s.days.length > best.days.length ? s : best), working[0]).slots;
 }
 
 export interface WeekProblem {
@@ -113,6 +128,22 @@ export function weekProblems(plan: WeekPlan): WeekProblem[] {
     if (first) found.push({ where: d, message: first });
   }
   return found;
+}
+
+/** A day's rows in a few words ("08:30 to 14:20 · 8 periods · lunch 10:30 to 11:00"); rows made by hand read as they are. */
+export function rowsSummary(rows: readonly Slot[]): string {
+  const periods = rows.filter((s) => s.kind === "period").length;
+  if (periods === 0) return "No periods";
+  const lunch = rows.find((s) => s.kind === "lunch");
+  const rest = rows.find((s) => s.kind === "break" && s.label === "Short break");
+  return [
+    `${rows[0].start} to ${rows[rows.length - 1].end}`,
+    `${periods} period${periods === 1 ? "" : "s"}`,
+    lunch ? `lunch ${lunch.start} to ${lunch.end}` : "no lunch",
+    rest ? `short break ${rest.start} to ${rest.end}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** "08:30 to 14:20 · 8 periods · lunch 10:30 to 11:00": a day in a few words. */

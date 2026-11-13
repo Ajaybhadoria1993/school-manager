@@ -9,6 +9,7 @@ import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetClassOverviewQuery, useGetStudentsQuery } from "../../redux/api/studentsApi";
 import { plural, toneOf } from "../../utils/academics";
 import { getApiError } from "../../utils/apiErrors";
+import { cn } from "../../utils/helpers";
 import { admitLink, importLink } from "../../utils/students";
 import { ALL_SECTIONS, SectionPicker } from "../../components/schoolClass/SectionPicker";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
@@ -26,7 +27,7 @@ const outlineLink =
 const plainLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_4px_10px_-2px_rgb(37_99_235/0.4)] transition-all duration-150 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 const arrowLink =
-  "inline-flex size-10 items-center justify-center rounded-lg border border-border bg-surface text-foreground-muted shadow-sm transition-all hover:border-[#cbd5e1] hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
+  "inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-foreground-muted shadow-sm transition-all hover:border-[#cbd5e1] hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 
 /**
  * One class of School Class (`/school-class/:classId`), in the same plain look as the other pages: the name and numbers of the class, the
@@ -163,27 +164,36 @@ export default function SchoolClassDetailPage() {
         title={overview.name}
         crumbs={[{ label: "Classes", to: "/school-class" }]}
         info={
-          // The class teacher of the class (no sections) or of the picked section; with no section picked each section's card says its own.
-          !hasSections || active ? (
-            <Badge tone={headTeacher ? "primary" : "neutral"} className="gap-1.5">
-              <UserRound className="size-3.5" aria-hidden />
-              Class teacher: {headTeacher?.name ?? "N/A"}
-            </Badge>
-          ) : undefined
-        }
-        actions={
-          <>
-            {before && (
-              <Link to={`/school-class/${before.id}`} aria-label={`Previous class: ${before.name}`} title={before.name} className={arrowLink}>
-                <ArrowLeft className="size-4" aria-hidden />
-              </Link>
+          // Right beside the title: the arrows to the class before and after (a missing neighbour is a dimmed arrow, so the pair never moves),
+          // then the class teacher of the class (no sections) or of the picked section; with no section picked each section's card says its own.
+          <span className="inline-flex flex-wrap items-center gap-2 self-center">
+            <span className="inline-flex items-center gap-1.5">
+              {before ? (
+                <Link to={`/school-class/${before.id}`} aria-label={`Previous class: ${before.name}`} title={before.name} className={arrowLink}>
+                  <ArrowLeft className="size-4" aria-hidden />
+                </Link>
+              ) : (
+                <span role="link" aria-disabled="true" aria-label="No class before this one" className={cn(arrowLink, "pointer-events-none opacity-40")}>
+                  <ArrowLeft className="size-4" aria-hidden />
+                </span>
+              )}
+              {after ? (
+                <Link to={`/school-class/${after.id}`} aria-label={`Next class: ${after.name}`} title={after.name} className={arrowLink}>
+                  <ArrowRight className="size-4" aria-hidden />
+                </Link>
+              ) : (
+                <span role="link" aria-disabled="true" aria-label="No class after this one" className={cn(arrowLink, "pointer-events-none opacity-40")}>
+                  <ArrowRight className="size-4" aria-hidden />
+                </span>
+              )}
+            </span>
+            {(!hasSections || active) && (
+              <Badge tone={headTeacher ? "primary" : "neutral"} className="gap-1.5">
+                <UserRound className="size-3.5" aria-hidden />
+                Class teacher: {headTeacher?.name ?? "N/A"}
+              </Badge>
             )}
-            {after && (
-              <Link to={`/school-class/${after.id}`} aria-label={`Next class: ${after.name}`} title={after.name} className={arrowLink}>
-                <ArrowRight className="size-4" aria-hidden />
-              </Link>
-            )}
-          </>
+          </span>
         }
       />
 

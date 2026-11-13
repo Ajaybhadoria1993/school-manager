@@ -7,6 +7,7 @@ import { useSidebarCollapsed } from "../../hooks/useSidebarCollapsed";
 import { BrandMark } from "../brand/BrandMark";
 import { FOLDING_GROUPS, NAV_ITEMS, SUBMENUS, activeNavItem, groupLabel, navVisible, pathForMenu, type NavItem } from "./nav-config";
 import { usePending } from "../../hooks/usePending";
+import { useThemeScope } from "../../theme/themeScopeContext";
 
 /**
  * The light menu. On a laptop it can fold down to icons (remembered on this device); on a phone it slides in as a drawer.
@@ -25,6 +26,8 @@ export function Sidebar({
   const { user, tenant } = useAuth();
   const { pending } = usePending();
   const [folded, setFolded] = useSidebarCollapsed();
+  // A look other than Classic has a deep menu (index.css, .app-sidebar): the wordmark is the one for dark backgrounds.
+  const deepMenu = useThemeScope() !== "classic";
 
   const items = user ? NAV_ITEMS.filter((item) => navVisible(item, user)) : [];
   const current = activeNavItem(pathForMenu(location), items);
@@ -258,7 +261,7 @@ export function Sidebar({
           href="/dashboard"
           onClick={onClose}
           size="sm"
-          tone="default"
+          tone={deepMenu ? "inverse" : "default"}
           compact={compact}
           tagline={
             isSuperAdmin ? "Platform console" : (tenant?.name ?? "School")
@@ -316,7 +319,7 @@ export function Sidebar({
     <>
       <aside
         className={cn(
-          "hidden h-full shrink-0 border-r border-border bg-surface transition-[width] duration-300 ease-out lg:sticky lg:top-0 lg:block",
+          "app-sidebar hidden h-full shrink-0 border-r border-border bg-surface transition-[width] duration-300 ease-out lg:sticky lg:top-0 lg:block",
           folded ? "w-[76px]" : "w-[260px]",
         )}
       >
@@ -329,7 +332,7 @@ export function Sidebar({
             className="fade-in absolute inset-0 bg-slate-900/35 backdrop-blur-sm"
             onClick={onClose}
           />
-          <aside className="slide-in-left absolute left-0 top-0 h-full w-72 border-r border-border bg-surface shadow-xl">
+          <aside className="app-sidebar slide-in-left absolute left-0 top-0 h-full w-72 border-r border-border bg-surface shadow-xl">
             {render(false)}
           </aside>
         </div>

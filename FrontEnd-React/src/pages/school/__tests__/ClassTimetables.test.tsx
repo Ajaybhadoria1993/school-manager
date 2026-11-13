@@ -54,7 +54,9 @@ const noUnits = { units: 0, withSubjects: 0, withTiming: 0, none: 0, draft: 0, p
 describe("Class timetables: a page of its own (2026-11-09: it was a tab of the Timetable page)", () => {
   it("has its own title, and no tabs: School timings is another entry of the menu, not a tab here", async () => {
     openPage();
-    expect(await screen.findByRole("heading", { name: "Class timetables", level: 1 })).toBeInTheDocument();
+    // The title is the class picked once it is read (2026-11-13); the way back still says where the page is.
+    expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 1 })).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByText("Class timetables")).toBeInTheDocument();
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "School timings" })).not.toBeInTheDocument();
@@ -103,7 +105,7 @@ describe("Class timetables: the list and the week", () => {
     const list = await classList();
     expect(list.getAllByRole("button").map((b) => b.textContent)).toEqual(["Class 5 - ADraft · 7 of 40", "Class 5 - BPublished", "Class 1No subjects yet"]);
     expect(list.getByRole("button", { name: /Class 5 - A/ })).toHaveAttribute("aria-current", "true");
-    expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 2 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 1 })).toBeInTheDocument();
     expect(await screen.findByRole("table", { name: "Weekly timetable" })).toBeInTheDocument();
   });
 
@@ -111,13 +113,13 @@ describe("Class timetables: the list and the week", () => {
     const { router, user } = openPage();
     await screen.findByRole("table", { name: "Weekly timetable" });
     await user.click((await classList()).getByRole("button", { name: /Class 5 - B/ }));
-    expect(await screen.findByRole("heading", { name: "Class 5 - B", level: 2 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Class 5 - B", level: 1 })).toBeInTheDocument();
     expect(router.state.location.search).toBe("?class=c5&section=c5-B");
   });
 
   it("opens the class named in the address", async () => {
     openPage(OVERVIEW, "/school/timetable?class=c5&section=c5-B");
-    expect(await screen.findByRole("heading", { name: "Class 5 - B", level: 2 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Class 5 - B", level: 1 })).toBeInTheDocument();
     expect((await classList()).getByRole("button", { name: /Class 5 - B/ })).toHaveAttribute("aria-current", "true");
   });
 
@@ -134,9 +136,9 @@ describe("Class timetables: the list and the week", () => {
     await waitFor(async () => expect((await classList()).getAllByRole("button")).toHaveLength(1));
 
     await user.clear(screen.getByLabelText("Search classes"));
-    await user.click(screen.getByRole("button", { name: /Which timetables to show/ }));
-    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual(["All classes (3)", "Not started (1)", "Draft (1)", "Published (1)"]);
-    await user.click(screen.getByRole("option", { name: "Published (1)" }));
+    const filter = screen.getByRole("radiogroup", { name: "Which timetables to show" });
+    expect(within(filter).getAllByRole("radio").map((r) => r.textContent)).toEqual(["All classes (3)", "Not started (1)", "Draft (1)", "Published (1)"]);
+    await user.click(within(filter).getByRole("radio", { name: "Published (1)" }));
     await waitFor(() => expect(overviewCalls(calls).at(-1)!.query).toBe("?status=published"));
   });
 
@@ -192,5 +194,44 @@ describe("Timetable: the old addresses", () => {
     const three = openPage(OVERVIEW, "/school/timetable/class-subjects?class=c1&section=none");
     await waitFor(() => expect(three.router.state.location.search).toBe("?class=c1&section=none"));
     expect(three.router.state.location.pathname).toBe("/school/timetable");
+  });
+});
+
+describe("Class timetables: the class is the title, the filter is beside it (2026-11-13)", () => {
+  const headerOf = async () => (await screen.findByRole("heading", { name: "Class 5 - A", level: 1 })).closest("header")!;
+
+  it("the title of the page is the class picked, with its year and where its timetable stands beside it", async () => {
+    openPage();
+    const header = await headerOf();
+    expect(await within(header).findByText("2026-2027")).toBeInTheDocument();
+    expect(within(header).getByText("Draft")).toBeInTheDocument();
+    // The workspace under it does not say it again.
+    expect(screen.queryByRole("heading", { name: "Class 5 - A", level: 2 })).not.toBeInTheDocument();
+  });
+
+  it("the title follows the class picked from the list", async () => {
+    const { user } = openPage();
+    await headerOf();
+    await user.click((await classList()).getByRole("button", { name: /Class 5 - B/ }));
+    expect(await screen.findByRole("heading", { name: "Class 5 - B", level: 1 })).toBeInTheDocument();
+  });
+
+  it("the filter is buttons in one line at the right of the title (not a dropdown in the list), All classes picked", async () => {
+    openPage();
+    const header = await headerOf();
+    const filter = within(header).getByRole("radiogroup", { name: "Which timetables to show" });
+    expect(within(filter).getAllByRole("radio").map((r) => r.textContent)).toEqual(["All classes (3)", "Not started (1)", "Draft (1)", "Published (1)"]);
+    expect(within(filter).getByRole("radio", { name: "All classes (3)" })).toBeChecked();
+    expect(screen.queryByRole("button", { name: /Which timetables to show/ })).not.toBeInTheDocument();
+    // The list keeps only its search box.
+    expect(screen.getByLabelText("Search classes")).toBeInTheDocument();
+  });
+
+  it("a filter button asks the server for those timetables and is the one picked", async () => {
+    const { calls, user } = openPage();
+    const header = await headerOf();
+    await user.click(within(header).getByRole("radio", { name: "Draft (1)" }));
+    await waitFor(() => expect(overviewCalls(calls).at(-1)!.query).toBe("?status=draft"));
+    expect(within(header).getByRole("radio", { name: "Draft (1)" })).toBeChecked();
   });
 });

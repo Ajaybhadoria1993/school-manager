@@ -1,5 +1,4 @@
 import { Navigate, useNavigate, useSearchParams } from "react-router";
-import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { ClassTimetables } from "../../components/timetable/ClassTimetables";
 
 /**
@@ -14,10 +13,6 @@ export default function ClassTimetablesPage() {
   const [params] = useSearchParams();
   if (params.get("tab") === "timings") return <Navigate to="/school/timings" replace />;
 
-  return (
-    <div className="space-y-5">
-      <StudentFormHeader title="Class timetables" crumbs={[{ label: "Dashboard", to: "/dashboard" }]} />
-      <ClassTimetables onGoTimings={() => navigate("/school/timings")} />
-    </div>
-  );
+  // The page's title is drawn by the component: it is the class picked (2026-11-13), with the filter at its right.
+  return <ClassTimetables onGoTimings={() => navigate("/school/timings")} />;
 }

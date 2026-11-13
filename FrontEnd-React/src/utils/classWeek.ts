@@ -137,20 +137,13 @@ export function rowsForPeriods(start: string, n: number, reference: readonly Slo
 }
 
 /**
- * What `PUT /timetable/class-day` is sent for a class that comes from `start` to `end`: every day the class has school and follows the
- * school's usual day gets those hours (a class with no school at all: Monday to Friday from the usual day); a day the school keeps
- * different (a short Saturday) stays as it is, the class's own rows if it has any; a day it has off by itself stays off; a day with no
- * school stays without. Only the days that differ from what the class would follow anyway are sent, so the school's own hours send
- * nothing. `problem` says why the hours make no day, and then nothing should be sent.
+ * The days of `PUT /timetable/class-day` for a class given the rows of its usual day (`rowsFor` answers them for one day, or null when
+ * they make no day). Every day the class has school and follows the school's usual day gets those rows (a class with no school at all:
+ * Monday to Friday); a day the school keeps different (a short Saturday) stays as it is, the class's own rows if it has any; a day it has
+ * off by itself stays off; a day with no school stays without. Only the days that differ from what the class would follow anyway are
+ * sent, so the school's own rows send nothing. Null when `rowsFor` answered null.
  */
-export function classTimingBody(classId: string, days: readonly ClassDay[], start: string, end: string, removeLessons: boolean): { body: ClassDayInput; problem: string | null } {
-  const empty = { body: { classId, days: [], removeLessons } as ClassDayInput };
-  const from = clockToMinutes(start);
-  const to = clockToMinutes(end);
-  if (from === null || to === null) return { ...empty, problem: "Enter when the class starts and ends" };
-  if (to <= from) return { ...empty, problem: "The class must end after it starts" };
-
-  const reference = referenceDay(days);
+function classDays(days: readonly ClassDay[], rowsFor: (day: ClassDay) => Slot[] | null): ClassDayInput["days"] | null {
   const hasSchool = days.some((d) => d.current.length > 0);
   // The school's usual day: the rows most of its days have.
   const signature = (rows: readonly Slot[]) => JSON.stringify(rows.map((r) => [r.kind, r.start, r.end]));
@@ -172,11 +165,71 @@ export function classTimingBody(classId: string, days: readonly ClassDay[], star
       if (d.own) sent.push({ day: d.day, slots: d.current });
       continue;
     }
-    const rows = rowsBetween(start, end, d.inherited.length > 0 ? d.inherited : d.current.length > 0 ? d.current : reference);
-    if (!rows) return { ...empty, problem: "These hours are too short for a period" };
+    const rows = rowsFor(d);
+    if (!rows) return null;
     if (!sameRows(rows, d.inherited)) sent.push({ day: d.day, slots: rows });
   }
+  return sent;
+}
+
+/**
+ * What `PUT /timetable/class-day` is sent for a class that comes from `start` to `end` (the Periods & time box of its timetable): the
+ * hours are made into rows with the school's length of a period and lunch (`classDays` says which days get them). `problem` says why the
+ * hours make no day, and then nothing should be sent.
+ */
+export function classTimingBody(classId: string, days: readonly ClassDay[], start: string, end: string, removeLessons: boolean): { body: ClassDayInput; problem: string | null } {
+  const empty = { body: { classId, days: [], removeLessons } as ClassDayInput };
+  const from = clockToMinutes(start);
+  const to = clockToMinutes(end);
+  if (from === null || to === null) return { ...empty, problem: "Enter when the class starts and ends" };
+  if (to <= from) return { ...empty, problem: "The class must end after it starts" };
+
+  const reference = referenceDay(days);
+  const sent = classDays(days, (d) => rowsBetween(start, end, d.inherited.length > 0 ? d.inherited : d.current.length > 0 ? d.current : reference));
+  if (!sent) return { ...empty, problem: "These hours are too short for a period" };
   return { body: { classId, days: sent, removeLessons }, problem: null };
+}
+
+/**
+ * What `PUT /timetable/class-day` is sent for a class whose usual day is the given `rows` (the School timings page: the same boxes as a
+ * department's, made into rows by the page). Same days as `classTimingBody`; rows that are the school's own send nothing.
+ */
+export function classDayBody(classId: string, days: readonly ClassDay[], rows: readonly Slot[], removeLessons: boolean): ClassDayInput {
+  return { classId, days: classDays(days, () => [...rows]) ?? [], removeLessons };
+}
+
+/** A class that has a timing of its own: its usual day (the one of its own timings that covers most days) and the days it covers. */
+export interface ClassOwn {
+  classId: string;
+  rows: Slot[];
+  days: number[];
+}
+
+/** The classes with a timing made for that one class only (not a department's, not one for several classes), as the School timings page lists them. */
+export function classOwnTimings(schedules: readonly Schedule[]): ClassOwn[] {
+  const found = new Map<string, Schedule>();
+  for (const s of schedules) {
+    if (s.scope !== "only" || s.departmentId || s.classIds.length !== 1 || periodCount(s.slots) === 0) continue;
+    const classId = s.classIds[0];
+    const best = found.get(classId);
+    if (!best || s.days.length > best.days.length) found.set(classId, s);
+  }
+  return [...found].map(([classId, s]) => ({ classId, rows: s.slots, days: s.days }));
+}
+
+/** The rows most of a class's days have now (the earliest day wins a tie): what the box of its timing starts from. The school's default day when it has no school at all. */
+export function usualRows(days: readonly ClassDay[]): Slot[] {
+  const signature = (rows: readonly Slot[]) => JSON.stringify(rows.map((r) => [r.kind, r.start, r.end]));
+  const tally = new Map<string, { rows: Slot[]; count: number }>();
+  for (const d of days) {
+    if (d.current.length === 0) continue;
+    const key = signature(d.current);
+    const seen = tally.get(key);
+    if (seen) seen.count += 1;
+    else tally.set(key, { rows: d.current, count: 1 });
+  }
+  const top = [...tally.values()].sort((a, b) => b.count - a.count)[0];
+  return top ? top.rows : generateDay(DEFAULT_SETUP).slots;
 }
 
 /** "08:30 to 12:20 · lunch 10:30 to 11:00": a day in a few words; "No school" for a day with no rows. */

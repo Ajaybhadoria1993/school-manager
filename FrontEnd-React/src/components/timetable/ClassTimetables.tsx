@@ -1,17 +1,19 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import { skipToken } from "@reduxjs/toolkit/query";
 import { Link, useSearchParams } from "react-router";
 import { CalendarClock, Clock3, FolderTree, MousePointerClick, Search } from "lucide-react";
-import { useGetOverviewQuery } from "../../redux/api/timetableApi";
+import { useGetGridQuery, useGetOverviewQuery } from "../../redux/api/timetableApi";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
-import type { OverviewQuery, OverviewUnit, UnitRef } from "../../types";
+import type { ClassWeekStatus, OverviewQuery, OverviewUnit, UnitRef } from "../../types";
+import { StudentFormHeader } from "../students/StudentFormHeader";
 import { StudentsNotice } from "../students/StudentsNotice";
+import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Input } from "../ui/Input";
-import { Select } from "../ui/Select";
 import { Skeleton } from "../ui/Skeleton";
 import { ClassWeek } from "./ClassWeek";
 
@@ -33,9 +35,12 @@ function StatusText({ unit }: { unit: OverviewUnit }) {
 const keyOf = (u: { classId: string; sectionId: string | null }) => `${u.classId}:${u.sectionId ?? "none"}`;
 
 /**
- * Class timetables (its own page, `/school/timetable`, no longer a tab): every class or section on the left (searched and filtered by the server), and the one picked on the right
- * with its subjects and its week, made right there. The class picked is kept in the address (`?class=&section=`); with none, the first of
- * the list opens.
+ * Class timetables (its own page, `/school/timetable`, no longer a tab): every class or section on the left (searched by the server), and the one
+ * picked on the right with its subjects and its week, made right there. The class picked is kept in the address (`?class=&section=`); with none,
+ * the first of the list opens. 2026-11-13 (user): the page's title is the class picked, with its year and where its timetable stands beside it
+ * (the way back still says Class timetables), and the filter of the list (All / Not started / Draft / Published, with their numbers) is four
+ * buttons in one line at the right of the title instead of a dropdown above the list. The title reads the class's week with the same request the
+ * workspace makes (one cache entry, so nothing is asked twice).
  */
 export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
   // A year that is over is only looked at: the school's timings are not set from there.
@@ -47,9 +52,83 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
   const res = useGetOverviewQuery({ ...(typed ? { search: typed } : {}), status });
   const overview = res.data?.data;
   const detail = useRef<HTMLDivElement>(null);
+  // What the class open says about itself (periods filled, not saved, no teacher): shown under the filter, in the title row.
+  const [info, setInfo] = useState<ClassWeekStatus | null>(null);
+
+  const chosen = params.get("class");
+  const picked: UnitRef | null = !overview
+    ? null
+    : chosen
+      ? { classId: chosen, sectionId: params.get("section") && params.get("section") !== "none" ? params.get("section") : null }
+      : overview.units[0]
+        ? { classId: overview.units[0].classId, sectionId: overview.units[0].sectionId }
+        : null;
+  const week = useGetGridQuery(picked ?? skipToken).currentData?.data;
+
+  const tabs: { value: Status; label: string }[] = overview
+    ? [
+        { value: "all", label: `All classes (${overview.summary.units})` },
+        { value: "none", label: `Not started (${overview.summary.none})` },
+        { value: "draft", label: `Draft (${overview.summary.draft})` },
+        { value: "published", label: `Published (${overview.summary.published})` },
+      ]
+    : [];
+  const listed = !!overview && !!overview.academicYear && overview.summary.units > 0 && overview.counts.timings > 0;
+
+  /** The page: the title (the class picked, once its week is read) with the filter at its right, then what the page has to show. */
+  const frame = (body: ReactNode) => (
+    <div className="space-y-5">
+      <StudentFormHeader
+        title={picked && week ? week.unit.label : "Class timetables"}
+        current="Class timetables"
+        crumbs={[{ label: "Dashboard", to: "/dashboard" }]}
+        subtitle={
+          picked && week ? (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              {week.unit.academicYear.name}
+              {week.status === "published" ? <Badge tone="success">Published</Badge> : <Badge tone="warning">Draft</Badge>}
+            </span>
+          ) : undefined
+        }
+        meta={
+          picked && info ? (
+            <>
+              {info.dirty && <Badge tone="warning">Not saved</Badge>}
+              <span role="status" aria-label="Periods with a lesson" className="text-foreground-muted">
+                {info.filled} of {info.total} periods have a lesson
+              </span>
+              {info.noTeacher && <span className="font-medium text-warning">No teacher available in your school</span>}
+            </>
+          ) : undefined
+        }
+        actions={
+          listed ? (
+            <div role="radiogroup" aria-label="Which timetables to show" className="inline-flex max-w-full overflow-x-auto rounded-lg border border-border bg-surface p-0.5">
+              {tabs.map((t) => (
+                <button
+                  key={t.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={status === t.value}
+                  onClick={() => setStatus(t.value)}
+                  className={cn(
+                    "h-8 shrink-0 cursor-pointer whitespace-nowrap rounded-md px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                    status === t.value ? "bg-primary-soft text-primary-deep" : "text-foreground-muted hover:text-foreground"
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          ) : undefined
+        }
+      />
+      {body}
+    </div>
+  );
 
   if (res.error && !overview) {
-    return (
+    return frame(
       <Card className="flex flex-col items-center gap-3 py-12 text-center">
         <p className="text-sm text-danger">{getApiError(res.error)?.message ?? "Could not load the classes."}</p>
         <Button variant="outline" onClick={() => res.refetch()}>
@@ -59,7 +138,7 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
     );
   }
   if (!overview) {
-    return (
+    return frame(
       <div className="grid gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]" aria-busy="true">
         <Skeleton className="h-96 rounded-2xl" />
         <Skeleton className="h-96 rounded-2xl" />
@@ -67,21 +146,21 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
     );
   }
   if (!overview.academicYear) {
-    return (
+    return frame(
       <StudentsNotice icon={CalendarClock} tone="warning" title="Your school has no running academic year yet" actions={<Link to="/dashboard" className={plainLink}>Go to the dashboard</Link>}>
         <p>Set up the running year on the dashboard first. A timetable belongs to a year.</p>
       </StudentsNotice>
     );
   }
   if (overview.summary.units === 0) {
-    return (
+    return frame(
       <StudentsNotice icon={FolderTree} tone="primary" title="No classes yet" actions={<Link to="/school/classes" className={plainLink}>Add your classes</Link>}>
         <p>A timetable is made for each class (or section). Add your classes first.</p>
       </StudentsNotice>
     );
   }
   if (overview.counts.timings === 0) {
-    return (
+    return frame(
       <StudentsNotice
         icon={Clock3}
         tone="primary"
@@ -99,13 +178,6 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
     );
   }
 
-  const chosen = params.get("class") ? `${params.get("class")}:${params.get("section") ?? "none"}` : null;
-  const picked: UnitRef | null = chosen
-    ? { classId: params.get("class")!, sectionId: params.get("section") && params.get("section") !== "none" ? params.get("section") : null }
-    : overview.units[0]
-      ? { classId: overview.units[0].classId, sectionId: overview.units[0].sectionId }
-      : null;
-
   function pick(unit: OverviewUnit) {
     setParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -117,19 +189,11 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
     if (window.matchMedia?.("(max-width: 1023px)").matches) detail.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  const tabs: { value: Status; label: string }[] = [
-    { value: "all", label: `All classes (${overview.summary.units})` },
-    { value: "none", label: `Not started (${overview.summary.none})` },
-    { value: "draft", label: `Draft (${overview.summary.draft})` },
-    { value: "published", label: `Published (${overview.summary.published})` },
-  ];
-
-  return (
+  return frame(
     <div className="grid items-start gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
       <Card className="overflow-hidden">
-        <div className="space-y-2 border-b border-border p-3">
+        <div className="border-b border-border p-3">
           <Input aria-label="Search classes" icon={Search} placeholder="Search a class" value={search} onChange={(e) => setSearch(e.target.value)} />
-          <Select aria-label="Which timetables to show" value={status} options={tabs} onChange={(v) => setStatus(v as Status)} />
         </div>
         {overview.units.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-foreground-muted">No class matches.</p>
@@ -163,7 +227,7 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
 
       <div ref={detail} className="min-w-0 scroll-mt-4">
         {picked ? (
-          <ClassWeek key={keyOf(picked)} unit={picked} onGoTimings={onGoTimings} />
+          <ClassWeek key={keyOf(picked)} unit={picked} onGoTimings={onGoTimings} onStatus={setInfo} />
         ) : (
           <Card className="flex flex-col items-center gap-2 px-6 py-20 text-center">
             <span className="flex size-12 items-center justify-center rounded-2xl bg-primary-soft text-primary">

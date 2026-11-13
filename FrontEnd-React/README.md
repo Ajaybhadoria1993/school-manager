@@ -499,7 +499,19 @@ Good to know:
   (`components/students/form/SeatsFullDialog.tsx`): **Add seats** (`raiseSeatsTo` on the admission or the move; the server raises the seats only when
   the place really is full, and puts them back if the admission fails) or, for a class with no sections and someone who may manage classes,
   **Make sections** (`POST /classes/:id/divide`, with the students shared out and a preview of how many go where). A bulk upload raises a full
-  class's seats and says so.
+  class's seats and says so. **It is asked in the Academic step** (2026-11-13): picking a full section on the page asks at the pick, and a place a
+  link chose (`?class=&section=` from a class's page) is asked when **Next** is pressed on the Academic step (`fullPlaceOf` in `utils/placeSeats.ts`,
+  `goNext` in `StudentAdmit.tsx`; the dialog is opened with `next: true`, so once a seat is added or sections are made the form goes on to the next
+  step; Cancel stays on the Academic step and Next asks again). A place already answered (`raise` for that place) is not asked again, and
+  the server's `SECTION_FULL` / `CLASS_FULL` at Admit stays as the last word (a place that filled up while the form was open).
+  **A class with one section has it picked** with the class (`PlacementFields.pickOnlySection`: Add student "always", even a full one, which is then
+  asked at Next; a student's page and a transfer "withRoom"), and a link that names only the class (`?class=`) picks it too; a class with several
+  sections still asks. **The seats a person added show at once**: the picked section's card and note say "30 of 31 seats", not "Full" (the seats are
+  written when the student is admitted). **A full section's window has a second answer for someone who may manage classes: Add a section**
+  (name = the next letter, seats = the full section's, room only when the school requires it): `POST /classes/:id/sections` with
+  `raiseClassSeats: true`, which makes the class's seats grow when the new section would not fit in what its sections share (refused above 2000, put
+  back if the section cannot be made; without the flag the old `SECTION_SEATS_OVER_CLASS` stays). The new section is picked for the student and the form
+  goes on; the seat counts are read again (`createSection` invalidates `Capacity`). A class with no sections still offers **Make sections** (divide).
 - Quick setup uses these departments: Pre-Primary (Pre-Nursery to UKG), Primary (1-5), Middle (6-8), Secondary (9-10),
   Senior Secondary (11-12). The names must match `backend/src/main/academics/constants.ts`.
 - Tests: `backend/src/main/academics/__tests__/academics.test.ts` (66 cases: permissions, every rule above, and that one
@@ -1153,3 +1165,49 @@ Sections, 4 Your Profile), and what was typed there is still there. Below them: 
 Active only / Inactive only, in the address as `?status=`; Clear brings back all), so Make inactive does not make the class vanish: it stays in
 its place, greyed and marked **Inactive**, stays open on the right (now the read-only view with Make active), and the header says "N inactive".
 Make active returns it to a class that can be changed. (The Inactive list at the bottom of the Classes & Sections page still lists them too.)
+
+## Themes (Settings > Appearance > Theme, `src/theme/`)
+
+The signed-in app has a **Theme** choice at the top of Settings > Appearance, kept on this device (`edushiksha.appearance.v1`, with the accent and the
+mode). It is only a look: no page, rule or request changes.
+
+- **Classic** (the default, and what an appearance saved before themes existed is): the app as it was, with its own **Accent color** and **Display mode**
+  (`appearanceStyle` in `AppThemeProvider.tsx`, untouched).
+- **Onboarding** (deep blue menu, tinted page, white cards, soft rounded boxes) and **Evergreen** (the same in deep green): the look of the sign-up form.
+  They are light only and have colours of their own (`themes.ts`: one `Palette` each, `themeStyle`), so the accent and the mode belong to Classic: the
+  Settings page and the account menu show them only in Classic, and going back to Classic finds them as they were. A new look is one more entry in
+  `THEMES` and `PALETTES`.
+- **How a look reaches the screen.** The shell (`Layouts/MainLayout.tsx`) puts the look's tokens on itself with `data-theme`, and `useRootTheme` puts
+  them on the page's root too, because a dialog or a dropdown list is drawn outside the shell (Classic puts nothing there). `ThemeScope`
+  (`themeScope.tsx`) tells the boxes and the menu which look they are in; outside the shell (public pages, the sign-up form) it is Classic.
+- **The menu.** `.app-sidebar` (both the desktop and the phone menu) is made deep by one rule in `index.css`: inside it the tokens `--surface`,
+  `--foreground`, `--border`, `--primary`... take deep values from `--menu-from/-to/-active`, so no row of the menu was changed. The wordmark uses the
+  `BrandMark` "inverse" tone.
+- **The boxes.** `useControlStyle()` (`components/ui/Input.tsx`) maps the style a form asked for by the look: in Onboarding / Evergreen a plain box is
+  `round` (the soft look at its own size, so toolbars and tables do not grow) and a form's tall `boxed` box is `soft` (the sign-up form's box); the
+  sign-in `filled` boxes stay. Input, Textarea, Select, DateBox, ComboBox and SearchSelect all follow. The strip that starts each part of a form
+  (`--gold`) takes the look's colour.
+- Tests: `theme/__tests__` (storage, colours, scope, root), `components/ui/__tests__/ControlThemes.test.tsx`, `pages/settings/__tests__/Settings.test.tsx`,
+  `components/layout/__tests__/SidebarTheme.test.tsx`. Not looked at in a browser by the author of the first version: check the three looks on the
+  student form, a list with filters and a dialog.
+
+## The top bar (`components/layout/Topbar.tsx`), in the look of Infinity Medisetu's (2026-11-13)
+
+At the left the school and the page name (and the menu button on a phone). At the right, in this order: **New**, the **time and date**, the **medium**
+(and the **year** when a past year can be looked at), the bell and the account menu.
+
+- **New** (`NewMenu.tsx`): a primary button that opens a card of what can be added from anywhere, each row with an icon, its words, a line about it and
+  its shortcut as two key chips: **Add student** (`Alt S`, `/school/students/new`) and **Add teacher** (`Alt T`, `/teachers/new`). The list is one
+  array (`NEW_ITEMS`: label, note, route, `KeyboardEvent.code`, permission): another entry is one more line. The shortcuts work with the card closed,
+  on every page of the signed-in app, by `event.code` (so a Mac's Option key and other keyboard layouts work), only with Alt alone (Shift, Ctrl or
+  Command make it another shortcut), a held key is one press, and never while a dialog is open. Only what this person may add (`students.add`,
+  `teachers.add`, from the Permissions page) is offered; nothing to add, or a past year open (read only): no button and no shortcut.
+- **Time and date** (`HeaderClock.tsx`): "11:03 AM" over "Fri, Nov 13, 2026" in a `<time>` element, always in India's time (`Asia/Kolkata`), moving on at
+  each whole minute with one timer that stops when it leaves the screen; not drawn under `md` (the old date chip is gone).
+- **Dropdowns** (`HeaderMenu.tsx`: `HeaderMenu` + `MenuRow`): the medium and the year are bordered boxes (icon, what is chosen, chevron); open, a card with
+  a small heading ("Switch medium", "Switch year") and a row per choice (an icon tile, the words, a tick on the one in use). Escape or a press outside closes.
+  The roles (`menuitemradio`, `aria-checked`) and the box names ("Medium", "Academic year") are as before. A past year makes the year box amber.
+- **The class page's arrows** (`/school-class/:id`): the arrows to the class before and after sit right beside the class name (a missing neighbour is
+  a dimmed arrow, `aria-disabled`, so the pair never moves), then the class teacher's badge; they used to stand alone at the far right of the page.
+- Tests: `layout/__tests__/{HeaderClock,NewMenu,Topbar,MediumSwitcher,YearSwitcher}.test.tsx`, `pages/school/__tests__/SchoolClassDetail.test.tsx`. The
+  Topbar tests need `AppThemeProvider` (the account menu reads the theme), as in the app.

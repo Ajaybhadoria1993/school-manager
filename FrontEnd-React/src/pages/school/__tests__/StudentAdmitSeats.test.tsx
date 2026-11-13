@@ -57,14 +57,14 @@ function school(extra: Record<string, Handler> = {}, structure = FULL_STRUCTURE,
   });
 }
 
-function openPage(role: "school_admin" | "teacher" = "school_admin", permissions?: string[]) {
+function openPage(role: "school_admin" | "teacher" = "school_admin", permissions?: string[], entry = "/school/students/new") {
   signInAs(role, permissions);
   const router = createMemoryRouter(
     [
       { path: "/school/students/new", element: <StudentAdmitPage /> },
       { path: "/school/students/:id", element: <p>The student&apos;s page</p> },
     ],
-    { initialEntries: ["/school/students/new"] }
+    { initialEntries: [entry] }
   );
   render(
     <Provider store={store}>
@@ -296,13 +296,18 @@ describe("making sections from the full-class window", () => {
 
   it("divides the class, picks the section for the new student and carries on with the admission (one divide, one admission)", async () => {
     let divided = false;
-    const calls = school({
-      "POST /academics/classes/c1/divide": () => {
-        divided = true;
-        return CLASS_1_DIVIDED;
+    const calls = school(
+      {
+        "POST /academics/classes/c1/divide": () => {
+          divided = true;
+          return CLASS_1_DIVIDED;
+        },
+        "POST /students": () => ADMITTED,
       },
-      "POST /students": () => ADMITTED,
-    });
+      FULL_STRUCTURE,
+      // The page is told there is room (12 of 40); the server says the class is full when the student is admitted.
+      { ...FULL_CAPACITY, classes: [{ classId: "c1", enrolled: 12, nextRollNumber: 13 }, ...FULL_CAPACITY.classes.slice(1)] }
+    );
     const { router, user } = openPage();
     await personal(user);
     await academic(user, /Class 1/);
@@ -360,48 +365,401 @@ describe("making sections from the full-class window", () => {
 });
 
 describe("a section that is full", () => {
-  it("only offers more seats (the other answer is to pick another section), and says the class grows when its sections no longer fit", async () => {
+  /** Class 6 has one section (A, full), picked with the class; the previous school is typed and Next opens the window. */
+  async function pickAndNext(user: User) {
+    await personal(user);
+    await user.click(await screen.findByRole("radio", { name: /Class 6/ }));
+    await user.type(box("previousSchool.name")!, "Little Flower School");
+    await next(user);
+    return screen.findByRole("dialog");
+  }
+
+  it("offers more seats (or a new section; the other answer is Cancel and another section), and says how the class grows when its sections no longer fit", async () => {
     // Class 6 has 100 seats and one section of 30; adding seats to A does not make the class grow.
     school();
     const { user } = openPage();
-    await personal(user);
-    await user.click(await screen.findByRole("radio", { name: /Class 6/ }));
-    await user.click(await screen.findByRole("radio", { name: /^A/ }));
-
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await pickAndNext(user);
     expect(within(dialog).getByText(/30 of 30 seats/)).toBeInTheDocument();
     expect(within(dialog).queryByRole("radio", { name: /Make sections/ })).toBeNull();
     expect(within(dialog).getByRole("textbox", { name: "New seats of Class 6 - A" })).toHaveValue("31");
     expect(within(dialog).getByText("Class 6 - A will have 31 seats, 1 more than now.")).toBeInTheDocument();
-    // Cancel: the section is not picked.
+    // Cancel: the section stays picked (it is the only one), the step is the same, and nothing was decided.
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("radio", { name: /^A/ })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: /^A/ })).toBeChecked();
+    expect(box("guardians.0.mobile")).toBeNull();
   });
 
   it("says the class's seats grow too when the section's new seats no longer fit in the class", async () => {
     school({}, { ...FULL_STRUCTURE, classes: [FULL_STRUCTURE.classes[0], { ...FULL_STRUCTURE.classes[1], capacity: 30 }] });
     const { user } = openPage();
-    await personal(user);
-    await user.click(await screen.findByRole("radio", { name: /Class 6/ }));
-    await user.click(await screen.findByRole("radio", { name: /^A/ }));
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await pickAndNext(user);
     expect(within(dialog).getByText(/Class 6 has 30 seats and its sections share them, so its seats grow to 31/)).toBeInTheDocument();
   });
 
-  it("is picked once seats are added, and the admission carries the new seats", async () => {
+  it("is carried on once seats are added, and the admission carries the new seats", async () => {
     const calls = school({ "POST /students": () => ADMITTED });
     const { router, user } = openPage();
-    await personal(user);
-    await user.click(await screen.findByRole("radio", { name: /Class 6/ }));
-    await user.click(await screen.findByRole("radio", { name: /^A/ }));
-    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Add seats" }));
-    expect(screen.getByRole("radio", { name: /^A/ })).toBeChecked();
-    await user.type(box("previousSchool.name")!, "Little Flower School");
-    await next(user);
+    const dialog = await pickAndNext(user);
+    await user.click(within(dialog).getByRole("button", { name: "Add seats" }));
     await parents(user);
     await user.click(await screen.findByRole("button", { name: "Admit the student" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/school/students/s9"));
     expect(posts(calls)[0].body).toMatchObject({ classId: "c6", sectionId: "c6-A", raiseSeatsTo: 31 });
+  });
+});
+
+// ---- A full place the page was opened on (a link from a class's page chose it): asked in the Academic step, not at the end --------
+
+/** The place a link chose is already picked when the Academic step opens; the previous school is all that is left to type there. */
+async function atAcademicOf(user: User) {
+  await personal(user);
+  await user.type(await boxWhenShown("previousSchool.name"), "Little Flower School");
+}
+const onParents = () => boxWhenShown("guardians.0.mobile");
+
+describe("a full place the page was opened on is asked about in the Academic step", () => {
+  it("a full section: Next on the Academic step asks, and stays there until it is answered (nothing is sent)", async () => {
+    const calls = school({ "POST /students": () => ADMITTED });
+    const { user } = openPage("school_admin", undefined, "/school/students/new?class=c6&section=c6-A");
+    await atAcademicOf(user);
+    expect(screen.getByRole("radio", { name: /^A/ })).toBeChecked();
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await next(user);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Class 6 - A is full")).toBeInTheDocument();
+    expect(within(dialog).getByText(/30 of 30 seats/)).toBeInTheDocument();
+    // It is still the Academic step: nothing moved on, nothing was sent.
+    expect(box("previousSchool.name")).not.toBeNull();
+    expect(box("guardians.0.mobile")).toBeNull();
+    expect(posts(calls)).toHaveLength(0);
+
+    // Cancel: the same step; Next asks again (nothing was decided).
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(box("previousSchool.name")).not.toBeNull();
+    await next(user);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("Add seats: the form goes on to the next step at once, and the admission carries the seats without asking again at the end", async () => {
+    const calls = school({ "POST /students": () => ADMITTED });
+    const { router, user } = openPage("school_admin", undefined, "/school/students/new?class=c6&section=c6-A");
+    await atAcademicOf(user);
+    await next(user);
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Add seats" }));
+    await onParents();
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await parents(user);
+    await user.click(await screen.findByRole("button", { name: "Admit the student" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/school/students/s9"));
+    expect(posts(calls)).toHaveLength(1);
+    expect(posts(calls)[0].body).toMatchObject({ classId: "c6", sectionId: "c6-A", raiseSeatsTo: 31 });
+  });
+
+  it("a full class with no sections: the same window (Add seats or Make sections), in the Academic step", async () => {
+    school();
+    const { user } = openPage("school_admin", undefined, "/school/students/new?class=c1");
+    await atAcademicOf(user);
+    await next(user);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Class 1 is full")).toBeInTheDocument();
+    expect(within(dialog).getByRole("radio", { name: /Add seats/ })).toBeChecked();
+    expect(within(dialog).getByRole("radio", { name: /Make sections/ })).toBeInTheDocument();
+    expect(box("guardians.0.mobile")).toBeNull();
+    await user.click(within(dialog).getByRole("button", { name: "Add seats" }));
+    await onParents();
+  });
+
+  it("Make sections: the class is divided, the new student gets a section, and the form goes on", async () => {
+    const calls = school({
+      "POST /academics/classes/c1/divide": () => ({
+        class: { id: "c1", name: "Class 1" },
+        sections: [
+          { id: "c1-A", name: "A", students: 20, capacity: 25 },
+          { id: "c1-B", name: "B", students: 20, capacity: 25 },
+        ],
+        moved: 40,
+      }),
+      "POST /students": () => ADMITTED,
+    });
+    const { user } = openPage("school_admin", undefined, "/school/students/new?class=c1");
+    await atAcademicOf(user);
+    await next(user);
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("radio", { name: /Make sections/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Make sections" }));
+    await onParents();
+    expect(calls.filter((c) => c.method === "POST" && c.path === "/academics/classes/c1/divide")).toHaveLength(1);
+    expect(posts(calls)).toHaveLength(0);
+  });
+
+  it("a place that has room goes on without a question", async () => {
+    school({}, FULL_STRUCTURE, { ...FULL_CAPACITY, sections: [{ sectionId: "c6-A", classId: "c6", capacity: 30, enrolled: 12, seatsLeft: 18, nextRollNumber: 13 }] });
+    const { user } = openPage("school_admin", undefined, "/school/students/new?class=c6&section=c6-A");
+    await atAcademicOf(user);
+    await next(user);
+    await onParents();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a class whose seats are not set has no limit: it goes on without a question", async () => {
+    school({}, { ...FULL_STRUCTURE, classes: [{ ...FULL_STRUCTURE.classes[0], capacity: null }, FULL_STRUCTURE.classes[1]] });
+    const { user } = openPage("school_admin", undefined, "/school/students/new?class=c1");
+    await atAcademicOf(user);
+    await next(user);
+    await onParents();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a place already answered is not asked again: going back to the Academic step and on does not open the window", async () => {
+    school({ "POST /students": () => ADMITTED });
+    const { user } = openPage();
+    await personal(user);
+    await user.click(await screen.findByRole("radio", { name: /Class 6/ }));
+    await user.type(box("previousSchool.name")!, "Little Flower School");
+    await next(user);
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Add seats" }));
+    await onParents();
+    await user.click(screen.getByRole("button", { name: "Previous step" }));
+    await next(user);
+    await onParents();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("another full section picked after the answer is asked again (the answer was for the first one)", async () => {
+    const two = {
+      ...FULL_STRUCTURE,
+      classes: [FULL_STRUCTURE.classes[0], { ...FULL_STRUCTURE.classes[1], sections: [FULL_STRUCTURE.classes[1].sections[0], { id: "c6-B", classId: "c6", name: "B", capacity: 30, room: "6B" }] }],
+    };
+    const cap = { ...FULL_CAPACITY, sections: [...FULL_CAPACITY.sections, { sectionId: "c6-B", classId: "c6", capacity: 30, enrolled: 30, seatsLeft: 0, nextRollNumber: 31 }] };
+    school({}, two, cap);
+    const { user } = openPage("school_admin", undefined, "/school/students/new?class=c6&section=c6-A");
+    await atAcademicOf(user);
+    await next(user);
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Add seats" }));
+    await onParents();
+    // Back to Academic and on to B, which is full too: asked again, at Next or at the pick.
+    await user.click(screen.getByRole("button", { name: "Previous step" }));
+    await user.click(await screen.findByRole("radio", { name: /^B/ }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).getByText("Class 6 - B is full")).toBeInTheDocument();
+  });
+});
+
+// ---- A class with one section has it picked at once; the seats added show on the page; a full section can get a new section --------
+
+const TWO_SECTIONS = {
+  ...FULL_STRUCTURE,
+  classes: [FULL_STRUCTURE.classes[0], { ...FULL_STRUCTURE.classes[1], sections: [FULL_STRUCTURE.classes[1].sections[0], { id: "c6-B", classId: "c6", name: "B", capacity: 30, room: "6B" }] }],
+};
+const TWO_SECTIONS_CAPACITY = { ...FULL_CAPACITY, sections: [...FULL_CAPACITY.sections, { sectionId: "c6-B", classId: "c6", capacity: 30, enrolled: 10, seatsLeft: 20, nextRollNumber: 11 }] };
+
+describe("a class with one section has it picked at once", () => {
+  it("picking the class picks its only section, a full one too: nothing is asked until Next is pressed", async () => {
+    school();
+    const { user } = openPage();
+    await personal(user);
+    await user.click(await screen.findByRole("radio", { name: /Class 6/ }));
+    expect(screen.getByRole("radio", { name: /^A/ })).toBeChecked();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await user.type(box("previousSchool.name")!, "Little Flower School");
+    await next(user);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Class 6 - A is full")).toBeInTheDocument();
+    expect(box("guardians.0.mobile")).toBeNull();
+  });
+
+  it("a link that names only the class picks its only section too", async () => {
+    school();
+    const { user } = openPage("school_admin", undefined, "/school/students/new?class=c6");
+    await personal(user);
+    expect(await screen.findByRole("radio", { name: /^A/ })).toBeChecked();
+  });
+
+  it("a class with several sections is not picked for the person: they choose", async () => {
+    school({}, TWO_SECTIONS, TWO_SECTIONS_CAPACITY);
+    const { user } = openPage();
+    await personal(user);
+    await user.click(await screen.findByRole("radio", { name: /Class 6/ }));
+    expect(screen.getByRole("radio", { name: /^A/ })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: /^B/ })).not.toBeChecked();
+    expect(screen.getByText("2 sections this year. Pick one.")).toBeInTheDocument();
+    cleanup();
+  });
+
+  it("a class with several sections opened by a link that names only the class asks for the section", async () => {
+    school({}, TWO_SECTIONS, TWO_SECTIONS_CAPACITY);
+    const { user } = openPage("school_admin", undefined, "/school/students/new?class=c6");
+    await personal(user);
+    await screen.findByRole("radio", { name: /^A/ });
+    expect(screen.getByRole("radio", { name: /^A/ })).not.toBeChecked();
+  });
+});
+
+describe("the seats added show on the page", () => {
+  it("a section: its card says the new seats, it is no longer Full, and the note says its seats become that many when the student is admitted", async () => {
+    school();
+    const { user } = openPage();
+    await personal(user);
+    await user.click(await screen.findByRole("radio", { name: /Class 6/ }));
+    expect(screen.getByText("30 of 30 seats filled")).toBeInTheDocument();
+    await user.type(box("previousSchool.name")!, "Little Flower School");
+    await next(user);
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Add seats" }));
+    await onParents();
+    await user.click(screen.getByRole("button", { name: "Previous step" }));
+    expect(await screen.findByText("30 of 31 seats filled")).toBeInTheDocument();
+    expect(screen.queryByText("30 of 30 seats filled")).toBeNull();
+    expect(screen.getByText("Class 6 - A: 30 of 31 seats taken, 1 left. Its seats become 31 when you admit.")).toBeInTheDocument();
+  });
+
+  it("a class with no sections: the box says the new seats too", async () => {
+    school();
+    const { user } = openPage();
+    await personal(user);
+    await user.click(await screen.findByRole("radio", { name: /Class 1/ }));
+    await user.click(await screen.findByRole("button", { name: "Add seats or make sections" }));
+    const dialog = await screen.findByRole("dialog");
+    const seats = within(dialog).getByRole("textbox", { name: "New seats of Class 1" });
+    await user.clear(seats);
+    await user.type(seats, "45");
+    await user.click(within(dialog).getByRole("button", { name: "Add seats" }));
+    expect(await screen.findByText("Class 1 has 40 of 45 seats taken. Its seats become 45 when you admit.")).toBeInTheDocument();
+  });
+});
+
+describe("a full section can also get a new section", () => {
+  const NEW_SECTION = { id: "c6-B", classId: "c6", name: "B", capacity: 30, room: null };
+
+  async function fullSectionDialog(user: User, role: "school_admin" | "teacher" = "school_admin") {
+    void role;
+    await personal(user);
+    await user.click(await screen.findByRole("radio", { name: /Class 6/ }));
+    await user.type(box("previousSchool.name")!, "Little Flower School");
+    await next(user);
+    return screen.findByRole("dialog");
+  }
+
+  it("offers Add seats and Add a section; Add seats is the first", async () => {
+    school();
+    const { user } = openPage();
+    const dialog = await fullSectionDialog(user);
+    expect(within(dialog).getByRole("radio", { name: /Add seats/ })).toBeChecked();
+    expect(within(dialog).getByRole("radio", { name: /Add a section/ })).not.toBeChecked();
+    // A full section is never divided: that is for a class that has no sections.
+    expect(within(dialog).queryByRole("radio", { name: /Make sections/ })).toBeNull();
+  });
+
+  it("is not offered to someone who may not manage classes: they can only add seats", async () => {
+    school();
+    const { user } = openPage("teacher", ["students.add", "students.view", "classes.view"]);
+    const dialog = await fullSectionDialog(user);
+    expect(within(dialog).queryByRole("radio")).toBeNull();
+    expect(within(dialog).getByRole("textbox", { name: "New seats of Class 6 - A" })).toBeInTheDocument();
+  });
+
+  it("asks for the name (the next letter), the seats (the full section's) and says how the class's seats grow", async () => {
+    school();
+    const { user } = openPage();
+    const dialog = await fullSectionDialog(user);
+    await user.click(within(dialog).getByRole("radio", { name: /Add a section/ }));
+    expect(within(dialog).getByRole("textbox", { name: "Name of the new section" })).toHaveValue("B");
+    expect(within(dialog).getByRole("textbox", { name: "Seats of the new section" })).toHaveValue("30");
+    // Class 6 has 100 seats and section A holds 30: 30 more fit, so the class does not grow.
+    expect(within(dialog).queryByText(/seats grow to/)).toBeNull();
+    await user.clear(within(dialog).getByRole("textbox", { name: "Seats of the new section" }));
+    await user.type(within(dialog).getByRole("textbox", { name: "Seats of the new section" }), "90");
+    expect(within(dialog).getByText(/Class 6 has 100 seats and its sections share them, so its seats grow to 120/)).toBeInTheDocument();
+  });
+
+  it("makes the section (the class's seats may grow), picks it for the student and goes on to the next step; the admission has no more seats to add", async () => {
+    const calls = school({ "POST /academics/classes/c6/sections": () => NEW_SECTION, "POST /students": () => ADMITTED });
+    const { router, user } = openPage();
+    const dialog = await fullSectionDialog(user);
+    await user.click(within(dialog).getByRole("radio", { name: /Add a section/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Add section" }));
+    await onParents();
+    const made = calls.filter((c) => c.method === "POST" && c.path === "/academics/classes/c6/sections");
+    expect(made).toHaveLength(1);
+    expect(made[0].body).toEqual({ name: "B", capacity: 30, room: null, raiseClassSeats: true });
+
+    await parents(user);
+    await user.click(await screen.findByRole("button", { name: "Admit the student" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/school/students/s9"));
+    expect(posts(calls)).toHaveLength(1);
+    expect(posts(calls)[0].body).toMatchObject({ classId: "c6", sectionId: "c6-B" });
+    expect(posts(calls)[0].body).not.toHaveProperty("raiseSeatsTo");
+  });
+
+  it("will not take an empty name or seats that are not a number; nothing is sent", async () => {
+    const calls = school();
+    const { user } = openPage();
+    const dialog = await fullSectionDialog(user);
+    await user.click(within(dialog).getByRole("radio", { name: /Add a section/ }));
+    await user.clear(within(dialog).getByRole("textbox", { name: "Name of the new section" }));
+    await user.click(within(dialog).getByRole("button", { name: "Add section" }));
+    expect(within(dialog).getByText("Enter the section name.")).toBeInTheDocument();
+    await user.type(within(dialog).getByRole("textbox", { name: "Name of the new section" }), "B");
+    await user.clear(within(dialog).getByRole("textbox", { name: "Seats of the new section" }));
+    await user.type(within(dialog).getByRole("textbox", { name: "Seats of the new section" }), "0");
+    await user.click(within(dialog).getByRole("button", { name: "Add section" }));
+    expect(within(dialog).getByText(/Seats must be a whole number from 1 to 200/)).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+  });
+
+  it("when the server refuses (the name is taken) the window stays and says so under the name", async () => {
+    school({
+      "POST /academics/classes/c6/sections": () =>
+        new Response(JSON.stringify({ success: false, message: 'This class already has a section called "B".', code: "SECTION_EXISTS" }), { status: 409, headers: { "Content-Type": "application/json" } }),
+    });
+    const { user } = openPage();
+    const dialog = await fullSectionDialog(user);
+    await user.click(within(dialog).getByRole("radio", { name: /Add a section/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Add section" }));
+    expect(await within(dialog).findByText('This class already has a section called "B".')).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(box("guardians.0.mobile")).toBeNull();
+  });
+
+  it("is also asked when the server says the section is full at Admit (a section that filled up meanwhile): Add section and admit", async () => {
+    let attempts = 0;
+    const calls = school(
+      {
+        "POST /academics/classes/c6/sections": () => NEW_SECTION,
+        "POST /students": () => {
+          attempts += 1;
+          if (attempts === 1) {
+            return new Response(
+              JSON.stringify({
+                success: false,
+                message: "Class 6 - A is full",
+                code: "SECTION_FULL",
+                details: [{ path: "sectionId", message: "full", capacity: 30, enrolled: 30, seatsLeft: 0, classId: "c6", sectionId: "c6-A" }],
+              }),
+              { status: 409, headers: { "Content-Type": "application/json" } }
+            );
+          }
+          return ADMITTED;
+        },
+      },
+      FULL_STRUCTURE,
+      { ...FULL_CAPACITY, sections: [{ sectionId: "c6-A", classId: "c6", capacity: 30, enrolled: 12, seatsLeft: 18, nextRollNumber: 13 }] }
+    );
+    const { router, user } = openPage();
+    await personal(user);
+    await user.click(await screen.findByRole("radio", { name: /Class 6/ }));
+    await user.type(box("previousSchool.name")!, "Little Flower School");
+    await next(user);
+    await parents(user);
+    await user.click(await screen.findByRole("button", { name: "Admit the student" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("radio", { name: /Add a section/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Add section and admit" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/school/students/s9"));
+    expect(posts(calls)).toHaveLength(2);
+    expect(posts(calls)[1].body).toMatchObject({ classId: "c6", sectionId: "c6-B" });
   });
 });

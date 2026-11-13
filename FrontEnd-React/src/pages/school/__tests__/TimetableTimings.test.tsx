@@ -75,7 +75,7 @@ afterEach(() => {
 const sent = (calls: Call[]) => calls.filter((c) => c.method === "PUT" && c.path === "/timetable/school-day").map((c) => c.body as SchoolDayInput);
 const mode = (day: string, label: "Usual" | "Different" | "Holiday") => within(screen.getByRole("radiogroup", { name: day })).getByRole("radio", { name: label });
 const box = (label: string) => screen.getByLabelText(label);
-const saveButton = () => screen.getByRole("button", { name: "Save timings" });
+const saveButton = () => screen.getByRole("button", { name: "Save changes" });
 const server = (status: number, message: string, code?: string, details?: object[]) => () =>
   new Response(JSON.stringify({ success: false, message, code, details }), { status, headers: { "Content-Type": "application/json" } });
 const times = (slots: Slot[]) => slots.map((s) => `${s.kind} ${s.start}-${s.end}`);
@@ -83,8 +83,9 @@ const times = (slots: Slot[]) => slots.map((s) => `${s.kind} ${s.start}-${s.end}
 describe("School timings: a school that has none yet", () => {
   it("opens with the usual numbers, Monday to Saturday as usual days and Sunday a holiday, and the day drawn period by period", async () => {
     openPage([]);
-    expect(await screen.findByRole("heading", { name: "School timings", level: 1 })).toBeInTheDocument();
+    // The title is drawn again when the loaded page replaces the loading one, so it is asked for after the numbers are there.
     expect(await screen.findByLabelText("Usual day: school starts")).toHaveValue("08:30");
+    expect(screen.getByRole("heading", { name: "School timings", level: 1 })).toBeInTheDocument();
     expect(box("Usual day: minutes in a period")).toHaveValue(40);
     expect(box("Usual day: number of periods")).toHaveValue(8);
     expect(box("Usual day: lunch from")).toHaveValue("10:30");
@@ -99,7 +100,7 @@ describe("School timings: a school that has none yet", () => {
 
   it("sends the whole week in one request: the rows of each day with school, Sunday left out", async () => {
     const { calls, user } = openPage([]);
-    await user.click(await screen.findByRole("button", { name: "Save timings" }));
+    await user.click(await screen.findByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(sent(calls)).toHaveLength(1));
     const body = sent(calls)[0];
     expect(body.days.map((d) => d.day)).toEqual([1, 2, 3, 4, 5, 6]);
@@ -195,41 +196,9 @@ describe("School timings: what is said before and after sending", () => {
   });
 });
 
-describe("School timings: one timing for the whole school", () => {
-  // 2026-11-09: school time is one for every class (user: "school time ek hi rehta hai"): no Timing for / department choice any more.
-  const WITH_DEPARTMENTS: AcademicStructure = {
-    ...STRUCTURE,
-    departments: [
-      { id: "d1", name: "Pre-Primary", classCount: 1 },
-      { id: "d2", name: "Primary", classCount: 1 },
-    ],
-    classes: [
-      { ...STRUCTURE.classes[0], departmentId: "d1" },
-      { id: "c2", name: "Class 1", order: 2, departmentId: "d2", capacity: null, sections: [] },
-    ],
-  };
-  const PRE_OWN: Schedule = { id: "p1", name: "Pre-Primary", days: [1, 2, 3, 4, 5], scope: "only", classIds: ["c1"], departmentId: "d1", slots: SATURDAY_ROWS, periods: 4 };
-  const PRE_OFF: Schedule = { id: "p2", name: "Pre-Primary - holiday", days: [6, 7], scope: "only", classIds: ["c1"], departmentId: "d1", slots: [], periods: 0 };
-  const open = (schedules: Schedule[], extra: Record<string, Handler> = {}) => openPage(schedules, { "GET /academics/structure": () => WITH_DEPARTMENTS, ...extra });
-  const PRIMARY_OWN: Schedule = { id: "q1", name: "Primary", days: [1, 2, 3, 4, 5], scope: "only", classIds: ["c2"], departmentId: "d2", slots: SATURDAY_ROWS, periods: 4 };
-  const PRIMARY_OFF: Schedule = { id: "q2", name: "Primary - holiday", days: [6, 7], scope: "only", classIds: ["c2"], departmentId: "d2", slots: [], periods: 0 };
-  const STILL_OWN = "Primary still keeps a timing of its own.";
-
-  it("has no Timing for choice (whole school, each department), even in a school with departments: one usual day, the same for every class", async () => {
-    open([{ ...REGULAR, days: [1, 2, 3, 4, 5, 6] }]);
-    await screen.findByLabelText("Usual day: school starts");
-    expect(screen.queryByRole("radiogroup", { name: "Timing for" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Timing for")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Same as school|Own timing|follows the school/)).not.toBeInTheDocument();
-    // Only Pre-Primary may keep a timing of its own (its box, below); no other department is offered one.
-    expect(screen.queryByRole("button", { name: "Give Primary its own timing" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Usual school day" })).toBeInTheDocument();
-    // Nothing to say about departments when none has a timing of its own.
-    expect(screen.queryByText(/still keeps a timing of its own/)).not.toBeInTheDocument();
-  });
-
+describe("School timings: the school's week is saved on its own", () => {
   it("saves the week of the whole school: no department in the request", async () => {
-    const { calls, user } = open([{ ...REGULAR, days: [1, 2, 3, 4, 5, 6] }]);
+    const { calls, user } = openPage([{ ...REGULAR, days: [1, 2, 3, 4, 5, 6] }]);
     const periods = await screen.findByLabelText("Usual day: number of periods");
     await user.clear(periods);
     await user.type(periods, "7");
@@ -239,30 +208,9 @@ describe("School timings: one timing for the whole school", () => {
     expect(sent(calls)[0].days.map((d) => d.slots.filter((r) => r.kind === "period").length)).toEqual([7, 7, 7, 7, 7, 7]);
   });
 
-  it("keeps a department's own timing from before out of the school's week, and says so with a way back to the school's timing (after asking)", async () => {
-    const { calls, user } = open([REGULAR, PRIMARY_OWN, PRIMARY_OFF, PRE_OWN, PRE_OFF], { "DELETE /timetable/school-day/d2": () => ({ items: [REGULAR, PRE_OWN, PRE_OFF] }) });
-    await screen.findByLabelText("Usual day: school starts");
-    // The school's own week is untouched by it: Saturday is still a holiday there.
-    expect(mode("Saturday", "Holiday")).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByText(STILL_OWN)).toBeInTheDocument();
-    // Pre-Primary's own timing is in its own box, not in this notice.
-    expect(screen.queryByText(/^Pre-Primary still keeps/)).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Primary: use the school's timing" }));
-    const dialog = await screen.findByRole("dialog", { name: "Primary: use the school's timing again?" });
-    await user.click(within(dialog).getByRole("button", { name: "Use the school's timing" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.path === "/timetable/school-day/d2")).toBe(true));
-    await waitFor(() => expect(screen.queryByText(STILL_OWN)).not.toBeInTheDocument());
-  });
-});
-
-describe("School timings: this tab is the school's, not a class's", () => {
-  it("has no section for timings of a few classes, even when the school has one (a class's own periods are set on its timetable)", async () => {
+  it("a timing made for one class is not part of the school's week (Saturday stays a holiday)", async () => {
     openPage([REGULAR, LITTLE]);
     await screen.findByLabelText("Usual day: school starts");
-    expect(screen.queryByText("Timings for a few classes")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Add a timing for some classes" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("list", { name: "Timings for some classes" })).not.toBeInTheDocument();
-    // It is not part of the school's week either.
     expect(mode("Saturday", "Holiday")).toHaveAttribute("aria-checked", "true");
   });
 
@@ -451,91 +399,5 @@ describe("School timings: changes that are not saved are asked about before leav
     expect(within(dialog).getByText("Add at least one period")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Save and continue" })).toBeDisabled();
     expect(sent(calls)).toHaveLength(0);
-  });
-});
-
-describe("School timings: Pre-Primary's own timing (2026-11-10, it may start earlier)", () => {
-  const PP: AcademicStructure = {
-    ...STRUCTURE,
-    departments: [
-      { id: "d1", name: "Pre-Primary", classCount: 1 },
-      { id: "d2", name: "Primary", classCount: 1 },
-    ],
-    classes: [
-      { ...STRUCTURE.classes[0], departmentId: "d1" },
-      { id: "c2", name: "Class 1", order: 2, departmentId: "d2", capacity: null, sections: [] },
-    ],
-  };
-  const SIX: Schedule = { ...REGULAR, days: [1, 2, 3, 4, 5, 6] };
-  const EARLY: Schedule = { id: "p1", name: "Pre-Primary", days: [1, 2, 3, 4, 5, 6], scope: "only", classIds: ["c1"], departmentId: "d1", slots: SATURDAY_ROWS, periods: 4 };
-  /** The server's answer to Pre-Primary's week: the school's timing and Pre-Primary's as sent. */
-  const deptSaved = (body: unknown) => {
-    const b = body as SchoolDayInput;
-    return { items: [SIX, { ...EARLY, days: b.days.map((d) => d.day), slots: b.days[0].slots, periods: b.days[0].slots.filter((x) => x.kind === "period").length }] };
-  };
-  const open = (schedules: Schedule[] = [SIX], extra: Record<string, Handler> = {}) => openPage(schedules, { "GET /academics/structure": () => PP, "PUT /timetable/school-day": deptSaved, ...extra });
-  const region = () => screen.findByRole("region", { name: "Pre-Primary timing" });
-
-  it("a school without a Pre-Primary department has no such box", async () => {
-    openPage([SIX]);
-    await screen.findByLabelText("Usual day: school starts");
-    expect(screen.queryByRole("region", { name: "Pre-Primary timing" })).not.toBeInTheDocument();
-  });
-
-  it("Pre-Primary follows the school's timing until it is given its own; no other department gets a box", async () => {
-    open();
-    const r = await region();
-    expect(r).toHaveTextContent("Same as the school");
-    expect(within(r).getByRole("button", { name: "Give Pre-Primary its own timing" })).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Primary timing" })).not.toBeInTheDocument();
-  });
-
-  it("its own timing starts from the school's day; an earlier start is sent for the school's usual days only, and the school's week is not sent", async () => {
-    const { calls, user } = open();
-    await user.click(within(await region()).getByRole("button", { name: "Give Pre-Primary its own timing" }));
-    expect(box("Pre-Primary: school starts")).toHaveValue("08:30");
-    fireEvent.change(box("Pre-Primary: school starts"), { target: { value: "07:30" } });
-    await user.click(screen.getByRole("button", { name: "Save Pre-Primary timing" }));
-    await waitFor(() => expect(sent(calls)).toHaveLength(1));
-    const body = sent(calls)[0];
-    expect(body.departmentId).toBe("d1");
-    expect(body.days.map((d) => d.day)).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(body.days[0].slots[0].start).toBe("07:30");
-    expect(await within(await region()).findByRole("button", { name: "Use the school's timing" })).toBeInTheDocument();
-  });
-
-  it("reads its own timing, and gives it back to the school after asking", async () => {
-    const { calls, user } = open([SIX, EARLY], { "DELETE /timetable/school-day/d1": () => ({ items: [SIX] }) });
-    await region();
-    expect(box("Pre-Primary: number of periods")).toHaveValue(4);
-    await user.click(within(await region()).getByRole("button", { name: "Use the school's timing" }));
-    const dialog = await screen.findByRole("dialog", { name: "Pre-Primary: use the school's timing again?" });
-    await user.click(within(dialog).getByRole("button", { name: "Use the school's timing" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.path === "/timetable/school-day/d1")).toBe(true));
-    expect(await within(await region()).findByText("Same as the school")).toBeInTheDocument();
-  });
-
-  it("will not send numbers that make no day, and says why; Cancel leaves it following the school", async () => {
-    const { calls, user } = open();
-    await user.click(within(await region()).getByRole("button", { name: "Give Pre-Primary its own timing" }));
-    await user.clear(box("Pre-Primary: number of periods"));
-    await user.type(box("Pre-Primary: number of periods"), "0");
-    expect(within(await region()).getByRole("alert")).toHaveTextContent("Add at least one period");
-    expect(screen.getByRole("button", { name: "Save Pre-Primary timing" })).toBeDisabled();
-    await user.click(within(await region()).getByRole("button", { name: "Cancel" }));
-    expect(within(await region()).getByText("Same as the school")).toBeInTheDocument();
-    expect(sent(calls)).toHaveLength(0);
-  });
-
-  it("asks before leaving with a change to it that is not saved, and saves it when told to", async () => {
-    const { calls, router, user } = open([SIX, EARLY]);
-    await region();
-    fireEvent.change(box("Pre-Primary: school starts"), { target: { value: "07:30" } });
-    await act(async () => void router.navigate("/school/timetable"));
-    const dialog = await screen.findByRole("dialog", { name: "Save the changes to Pre-Primary's timing?" });
-    await user.click(within(dialog).getByRole("button", { name: "Save and continue" }));
-    await waitFor(() => expect(sent(calls)).toHaveLength(1));
-    expect(sent(calls)[0].departmentId).toBe("d1");
-    await waitFor(() => expect(router.state.location.pathname).toBe("/school/timetable"));
   });
 });

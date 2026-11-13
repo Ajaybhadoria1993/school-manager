@@ -41,6 +41,27 @@ School timings, `/class-subjects` and `/class/:classId/:sectionId` to Class time
    (`departmentDayBody`), so a day the school keeps different and a holiday stay the school's for its classes. *Use the school's timing* takes it away. Its
    unsaved changes are asked about with the school's (one *Save and continue* saves both). Other departments get no box; one with a timing from before
    still gets the notice above.
+   **Redesign, 2026-11-13** (user, with three reference pictures; this REVERSES the two paragraphs above: every department and any one class may now
+   have its own time). Left: *Usual school day* (the numbers, lunch, short break), the day drawn as a **timeline** (`DayPreview variant="line"`), *Days
+   of the week*. Right (24rem, below on a narrow screen): **Class timings** (`ClassTimings.tsx`) first, then **Department timings** (`DepartmentTimings.tsx`);
+   the two columns are the cells of one grid under the title, so the right column starts **level with the Usual school day card** (user's choice, 2026-11-13; he first asked for it
+   beside the title, then lower) and its **last card grows to the foot of the page** (`[&>:last-child]:flex-1`), so both columns end together and no blank space is left.
+   A department follows the school ("Same as school" + the day it follows) until **Change timing** opens a **window** (`DepartmentTimingDialog.tsx`,
+   user 2026-11-13: the boxes no longer open inside the card) with the same boxes as the school's day, starting from what the department has (or the
+   school's day), with a Save of its own that waits until something is different (`PUT /timetable/school-day {departmentId}`) and, for a department that
+   has its own timing, *Same as school* (`DELETE`, at once). The card then says *Own timing* and its day. The page's **Save changes** is only about the
+   school's week (the usual day and each day of the week); it stands in **the layout's footer strip** (`FixedSaveBar.tsx` + `components/layout/FooterSlot.tsx`; `MainLayout` makes the strip UNDER the scroll pane, so the page scrolls
+   above the buttons and never behind them and nothing moves them: the user asked for this three times, "scroll ke saath scroll na ho"; the strip has no band of its own,
+   only the buttons are drawn, no white card) and, where there is no such layout (a test), fixed to the bottom right of the screen (a portal into the body; the page then keeps `pb-20`),
+   and *Throw away changes* stands
+   beside it once the week is changed. A department whose days no longer match the school's usual days (the school
+   made Saturday a holiday) is sent again with the school's week, with the rows it had. **Pre-Primary is set by hours** (user: one teacher teaches one
+   thing a day, so periods do not matter; `utils/departmentDay.ts`): *School starts*, *School ends* and a lunch, no period boxes; the periods are made
+   from the school's own length of a period, the last cut to end where the day ends (a stored period-based timing is read back as its hours), and its
+   day is said without counting periods. **A class** (`ClassOwnTimingDialog.tsx`, `PUT /timetable/class-day`) is added with *Add class* (pick the class,
+   then the same boxes as the school's day) and changed with its pencil; *Use the school's timing* takes its own days away; lessons in periods it will no
+   longer have are asked about first (`LESSONS_IN_REMOVED_PERIODS`). A class follows its own timing, else its department's, else the school's. The
+   Class timetables page keeps its *Periods & time* button. Tests: `TimetableOwnTimings.test.tsx`, `TimetableTimings.test.tsx`, `utils/__tests__/departmentDay.test.ts`.
 2. **Class timetables** page: every class or section on the left (search, and All / Not started / Draft / Published), the one picked on the
    right with its week as a table. **Click a period** and a box opens right under it (2026-11-03; before, a subject was picked above the
    week first and then the periods were clicked, and there was an Eraser): type the first letters of the subject and press Enter, or click it.
@@ -65,6 +86,24 @@ School timings, `/class-subjects` and `/class/:classId/:sectionId` to Class time
    The choice stays while the page is open. The box is not modal on a desktop (the next period can be clicked at once; Escape or a click elsewhere closes it) and is a modal
    one on a phone (no cursor in the search box until it is touched). A subject the class did not study yet **joins its list when the
    timetable is saved** (with the periods it was given, no teacher).
+   **Class timetables page layout, 2026-11-13** (user, with the Pre-Nursery class open): the page's **title is the class picked** (`h1` "Pre-Nursery") with its year and
+   Draft/Published beside it (read with the same `getGrid` request the workspace makes, one cache entry); the way back still says *Class timetables*
+   (`StudentFormHeader current`). The **filter** (All classes / Not started / Draft / Published, with their numbers) is **four buttons in one line at the right of the title**
+   (a radiogroup "Which timetables to show") instead of the dropdown above the list, which keeps only its search box. In the class workspace the old title block is gone
+   and **the toolbar and the class's buttons are ONE line** (user's second round: the first version wrapped to two lines): at the left Fill the empty periods, Periods & time
+   (Pre-Primary: Mother teacher), at the right Print, Add a teacher, Copy to other sections, Publish. What used to crowd it moved: the **count of periods, Not saved and "No teacher
+   available in your school"** are a line of facts under the filter in the page's title row (`StudentFormHeader meta`; the workspace reports them with `onStatus` / `ClassWeekStatus`),
+   and **Empty the whole week** is with Save under the week.
+   **Small classes and teachers, 2026-11-13** (user, with UKG - A open: "ek din mein ek cheez, kabhi 2"; "teacher ki list; aage ki class mein bhi"). In a
+   Pre-Primary class the **box of a period** says how far a picked subject goes: *This period | Half Monday | Whole Monday* (**whole day is the default**; the
+   choice stays while the page is open). The toolbar does NOT repeat it (first built there, then removed at the user's request: "modal mein hai already").
+   Half a day = the periods on that side of the lunch (`halfOf`; a day with no lunch is cut in the middle), so two things in a day are two picks
+   (`placeHalfDay`). **For every class** the box that picks the subject no longer closes: it stays beside the period and goes on to the **Teacher** list (the
+   school's teachers, the one chosen takes the period; in a Pre-Primary class the whole day or half of that subject: `teacherOnRange`); a subject taught side by
+   side with others (a choice) still closes it (they have the window). The parts of the box keep apart (the list of subjects gives way first, the teachers' part is
+   `shrink-0`, the whole box scrolls on a short screen): it had overlapped its own buttons. **Add a teacher** is a button in the header of the class, between Print
+   and Copy/Publish (`/teachers/new`, to whoever may add teachers; not inside the box); with no teacher in the school the toolbar and the box say so. The name of
+   the teacher was already on every filled period. Tests: `TimetableDayTeacher.test.tsx`, `utils/__tests__/timetable.test.ts`.
    **A class's day follows its lessons** (2026-11-09, user: "jis class ko jitne periods assign hain uss din ke, uska time wahi rahega; end time
    select karna faltu"): nothing is set for a class. The grid has the school's rows, and its last row, **Class ends**, says for each day the end
    of the last period that has a lesson (`dayEnds` in `utils/timetable.ts`; it follows lessons put in before they are saved; "–" for a day with

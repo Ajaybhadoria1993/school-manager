@@ -10,6 +10,9 @@ import type { GridAllotment, GridCell, GridDay, GridTeacher, GridView, Lesson } 
 
 export const cellKey = (day: number, period: number) => `${day}:${period}`;
 
+/** How far a subject picked in a Pre-Primary class goes: that period of every day, half of that day, or the whole of that day. */
+export type Spread = "week" | "half" | "day";
+
 /** A department called Pre-Primary, however it is written: its classes have a mother teacher and may give a whole day to one subject. */
 export const isPrePrimaryName = (name: string): boolean => name.toLowerCase().replace(/[^a-z]/g, "") === "preprimary";
 
@@ -181,6 +184,51 @@ export function placeWholeDay(model: GridModel, cells: readonly GridCell[], subj
   const next = cells.filter((c) => c.day !== day);
   for (const p of periods) next.push({ day, period: p, lessons: lessonsOf(members, mother) });
   return { cells: sorted(next), placed: periods.length, note: null };
+}
+
+/**
+ * The periods on the same side of the lunch as `period` on that day (a Pre-Primary day may be two things: one before the lunch, one after).
+ * A day with no lunch is cut in the middle, the bigger half first. None for a day or a period the class does not have.
+ */
+export function halfOf(model: GridModel, day: number, period: number): number[] {
+  const view = model.days.find((d) => d.day === day);
+  const rows = periodRows(view);
+  const at = rows.findIndex((r) => r.period === period);
+  if (!view || at < 0) return [];
+  const lunch = view.slots.findIndex((s) => s.kind === "lunch");
+  if (lunch >= 0) {
+    const before = rows[at].index < lunch;
+    return rows.filter((r) => r.index < lunch === before).map((r) => r.period);
+  }
+  const first = Math.ceil(rows.length / 2);
+  return (at < first ? rows.slice(0, first) : rows.slice(first)).map((r) => r.period);
+}
+
+/**
+ * Half a day of one subject (a Pre-Primary class, 2026-11-13: a day may be one thing, or two, one before the lunch and one after): every
+ * period of that half gets it, in place of what was there; the other half and the other days are left as they are. A choice puts all its
+ * subjects; the mother teacher goes on a subject with no usual teacher of its own.
+ */
+export function placeHalfDay(model: GridModel, cells: readonly GridCell[], subjectId: string, day: number, period: number, mother: string | null): Placing {
+  const subject = model.allotments.get(subjectId);
+  const periods = halfOf(model, day, period);
+  if (!subject || periods.length === 0) return { cells: [...cells], placed: 0, note: null };
+  const members = choiceOf(model, subjectId);
+  const next = cells.filter((c) => !(c.day === day && periods.includes(c.period)));
+  for (const p of periods) next.push({ day, period: p, lessons: lessonsOf(members, mother) });
+  return { cells: sorted(next), placed: periods.length, note: null };
+}
+
+/**
+ * A teacher chosen in the box of a period for the subject there (null: no teacher): for that period only (`period`), for that subject's
+ * periods in the same half of the day (`half`) or in the whole day (`day`). Other subjects and other days are left as they are.
+ */
+export function teacherOnRange(model: GridModel, cells: readonly GridCell[], day: number, period: number, subjectId: string, teacherId: string | null, range: "period" | "half" | "day"): GridCell[] {
+  const periods = range === "period" ? [period] : range === "half" ? halfOf(model, day, period) : null;
+  return cells.map((c) => {
+    if (c.day !== day || (periods && !periods.includes(c.period))) return c;
+    return { ...c, lessons: c.lessons.map((l) => (l.subjectId === subjectId ? { ...l, teacherId } : l)) };
+  });
 }
 
 /**

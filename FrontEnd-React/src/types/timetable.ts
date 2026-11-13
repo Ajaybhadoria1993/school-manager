@@ -300,3 +300,14 @@ export interface TimetableOverview {
 export interface PublishedUnits {
   units: { classId: string; sectionId: string | null; label: string }[];
 }
+
+/**
+ * What a class's workspace says to the title row of its page (2026-11-13, so that the toolbar of the class is one line): whether the week has
+ * changes that are not saved, how many periods have a lesson of how many, and that the school has no teacher to pick from.
+ */
+export interface ClassWeekStatus {
+  dirty: boolean;
+  filled: number;
+  total: number;
+  noTeacher: boolean;
+}

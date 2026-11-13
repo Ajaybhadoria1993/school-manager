@@ -156,3 +156,78 @@ describe("seats cannot be set below the students in the place", () => {
     expect((await patch(s.token, `/sections/${b}`, { capacity: 1 })).status).toBe(200);
   });
 });
+
+describe("a section added with raiseClassSeats (the Add student window: a section is full, so a new one is added)", () => {
+  /** Class 6: 40 seats, one section A that holds all of them. */
+  async function fullClass(s: Awaited<ReturnType<typeof school>>) {
+    const klass = await makeClass(s.token, "Class 6", 40, 0);
+    const a = await post(s.token, `/classes/${klass.id}/sections`, { name: "A", capacity: 40 });
+    expect(a.status).toBe(201);
+    return klass;
+  }
+  const seatsOf = async (s: { tenantId: unknown }, classId: string) => (await SchoolClass.findOne({ _id: classId, tenantId: s.tenantId }).lean())?.capacity;
+
+  it("without the flag a section that does not fit is still refused, and the class keeps its seats", async () => {
+    const s = await school();
+    const klass = await fullClass(s);
+    const res = await post(s.token, `/classes/${klass.id}/sections`, { name: "B", capacity: 40 });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("SECTION_SEATS_OVER_CLASS");
+    expect(await seatsOf(s, klass.id)).toBe(40);
+  });
+
+  it("with the flag the class's seats grow to hold the new section, and the section is made", async () => {
+    const s = await school();
+    const klass = await fullClass(s);
+    const res = await post(s.token, `/classes/${klass.id}/sections`, { name: "B", capacity: 30, raiseClassSeats: true });
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({ name: "B", capacity: 30 });
+    expect(await seatsOf(s, klass.id)).toBe(70);
+  });
+
+  it("only as much as is needed: a section that fits leaves the class's seats alone", async () => {
+    const s = await school();
+    const klass = await makeClass(s.token, "Class 7", 100, 0);
+    expect((await post(s.token, `/classes/${klass.id}/sections`, { name: "A", capacity: 40 })).status).toBe(201);
+    const res = await post(s.token, `/classes/${klass.id}/sections`, { name: "B", capacity: 40, raiseClassSeats: true });
+    expect(res.status).toBe(201);
+    expect(await seatsOf(s, klass.id)).toBe(100);
+  });
+
+  it("a class with no seats set is not given any, and a section with no seats needs none", async () => {
+    const s = await school();
+    const klass = await makeClass(s.token, "Class 8", 40, 0);
+    await SchoolClass.updateOne({ _id: klass.id, tenantId: s.tenantId }, { $unset: { capacity: 1 } });
+    expect((await post(s.token, `/classes/${klass.id}/sections`, { name: "A", capacity: 30, raiseClassSeats: true })).status).toBe(201);
+    expect((await SchoolClass.findOne({ _id: klass.id, tenantId: s.tenantId }).lean())?.capacity ?? null).toBeNull();
+  });
+
+  it("is refused when the class would pass the most seats a class can have; nothing is changed", async () => {
+    const s = await school();
+    // 2000 seats (the most), all held by ten sections of 200.
+    const klass = await makeClass(s.token, "Class 9", 2000, 0);
+    for (const name of "ABCDEFGHIJ") expect((await post(s.token, `/classes/${klass.id}/sections`, { name, capacity: 200 })).status).toBe(201);
+    const res = await post(s.token, `/classes/${klass.id}/sections`, { name: "K", capacity: 10, raiseClassSeats: true });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe("CLASS_SEATS_TOO_MANY");
+    expect(await seatsOf(s, klass.id)).toBe(2000);
+    expect(await Section.countDocuments({ tenantId: s.tenantId, classId: klass.id })).toBe(10);
+  });
+
+  it("when the section cannot be made (its name is taken) the class's seats are put back", async () => {
+    const s = await school();
+    const klass = await fullClass(s);
+    const res = await post(s.token, `/classes/${klass.id}/sections`, { name: "A", capacity: 30, raiseClassSeats: true });
+    expect(res.status).toBe(409);
+    expect(await seatsOf(s, klass.id)).toBe(40);
+    expect(await Section.countDocuments({ tenantId: s.tenantId, classId: klass.id })).toBe(1);
+  });
+
+  it("the flag must be true or false (a section that would fit is still refused for a wrong flag)", async () => {
+    const s = await school();
+    const klass = await makeClass(s.token, "Class 10", 100, 0);
+    const res = await post(s.token, `/classes/${klass.id}/sections`, { name: "A", capacity: 30, raiseClassSeats: "yes" });
+    expect(res.status).toBe(400);
+    expect(await Section.countDocuments({ tenantId: s.tenantId, classId: klass.id })).toBe(0);
+  });
+});

@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type R
 import { Popover } from "@heroui/react";
 import { Check, DoorOpen, Plus, Search, Trash2, UserCog } from "lucide-react";
 import { cn } from "../../utils/helpers";
-import { matchChoices, type SubjectChoice, type TeacherChoice } from "../../utils/timetable";
+import { matchChoices, type Spread, type SubjectChoice, type TeacherChoice } from "../../utils/timetable";
 import { Input } from "../ui/Input";
 
 /** One row of the list: a subject of the choices, or, last, the offer to make what was typed a new subject. */
@@ -55,8 +55,8 @@ export function PeriodPicker({
   /** The page puts the subject in and closes the box (it may first have to add the subject to the school). */
   onChoose: (choice: SubjectChoice) => void | Promise<void>;
   onCreate: (name: string) => void | Promise<void>;
-  /** A Pre-Primary class: put the subject in this period all week (the usual way) or in every period of this day. */
-  spread?: { value: "week" | "day"; dayName: string; onChange: (next: "week" | "day") => void };
+  /** A Pre-Primary class: put the subject in this period all week (the usual way), in half of this day (before or after the lunch) or in the whole day. */
+  spread?: { value: Spread; dayName: string; onChange: (next: Spread) => void };
   /** Only for a period with one lesson: its teachers (none: the school has no teacher), and what was picked. */
   teachers?: { subjectName: string; choices: readonly TeacherChoice[] };
   onTeacher?: (teacherId: string | null) => void;
@@ -133,15 +133,15 @@ export function PeriodPicker({
 
   return (
     <Popover.Content isOpen onOpenChange={(open) => !open && onClose()} triggerRef={anchor} isNonModal={!small} placement="bottom start" offset={6} className="w-80 max-w-[calc(100vw-1rem)] overflow-hidden rounded-xl border border-border bg-surface p-0 shadow-float">
-      <Popover.Dialog ref={root} aria-label={`${title}: choose the subject`} className="flex max-h-[inherit] flex-col p-0 outline-none">
+      <Popover.Dialog ref={root} aria-label={`${title}: choose the subject`} className="flex max-h-[inherit] flex-col overflow-y-auto p-0 outline-none">
         <div className="shrink-0 border-b border-border px-3.5 pb-3 pt-3">
           <p className="flex items-baseline justify-between gap-2">
             <span className="text-sm font-bold text-foreground">{title}</span>
             <span className="text-xs text-foreground-muted">{times}</span>
           </p>
           {spread && (
-            <div role="radiogroup" aria-label="Put the subject in" className="mt-2 grid grid-cols-2 gap-0.5 rounded-lg bg-surface-muted p-0.5">
-              {(["week", "day"] as const).map((v) => (
+            <div role="radiogroup" aria-label="Put the subject in" className="mt-2 grid grid-cols-3 gap-0.5 rounded-lg bg-surface-muted p-0.5">
+              {(["week", "half", "day"] as const).map((v) => (
                 <button
                   key={v}
                   type="button"
@@ -154,7 +154,7 @@ export function PeriodPicker({
                     spread.value === v ? "bg-surface text-primary-deep shadow-sm" : "text-foreground-muted hover:text-foreground"
                   )}
                 >
-                  {v === "week" ? "This period, all week" : `Whole ${spread.dayName}`}
+                  {v === "week" ? "This period" : v === "half" ? `Half ${spread.dayName}` : `Whole ${spread.dayName}`}
                 </button>
               ))}
             </div>
@@ -183,7 +183,7 @@ export function PeriodPicker({
           </div>
         </div>
 
-        <ul id={`${uid}-list`} ref={list} role="listbox" aria-label="Subjects" aria-busy={busy} className={cn("relative overflow-y-auto p-1.5", teachers ? "max-h-40" : "max-h-64", busy && "pointer-events-none opacity-60")}>
+        <ul id={`${uid}-list`} ref={list} role="listbox" aria-label="Subjects" aria-busy={busy} className={cn("relative min-h-20 overflow-y-auto p-1.5", teachers ? "max-h-40" : "max-h-64", busy && "pointer-events-none opacity-60")}>
           {rows.map((row, i) => {
             const isActive = i === at;
             const common = {
@@ -227,7 +227,7 @@ export function PeriodPicker({
         </ul>
 
         {teachers && (
-          <div className="flex min-h-0 flex-col border-t border-border p-1.5">
+          <div className="flex shrink-0 flex-col border-t border-border p-1.5">
             <p className="shrink-0 px-2.5 pb-0.5 pt-1 text-xs font-bold uppercase tracking-wide text-foreground-muted">Teacher</p>
             {teachers.choices.length === 0 ? (
               <p className="px-2.5 py-1.5 text-sm font-medium text-foreground-muted">No teacher available in your school</p>

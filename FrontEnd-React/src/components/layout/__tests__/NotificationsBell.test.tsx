@@ -14,6 +14,7 @@ import { useGetChildExamsQuery } from "../../../redux/api/parentApi";
 import { fakeApi, type Handler } from "../../../test/fakeApi";
 import { clearTokens, setTokens } from "../../../utils/auth";
 import type { NotificationItem } from "../../../types";
+import { AppThemeProvider } from "../../../theme/AppThemeProvider";
 import { Topbar } from "../Topbar";
 
 /**
@@ -108,9 +109,11 @@ function openApp(extra: Record<string, Handler> = {}, path = "/") {
   );
   render(
     <Provider store={store}>
-      <ToastProvider>
-        <RouterProvider router={router} />
-      </ToastProvider>
+      <AppThemeProvider>
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
+      </AppThemeProvider>
     </Provider>
   );
   return { calls, router, user: userEvent.setup() };

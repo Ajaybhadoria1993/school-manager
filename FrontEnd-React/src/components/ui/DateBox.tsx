@@ -90,6 +90,8 @@ export function DateBox({
                 ? "border-transparent bg-primary-soft focus-within:border-primary focus-within:bg-surface focus-within:ring-4 focus-within:ring-primary/15"
                 : style === "soft"
                   ? "rounded-xl border-border bg-white text-[15px] shadow-card hover:border-primary/40! focus-within:border-primary! focus-within:ring-4 focus-within:ring-primary/15 group-data-[invalid=true]:border-danger!"
+                : style === "round"
+                  ? "rounded-xl border-border bg-surface shadow-card hover:border-primary/40! focus-within:border-primary! focus-within:ring-4 focus-within:ring-primary/15 group-data-[invalid=true]:border-danger!"
                 : style === "boxed"
                   ? "rounded-[10px] border-foreground/60! bg-surface text-[15px] hover:border-foreground/80! focus-within:border-primary! focus-within:ring-4 focus-within:ring-primary/15 group-data-[invalid=true]:border-danger!"
                   : "border-border bg-surface focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/15",

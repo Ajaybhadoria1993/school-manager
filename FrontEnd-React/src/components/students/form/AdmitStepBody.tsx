@@ -50,7 +50,7 @@ export function AdmitStepBody({
     return (
       <>
         {structure ? (
-          <PlacementFields form={form} structure={structure} capacity={capacity} index={0} onPickFull={onPickFull ?? (() => {})} onFullClass={onFullClass} raisedTo={raisedTo} />
+          <PlacementFields form={form} structure={structure} capacity={capacity} index={0} onPickFull={onPickFull ?? (() => {})} onFullClass={onFullClass} raisedTo={raisedTo} pickOnlySection="always" />
         ) : (
           <FormSection index={0} icon={FolderTree} title="Class and section">
             <p className="text-sm text-foreground-muted">Your classes and sections are shown here once they are set up in Classes & Sections.</p>
