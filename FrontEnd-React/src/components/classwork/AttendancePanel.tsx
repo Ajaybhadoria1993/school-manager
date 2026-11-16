@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { CalendarOff, Save } from "lucide-react";
-import { useCan } from "../../hooks/useCan";
 import { useGetAttendanceQuery, useSaveAttendanceMutation } from "../../redux/api/classroomApi";
 import { addDays, shortDay } from "../../utils/calendar";
 import { getApiError } from "../../utils/apiErrors";
@@ -27,10 +26,9 @@ const MARKS: { value: AttendanceStatus; label: string; on: string }[] = [
  * then says how many were present, absent, late and on leave. A child marked Absent or Late can be given a **reason** (optional, 2026-11-06:
  * "Fever"): the school and the parent see it. A holiday says so and has nothing to save.
  */
-export function AttendancePanel({ classId, sectionId }: { classId: string; sectionId: string | null }) {
+export function AttendancePanel({ classId, sectionId, canMark = false }: { classId: string; sectionId: string | null; canMark?: boolean }) {
   const today = todayInIndia();
-  // Seeing the day is one permission, taking it another (Permissions): a person who may only see it gets the marks without the buttons.
-  const canMark = useCan()("attendance.mark");
+  // Only the class teacher takes the day (2026-11-17); the school, and anyone else who may see it, gets the marks without the buttons.
   const [date, setDate] = useState(today);
   const res = useGetAttendanceQuery({ classId, sectionId, date: date || today });
   const [save, { isLoading: saving }] = useSaveAttendanceMutation();

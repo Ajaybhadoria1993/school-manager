@@ -85,7 +85,8 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
     label: "Attendance",
     items: [
       { key: "attendance.view", label: "See students' attendance", for: ["staff", "teacher"] },
-      { key: "attendance.mark", label: "Take and correct students' attendance", for: ["staff", "teacher"] },
+      // Only a class teacher takes attendance (2026-11-17): the school and its staff look, so this is offered to teachers only.
+      { key: "attendance.mark", label: "Take and correct students' attendance", for: ["teacher"] },
       { key: "attendance.teachers", label: "See and correct teachers' attendance", for: ["staff"] },
     ],
   },

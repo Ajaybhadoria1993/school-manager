@@ -120,15 +120,17 @@ describe("attendance", () => {
   const sheet = (token: string) => call("get", `/classroom/attendance?classId=${school.a.classId}&sectionId=${school.a.sectionId}&date=${day}`, token);
   const marks = (token: string) => call("put", "/classroom/attendance", token, { ...school.a, date: day, marks: [{ studentId: school.asha.id, status: "present" }, { studentId: school.kabir.id, status: "absent" }] });
 
-  it("seeing the attendance of a class and taking it are two permissions; the receptionist works on any class (they have none of their own)", async () => {
+  it("seeing the attendance of a class is a permission the receptionist can be given; taking it is only the class teacher's, whatever the school ticks (2026-11-17)", async () => {
     expect((await sheet(reception)).status).toBe(403);
     await tell(school.token, "receptionist", ["attendance.view"]);
     expect((await sheet(reception)).status).toBe(200);
-    expect((await marks(reception)).status).toBe(403);
-    await tell(school.token, "receptionist", ["attendance.mark"]);
-    const saved = await marks(reception);
-    expect(saved.status).toBe(200);
-    expect((await sheet(reception)).body.data.students.map((s: { status: string }) => s.status)).toContain("absent");
+    // They look; they never take it. The permission is not even offered to staff any more.
+    const refused = await marks(reception);
+    expect(refused.status).toBe(403);
+    await tell(school.token, "receptionist", ["attendance.view", "attendance.mark"]);
+    const stillRefused = await marks(reception);
+    expect(stillRefused.status).toBe(403);
+    expect((await sheet(reception)).body.data.students.map((s: { status: string }) => s.status)).not.toContain("absent");
   });
 
   it("the school-wide sheets are for attendance.view, and teachers' attendance for attendance.teachers", async () => {

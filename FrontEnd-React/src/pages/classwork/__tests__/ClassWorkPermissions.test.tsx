@@ -68,11 +68,13 @@ describe("a class's attendance for the school's staff", () => {
     expect(calls.some((c) => c.path === "/classroom/my-classes")).toBe(false);
   });
 
-  it("allowed to take it too, the marks can be changed and saved", async () => {
+  it("even with attendance.mark ticked a staff member only looks: the marks are fixed and there is no Save (only the class teacher takes it)", async () => {
     openPage("receptionist", ["attendance.view", "attendance.mark"]);
     const list = await screen.findByRole("list", { name: "Attendance" });
-    expect(within(within(list).getByRole("listitem", { name: "Kabir Rao" })).getByRole("radio", { name: "Absent" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Save attendance" })).toBeInTheDocument();
+    expect(within(within(list).getByRole("listitem", { name: "Kabir Rao" })).getByRole("radio", { name: "Absent" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save attendance" })).not.toBeInTheDocument();
+    // No register to mark in either: that is the class teacher's.
+    expect(screen.queryByText("Not taken")).not.toBeInTheDocument();
   });
 
   it("allowed nothing of a class's work: the page says so instead of an empty page", async () => {
@@ -81,9 +83,12 @@ describe("a class's attendance for the school's staff", () => {
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
   });
 
-  it("the school admin has every tab whatever list the session carries", async () => {
+  it("the school admin has every tab whatever list the session carries, and in Attendance only looks at the day", async () => {
     openPage("school_admin", []);
     await screen.findByRole("heading", { name: "Class 5 - A", level: 1 });
     expect(tabs()).toEqual(["Attendance", "Diary", "Tests", "Exams"]);
+    const list = await screen.findByRole("list", { name: "Attendance" });
+    expect(within(within(list).getByRole("listitem", { name: "Kabir Rao" })).getByRole("radio", { name: "Absent" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save attendance" })).not.toBeInTheDocument();
   });
 });

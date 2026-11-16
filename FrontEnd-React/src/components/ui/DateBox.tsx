@@ -38,7 +38,10 @@ export function DateBox({
   max,
   invalid,
   shortcuts,
+  compact = false,
 }: {
+  /** One step shorter (36px), and without the clear button, for a box that sits in a line of small buttons (the filters of a list). */
+  compact?: boolean;
   id: string;
   /** The words of the label, for the calendar and the clear button ("Clear joining date"). */
   label: string;
@@ -95,7 +98,8 @@ export function DateBox({
                 : style === "boxed"
                   ? "rounded-[10px] border-foreground/60! bg-surface text-[15px] hover:border-foreground/80! focus-within:border-primary! focus-within:ring-4 focus-within:ring-primary/15 group-data-[invalid=true]:border-danger!"
                   : "border-border bg-surface focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/15",
-              "group-data-[invalid=true]:border-danger group-data-[invalid=true]:ring-2 group-data-[invalid=true]:ring-danger/30"
+              "group-data-[invalid=true]:border-danger group-data-[invalid=true]:ring-2 group-data-[invalid=true]:ring-danger/30",
+              compact && "h-9"
             )}
           >
             <ControlIcon icon={CalendarDays} />
@@ -108,7 +112,7 @@ export function DateBox({
               )}
             </DateField.Input>
             <DateField.Suffix className="flex shrink-0 items-center gap-0.5">
-              {value && (
+              {value && !compact && (
                 <button
                   type="button"
                   aria-label={`Clear ${label.toLowerCase()}`}

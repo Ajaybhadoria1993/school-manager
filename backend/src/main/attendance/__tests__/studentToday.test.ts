@@ -5,7 +5,7 @@ import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { clock } from "../../../utils/clock";
 import { classroomSchool } from "../../../test/classroom";
 import { addColleague } from "../../../test/schools";
-import { addClass, addTiming, auth } from "../../../test/timetable";
+import { addClass, addTeacher, addTiming, auth } from "../../../test/timetable";
 
 /**
  * Which classes have not taken today's attendance (2026-11-06): the first thing a principal asks. School runs Monday to Friday from
@@ -43,12 +43,21 @@ describe("the classes that have not taken today's attendance", () => {
     ]);
   });
 
-  it("a class drops off the list when its attendance is taken (by the class teacher, or by the school)", async () => {
+  it("a class drops off the list when its class teacher takes its attendance (the school cannot take it for them)", async () => {
     const { s, today, take } = await setUp();
     at(THU, "09:00");
     expect((await take(THU)).status).toBe(200);
     expect((await today(s.token)).body.data.pending.map((p: { label: string }) => p.label)).toEqual(["Class 1"]);
-    await request(app).put("/api/v1/classroom/attendance").set(auth(s.token)).send({ ...s.one, date: THU, marks: [{ studentId: s.mira.id, status: "present" }] });
+    // The school (admin) tries Class 1's day: refused, so it stays on the list.
+    const byTheSchool = await request(app).put("/api/v1/classroom/attendance").set(auth(s.token)).send({ ...s.one, date: THU, marks: [{ studentId: s.mira.id, status: "present" }] });
+    expect(byTheSchool.status).toBe(403);
+    expect((await today(s.token)).body.data.pending.map((p: { label: string }) => p.label)).toEqual(["Class 1"]);
+    // Class 1's own class teacher takes it.
+    const anita = await addTeacher(s.token, "Anita Rao", { mobile: "9876500002", login: { username: "sun.anita", password: "Sch00l@Login1" } });
+    await request(app).put("/api/v1/staff/class-teachers").set(auth(s.token)).send({ ...s.one, teacherId: anita });
+    const anitaToken = (await request(app).post("/api/v1/auth/login").send({ identifier: "sun.anita", password: "Sch00l@Login1" })).body.data.accessToken as string;
+    const taken = await request(app).put("/api/v1/classroom/attendance").set(auth(anitaToken)).send({ ...s.one, date: THU, marks: [{ studentId: s.mira.id, status: "present" }] });
+    expect(taken.status, JSON.stringify(taken.body)).toBe(200);
     expect((await today(s.token)).body.data.pending).toEqual([]);
   });
 

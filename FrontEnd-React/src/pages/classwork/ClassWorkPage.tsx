@@ -5,6 +5,7 @@ import { useCan } from "../../hooks/useCan";
 import { useGetMyClassesQuery } from "../../redux/api/classroomApi";
 import { useGetClassOverviewQuery } from "../../redux/api/studentsApi";
 import { cn } from "../../utils/helpers";
+import { StudentAttendance } from "../../components/attendance/StudentAttendance";
 import { AttendancePanel } from "../../components/classwork/AttendancePanel";
 import { DiaryPanel } from "../../components/classwork/DiaryPanel";
 import { ExamsPanel } from "../../components/classwork/ExamsPanel";
@@ -17,7 +18,7 @@ type Tab = "attendance" | "diary" | "tests" | "exams";
 
 /**
  * A class's work (`/class-work/:classId?section=&tab=`, docs/parent-teacher-flow.md): for a teacher, one of their classes (from their
- * home); for the people who run the school, any class (from School Class). Four tabs: **Attendance** (the class teacher and the school),
+ * home); for the people who run the school, any class (from School Class). Four tabs: **Attendance** (the class teacher takes it, the school looks),
  * **Diary** (what was taught, the homework), **Tests** (with their marks) and **Exams** (the school's exams for this class, and their
  * marks). A teacher who is not the class teacher opens on the Diary.
  */
@@ -35,7 +36,9 @@ export default function ClassWorkPage() {
   const klass = overview.data?.data.classes[0];
   const section = klass?.sections.find((s) => s.id === sectionId);
   const label = myClass?.label ?? (klass ? (section ? `${klass.name} - ${section.name}` : klass.name) : "Class work");
-  const takesAttendance = runsSchool || !!myClass?.isClassTeacher;
+  // Only the class teacher TAKES attendance (2026-11-17); the school sees it. A teacher who is not the class teacher has no Attendance tab.
+  const isClassTeacher = !!myClass?.isClassTeacher;
+  const takesAttendance = runsSchool || isClassTeacher;
   // The subjects a test may be added for: the teacher's own (every one for the class teacher and the school: the server says which).
   const testSubjects = myClass?.subjects ?? [];
   // Each tab is what the school allowed this person (Permissions): the people who run the school have them all.
@@ -88,7 +91,14 @@ export default function ClassWorkPage() {
         ))}
       </div>
       <div role="tabpanel" aria-label={tabs.find((t) => t.value === tab)?.label}>
-        {tab === "attendance" && <AttendancePanel classId={classId} sectionId={sectionId} />}
+        {tab === "attendance" && (
+          <div className="space-y-8">
+            {/* The class teacher's week: Not taken, and a click on a cell marks one child on one day. */}
+            {isClassTeacher && <StudentAttendance unit={{ classId, sectionId }} canMark />}
+            {/* The whole day in one Save (the class teacher), or only to look at (the school). */}
+            <AttendancePanel classId={classId} sectionId={sectionId} canMark={isClassTeacher} />
+          </div>
+        )}
         {tab === "diary" && <DiaryPanel classId={classId} sectionId={sectionId} />}
         {tab === "tests" && <TestsPanel classId={classId} sectionId={sectionId} subjects={testSubjects} />}
         {tab === "exams" && <ExamsPanel classId={classId} sectionId={sectionId} />}

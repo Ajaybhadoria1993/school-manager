@@ -3,8 +3,10 @@ import { requireAuth, requireRole } from "../../../../middleware/auth";
 import { requirePermission } from "../../../../middleware/permission";
 import { yearView } from "../../../../middleware/yearView";
 import { validate } from "../../../../middleware/validate";
+import { studentsQuerySchema } from "../../../attendance/schemas/attendance.schemas";
 import {
   addTest,
+  attendanceRegister,
   attendanceSheet,
   createEvent,
   decideLeave,
@@ -15,6 +17,7 @@ import {
   listLeaves,
   listMyClasses,
   listTests,
+  markStudentAttendance,
   removeTest,
   saveAttendance,
   saveDiary,
@@ -34,6 +37,7 @@ import {
   decideLeaveSchema,
   idParamSchema,
   leaveQuerySchema,
+  markStudentSchema,
   saveAttendanceSchema,
   setStandardShownSchema,
   standardKeyParamSchema,
@@ -71,7 +75,12 @@ router.get("/my-classes", requireRole("teacher"), listMyClasses);
 
 // ---- Attendance: a class's (or section's) day, by its class teacher or the people who run the school ----------------------------------
 router.get("/attendance", requirePermission("attendance.view"), validate(attendanceQuerySchema, "query"), attendanceSheet);
+// One class or section's register for the days asked (its class teacher's page; the school may look).
+router.get("/attendance/register", requirePermission("attendance.view"), validate(studentsQuerySchema, "query"), attendanceRegister);
+// Only the class teacher of the class takes attendance (the service says who may): the whole day, or one child on one day.
 router.put("/attendance", requirePermission("attendance.mark"), validate(saveAttendanceSchema), saveAttendance);
+// One child on one day, from a cell of the register: only that child's mark is written.
+router.put("/attendance/student", requirePermission("attendance.mark"), validate(markStudentSchema), markStudentAttendance);
 
 // ---- Diary: what was taught and the homework, per subject and day (the subject's teacher, the class teacher, the school) --------------
 router.get("/diary", requirePermission("classwork.view"), validate(unitDayQuerySchema, "query"), diaryDay);

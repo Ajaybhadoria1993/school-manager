@@ -44,6 +44,8 @@ function openPage(path: string, role: UserRole = "teacher", extra: Record<string
     "GET /staff/teachers/me": () => new Response(JSON.stringify({ success: false, message: "Not found" }), { status: 404, headers: { "Content-Type": "application/json" } }),
     "GET /subjects": () => ({ items: [] }),
     "GET /classroom/attendance": () => SHEET,
+    "GET /classroom/attendance/register": () => REGISTER,
+    "PUT /classroom/attendance/student": () => ({ studentId: "s1", date: today, status: "absent" }),
     "PUT /classroom/attendance": (body) => {
       const marks = (body as { marks: { studentId: string; status: string }[] }).marks;
       const students = SHEET.students.map((st) => ({ ...st, status: (marks.find((m) => m.studentId === st.id)?.status ?? "present") as AttendanceSheet["students"][number]["status"] }));
@@ -88,6 +90,48 @@ describe("a teacher's home", () => {
     await user.click(item);
     expect(router.state.location.pathname).toBe("/class-work/c5");
     expect(router.state.location.search).toBe("?section=c5-A");
+  });
+});
+
+// The class teacher's week (2026-11-17): today is sent, nobody has a mark yet, so today says Not taken.
+const REGISTER = {
+  label: "Class 5 - A",
+  from: today,
+  to: today,
+  // A Tuesday whatever day the tests run on (a Sunday would say nothing).
+  days: [{ date: today, weekday: 2, holiday: null, taken: false }],
+  students: SHEET.students.map((st) => ({ id: st.id, name: st.name, admissionNumber: st.admissionNumber, rollNumber: st.rollNumber, section: "A", records: [], tally: { present: 0, absent: 0, late: 0, leave: 0, days: 0, percent: null } })),
+  summary: { students: SHEET.students.length, present: 0, absent: 0, late: 0, leave: 0, percent: null },
+};
+
+describe("the class teacher's register in the Attendance tab (2026-11-17)", () => {
+  it("is above the day's sheet: the week with Not taken, and the sheet to take the whole day", async () => {
+    const { calls } = openPage("/class-work/c5?section=c5-A");
+    expect(await screen.findByRole("table", { name: "Attendance of Class 5 - A" })).toBeInTheDocument();
+    expect(await screen.findByRole("list", { name: "Attendance" })).toBeInTheDocument();
+    const read = calls.find((c) => c.path === "/classroom/attendance/register");
+    expect(read?.query).toContain("classId=c5");
+    expect(read?.query).toContain("sectionId=c5-A");
+  });
+
+  it("a click on a cell marks one child on one day, with one request for that child", async () => {
+    const { calls, user } = openPage("/class-work/c5?section=c5-A");
+    const table = await screen.findByRole("table", { name: "Attendance of Class 5 - A" });
+    const row = within(table).getByRole("row", { name: /Asha Verma/ });
+    const notTaken = within(row).getAllByRole("button", { name: /not taken/ });
+    await user.click(notTaken[0]);
+    await user.click(within(await screen.findByRole("dialog", { name: /Asha Verma/ })).getByRole("button", { name: /Absent/ }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "PUT" && c.path === "/classroom/attendance/student")).toHaveLength(1));
+    expect(calls.find((c) => c.path === "/classroom/attendance/student")?.body).toEqual({ studentId: "s1", date: today, status: "absent" });
+    // The class's day sheet is the whole day's and was not saved by it.
+    expect(calls.filter((c) => c.method === "PUT" && c.path === "/classroom/attendance")).toHaveLength(0);
+  });
+
+  it("a teacher who is not the class teacher has neither the register nor the sheet", async () => {
+    openPage("/class-work/c5?section=c5-A", "teacher", { "GET /classroom/my-classes": () => ({ items: [{ ...FIVE_A, isClassTeacher: false }] }) });
+    await screen.findByRole("heading", { name: "Class 5 - A", level: 1 });
+    expect(screen.queryByRole("table", { name: /Attendance of/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Attendance" })).not.toBeInTheDocument();
   });
 });
 

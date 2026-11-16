@@ -140,11 +140,12 @@ export class StudentAttendanceService {
         { $match: { tenantId: school, academicYearId: units[0].yearId, status: "active" } },
         { $group: { _id: { classId: "$classId", sectionId: "$sectionId" } } },
       ]),
-      AttendanceDay.find({ tenantId: school, date: fromDay(now.date) }).select("classId sectionId").lean(),
+      AttendanceDay.find({ tenantId: school, date: fromDay(now.date) }).select("classId sectionId partial").lean(),
     ]);
     const key = (classId: Types.ObjectId | string, sectionId: Types.ObjectId | string | null) => `${classId.toString()}:${sectionId ? sectionId.toString() : "-"}`;
     const hasChildren = new Set(counts.map((c) => key(c._id.classId, c._id.sectionId)));
-    const done = new Set(taken.map((d) => key(d.classId, d.sectionId)));
+    // A day the school only partly marked (one child at a time) is not a day that was taken.
+    const done = new Set(taken.filter((d) => !d.partial).map((d) => key(d.classId, d.sectionId)));
     return {
       date: now.date,
       working: true,

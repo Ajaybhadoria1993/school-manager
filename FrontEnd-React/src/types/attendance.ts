@@ -18,6 +18,18 @@ export interface StudentRangeDay {
   taken: boolean;
 }
 
+/** The school marks one child on one day (a cell of the register): there or not there. */
+export interface MarkStudentInput {
+  studentId: string;
+  date: string;
+  status: "present" | "absent";
+}
+
+/** A column of the register: a day the server sent, or (`coming`) a day of the week asked for that has not come yet. */
+export interface RegisterDay extends StudentRangeDay {
+  coming?: boolean;
+}
+
 export interface StudentRangeRecord {
   date: string;
   status: AttendanceStatus;

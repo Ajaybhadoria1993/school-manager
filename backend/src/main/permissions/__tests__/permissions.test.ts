@@ -44,7 +44,9 @@ describe("the catalogue of what a person may be allowed", () => {
     // Only what has a page for that person is offered: a teacher works with their own classes, the staff with the school's pages.
     expect(permissionsFor("teacher")).toEqual(expect.arrayContaining(["attendance.mark", "classwork.manage", "exams.marks", "timetable.view"]));
     expect(permissionsFor("teacher")).not.toContain("students.add");
-    expect(permissionsFor("staff")).toEqual(expect.arrayContaining(["students.add", "attendance.mark", "leaves.decide", "calendar.manage", "dashboard.view"]));
+    expect(permissionsFor("staff")).toEqual(expect.arrayContaining(["students.add", "attendance.view", "leaves.decide", "calendar.manage", "dashboard.view"]));
+    // Only a class teacher takes attendance (2026-11-17): the staff are never offered it.
+    expect(permissionsFor("staff")).not.toContain("attendance.mark");
     expect(permissionsFor("staff")).not.toContain("classwork.manage");
   });
 
@@ -85,10 +87,10 @@ describe("the Permissions page's API", () => {
 
   it("saves what a kind may do: a permission brings what it needs (adding students needs seeing them), in the catalogue's order", async () => {
     const s = await createSchool("Sunrise Public School");
-    const saved = await put(s.token, "receptionist", ["students.add", "attendance.mark", "calendar.view"]);
+    const saved = await put(s.token, "receptionist", ["students.add", "attendance.view", "calendar.view"]);
     expect(saved.status).toBe(200);
     expect(saved.body.data).toMatchObject({ key: "receptionist", isDefault: false });
-    expect(saved.body.data.permissions).toEqual(["students.view", "students.add", "attendance.view", "attendance.mark", "calendar.view"]);
+    expect(saved.body.data.permissions).toEqual(["students.view", "students.add", "attendance.view", "calendar.view"]);
     const again = (await get(s.token)).body.data.profiles.find((p: { key: string }) => p.key === "receptionist");
     expect(again).toMatchObject({ isDefault: false, permissions: saved.body.data.permissions });
     // Another kind is untouched.

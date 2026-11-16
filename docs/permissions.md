@@ -25,7 +25,7 @@ a Parent, a Librarian... When that person signs in, the menu shows what the scho
 | Teachers | `teachers.view`, `.add` (Add teacher + Bulk upload; makes subjects), `.edit` (details, classes, class teacher, login, make inactive), `.export`, `.settings` (the extra fields) | staff |
 | Staff | `staff.view`, `.add`, `.edit` (details, login, make inactive, remove) | staff |
 | The school's set-up | `classes.view` (Classes pages), `classes.manage` (Classes & Sections: classes, sections, departments), `years.manage` (the next academic year), `promotion.manage` (prepare and send the promotion list) | staff |
-| Attendance | `attendance.view`, `attendance.mark` | staff, teacher (a teacher: their own classes) |
+| Attendance | `attendance.view` (staff, teacher: a teacher their own classes), `attendance.mark` (teacher only: 2026-11-17, only a class teacher takes attendance; the school and its staff only look) | see the column |
 | | `attendance.teachers` (see/correct teachers' attendance) | staff |
 | Leave requests | `leaves.view`, `leaves.decide` | staff, teacher |
 | Diary, homework, tests | `classwork.view`, `classwork.manage` | teacher |
@@ -79,7 +79,7 @@ their own classes and children.
   (`students.add`, inside `RunningYearRoute`), the inactive list (`students.status`), attendance pages. On the pages, each button follows its
   key: Students (Export: the school admin and the principal open the layout page, anyone else with `students.export` downloads the file at once; Bulk upload, Add student, the inactive tab, the ticks), a student's page (Add a sibling, Transfer, Make inactive, Edit,
   the parent's login), Attendance > Student gets **Take attendance** (to `/class-work/:classId?section=...&tab=attendance`) for
-  `attendance.mark`, a class's work page (tabs by key; the marks are fixed without `attendance.mark`), Leave requests (Approve/Decline by
+  `attendance.mark` (teachers only), a class's work page (tabs by key; the marks are fixed for everyone but the class teacher, whatever is ticked), Leave requests (Approve/Decline by
   `leaves.decide`), Calendar (`calendar.manage`), the dashboard (`dashboard.view`, else the person's own home), the parent's child page (each
   part by its `child.*` key, and a part not allowed is not asked for).
 - `utils/permissions.ts`: `can(user, ...keys)`, `toggled` (the page's ticking rule), `IMPLIES` (mirrors the server). A session without its own
