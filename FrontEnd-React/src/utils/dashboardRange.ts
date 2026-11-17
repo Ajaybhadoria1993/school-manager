@@ -1,4 +1,5 @@
 import type { SchoolDashboard } from "../types";
+import type { PickerPreset } from "./dateRange";
 
 /**
  * The days the school's home page is about (2026-11-10, laid out like Infinity Medisetu's): Today, This week, This month or any days, each
@@ -31,6 +32,24 @@ export function rangeFor(tab: Exclude<RangeTab, "custom">, today: string): Days 
   const month = today.slice(0, 7);
   const [year, m] = month.split("-").map(Number);
   return { from: `${month}-01`, to: dayOf(Date.UTC(year, m, 1) - DAY_MS) };
+}
+
+/**
+ * The ready-made ranges of the window "Select date range" on the home page: the same as everywhere (Today, This Week, Last Week, Last 7 Days,
+ * This Month, Last Month), but a week is Monday to Sunday here, the way this page counts it (and the This Week tab).
+ */
+export function dashboardPresets(today: string): PickerPreset[] {
+  const week = rangeFor("week", today);
+  const month = rangeFor("month", today);
+  const before = rangeFor("month", addDays(month.from, -1));
+  return [
+    { id: "today", label: "Today", from: today, to: today },
+    { id: "week", label: "This Week", ...week },
+    { id: "lastWeek", label: "Last Week", ...stepDays(week, -1) },
+    { id: "last7", label: "Last 7 Days", from: addDays(today, -6), to: today },
+    { id: "month", label: "This Month", ...month },
+    { id: "lastMonth", label: "Last Month", ...before },
+  ];
 }
 
 /** The same number of days, just before (-1) or just after (1). */

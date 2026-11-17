@@ -39,8 +39,18 @@ describe("the classes that have not taken today's attendance", () => {
     expect(res.body.data).toMatchObject({ date: THU, working: true, holiday: null });
     expect(res.body.data.pending).toEqual([
       { classId: s.class1.id, sectionId: null, label: "Class 1" },
-      { classId: s.class5.id, sectionId: s.a.sectionId, label: "Class 5 - A" },
+      // Class 5 has only the one section (A): it is named as the class, the section says nothing.
+      { classId: s.class5.id, sectionId: s.a.sectionId, label: "Class 5" },
     ]);
+  });
+
+  it("a class with two sections or more names each one: Class 5A, Class 5B", async () => {
+    const { s, today } = await setUp();
+    await request(app).post(`/api/v1/academics/classes/${s.class5.id}/sections`).set(auth(s.token)).send({ name: "B" });
+    at(THU, "09:00");
+    const labels = (await today(s.token)).body.data.pending.map((p: { label: string }) => p.label);
+    // Class 5B has no children yet, so only 5A is asked for; Class 1 has no section at all.
+    expect(labels).toEqual(["Class 1", "Class 5A"]);
   });
 
   it("a class drops off the list when its class teacher takes its attendance (the school cannot take it for them)", async () => {
@@ -65,7 +75,7 @@ describe("the classes that have not taken today's attendance", () => {
     const { s, today } = await setUp();
     await addClass(s.token, "Class 9");
     at(THU, "09:00");
-    expect((await today(s.token)).body.data.pending.map((p: { label: string }) => p.label)).toEqual(["Class 1", "Class 5 - A"]);
+    expect((await today(s.token)).body.data.pending.map((p: { label: string }) => p.label)).toEqual(["Class 1", "Class 5"]);
   });
 
   it("nobody is asked before school starts", async () => {

@@ -5,7 +5,7 @@ import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetStudentsAttendanceQuery, useGetStudentsTodayQuery } from "../../redux/api/attendanceApi";
 import { useGetRegisterQuery, useMarkStudentDayMutation } from "../../redux/api/classroomApi";
 import { getApiError } from "../../utils/apiErrors";
-import { cameToSchool, dayCount, isLowPercent, isWeekRange, percentText, showsEveryDay, studentStartRange, weekColumns, weekdayLetter } from "../../utils/attendance";
+import { attendanceUnits, cameToSchool, dayCount, isLowPercent, pickedUnit, isWeekRange, percentText, showsEveryDay, studentStartRange, weekColumns, weekdayLetter } from "../../utils/attendance";
 import { useYearView } from "../../hooks/useYearView";
 import { useAppSelector } from "../../redux/hooks";
 import { shortDay } from "../../utils/calendar";
@@ -16,12 +16,12 @@ import type { AttendanceStatus, RegisterDay, StudentRangeDay, StudentRangeRow } 
 import { StatTile } from "../dashboard/school/StatTile";
 import { StudentPager } from "../students/StudentPager";
 import { Card } from "../ui/Card";
+import { DateRangeControl } from "../ui/DateRangeControl";
 import { Skeleton } from "../ui/Skeleton";
 import { useToast } from "../ui/toast-context";
 import { DaySplitDialog } from "./DaySplitDialog";
 import { MarkMenu, type Answer } from "./MarkMenu";
 import { NotTakenStrip } from "./NotTakenStrip";
-import { RangeFilter } from "./RangeFilter";
 import { StudentDaysDialog } from "./StudentDaysDialog";
 
 /**
@@ -62,10 +62,11 @@ function Chips({ label, value, options, onChange }: { label: string; value: stri
 }
 
 /** One line of the Filters card: its name on the left (above on a phone), the choices beside it. */
-function FilterRow({ label, lower = false, children }: { label: string; lower?: boolean; children: ReactNode }) {
+function FilterRow({ label, tall = false, children }: { label: string; tall?: boolean; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5 sm:flex-row sm:gap-2">
-      <span aria-hidden className={cn("shrink-0 text-[13px] font-medium text-foreground sm:w-[4.5rem]", lower ? "sm:pt-[2.15rem]" : "sm:pt-1.5")}>
+      {/* `tall`: the row holds the 40px date box, so the name sits level with its middle. */}
+      <span aria-hidden className={cn("shrink-0 text-[13px] font-medium text-foreground sm:w-[4.5rem]", tall ? "sm:pt-2.5" : "sm:pt-1.5")}>
         {label}
       </span>
       <div className="min-w-0 flex-1">{children}</div>
@@ -80,8 +81,8 @@ export interface RegisterUnit {
 }
 
 /**
- * Student attendance for the school (Attendance > Student, 2026-11-06): every class by name; one with sections shows them too
- * (All sections, A, B...). The children of what is picked come with their marks for the days asked (this week, Monday to Saturday, to start
+ * Student attendance for the school (Attendance > Student, 2026-11-06): ONE row of classes (2026-11-17): a class with one section (or none) is
+ * "Class 1"; a class with two or more is one chip a section, "Class 5A", "Class 5B". No Section row, no "All sections". The children of what is picked come with their marks for the days asked (this week, Monday to Saturday, to start
  * with since 2026-11-16): a column for each day up to a month (P, A, L; a day nobody took is empty, a holiday is said), then their counts and
  * percentage; a longer range shows the counts only. A week or less is a register: bigger marks and a Remarks column with the reasons.
  * A day's heading opens that day in two sides, Present and Absent. A child's name opens their days with the reason of each absence.
@@ -101,11 +102,12 @@ export function StudentAttendance({ unit, canMark = false }: { unit?: RegisterUn
   const canTake = canMark && !viewing;
   const start = studentStartRange(today, viewing);
 
-  const klass: { id: string; sections: { id: string; name: string }[] } | undefined = unit ? { id: unit.classId, sections: [] } : (classes.find((c) => c.id === params.get("class")) ?? classes[0]);
-  const section = unit ? undefined : klass?.sections.find((s) => s.id === params.get("section"));
+  // The chips: a class with one section (or none) is one, a class with more is one chip a section (Class 5A, Class 5B).
+  const units = unit ? [] : attendanceUnits(classes);
+  const picked = unit ? undefined : pickedUnit(units, params.get("class"), params.get("section"));
   const range = { from: params.get("from") ?? start.from, to: params.get("to") ?? start.to };
 
-  const schoolRes = useGetStudentsAttendanceQuery({ classId: klass?.id ?? "", sectionId: section?.id ?? "all", ...range }, { skip: !klass || !!unit });
+  const schoolRes = useGetStudentsAttendanceQuery({ classId: picked?.classId ?? "", sectionId: picked?.sectionId ?? "all", ...range }, { skip: !picked || !!unit });
   const classRes = useGetRegisterQuery({ classId: unit?.classId ?? "", sectionId: unit?.sectionId ?? null, ...range }, { skip: !unit });
   const res = unit ? classRes : schoolRes;
   const data = res.data?.data;
@@ -159,7 +161,7 @@ export function StudentAttendance({ unit, canMark = false }: { unit?: RegisterUn
   }
 
   if (structure.isLoading) return <Skeleton className="h-64 rounded-2xl" />;
-  if (!klass) return <Card className="px-5 py-10 text-center text-sm text-foreground-muted">No class yet</Card>;
+  if (!unit && !picked) return <Card className="px-5 py-10 text-center text-sm text-foreground-muted">No class yet</Card>;
 
   const days = data ? dayCount(data.from, data.to) : 0;
   const grid = showsEveryDay(days);
@@ -183,26 +185,23 @@ export function StudentAttendance({ unit, canMark = false }: { unit?: RegisterUn
       {/* The class, the section and the days: one card, with the way to take attendance at the end of the last row. */}
       <section aria-label="Filters" className="space-y-3 rounded-[var(--radius-card)] border border-border bg-surface px-4 py-3.5 shadow-card">
         <h2 className="text-[15px] font-bold text-foreground">Filters</h2>
-        {!unit && (
+        {/* ONE row of choices: a class with one section is "Class 1"; a class with two or more is "Class 5A", "Class 5B". No Section row. */}
+        {picked && (
           <FilterRow label="Class">
-            <Chips label="Class" value={klass.id} options={classes.map((c) => ({ value: c.id, label: c.name }))} onChange={(id) => change({ class: id, section: "" })} />
-          </FilterRow>
-        )}
-        {!unit && klass.sections.length > 0 && (
-          <FilterRow label="Section">
             <Chips
-              label="Section"
-              value={section?.id ?? "all"}
-              options={[{ value: "all", label: "All sections" }, ...klass.sections.map((s) => ({ value: s.id, label: s.name }))]}
-              onChange={(id) => change({ section: id === "all" ? "" : id })}
+              label="Class"
+              value={picked.key}
+              options={units.map((u) => ({ value: u.key, label: u.label }))}
+              onChange={(key) => {
+                const chosen = units.find((u) => u.key === key);
+                if (chosen) change({ class: chosen.classId, section: chosen.sectionId ?? "" });
+              }}
             />
           </FilterRow>
         )}
-        {/* `lower`: the name sits level with the boxes, under the little From / To words. */}
-        <FilterRow label="Date Range" lower>
-          <div className="flex flex-wrap items-end justify-between gap-x-3 gap-y-3 min-[1420px]:-m-1 min-[1420px]:flex-nowrap min-[1420px]:overflow-x-auto min-[1420px]:p-1">
-            <RangeFilter idPrefix="students" range={range} weeks compact onChange={(r) => change({ from: r.from, to: r.to })} />
-          </div>
+        {/* The days: one box with arrows and the window "Select date range" (the whole app's date filter), not two date boxes and a row of buttons. */}
+        <FilterRow label="Date Range" tall>
+          <DateRangeControl range={range} noFuture onChange={(r) => change({ from: r.from, to: r.to })} />
         </FilterRow>
       </section>
 
@@ -312,8 +311,6 @@ export function StudentAttendance({ unit, canMark = false }: { unit?: RegisterUn
                             <button type="button" onClick={() => setOpen(s)} className="max-w-[14rem] truncate text-left font-semibold text-foreground hover:text-primary-deep focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20">
                               {s.name}
                             </button>
-                            {/* The section beside the name only where it tells children apart: a class with two sections or more, read together. */}
-                            {s.section && !section && klass.sections.length > 1 && <span className="ml-2 text-xs font-semibold text-foreground-muted">{s.section}</span>}
                           </td>
                           <td className={cn("whitespace-nowrap px-3 py-1.5 text-foreground", rule)}>{s.admissionNumber}</td>
                           {grid &&

@@ -29,6 +29,17 @@ export interface Unit {
 export const unitLabel = (className: string, sectionName: string | null) => (sectionName ? `${className} - ${sectionName}` : className);
 
 /**
+ * What a class or section is called where children are looked at (2026-11-17): a class with ONE section (or none) is just "Class 5",
+ * the section says nothing; a class with two or more is "Class 5A", "Class 5B". The letter is joined to a class name that ends in a number
+ * ("Class 5" + "A"); any other name keeps the dash ("Nursery - A", "Class 5 - 1"). The frontend has the same rule (`sectionedName`
+ * in utils/academics.ts).
+ */
+export function sectionedName(className: string, sectionName: string | null, sectionCount: number): string {
+  if (!sectionName || sectionCount <= 1) return className;
+  return /\d$/.test(className) && /^[A-Za-z]{1,2}$/.test(sectionName) ? `${className}${sectionName}` : `${className} - ${sectionName}`;
+}
+
+/**
  * The unit a request is about, checked against the school: the class exists; the section (if any) is the class's and belongs to the
  * running year or the next one that waits (a year that is over is history, not edited); a class without a section must really have none.
  */

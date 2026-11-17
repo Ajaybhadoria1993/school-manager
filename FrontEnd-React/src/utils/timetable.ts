@@ -366,7 +366,7 @@ export function teacherChoices(model: GridModel, subjectId: string, day: number,
       return {
         value: t.id,
         label: t.name,
-        note: trouble ?? (t.id === mother ? "Mother teacher" : null),
+        note: trouble ?? (t.id === mother ? "Class teacher" : null),
         bad: !!trouble,
         disabled: !!trouble && t.id !== current,
         selected: t.id === current,

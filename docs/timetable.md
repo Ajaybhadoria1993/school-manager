@@ -250,6 +250,51 @@ the days, never puts a teacher in two places or on a day off, and says what it c
 one wins, so a filled day has no free period before its last lesson and the grid's *Class ends* is the end of that day (test: *packs each day from the
 first period*, every seed). A teacher who is busy then can still leave a gap: it is only a preference.
 
+**One teacher, two places: every door, audited (2026-11-18).** "Nobody is in two places at the same moment" is held by the CLOCK (`TEACHER_BUSY`, 409, naming the
+other class and subject), not by the period number, and a period that only touches another (one ends as the next starts) is fine. It is checked at every
+door that can put a teacher in a period: *Save the timetable* (a lesson that names the teacher, or the teacher of the class's subject list), *Assign class*
+(`teacher-periods`), *Fill the empty periods* (never given a busy teacher), *Copy to other sections* (the clashing lessons are left out and said), *Replace a
+teacher* and a new teacher for a subject (checked before they take the lessons). Three holes were found and closed:
+1. **Two saves at the same moment.** The checks read the database a moment BEFORE the write and there are no transactions, so two classes saved together
+   with the same teacher were both kept (3 classes, one teacher, one period: all three saved). `GridService.save` and *Copy* now check once more AFTER
+   writing (`settleRace`): a timetable that meets a clash against what is stored now is put back as it was and refused. Both may be refused when they land at the
+   same instant (never both kept): the person saves again.
+2. **A timing change.** Hours are a separate thing from lessons: a class starting earlier, or the usual day starting later, could put two lessons on top of each other
+   with no word. Every timing save (create, change, delete, school week, a class's own days, a department's) now asks `assertNoNewClashes`
+   (`services/timingClashes.ts`): every timetable of the open years is checked under the timings as they would be, and the change is refused (`TIMETABLE_CLASHES`)
+   for the first TEACHER or ROOM clash it brings that was not there before. An old clash is not blamed on a change; the winter shift (everything together) keeps every gap.
+3. **Two mediums.** A teacher of English and Hindi medium is one person (one login, a record on each side) and each side only read its own timetables.
+   `World.outsideBusy` (`world.ts`) now adds the other sides' lessons of the people this side shares with them (same login; the other side's year with the same name) to
+   `busyFrom`, so a lesson on one side takes the teacher's time on the other (the message says "Class 1 - A, English Medium"). Not narrowed for a teacher's own published view.
+Also known and kept: a day off given to a teacher who has lessons that day is accepted; the timetable then shows `TEACHER_OFF` (an error) and cannot be published.
+Tests: `timetable/__tests__/teacherClash.scenarios.test.ts` (19) and `teacherClash.mediums.test.ts`.
+
+**The class teacher takes the first period (2026-11-17).** *Fill the empty periods* (`autofill.ts`, `classTeacherId`, set by `ToolsService.autofill` from the unit's
+`ClassTeacher`) gives the first period of every day to a subject the class teacher teaches in this class, alone and in single periods (not a double
+period, not a choice): shared between their subjects as their periods are, one a day. A day whose first period is already taken (lessons already there
+are never moved), or on which they are busy in another class or do not come, goes on as before; a class with no class teacher, or one who teaches
+nothing in it, is filled as it always was. It is a default of the fill only: any period can be changed by hand after. The class timetable's toolbar
+(2026-11-17): Fill, Periods & time, **Class teacher** (the same button as the class page: *Add class teacher*, or *Class teacher: Name*, a click lists the
+teachers and a change asks first), then Copy to other sections / Save the timetable at the right. Print, Add a teacher and Take back to a draft were
+taken off the toolbar (the server routes `grid/unpublish` etc. stay), and so was the **Mother teacher** box of a Pre-Primary class: its class teacher IS the
+mother teacher (the Class teacher button is the one; the teacher list of a period tags them "Class teacher"), and still takes the periods that have no
+teacher. **No class teacher** is at the foot of the Class teacher button's list (class page and timetable, 2026-11-17): it asks first, naming them,
+then sends the class with no teacher (`PUT /staff/class-teachers { teacherId: null }`); in a Pre-Primary class the periods that had them have no teacher until Save.
+
+**Winter shift (2026-11-17).** The school changes its timing by hand (no dated "winter timing"): in the *School timings* page, moving *School starts*
+moves the usual day's lunch and short break and every "Different" day of the week by the same minutes, and the one save
+(`PUT /timetable/school-day { days, shiftOthers }`, minutes, whole school only, at most 12 hours either way) moves every other timing too: each class's
+own, each department's own and any made for some classes. Everything is checked first (none may go before 00:00 or past 23:59, else
+`VALIDATION_ERROR` naming the timing) and written after; the periods stay the same, so no lesson loses its period.
+
+**The past keeps its timing (2026-11-17).** A timing has no dates, so every save of the timings (`create`, `update`, `remove`, `replaceSchoolDay`,
+`replaceClassDay`, `removeDepartmentDay`) first REMEMBERS what it replaces (`timetable/models/BellScheduleVersion.ts`, `services/scheduleHistory.ts`):
+once for each day of change (`until` = that day in India; a second save the same day keeps the first copy), only when the school already had a timing. A
+day is read with the oldest remembered version whose `until` is after it, else with the timings as they are now (`attendance/services/schoolDays.ts`:
+teachers' attendance, the classes still to take attendance today, the school's day on the dashboard). So a Saturday taken off later is still a school
+day, and a teacher's absence, before the change, and an old day says the hours it had. A teacher's mark (present, late by N minutes) is stored when it
+is made and never recomputed. Not covered: a class's timetable grid and week view show the timing as it is now (they are about the future of the timetable).
+
 ## Real cases covered
 
 Lunch and breaks that are the same for the school; a half-day Saturday; different timings for the little ones or a shift; periods of different

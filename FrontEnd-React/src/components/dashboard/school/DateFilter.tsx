@@ -1,11 +1,8 @@
 import { useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
-import { Button } from "@heroui/react";
-import { comparisonLabel, rangeLabel, stepDays, todayLabel, type Days, type RangeTab } from "../../../utils/dashboardRange";
+import { comparisonLabel, dashboardPresets, rangeLabel, stepDays, todayLabel, type Days, type RangeTab } from "../../../utils/dashboardRange";
 import { cn } from "../../../utils/helpers";
-import { DateBox } from "../../ui/DateBox";
-import { Field } from "../../ui/Field";
-import { AppModal } from "../../ui/AppModal";
+import { DateRangeModal } from "../../ui/DateRangeModal";
 
 export { comparisonLabel };
 
@@ -21,7 +18,8 @@ const arrow =
 /**
  * The days the home page looks at, in the look of Infinity Medisetu's date tabs (2026-11-10): Today (with arrows to step a day), This Week,
  * This Month and Custom (any days). The tab that is on is filled blue; Today says its date ("Today, 10 Nov", "Yesterday, 9 Nov") and Custom
- * says its days once they are chosen. Custom opens a small window with From and To; nothing changes until Apply, and Cancel leaves it as it was.
+ * says its days once they are chosen. Custom opens the window "Select date range" (2026-11-17: ready-made ranges and a calendar, not two date
+ * boxes); nothing changes until Apply, and Cancel leaves it as it was.
  */
 export function DateFilter({
   tab,
@@ -39,9 +37,6 @@ export function DateFilter({
   onDays: (days: Days, tab: RangeTab) => void;
 }) {
   const [choosing, setChoosing] = useState(false);
-  const [from, setFrom] = useState(days.from);
-  const [to, setTo] = useState(days.to);
-  const ready = !!from && !!to && from <= to;
   const step = (dir: -1 | 1) => onDays(stepDays(days, dir), "today");
 
   const pill = (on: boolean) =>
@@ -74,53 +69,24 @@ export function DateFilter({
             </div>
           );
         })}
-        <button
-          type="button"
-          aria-pressed={tab === "custom"}
-          onClick={() => {
-            setFrom(days.from);
-            setTo(days.to);
-            setChoosing(true);
-          }}
-          className={pill(tab === "custom")}
-        >
+        <button type="button" aria-pressed={tab === "custom"} onClick={() => setChoosing(true)} className={pill(tab === "custom")}>
           {tab === "custom" ? rangeLabel(days) : "Custom"}
           <CalendarDays className="hidden size-4 shrink-0 md:block" aria-hidden />
         </button>
       </div>
 
+      {/* Custom opens the window "Select date range" (the whole app's date filter): ready-made ranges and a calendar of two months. */}
       {choosing && (
-        <AppModal
-          title="Choose the days"
-          icon={CalendarDays}
+        <DateRangeModal
+          range={days}
+          today={today}
+          presets={dashboardPresets(today)}
           onClose={() => setChoosing(false)}
-          footer={
-            <>
-              <Button variant="secondary" onPress={() => setChoosing(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                isDisabled={!ready}
-                onPress={() => {
-                  onDays({ from, to }, "custom");
-                  setChoosing(false);
-                }}
-              >
-                Apply
-              </Button>
-            </>
-          }
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field id="dash-from" label="From" quiet>
-              <DateBox id="dash-from" label="From" value={from} onChange={setFrom} />
-            </Field>
-            <Field id="dash-to" label="To" quiet>
-              <DateBox id="dash-to" label="To" value={to} onChange={setTo} />
-            </Field>
-          </div>
-        </AppModal>
+          onApply={(range) => {
+            onDays(range, "custom");
+            setChoosing(false);
+          }}
+        />
       )}
     </>
   );

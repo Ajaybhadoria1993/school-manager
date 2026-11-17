@@ -423,11 +423,15 @@ describe("School timings: a class can have its own timing", () => {
     expect(periodsOf(classDays(calls)[0].days[0].slots)).toBe(5);
   });
 
-  it("Use the school's timing sends no days of its own, and the class leaves the list", async () => {
+  it("Use the school's timing, in the class window, is a button that asks first: the window closes, Are you sure? opens, and Yes sends no days of its own", async () => {
     const { calls, user } = openPage([SIX, CLASS_OWN]);
     await user.click(await screen.findByRole("button", { name: "Edit Class 1 timing" }));
     const dialog = await dialogOf("Class 1 timing");
     await user.click(within(dialog).getByRole("button", { name: "Use the school's timing" }));
+    const sure = await screen.findByRole("dialog", { name: "Are you sure?" });
+    expect(screen.queryByRole("dialog", { name: "Class 1 timing" })).not.toBeInTheDocument();
+    expect(classDays(calls)).toHaveLength(0);
+    await user.click(within(sure).getByRole("button", { name: "Yes, use the school's timing" }));
     await waitFor(() => expect(classDays(calls)).toHaveLength(1));
     expect(classDays(calls)[0]).toMatchObject({ classId: "c2", days: [], removeLessons: false });
     expect(await screen.findByText("No class has its own timing")).toBeInTheDocument();
@@ -466,6 +470,194 @@ describe("School timings: a class can have its own timing", () => {
     expect(within(dialog).getByRole("alert")).toHaveTextContent("Add at least one period");
     expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
     expect(classDays(calls)).toHaveLength(0);
+  });
+});
+
+describe("School timings: back to the school's timing asks first (2026-11-17)", () => {
+  const item = async () => within(await screen.findByRole("list", { name: "Classes with their own timing" })).getByRole("listitem");
+  const back = (row: HTMLElement) => within(row).getByRole("button", { name: "Use the school's timing for Class 1" });
+
+  it("a second icon stands beside the pencil in the row of a class with its own timing", async () => {
+    openPage([SIX, CLASS_OWN]);
+    const row = await item();
+    expect(within(row).getByRole("button", { name: "Edit Class 1 timing" })).toBeInTheDocument();
+    expect(back(row)).toBeInTheDocument();
+    expect(back(row)).toHaveAttribute("title", "Use the school's timing");
+  });
+
+  it("the icon opens Are you sure? and sends nothing at the first click; Cancel leaves the class as it was", async () => {
+    const { calls, user } = openPage([SIX, CLASS_OWN]);
+    await user.click(back(await item()));
+    const sure = await screen.findByRole("dialog", { name: "Are you sure?" });
+    expect(sure).toHaveTextContent("Class 1 will follow the school's timing again.");
+    expect(classDays(calls)).toHaveLength(0);
+    await user.click(within(sure).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Are you sure?" })).not.toBeInTheDocument());
+    expect(classDays(calls)).toHaveLength(0);
+    expect(within(await item()).getByText(/4 periods/)).toBeInTheDocument();
+  });
+
+  it("Yes takes the class's own timing away: no days of its own are sent, and the class leaves the list", async () => {
+    const { calls, user } = openPage([SIX, CLASS_OWN]);
+    await user.click(back(await item()));
+    await user.click(within(await screen.findByRole("dialog", { name: "Are you sure?" })).getByRole("button", { name: "Yes, use the school's timing" }));
+    await waitFor(() => expect(classDays(calls)).toHaveLength(1));
+    expect(classDays(calls)[0]).toMatchObject({ classId: "c2", days: [], removeLessons: false });
+    expect(await screen.findByText("No class has its own timing")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Are you sure?" })).not.toBeInTheDocument());
+  });
+
+  it("a class with lessons in periods the school's day does not have is asked a second time, and lessons go only when told to", async () => {
+    const message = "Class 1 has lessons in periods 5 to 8. They would have to be taken out.";
+    let first = true;
+    const { calls, user } = openPage([SIX, CLASS_OWN], {
+      "PUT /timetable/class-day": () => {
+        if (first) {
+          first = false;
+          return refused(409, message, "LESSONS_IN_REMOVED_PERIODS")();
+        }
+        return { items: [SIX] };
+      },
+    });
+    await user.click(back(await item()));
+    const sure = await screen.findByRole("dialog", { name: "Are you sure?" });
+    await user.click(within(sure).getByRole("button", { name: "Yes, use the school's timing" }));
+    const again = await screen.findByRole("dialog", { name: "Take those lessons out?" });
+    expect(again).toHaveTextContent(message);
+    expect(classDays(calls)[0].removeLessons).toBe(false);
+    await user.click(within(again).getByRole("button", { name: "Take those lessons out and use the school's timing" }));
+    await waitFor(() => expect(classDays(calls)).toHaveLength(2));
+    expect(classDays(calls)[1]).toMatchObject({ days: [], removeLessons: true });
+  });
+
+  it("Go back, on the second question, returns to the first and sends nothing more", async () => {
+    const { calls, user } = openPage([SIX, CLASS_OWN], { "PUT /timetable/class-day": refused(409, "Class 1 has lessons in periods 5 to 8.", "LESSONS_IN_REMOVED_PERIODS") });
+    await user.click(back(await item()));
+    await user.click(within(await screen.findByRole("dialog", { name: "Are you sure?" })).getByRole("button", { name: "Yes, use the school's timing" }));
+    await user.click(within(await screen.findByRole("dialog", { name: "Take those lessons out?" })).getByRole("button", { name: "Go back" }));
+    expect(await screen.findByRole("dialog", { name: "Are you sure?" })).toBeInTheDocument();
+    expect(classDays(calls)).toHaveLength(1);
+  });
+});
+
+describe("School timings: the winter shift (2026-11-17)", () => {
+  const startBox = () => screen.findByLabelText("Usual day: school starts");
+  const box = (name: string) => screen.getByLabelText(`Usual day: ${name}`);
+
+  it("moving the school's start moves the lunch with it, so no period is cut", async () => {
+    openPage();
+    fireEvent.change(await startBox(), { target: { value: "09:30" } });
+    expect(box("lunch from")).toHaveValue("11:30");
+    expect(box("lunch to")).toHaveValue("12:00");
+    // The card's own line says the whole day (the days of the week say it too).
+    expect(screen.getAllByText("09:30 to 15:20 · 8 periods · lunch 11:30 to 12:00").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/is cut to/)).not.toBeInTheDocument();
+  });
+
+  it("a start box that is cleared and typed again moves the lunch by what the start was before", async () => {
+    openPage();
+    const start = await startBox();
+    fireEvent.change(start, { target: { value: "" } });
+    expect(box("lunch from")).toHaveValue("10:30");
+    fireEvent.change(start, { target: { value: "09:30" } });
+    expect(box("lunch from")).toHaveValue("11:30");
+  });
+
+  it("changing the length of a period moves nothing else", async () => {
+    openPage();
+    await startBox();
+    fireEvent.change(box("minutes in a period"), { target: { value: "45" } });
+    expect(box("school starts")).toHaveValue("08:30");
+    expect(box("lunch from")).toHaveValue("10:30");
+  });
+
+  it("a day of the week that has hours of its own moves too", async () => {
+    // Saturday is a short day of its own, starting at 08:30 like the usual day.
+    const SATURDAY: Schedule = { ...SIX, id: "sat", name: "Saturday", days: [6], slots: FOUR_ROWS, periods: 4 };
+    const { calls, user } = openPage([{ ...SIX, days: [1, 2, 3, 4, 5] }, SATURDAY]);
+    fireEvent.change(await startBox(), { target: { value: "09:30" } });
+    expect(screen.getByLabelText("Saturday: school starts")).toHaveValue("09:30");
+    await user.click(saveButton());
+    await waitFor(() => expect(weeks(calls)).toHaveLength(1));
+    expect(weeks(calls)[0].days.find((d) => d.day === 6)?.slots[0].start).toBe("09:30");
+  });
+
+  it("with no class or department keeping hours of its own there is nothing else to say, and Save sends the school's week alone", async () => {
+    const { calls, user } = openPage();
+    fireEvent.change(await startBox(), { target: { value: "09:30" } });
+    expect(screen.queryByText(/too when you save/)).not.toBeInTheDocument();
+    await user.click(saveButton());
+    await waitFor(() => expect(weeks(calls)).toHaveLength(1));
+    expect(weeks(calls)[0].shiftOthers).toBeUndefined();
+    expect(weeks(calls)[0].days[0].slots[0].start).toBe("09:30");
+  });
+
+  it("says which classes and departments start later too, and Save sends the shift with the school's week, in the same save", async () => {
+    const { calls, user } = openPage([SIX, PRIMARY_OWN, CLASS_OWN]);
+    fireEvent.change(await startBox(), { target: { value: "09:30" } });
+    expect(await screen.findByText("Primary, Class 1 will start 1 hr later too when you save.")).toBeInTheDocument();
+    // Nothing of theirs is sent before Save.
+    expect(weeks(calls)).toHaveLength(0);
+    expect(classDays(calls)).toHaveLength(0);
+    await user.click(saveButton());
+    await waitFor(() => expect(weeks(calls)).toHaveLength(1));
+    expect(weeks(calls)[0]).toMatchObject({ shiftOthers: 60 });
+    expect(weeks(calls)[0].departmentId).toBeUndefined();
+    // The shift is the server's: no extra request for each class or department.
+    expect(classDays(calls)).toHaveLength(0);
+  });
+
+  it("earlier is said as earlier, and goes as a negative number of minutes", async () => {
+    const { calls, user } = openPage([SIX, CLASS_OWN]);
+    fireEvent.change(await startBox(), { target: { value: "08:00" } });
+    expect(await screen.findByText("Class 1 will start 30 min earlier too when you save.")).toBeInTheDocument();
+    await user.click(saveButton());
+    await waitFor(() => expect(weeks(calls)).toHaveLength(1));
+    expect(weeks(calls)[0].shiftOthers).toBe(-30);
+  });
+
+  it("putting the start back where it was says nothing and sends no shift", async () => {
+    const { calls } = openPage([SIX, CLASS_OWN]);
+    const start = await startBox();
+    fireEvent.change(start, { target: { value: "09:30" } });
+    expect(await screen.findByText(/will start 1 hr later too/)).toBeInTheDocument();
+    fireEvent.change(start, { target: { value: "08:30" } });
+    await waitFor(() => expect(screen.queryByText(/too when you save/)).not.toBeInTheDocument());
+    expect(box("lunch from")).toHaveValue("10:30");
+    expect(weeks(calls)).toHaveLength(0);
+  });
+
+  it("a department sent again with the school's week goes with the same shift", async () => {
+    const { calls, user } = openPage([SIX, PRIMARY_OWN]);
+    await screen.findByLabelText("Usual day: school starts");
+    await user.click(within(screen.getByRole("radiogroup", { name: "Saturday" })).getByRole("radio", { name: "Holiday" }));
+    fireEvent.change(box("school starts"), { target: { value: "09:30" } });
+    await user.click(saveButton());
+    await waitFor(() => expect(weeks(calls)).toHaveLength(2));
+    expect(weeks(calls)[0]).toMatchObject({ shiftOthers: 60 });
+    expect(weeks(calls)[1]).toMatchObject({ departmentId: "d2" });
+    // The rows it had (08:30) an hour later, not the old ones.
+    expect(weeks(calls)[1].days[0].slots[0].start).toBe("09:30");
+    expect(weeks(calls)[1].days[0].slots.at(-1)?.end).toBe("12:10");
+  });
+
+  it("will not save when a class's timing would go past midnight: it says which, and Save waits", async () => {
+    const LATE: Schedule = { ...CLASS_OWN, slots: [{ kind: "period", label: "", start: "22:00", end: "22:40" }, { kind: "period", label: "", start: "22:40", end: "23:20" }], periods: 2 };
+    const { calls, user } = openPage([SIX, LATE]);
+    fireEvent.change(await startBox(), { target: { value: "10:30" } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Class 1 would go past midnight if everything starts 2 hr later");
+    expect(saveButton()).toBeDisabled();
+    await user.click(saveButton());
+    expect(weeks(calls)).toHaveLength(0);
+  });
+
+  it("Throw away changes puts the start and the lunch back", async () => {
+    const { user } = openPage([SIX, CLASS_OWN]);
+    fireEvent.change(await startBox(), { target: { value: "09:30" } });
+    await user.click(await screen.findByRole("button", { name: "Throw away changes" }));
+    expect(box("school starts")).toHaveValue("08:30");
+    expect(box("lunch from")).toHaveValue("10:30");
+    expect(screen.queryByText(/too when you save/)).not.toBeInTheDocument();
   });
 });
 

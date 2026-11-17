@@ -36,6 +36,7 @@ const YEAR_FREE_MODELS: Record<string, string> = {
   StudentStatusLog: "a lasting record of who made a student inactive or active again, when and why; it must outlive every year",
   StudentSettings: "how a school keeps its students' records (which details it needs, its export's columns) does not change with the session",
   BellSchedule: "the school's bell (periods, lunch, breaks) is the same every session; a class's timetable of a year points to it",
+  BellScheduleVersion: "the school's bell as it was before a change, kept with the day of the change so the days before it read the timing they had; like the bell itself it does not belong to one session",
   TeacherSettings: "the school's own fields for its teachers (a PAN number, a blood group...) are its way of keeping people's records: they do not change with the session",
   Teacher: "the same person every year; what they teach in a year is an Allotment and the periods they take are in that year's timetable",
   StaffMember: "a person who works for the school without teaching (receptionist, management...) is the same person every year; their login and role last across sessions",

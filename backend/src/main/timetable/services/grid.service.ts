@@ -224,8 +224,35 @@ export class GridService {
       period: c.period,
       lessons: c.lessons.map((l) => ({ subjectId: new Types.ObjectId(l.subjectId), teacherId: l.teacherId ? new Types.ObjectId(l.teacherId) : null, room: l.room })),
     }));
+    const previous = world.timetables.get(key)?.cells ?? null;
     await GridService.upsert(filter, { $set: { cells: document, updatedBy: new Types.ObjectId(userId) } });
+    // Another class saved at the same moment may have taken the same teacher: checked once more against what is stored now (see `settleRace`).
+    const raced = await GridService.settleRace(tenantId, unit, key, cells, allotments);
+    if (raced.length > 0) {
+      await Timetable.updateOne(filter, { $set: { cells: previous ? GridService.toDocument(previous) : [] } });
+      throw clashError(raced);
+    }
     return GridService.reload(tenantId, unit);
+  }
+
+  /**
+   * The checks of a save are made on what the database held a moment BEFORE the write, and there are no transactions: two classes saved at
+   * the same moment with the same teacher could each pass them and both be kept (a teacher in two places, 2026-11-18). So a timetable that was
+   * just written is checked once more against what is stored NOW; if the other class got there first (or at the same time), the one just written
+   * is put back as it was and refused. When both land at once both may be refused: nobody is ever left in two places, and the person saves again.
+   */
+  static async settleRace(tenantId: string, unit: Unit, key: string, cells: CellIn[], allotments: Map<string, AllotmentInfo>): Promise<Issue[]> {
+    const fresh = await loadWorld(tenantId, unit.yearId);
+    return analyse({ days: unitDays(fresh, unit.classId), cells, allotments, teachers: fresh.teachers, busy: busyFrom(fresh, key) }).issues.filter((i) => i.level === "error");
+  }
+
+  /** Stored cells as the document keeps them (ids as ObjectIds). */
+  static toDocument(cells: CellIn[]) {
+    return cells.map((c) => ({
+      day: c.day,
+      period: c.period,
+      lessons: c.lessons.map((l) => ({ subjectId: new Types.ObjectId(l.subjectId), teacherId: l.teacherId ? new Types.ObjectId(l.teacherId) : null, room: l.room })),
+    }));
   }
 
   /**

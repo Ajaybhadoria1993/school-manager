@@ -181,3 +181,56 @@ describe("Add class teacher on a class's page", () => {
     expect(screen.queryByRole("button", { name: "Add class teacher" })).not.toBeInTheDocument();
   });
 });
+
+describe("No class teacher: taking the class teacher away (2026-11-17, user: \"hatane ka bhi rakh do, kabhi no class teacher karna ho\")", () => {
+  const taken = { "PUT /staff/class-teachers": (body: unknown) => ({ ...(body as object), label: "Class 5 - A", teacher: null }) };
+  const noClassTeacher = () => screen.findByRole("button", { name: "No class teacher" });
+
+  it("a class with a class teacher ends its list with No class teacher; a class with none does not offer it", async () => {
+    const { user } = openPage("/school-class/c5?section=c5-A", taken);
+    await user.click(await screen.findByRole("button", { name: "Class teacher: Meena Singh" }));
+    await menu();
+    expect(await noClassTeacher()).toBeInTheDocument();
+    // It is a button of its own, not one of the teachers of the list.
+    expect(within(screen.getByRole("listbox", { name: "Teachers to choose from" })).queryByText("No class teacher")).not.toBeInTheDocument();
+  });
+
+  it("a class with none yet has no such choice (there is nobody to take away)", async () => {
+    const { user } = openPage("/school-class/c5?section=c5-B");
+    await user.click(await addButton());
+    await menu();
+    expect(screen.queryByRole("button", { name: "No class teacher" })).not.toBeInTheDocument();
+  });
+
+  it("asks first and names them; Cancel sends nothing; Take off sends no teacher for the class", async () => {
+    const { calls, user } = openPage("/school-class/c5?section=c5-A", taken);
+    await user.click(await screen.findByRole("button", { name: "Class teacher: Meena Singh" }));
+    await menu();
+    await user.click(await noClassTeacher());
+    const ask = await screen.findByRole("dialog", { name: "Take Meena Singh off as the class teacher of Class 5 - A?" });
+    expect(ask).toHaveTextContent("Class 5 - A will have no class teacher until you choose one.");
+    expect(writes(calls)).toHaveLength(0);
+    await user.click(within(ask).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Take Meena Singh off as the class teacher of Class 5 - A?" })).not.toBeInTheDocument());
+    expect(writes(calls)).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "Class teacher: Meena Singh" }));
+    await menu();
+    await user.click(await noClassTeacher());
+    await user.click(within(await screen.findByRole("dialog", { name: "Take Meena Singh off as the class teacher of Class 5 - A?" })).getByRole("button", { name: "Take off" }));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0].body).toEqual({ classId: "c5", sectionId: "c5-A", teacherId: null });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Take Meena Singh off as the class teacher of Class 5 - A?" })).not.toBeInTheDocument());
+  });
+
+  it("a refusal is said in the window, which stays open", async () => {
+    const refused = () => new Response(JSON.stringify({ success: false, message: "Could not change the class teacher" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    const { user } = openPage("/school-class/c5?section=c5-A", { "PUT /staff/class-teachers": refused });
+    await user.click(await screen.findByRole("button", { name: "Class teacher: Meena Singh" }));
+    await menu();
+    await user.click(await noClassTeacher());
+    const ask = await screen.findByRole("dialog", { name: "Take Meena Singh off as the class teacher of Class 5 - A?" });
+    await user.click(within(ask).getByRole("button", { name: "Take off" }));
+    expect(await within(ask).findByText("Could not change the class teacher")).toBeInTheDocument();
+  });
+});

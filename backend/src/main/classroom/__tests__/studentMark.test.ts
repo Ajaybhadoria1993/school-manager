@@ -113,11 +113,11 @@ describe("a day that is only partly marked is not a day that was taken", () => {
     await addTiming(s.token);
     at(THU, "09:00");
     const pending = async () => ((await request(app).get("/api/v1/attendance/students/today").set(auth(s.token))).body.data.pending as { label: string }[]).map((p) => p.label);
-    expect(await pending()).toContain("Class 5 - A");
+    expect(await pending()).toContain("Class 5");
     await mark(s.tokens.meena, THU, s.kabir.id, "absent");
-    expect(await pending()).toContain("Class 5 - A");
+    expect(await pending()).toContain("Class 5");
     await mark(s.tokens.meena, THU, s.asha.id, "present");
-    expect(await pending()).not.toContain("Class 5 - A");
+    expect(await pending()).not.toContain("Class 5");
   });
 
   it("a day the class teacher saved in full stays taken when the school changes one mark", async () => {
@@ -127,7 +127,7 @@ describe("a day that is only partly marked is not a day that was taken", () => {
     await save(s.tokens.meena, s.a, THU, [{ studentId: s.asha.id, status: "present" }, { studentId: s.kabir.id, status: "present" }]);
     await mark(s.tokens.meena, THU, s.kabir.id, "absent");
     const pending = ((await request(app).get("/api/v1/attendance/students/today").set(auth(s.token))).body.data.pending as { label: string }[]).map((p) => p.label);
-    expect(pending).not.toContain("Class 5 - A");
+    expect(pending).not.toContain("Class 5");
     expect((await sheet(s.token, s.a, THU)).body.data.saved).toBe(true);
   });
 });
@@ -213,7 +213,7 @@ describe("the class teacher reads the register of their own class (2026-11-17)",
     await mark(s.tokens.meena, yesterday, s.kabir.id, "absent");
     const res = await register(s.tokens.meena, s.a, yesterday, yesterday);
     expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(res.body.data).toMatchObject({ label: "Class 5 - A", from: yesterday, to: yesterday });
+    expect(res.body.data).toMatchObject({ label: "Class 5", from: yesterday, to: yesterday });
     expect(res.body.data.days).toEqual([{ date: yesterday, weekday: expect.any(Number), holiday: null, taken: true }]);
     expect(recordsOf(res)["Kabir Rao"]).toEqual([{ date: yesterday, status: "absent", reason: null }]);
     expect(recordsOf(res)["Asha Verma"]).toEqual([]);

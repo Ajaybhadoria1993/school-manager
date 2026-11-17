@@ -8,7 +8,7 @@ import { AttendanceDay, type AttendanceStatus } from "../../classroom/models/Att
 import { CalendarService } from "../../classroom/services/calendar.service";
 import { childrenOf } from "../../classroom/services/children";
 import { Enrolment } from "../../students/models/Enrolment";
-import { activeUnits, resolveUnit } from "../../timetable/services/unit";
+import { activeUnits, resolveUnit, sectionedName } from "../../timetable/services/unit";
 import type { StudentsQuery } from "../schemas/attendance.schemas";
 import { eachDay, schoolDays, weekdayOf } from "./schoolDays";
 
@@ -47,7 +47,9 @@ export class StudentAttendanceService {
   private static async places(tenantId: string, query: StudentsQuery): Promise<{ label: string; places: Place[] }> {
     if (query.sectionId !== "all") {
       const unit = await resolveUnit(tenantId, query.classId, query.sectionId === "none" ? null : query.sectionId);
-      return { label: unit.label, places: [{ classId: unit.classId, sectionId: unit.sectionId, yearId: unit.yearId, section: unit.sectionName }] };
+      // A section says its name only when the class has more than one (Class 5A), else it is just the class (Class 5).
+      const sections = unit.sectionId ? await Section.countDocuments({ tenantId: asId(tenantId), classId: asId(unit.classId), academicYearId: unit.yearId }) : 0;
+      return { label: sectionedName(unit.className, unit.sectionName, sections), places: [{ classId: unit.classId, sectionId: unit.sectionId, yearId: unit.yearId, section: unit.sectionName }] };
     }
     const school = asId(tenantId);
     const klass = await SchoolClass.findOne({ _id: query.classId, tenantId: school }).select("name").lean();
@@ -144,13 +146,16 @@ export class StudentAttendanceService {
     ]);
     const key = (classId: Types.ObjectId | string, sectionId: Types.ObjectId | string | null) => `${classId.toString()}:${sectionId ? sectionId.toString() : "-"}`;
     const hasChildren = new Set(counts.map((c) => key(c._id.classId, c._id.sectionId)));
+    // How many sections each class has: a class with one is named as the class alone.
+    const sectionsOf = new Map<string, number>();
+    for (const u of units) if (u.sectionId) sectionsOf.set(u.classId, (sectionsOf.get(u.classId) ?? 0) + 1);
     // A day the school only partly marked (one child at a time) is not a day that was taken.
     const done = new Set(taken.filter((d) => !d.partial).map((d) => key(d.classId, d.sectionId)));
     return {
       date: now.date,
       working: true,
       holiday: null,
-      pending: units.filter((u) => hasChildren.has(key(u.classId, u.sectionId)) && !done.has(key(u.classId, u.sectionId))).map((u) => ({ classId: u.classId, sectionId: u.sectionId, label: u.label })),
+      pending: units.filter((u) => hasChildren.has(key(u.classId, u.sectionId)) && !done.has(key(u.classId, u.sectionId))).map((u) => ({ classId: u.classId, sectionId: u.sectionId, label: sectionedName(u.className, u.sectionName, sectionsOf.get(u.classId) ?? 0) })),
     };
   }
 }

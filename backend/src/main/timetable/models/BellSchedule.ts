@@ -37,7 +37,7 @@ export interface IBellSchedule {
   updatedAt: Date;
 }
 
-const slotSchema = new Schema<IScheduleSlot>(
+export const slotSchema = new Schema<IScheduleSlot>(
   {
     kind: { type: String, enum: SLOT_KINDS, required: true },
     label: { type: String, default: "", trim: true, maxlength: MAX_LABEL },

@@ -79,20 +79,33 @@ export type UpdateScheduleInput = z.infer<typeof updateScheduleSchema>;
  * a holiday. The server makes one timing of the days whose rows are the same.
  */
 const DAY_MESSAGE = "Choose a day from Monday to Sunday";
-export const schoolDaySchema = z.object({
-  /** A department's own week; left out (or null) for the whole school. */
-  departmentId: objectId.nullable().optional(),
-  days: z
-    .array(
-      z.object({
-        day: z.number({ required_error: DAY_MESSAGE, invalid_type_error: DAY_MESSAGE }).int(DAY_MESSAGE).min(1, DAY_MESSAGE).max(7, DAY_MESSAGE),
-        slots: fields.slots,
-      })
-    )
-    .min(1, "Keep at least one day with school")
-    .max(7, "A week has seven days")
-    .refine((value) => new Set(value.map((d) => d.day)).size === value.length, "Choose each day once"),
-});
+export const MAX_SHIFT_MINUTES = 720;
+export const schoolDaySchema = z
+  .object({
+    /** A department's own week; left out (or null) for the whole school. */
+    departmentId: objectId.nullable().optional(),
+    days: z
+      .array(
+        z.object({
+          day: z.number({ required_error: DAY_MESSAGE, invalid_type_error: DAY_MESSAGE }).int(DAY_MESSAGE).min(1, DAY_MESSAGE).max(7, DAY_MESSAGE),
+          slots: fields.slots,
+        })
+      )
+      .min(1, "Keep at least one day with school")
+      .max(7, "A week has seven days")
+      .refine((value) => new Set(value.map((d) => d.day)).size === value.length, "Choose each day once"),
+    /**
+     * The winter shift (2026-11-17), whole school only: move every other timing of the school (each class's and department's own, and any made
+     * for some classes) by this many minutes in the same save, so that when school starts later they start later too. Whole minutes, up to twelve hours either way.
+     */
+    shiftOthers: z
+      .number({ invalid_type_error: "Enter the minutes to move the timings by" })
+      .int("Enter whole minutes")
+      .min(-MAX_SHIFT_MINUTES, "Move the timings by twelve hours at most")
+      .max(MAX_SHIFT_MINUTES, "Move the timings by twelve hours at most")
+      .optional(),
+  })
+  .refine((value) => !value.shiftOthers || !value.departmentId, { message: "Only the whole school's save can move the other timings", path: ["shiftOthers"] });
 export type SchoolDayInput = z.infer<typeof schoolDaySchema>;
 
 /**

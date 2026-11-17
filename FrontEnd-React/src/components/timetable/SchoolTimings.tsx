@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker } from "react-router";
-import { ArrowRight, CalendarDays, Clock3, Save, TriangleAlert } from "lucide-react";
+import { ArrowRight, CalendarDays, Clock3, Info, Save, TriangleAlert } from "lucide-react";
 import { Button as HeroButton } from "@heroui/react";
 import { DAY_NAMES } from "../../constants/timetable";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
@@ -9,7 +9,8 @@ import { getApiError } from "../../utils/apiErrors";
 import { periodCount } from "../../utils/classWeek";
 import { cn } from "../../utils/helpers";
 import { deptSummary, storedSetup } from "../../utils/departmentDay";
-import { WEEK_DAYS, daySummary, departmentRows, departmentRowsBody, readWeek, setupOf, usualDays, weekBody, weekProblems, type DayMode, type WeekPlan } from "../../utils/schoolWeek";
+import { WEEK_DAYS, daySummary, departmentRows, departmentRowsBody, moveStart, readWeek, setupOf, shiftMinutes, usualDays, weekBody, weekProblems, type DayMode, type WeekPlan } from "../../utils/schoolWeek";
+import { clockToMinutes, formatMinutes, shiftSlots, type DaySetup } from "../../utils/timings";
 import type { ClassItem, DepartmentItem, Schedule, SchoolDayInput } from "../../types";
 import { AppModal, ModalError } from "../ui/AppModal";
 import { Button } from "../ui/Button";
@@ -135,7 +136,19 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
   const dirty = read.isNew || (schoolEdited && JSON.stringify(weekBody(plan)) !== JSON.stringify(weekBody(read.plan)));
   const problems = weekProblems(plan);
   const problemOf = (where: "usual" | "week" | number) => problems.find((p) => p.where === where)?.message;
-  const firstProblem = problems[0]?.message ?? null;
+
+  // ---- The winter shift (2026-11-17) -------------------------------------------------------------------------------------------------------
+  // School starts later (or earlier) than it was saved: the lunch and the days of its own moved in the boxes at once; the timings of the
+  // classes and departments that keep hours of their own move with it when this is saved (the server does it in the same save).
+  const shift = read.isNew || !dirty ? 0 : (shiftMinutes(read.plan.usual.start, plan.usual.start) ?? 0);
+  const moving = schedules.filter((s) => s.scope !== "all" && periodCount(s.slots) > 0);
+  const classNameOf = (id: string) => classes.find((c) => c.id === id)?.name;
+  const movingNames = shift === 0 ? [] : [...new Set(moving.map((s) => (s.departmentId ? departments.find((d) => d.id === s.departmentId)?.name : s.classIds.length === 1 ? classNameOf(s.classIds[0]) : undefined) ?? s.name))];
+  const shiftProblem = shift === 0 ? null : (() => {
+    const stuck = moving.find((s) => shiftSlots(s.slots, shift) === null);
+    return stuck ? `${stuck.name} would go past midnight if everything starts ${formatMinutes(Math.abs(shift))} ${shift > 0 ? "later" : "earlier"}` : null;
+  })();
+  const firstProblem = problems[0]?.message ?? shiftProblem ?? null;
 
   // ---- The departments --------------------------------------------------------------------------------------------------------------------
   // The school's length of a period: a department set by hours (Pre-Primary) gets periods of it.
@@ -161,6 +174,13 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
     setJustSaved(false);
     setFailure(null);
   };
+  // The usual day was edited: when its start moved, the lunch and the days of its own move with it (`moveStart`). A start box that was cleared
+  // and typed again is measured from the last whole start, kept here.
+  const lastStart = useRef(plan.usual.start);
+  const editUsual = (usual: DaySetup) => {
+    if (clockToMinutes(plan.usual.start) !== null) lastStart.current = plan.usual.start;
+    editPlan(moveStart(plan, usual, lastStart.current));
+  };
   const setMode = (day: number, mode: DayMode) => {
     const before = plan.days[day];
     // A day that becomes different starts from the usual day, so only what differs has to be changed.
@@ -182,8 +202,14 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
       sent: SchoolDayInput;
     }
     const jobs: Job[] = [];
-    if (dirty) jobs.push({ label: "School timings", sent: weekBody(plan) });
-    for (const d of resends) jobs.push({ label: `${d.name}'s timing`, sent: departmentRowsBody(plan, departmentRows(schedules, d.id), d.id) });
+    // The school's week carries the winter shift: the server moves every other timing by the same minutes in this one save (nothing to say when none keeps hours of its own).
+    const moveBy = moving.length > 0 ? shift : 0;
+    if (dirty) jobs.push({ label: "School timings", sent: { ...weekBody(plan), ...(moveBy !== 0 ? { shiftOthers: moveBy } : {}) } });
+    // A department sent again with the school's week goes with the same shift (its rows were moved by the server a moment ago).
+    for (const d of resends) {
+      const rowsNow = departmentRows(schedules, d.id);
+      jobs.push({ label: `${d.name}'s timing`, sent: departmentRowsBody(plan, moveBy !== 0 ? (shiftSlots(rowsNow, moveBy) ?? rowsNow) : rowsNow, d.id) });
+    }
     setSaving(true);
     try {
       for (const job of jobs) {
@@ -231,10 +257,24 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
                 <p className="text-sm text-foreground-muted">{daySummary(plan.usual)}</p>
               </div>
             </div>
-            <DayFields adaptive idPrefix="usual" name="Usual day" value={plan.usual} onChange={(usual) => editPlan({ ...plan, usual })} />
+            <DayFields adaptive idPrefix="usual" name="Usual day" value={plan.usual} onChange={editUsual} />
             {problemOf("usual") && (
               <p role="alert" className="text-sm font-medium text-danger">
                 {problemOf("usual")}
+              </p>
+            )}
+            {/* Only when the start moved and some class or department keeps hours of its own: what else moves when this is saved. */}
+            {movingNames.length > 0 && !shiftProblem && (
+              <p className="flex items-start gap-2 rounded-xl border border-primary/20 bg-primary-soft px-4 py-3 text-sm text-primary-deep">
+                <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+                <span>
+                  {movingNames.join(", ")} will start {formatMinutes(Math.abs(shift))} {shift > 0 ? "later" : "earlier"} too when you save.
+                </span>
+              </p>
+            )}
+            {shiftProblem && (
+              <p role="alert" className="text-sm font-medium text-danger">
+                {shiftProblem}
               </p>
             )}
           </Card>

@@ -1,4 +1,5 @@
-import type { AttendanceStatus, DateRange, RegisterDay, StudentRangeDay, StudentRangeRow, TeacherDayStatus } from "../types";
+import type { AttendanceStatus, ClassItem, DateRange, RegisterDay, StudentRangeDay, StudentRangeRow, TeacherDayStatus } from "../types";
+import { sectionedName } from "./academics";
 import { addDays, monthBounds, shiftMonth } from "./calendar";
 
 /** The rules of the attendance pages (2026-11-06): the ranges the school picks, the words for a teacher's time, how a day's mark looks. */
@@ -22,8 +23,8 @@ function schoolWeek(day: string, back = 0): { from: string; to: string } {
 }
 
 /**
- * The ranges the school picks in one click. `today` is "2026-11-06". The students' page asks for the weeks too (`weeks`), after Today,
- * and opens on This week; the teachers' page keeps the month.
+ * The ranges the school picks in one click. `today` is "2026-11-06". The pages ask for the weeks too (`weeks`), after Today: the students'
+ * page opens on This week, the teachers' and the staff page on the month (2026-11-17: they have the week buttons as well).
  */
 export function rangePresets(today: string, weeks = false): RangePreset[] {
   const month = today.slice(0, 7);
@@ -48,6 +49,44 @@ export function studentStartRange(today: string, over: { endDate: string } | nul
 export function startRange(today: string, over: { endDate: string } | null): { from: string; to: string } {
   if (!over) return monthBounds(today.slice(0, 7));
   return monthBounds((over.endDate < today ? over.endDate : today).slice(0, 7));
+}
+
+/**
+ * The days the Teacher and Staff pages open on (2026-11-17): today, the one day that answers "who came, and at what time". While a year that
+ * is over is open, today is not in it, so they open on that year's last month (see `startRange`).
+ */
+export function todayStartRange(today: string, over: { endDate: string } | null): { from: string; to: string } {
+  return over ? startRange(today, over) : { from: today, to: today };
+}
+
+/** One chip of the Class row: a class, or one section of a class that has two or more (the whole class is never one chip). */
+export interface AttendanceUnit {
+  key: string;
+  classId: string;
+  /** Null for a class that has no section; the section's id for a class with one or more. */
+  sectionId: string | null;
+  /** "Class 1", "Class 5A": the section is named only when the class has two or more. */
+  label: string;
+}
+
+/**
+ * The chips of the attendance page, in the school's order: a class with no section or one section is one chip ("Class 1"); a class with
+ * two or more is one chip for each section ("Class 5A", "Class 5B"). There is no separate Section row and no "All sections".
+ */
+export function attendanceUnits(classes: readonly Pick<ClassItem, "id" | "name" | "sections">[]): AttendanceUnit[] {
+  return classes.flatMap((c): AttendanceUnit[] => {
+    if (c.sections.length === 0) return [{ key: c.id, classId: c.id, sectionId: null, label: c.name }];
+    const sections = [...c.sections].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+    return sections.map((s) => ({ key: `${c.id}:${s.id}`, classId: c.id, sectionId: s.id, label: sectionedName(c.name, s.name, sections.length) }));
+  });
+}
+
+/**
+ * The chip an address points at: the class and section it names; a class without a section named (an old link) opens its first chip;
+ * a class that is not there any more opens the first chip of all.
+ */
+export function pickedUnit(units: readonly AttendanceUnit[], classId: string | null, sectionId: string | null): AttendanceUnit | undefined {
+  return units.find((u) => u.classId === classId && u.sectionId === (sectionId || null)) ?? units.find((u) => u.classId === classId) ?? units[0];
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

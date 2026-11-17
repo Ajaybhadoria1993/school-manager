@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker, Link } from "react-router";
-import { BookOpen, CircleAlert, Clock3, Copy, HeartHandshake, ListOrdered, Printer, Save, Sparkles, TriangleAlert, Undo2, UserMinus, UserPlus } from "lucide-react";
+import { BookOpen, CircleAlert, Clock3, Copy, ListOrdered, Printer, Save, Sparkles, TriangleAlert, Undo2, UserPlus } from "lucide-react";
 import { DAY_NAMES, SUBJECT_PRESETS } from "../../constants/timetable";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import {
@@ -10,17 +10,15 @@ import {
   usePublishGridMutation,
   useQuickAddSubjectsMutation,
   useSaveGridMutation,
-  useSetClassTeacherMutation,
-  useUnpublishGridMutation,
 } from "../../redux/api/timetableApi";
 import { useCan } from "../../hooks/useCan";
 import { getApiError } from "../../utils/apiErrors";
 import { PRESET_PREFIX, applyMotherTeacher, buildModel, cellAt, cellKey, changeLesson, choiceOf, clearCell, isPrePrimaryName, localProblems, placeAcrossWeek, placeHalfDay, placeWholeDay, placedCounts, sameGrid, subjectChoices, subjectColors, teacherChoices, teacherOf, teacherOnRange, teacherTrouble, type Spread, type SubjectChoice } from "../../utils/timetable";
 import type { AutofillAnswer, ClassWeekStatus, GridAllotment, GridCell, GridView, Issue, Lesson, UnitRef } from "../../types";
 import { ConfirmModal } from "../classes/ConfirmModal";
+import { ClassTeacherButton } from "../schoolClass/ClassTeacherButton";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
-import { Select } from "../ui/Select";
 import { Skeleton } from "../ui/Skeleton";
 import { useToast } from "../ui/toast-context";
 import { ClassTimingDialog } from "./ClassTimingDialog";
@@ -46,10 +44,8 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
   const allSubjects = useGetSubjectsQuery("all").data?.data.items;
   const [save, { isLoading: saving }] = useSaveGridMutation();
   const [publish, { isLoading: publishing }] = usePublishGridMutation();
-  const [unpublish, { isLoading: unpublishing }] = useUnpublishGridMutation();
   const [autofill, { isLoading: filling }] = useAutofillGridMutation();
   const [quickAdd] = useQuickAddSubjectsMutation();
-  const [setClassTeacher, { isLoading: choosingMother }] = useSetClassTeacherMutation();
 
   // Subjects picked here that the class does not study yet: they work in the grid at once, and the server adds them to the class's list
   // when the timetable is saved (with the periods they were given).
@@ -73,6 +69,9 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
   const [note, setNote] = useState<string | null>(null);
   const [clashes, setClashes] = useState<Map<string, string[]>>(new Map());
   const [failure, setFailure] = useState<string | null>(null);
+  // The class teacher chosen here (the Class teacher button), until the page
+  // reads the week again (the server then says the same). The week is not read again for it: lessons not saved yet would be thrown away.
+  const [headChosen, setHeadChosen] = useState<{ id: string; name: string } | null | undefined>(undefined);
 
   // What was saved changed (the answer to Save, Publish, a new list of subjects): the grid is that again, and a subject picked here is in
   // the class's list now (or was not kept).
@@ -83,19 +82,18 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
     setFill(null);
     setClashes(new Map());
     setPicking(null);
+    // The week as the server has it says who the class teacher is again.
+    setHeadChosen(undefined);
   }
 
   const model = useMemo(() => buildModel(view), [view]);
 
-  // A Pre-Primary class (2026-11-10): one mother teacher takes it (she is kept as its class teacher), and a subject may fill a whole day.
+  // A Pre-Primary class (2026-11-10): its class teacher takes it (`mother` in here: 2026-11-17 the Mother teacher box is gone, the Class teacher button is the one), and a subject may fill a whole day.
   const klass = structure?.classes.find((c) => c.id === unit.classId);
   const prePrimary = !!structure?.departments.some((d) => d.id === klass?.departmentId && isPrePrimaryName(d.name));
-  // The mother teacher chosen here, until the page reads the week again (the server then says the same).
-  const [motherChosen, setMotherChosen] = useState<string | null | undefined>(undefined);
-  // A mother teacher who is there already is replaced (or taken away) by a new choice: a window asks first, naming her.
-  const [askingMother, setAskingMother] = useState<{ next: string | null } | null>(null);
-  const mother = prePrimary ? (motherChosen !== undefined ? motherChosen : (saved.classTeacher?.id ?? null)) : null;
-  const motherName = mother ? (model.teachers.get(mother)?.name ?? saved.classTeacher?.name ?? null) : null;
+  const head = headChosen !== undefined ? headChosen : (saved.classTeacher ?? null);
+  const mother = prePrimary ? (head?.id ?? null) : null;
+  const motherName = mother ? (model.teachers.get(mother)?.name ?? head?.name ?? null) : null;
   // A small class has one thing a day (or two): the whole day is what a picked subject fills, until the toolbar says otherwise.
   const [spread, setSpread] = useState<Spread>("day");
   const can = useCan();
@@ -220,40 +218,24 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
     }
   }
 
-  /** A choice in the Mother teacher box: with a mother teacher in place already, the window asks first; with none, it is kept at once. */
-  function pickMother(next: string | null) {
-    if (next === mother) return;
-    if (mother !== null) return setAskingMother({ next });
-    void chooseMother(next);
-  }
-
-  /** The mother teacher of a Pre-Primary class: kept at once as its class teacher, and put on the periods with no teacher (saved with the week). */
-  async function chooseMother(next: string | null) {
-    if (next === mother) return;
-    setFailure(null);
-    try {
-      await setClassTeacher({ classId: unit.classId, sectionId: unit.sectionId, teacherId: next }).unwrap();
-      setMotherChosen(next);
-      const name = next ? (model.teachers.get(next)?.name ?? "The mother teacher") : null;
-      const changed = applyMotherTeacher(model, cells, next, mother);
-      if (!sameGrid(changed, cells)) {
-        edit(changed);
-        setNote(name ? `${name} is put on the periods that had no teacher. Press Save the timetable to keep them.` : "The periods that had the mother teacher have no teacher now. Press Save the timetable to keep them.");
-      }
-      push("success", name ? `${name} is the mother teacher of ${view.unit.label}` : `${view.unit.label} has no mother teacher now`);
-    } catch (err) {
-      setFailure(getApiError(err)?.message ?? "Could not keep the mother teacher. Please try again.");
-    }
-  }
-
-  /** A published timetable goes back to a draft (teachers and parents no longer see it): the only thing left of the old Publish toggle. */
-  async function takeBack() {
-    setFailure(null);
-    try {
-      await unpublish(unit).unwrap();
-      push("success", "Taken back to a draft");
-    } catch (err) {
-      setFailure(getApiError(err)?.message ?? "Could not do that. Please try again.");
+  /**
+   * The Class teacher button of the toolbar kept someone as the class teacher, or took the class teacher away (null): the button said so to the
+   * server already and to the person. The toolbar shows it at once, and in a Pre-Primary class, where the class teacher takes the whole class, a
+   * new class teacher goes on the periods with no teacher (in place of the one there was), and with none the periods that had them have no teacher.
+   */
+  function headAssigned(teacher: { id: string; name: string } | null) {
+    const before = mother;
+    const beforeName = motherName;
+    setHeadChosen(teacher);
+    if (!prePrimary) return;
+    const changed = applyMotherTeacher(model, cells, teacher?.id ?? null, before);
+    if (!sameGrid(changed, cells)) {
+      edit(changed);
+      setNote(
+        teacher
+          ? `${teacher.name} is put on the periods that had no teacher. Press Save the timetable to keep them.`
+          : `The periods that had ${beforeName ?? "the class teacher"} have no teacher now. Press Save the timetable to keep them.`
+      );
     }
   }
 
@@ -419,56 +401,21 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
               <ListOrdered className="size-4" aria-hidden />
               Periods & time
             </Button>
-            {prePrimary && !noTeacher && (
-              <div className="flex items-center gap-2">
-                <HeartHandshake className="size-4 shrink-0 text-primary" aria-hidden />
-                <span className="whitespace-nowrap text-sm font-semibold text-foreground">Mother teacher</span>
-                <div className="w-44">
-                  <Select
-                    aria-label="Mother teacher"
-                    value={mother ?? ""}
-                    disabled={choosingMother}
-                    options={[{ value: "", label: "No mother teacher" }, ...activeTeachers.map((t) => ({ value: t.id, label: t.name }))]}
-                    onChange={(v) => pickMother(v || null)}
-                  />
-                </div>
-              </div>
-            )}
+            {/* Who the class teacher is (2026-11-17, in place of Add a teacher): with none it says Add class teacher, with one it says who, and a click
+                changes them (the list, then a window that asks first). In a Pre-Primary class they also take the periods that have no teacher. */}
+            <ClassTeacherButton classId={unit.classId} sectionId={unit.sectionId} label={view.unit.label} current={head} look="button" onAssigned={headAssigned} />
             {prePrimary && mother && motherName && untaught > 0 && (
               <Button variant="ghost" onClick={() => edit(applyMotherTeacher(model, cells, mother, null))}>
                 Put {motherName} on {untaught} period{untaught === 1 ? "" : "s"} with no teacher
               </Button>
             )}
+            {/* Print, Add a teacher, Take back to a draft and Throw away my changes are not here any more (2026-11-17): the row is the week's tools, the class
+                teacher, and Save, in ONE line (a change is kept or lost by Save, or by leaving, which asks first). */}
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-              <Button variant="outline" onClick={() => window.print()}>
-                <Printer className="size-4" aria-hidden />
-                Print
-              </Button>
-              {/* The teachers of the school are the ones the box of a period lists: this is the way to add one (2026-11-13). */}
-              {can("teachers.add") && (
-                <Link
-                  to="/teachers/new"
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:border-primary/30 hover:bg-background focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20"
-                >
-                  <UserPlus className="size-4" aria-hidden />
-                  Add a teacher
-                </Link>
-              )}
               {siblings.length > 0 && (
                 <Button variant="outline" onClick={() => setCopying(true)} disabled={dirty || !view.exists || view.cells.length === 0} title={dirty ? "Save first" : undefined}>
                   <Copy className="size-4" aria-hidden />
                   Copy to other sections
-                </Button>
-              )}
-              {dirty && (
-                <Button variant="ghost" onClick={() => edit(view.cells)}>
-                  Throw away my changes
-                </Button>
-              )}
-              {view.status === "published" && !dirty && (
-                <Button variant="outline" onClick={() => void takeBack()} loading={unpublishing}>
-                  <Undo2 className="size-4" aria-hidden />
-                  Take back to a draft
                 </Button>
               )}
               <Button onClick={() => void submit()} loading={saving || publishing} disabled={!dirty && !publishSaved} title={!dirty && !publishSaved ? "Everything is saved" : undefined}>
@@ -627,43 +574,6 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
       {clearing && (
         <ConfirmModal title="Empty the whole week?" confirmLabel="Empty it" onClose={() => setClearing(false)} onConfirm={async () => edit([])}>
           <p>Every lesson is taken out of the grid. Nothing is saved until you press Save, so you can still throw this away.</p>
-        </ConfirmModal>
-      )}
-      {askingMother && mother && askingMother.next !== null && (
-        <ConfirmModal
-          title={`${view.unit.label} already has a mother teacher`}
-          confirmLabel="Change mother teacher"
-          icon={HeartHandshake}
-          tone="primary"
-          onClose={() => setAskingMother(null)}
-          onConfirm={async () => {
-            setAskingMother(null);
-            await chooseMother(askingMother.next);
-          }}
-        >
-          <p>
-            <strong>{motherName ?? "The mother teacher"}</strong> is the mother teacher (the class teacher) of {view.unit.label} now.
-          </p>
-          <p>
-            If you go on, {model.teachers.get(askingMother.next)?.name ?? "The new teacher"} becomes the mother teacher instead and {motherName ?? "she"} no longer is. The periods that had{" "}
-            {motherName ?? "her"} go to the new one; press Save the timetable to keep them.
-          </p>
-        </ConfirmModal>
-      )}
-      {askingMother && mother && askingMother.next === null && (
-        <ConfirmModal
-          title={`Take ${motherName ?? "the mother teacher"} off as mother teacher of ${view.unit.label}?`}
-          confirmLabel="Take off"
-          icon={UserMinus}
-          onClose={() => setAskingMother(null)}
-          onConfirm={async () => {
-            setAskingMother(null);
-            await chooseMother(null);
-          }}
-        >
-          <p>
-            {view.unit.label} will have <strong>no mother teacher</strong> until you choose one. The periods that had {motherName ?? "her"} have no teacher until you choose another.
-          </p>
         </ConfirmModal>
       )}
       {blocker.state === "blocked" && (

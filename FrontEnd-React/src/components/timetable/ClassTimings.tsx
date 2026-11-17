@@ -1,21 +1,25 @@
 import { useMemo, useState } from "react";
-import { GraduationCap, Pencil, Plus } from "lucide-react";
+import { GraduationCap, Pencil, Plus, RotateCcw } from "lucide-react";
 import { classOwnTimings } from "../../utils/classWeek";
 import { rowsSummary } from "../../utils/schoolWeek";
 import type { ClassItem, DepartmentItem, Schedule } from "../../types";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { ClassOwnTimingDialog } from "./ClassOwnTimingDialog";
+import { UseSchoolTimingModal } from "./UseSchoolTimingModal";
 
 /**
  * Class timings (2026-11-13): the classes that come at hours of their own (one class of the school that starts later, or has fewer periods),
  * under the department timings. A class follows its department's timing, or the school's, until it is added here; its row says what it
- * has now and the pencil changes it. Adding and changing happen in a window with its own Save (`ClassOwnTimingDialog`), so this card never
- * has unsaved work.
+ * has now, the pencil changes it, and the arrow beside the pencil takes it back to the school's timing (2026-11-17, after an "Are you sure?"
+ * window: `UseSchoolTimingModal`, the same as the button in the class window). Adding and changing happen in a window with its own Save
+ * (`ClassOwnTimingDialog`), so this card never has unsaved work.
  */
 export function ClassTimings({ classes, departments, schedules }: { classes: ClassItem[]; departments: DepartmentItem[]; schedules: Schedule[] }) {
   // null: closed; { classId: null }: adding; { classId }: changing that class.
   const [open, setOpen] = useState<{ classId: string | null } | null>(null);
+  // The class that is about to go back to the school's timing (the window asking "Are you sure?").
+  const [going, setGoing] = useState<{ id: string; name: string } | null>(null);
   const own = useMemo(() => classOwnTimings(schedules), [schedules]);
   const rows = useMemo(() => {
     const byId = new Map(classes.map((c) => [c.id, c]));
@@ -53,14 +57,33 @@ export function ClassTimings({ classes, departments, schedules }: { classes: Cla
                 {departmentName(klass.departmentId) && <p className="text-xs text-foreground-muted">{departmentName(klass.departmentId)}</p>}
                 <p className="mt-1 text-sm text-foreground-muted">{rowsSummary(slots)}</p>
               </div>
-              <Button variant="ghost" size="sm" aria-label={`Edit ${klass.name} timing`} className="shrink-0 px-2.5" onClick={() => setOpen({ classId: klass.id })}>
-                <Pencil className="size-4" aria-hidden />
-              </Button>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button variant="ghost" size="sm" aria-label={`Edit ${klass.name} timing`} title="Change timing" className="px-2.5" onClick={() => setOpen({ classId: klass.id })}>
+                  <Pencil className="size-4" aria-hidden />
+                </Button>
+                <Button variant="ghost" size="sm" aria-label={`Use the school's timing for ${klass.name}`} title="Use the school's timing" className="px-2.5" onClick={() => setGoing({ id: klass.id, name: klass.name })}>
+                  <RotateCcw className="size-4" aria-hidden />
+                </Button>
+              </div>
             </li>
           ))}
         </ul>
       )}
-      {open && <ClassOwnTimingDialog key={open.classId ?? "new"} classes={classes} schedules={schedules} classId={open.classId} onClose={() => setOpen(null)} />}
+      {open && (
+        <ClassOwnTimingDialog
+          key={open.classId ?? "new"}
+          classes={classes}
+          schedules={schedules}
+          classId={open.classId}
+          onClose={() => setOpen(null)}
+          // The button of the window does not act at once: the window closes and "Are you sure?" opens.
+          onUseSchool={(klass) => {
+            setOpen(null);
+            setGoing(klass);
+          }}
+        />
+      )}
+      {going && <UseSchoolTimingModal key={going.id} klass={going} onClose={() => setGoing(null)} />}
     </Card>
   );
 }

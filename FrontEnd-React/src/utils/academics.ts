@@ -34,6 +34,17 @@ export const sectionsOverClass = (classSeats: number | null, held: number): bool
 /** "Class 5 - A". */
 export const sectionTitle = (className: string, sectionName: string) => `${className} - ${sectionName}`;
 
+/**
+ * What a class or section is called where children are looked at (2026-11-17): a class with ONE section (or none) is just "Class 5",
+ * the section says nothing; a class with two or more is "Class 5A", "Class 5B". The letter is joined to a class name that ends in a
+ * number; any other name keeps the dash ("Nursery - A", "Class 5 - 1"). The server has the same rule (`sectionedName` in
+ * backend/src/main/timetable/services/unit.ts), so a name from there and one made here read alike.
+ */
+export function sectionedName(className: string, sectionName: string | null, sectionCount: number): string {
+  if (!sectionName || sectionCount <= 1) return className;
+  return /\d$/.test(className) && /^[A-Za-z]{1,2}$/.test(sectionName) ? `${className}${sectionName}` : `${className} - ${sectionName}`;
+}
+
 /** What "N sections" will be called: 2 -> "A, B", 3 -> "A, B, C", 8 -> "A to H". */
 export function describeSections(count: number): string {
   const letters = sectionLetters(count);

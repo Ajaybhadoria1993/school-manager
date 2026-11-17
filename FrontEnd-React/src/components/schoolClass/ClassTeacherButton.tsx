@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { ChevronDown, Search, UserPlus, UserRound, UserRoundCheck } from "lucide-react";
+import { ChevronDown, Search, UserMinus, UserPlus, UserRound, UserRoundCheck } from "lucide-react";
 import { useDismiss } from "../../hooks/useDismiss";
 import { useGetTeachersQuery, useSetClassTeacherMutation } from "../../redux/api/timetableApi";
 import type { Teacher } from "../../types";
@@ -18,8 +18,28 @@ import { useToast } from "../ui/toast-context";
  * Choosing a teacher who is nobody's class teacher, where there was none, is done at once. Anything else asks first, in a window that says what
  * happens: the class teacher who is there now will no longer be, and a teacher who is the class teacher of another class is **taken off it** (that
  * class has none then): one request (\`releaseOthers\`), all or nothing. Who may change it, and whether the year allows it, is the page's to say.
+ *
+ * `look="button"` (2026-11-17, the class timetable's toolbar) is the height and shape of the other buttons of that row instead of the small pill beside a
+ * title; `onAssigned` tells the page who the class teacher is now (the toolbar does not read the week again, which would throw away unsaved lessons).
+ * A class that has a class teacher also has **No class teacher** at the foot of the list (2026-11-17): it asks first, naming them, and takes them away
+ * (one request with no teacher); `onAssigned` then says null.
  */
-export function ClassTeacherButton({ classId, sectionId, label, current }: { classId: string; sectionId: string | null; label: string; current: { id: string; name: string } | null }) {
+export function ClassTeacherButton({
+  classId,
+  sectionId,
+  label,
+  current,
+  look = "pill",
+  onAssigned,
+}: {
+  classId: string;
+  sectionId: string | null;
+  label: string;
+  current: { id: string; name: string } | null;
+  look?: "pill" | "button";
+  /** The class teacher now: the one chosen, or null when the class teacher was taken away. */
+  onAssigned?: (teacher: { id: string; name: string } | null) => void;
+}) {
   const [open, setOpen] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const ref = useDismiss(open, close);
@@ -29,6 +49,8 @@ export function ClassTeacherButton({ classId, sectionId, label, current }: { cla
   const { push } = useToast();
   // A pick that needs a question first: the teacher, and the other classes they are the class teacher of.
   const [asking, setAsking] = useState<{ teacher: Teacher; others: string[] } | null>(null);
+  // "No class teacher" was chosen: the window asks before the class teacher is taken away.
+  const [askingOff, setAskingOff] = useState(false);
 
   const items = (teachers.data?.data.items ?? []).filter((t) => t.name.toLowerCase().includes(query.trim().toLowerCase()));
   /** The other classes this teacher is the class teacher of (this class is not "another"). */
@@ -39,6 +61,14 @@ export function ClassTeacherButton({ classId, sectionId, label, current }: { cla
     const res = await setClassTeacher({ classId, sectionId, teacherId: t.id, ...(others.length > 0 ? { releaseOthers: true } : {}) }).unwrap();
     const left = res.data.released ?? [];
     push("success", `${t.name} is the class teacher of ${label}${left.length > 0 ? `, and no longer of ${left.join(", ")}` : ""}`);
+    onAssigned?.({ id: t.id, name: t.name });
+  }
+
+  /** Takes the class teacher away: the class has none until one is chosen. A refusal is thrown to whoever asked (the window says it). */
+  async function takeOff() {
+    await setClassTeacher({ classId, sectionId, teacherId: null }).unwrap();
+    push("success", `${label} has no class teacher now`);
+    onAssigned?.(null);
   }
 
   function pick(t: Teacher) {
@@ -61,17 +91,19 @@ export function ClassTeacherButton({ classId, sectionId, label, current }: { cla
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
+          "inline-flex max-w-full cursor-pointer items-center font-semibold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
+          // In the toolbar a long name is cut short (16rem) so that it never pushes Save to a second line.
+          look === "button" ? "h-10 max-w-64 gap-2 rounded-lg border px-4 text-sm shadow-sm" : "h-8 gap-1.5 rounded-full border px-3 text-xs",
           current ? "border-primary/25 bg-primary-soft text-primary-deep hover:border-primary/50" : "border-dashed border-primary/50 bg-surface text-primary-deep hover:bg-primary-soft/50"
         )}
       >
-        {current ? <UserRound className="size-3.5 shrink-0" aria-hidden /> : <UserPlus className="size-3.5 shrink-0" aria-hidden />}
-        <span className="truncate">{current ? `Class teacher: ${current.name}` : "Add class teacher"}</span>
-        <ChevronDown className={cn("size-3.5 shrink-0 transition-transform duration-200", open && "rotate-180")} aria-hidden />
+        {current ? <UserRound className={cn("shrink-0", look === "button" ? "size-4" : "size-3.5")} aria-hidden /> : <UserPlus className={cn("shrink-0", look === "button" ? "size-4" : "size-3.5")} aria-hidden />}
+        <span className="min-w-0 truncate">{current ? `Class teacher: ${current.name}` : "Add class teacher"}</span>
+        <ChevronDown className={cn("shrink-0 transition-transform duration-200", look === "button" ? "size-4" : "size-3.5", open && "rotate-180")} aria-hidden />
       </button>
 
       {open && (
-        <div className="pop-in absolute left-0 top-10 z-30 w-80 max-w-[85vw] origin-top-left rounded-2xl border border-border bg-surface p-2 shadow-float">
+        <div className={cn("pop-in absolute left-0 z-30 w-80 max-w-[85vw] origin-top-left rounded-2xl border border-border bg-surface p-2 shadow-float", look === "button" ? "top-12" : "top-10")}>
           <p className="px-2.5 pb-1.5 pt-1 text-[11px] font-bold uppercase tracking-wider text-foreground-muted">{current ? `Replace the class teacher of ${label}` : `Choose the class teacher of ${label}`}</p>
           <div className="relative mb-1.5">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-foreground-muted" aria-hidden />
@@ -127,7 +159,35 @@ export function ClassTeacherButton({ classId, sectionId, label, current }: { cla
               })}
             </div>
           )}
+          {current && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setQuery("");
+                setAskingOff(true);
+              }}
+              className="mt-1.5 flex w-full cursor-pointer items-center gap-2 rounded-lg border-t border-border px-2.5 py-2 text-left text-sm font-semibold text-danger transition-colors hover:bg-danger-soft/60 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-danger/20"
+            >
+              <UserMinus className="size-4 shrink-0" aria-hidden />
+              No class teacher
+            </button>
+          )}
         </div>
+      )}
+
+      {askingOff && current && (
+        <ConfirmModal
+          title={`Take ${current.name} off as the class teacher of ${label}?`}
+          confirmLabel="Take off"
+          icon={UserMinus}
+          onClose={() => setAskingOff(false)}
+          onConfirm={() => takeOff()}
+        >
+          <p>
+            {label} will have <strong>no class teacher</strong> until you choose one.
+          </p>
+        </ConfirmModal>
       )}
 
       {asking && (

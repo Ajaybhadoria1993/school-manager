@@ -171,7 +171,7 @@ describe("the attendance of a past year", () => {
     expect((await students(s, s.oldA6)).status).toBe(409);
     const res = await students(s, s.oldA6, s.old);
     expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(res.body.data.label).toBe("Class 6 - A");
+    expect(res.body.data.label).toBe("Class 6");
     expect(res.body.data.students.map((c: { name: string }) => c.name)).toEqual(["Chitra Verma"]);
     expect(res.body.data.students[0].records).toEqual([{ date: "2026-11-03", status: "absent", reason: "Fever" }]);
   });

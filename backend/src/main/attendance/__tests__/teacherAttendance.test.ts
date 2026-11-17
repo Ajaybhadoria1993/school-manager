@@ -286,6 +286,8 @@ describe("real school days (2026-11-06)", () => {
 
   it("a half day (Saturday 9:00 to 12:00) is a working day with its own hours: the mark counts late from 9:00, and school ends at 12:00", async () => {
     const { s, present, mine } = await setUp();
+    // The half day is added before the Saturday it is for (a timing reads for the days from the day it is saved; the days before keep the old one).
+    at(THU, "07:00");
     await addTiming(s.token, {
       name: "Saturday",
       days: [6],
@@ -315,7 +317,9 @@ describe("real school days (2026-11-06)", () => {
 
   it("two timings that run the same day: school starts with the earliest and ends with the last", async () => {
     const { s, mine } = await setUp();
-    // Class 1 keeps its own hours (07:45 to 14:30) beside the school's usual 08:30 to 14:20.
+    // Class 1 keeps its own hours (07:45 to 14:30) beside the school's usual 08:30 to 14:20. Saved before the days looked at below: a timing
+    // reads for the days from the day it is saved (the days before keep the timing they had).
+    at(THU, "07:00");
     const early = await addTiming(s.token, {
       name: "Pre-primary",
       days: [1, 2, 3, 4, 5],

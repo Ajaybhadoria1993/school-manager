@@ -19,10 +19,24 @@ import { DayFields, DayPreview } from "./DayFields";
  * has a timing of its own is not offered again); changing opens the class that was clicked. It starts from the day the class has now, so
  * only what differs has to be changed. Save writes the rows for every day the class follows the school's usual day (`PUT /timetable/class-day`;
  * a short Saturday of the school is left to the school), and nothing is sent while the boxes are what the class already has. *Use the school's
- * timing* takes the class's own days away. Lessons in a period the class will no longer have are asked about first and taken out only when
- * the person agrees.
+ * timing* (a button, 2026-11-17) does not act at once: it hands the class to `onUseSchool`, which closes this window and opens "Are you sure?"
+ * (`UseSchoolTimingModal`). Lessons in a period the class will no longer have are asked about first and taken out only when the person agrees.
  */
-export function ClassOwnTimingDialog({ classes, schedules, classId, onClose }: { classes: ClassItem[]; schedules: Schedule[]; /** The class being changed; none when one is being added. */ classId: string | null; onClose: () => void }) {
+export function ClassOwnTimingDialog({
+  classes,
+  schedules,
+  classId,
+  onClose,
+  onUseSchool,
+}: {
+  classes: ClassItem[];
+  schedules: Schedule[];
+  /** The class being changed; none when one is being added. */
+  classId: string | null;
+  onClose: () => void;
+  /** The class wants to follow the school's timing again: the page asks "Are you sure?" and does it. */
+  onUseSchool: (klass: { id: string; name: string }) => void;
+}) {
   const { push } = useToast();
   const [saveClassDay] = useSaveClassDayMutation();
   const { busy, error, run, clearError } = useSave(onClose);
@@ -30,7 +44,6 @@ export function ClassOwnTimingDialog({ classes, schedules, classId, onClose }: {
   const owned = useMemo(() => new Set(classOwnTimings(schedules).map((o) => o.classId)), [schedules]);
   const [chosen, setChosen] = useState(classId ?? "");
   const [typed, setTyped] = useState<{ classId: string; setup: DaySetup } | null>(null);
-  const [tried, setTried] = useState<"save" | "school">("save");
 
   const klass = classes.find((c) => c.id === chosen) ?? null;
   const days = useMemo(() => (chosen ? classWeek(schedules, chosen) : []), [schedules, chosen]);
@@ -44,12 +57,11 @@ export function ClassOwnTimingDialog({ classes, schedules, classId, onClose }: {
   const canSave = body !== null && (hasOwn ? JSON.stringify(setup) !== JSON.stringify(base) : body.days.length > 0);
 
   const asked = error?.code === "LESSONS_IN_REMOVED_PERIODS";
-  const send = (what: "save" | "school", removeLessons: boolean) =>
+  const send = (removeLessons: boolean) =>
     run(async () => {
       if (!klass || !body) return;
-      setTried(what);
-      await saveClassDay({ ...body, days: what === "school" ? [] : body.days, removeLessons }).unwrap();
-      push("success", what === "school" ? `${klass.name} follows the school's timing` : `${klass.name}: timing saved`);
+      await saveClassDay({ ...body, removeLessons }).unwrap();
+      push("success", `${klass.name}: timing saved`);
     });
 
   const free = classes.filter((c) => !owned.has(c.id));
@@ -67,7 +79,7 @@ export function ClassOwnTimingDialog({ classes, schedules, classId, onClose }: {
             <Button variant="secondary" onPress={clearError} isDisabled={busy}>
               Go back
             </Button>
-            <Button variant="danger" isPending={busy} onPress={() => void send(tried, true)}>
+            <Button variant="danger" isPending={busy} onPress={() => void send(true)}>
               Take those lessons out and save
             </Button>
           </>
@@ -76,7 +88,7 @@ export function ClassOwnTimingDialog({ classes, schedules, classId, onClose }: {
             <Button variant="secondary" onPress={onClose} isDisabled={busy}>
               Cancel
             </Button>
-            <Button variant="primary" isPending={busy} isDisabled={!canSave} onPress={() => void send("save", false)}>
+            <Button variant="primary" isPending={busy} isDisabled={!canSave} onPress={() => void send(false)}>
               Save
             </Button>
           </>
@@ -126,7 +138,8 @@ export function ClassOwnTimingDialog({ classes, schedules, classId, onClose }: {
               <ModalError message={error ? error.message : null} />
               {hasOwn && (
                 <div>
-                  <Button variant="ghost" size="sm" isDisabled={busy} onPress={() => void send("school", false)}>
+                  {/* A button with an outline of its own (not a quiet link), and it asks first: the page opens "Are you sure?". */}
+                  <Button variant="outline" size="sm" isDisabled={busy} onPress={() => onUseSchool({ id: klass.id, name: klass.name })}>
                     <RotateCcw className="size-4" aria-hidden />
                     Use the school's timing
                   </Button>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { comparisonLabel, dayState, indiaMinutes, percentChange, pointsChange, rangeFor, rangeLabel, stepDays, todayLabel } from "../dashboardRange";
+import { comparisonLabel, dashboardPresets, dayState, indiaMinutes, percentChange, pointsChange, rangeFor, rangeLabel, stepDays, todayLabel } from "../dashboardRange";
 
 /** 10 Nov 2026 is a Tuesday. */
 const TODAY = "2026-11-10";
@@ -83,5 +83,19 @@ describe("school's day, as the line under the figures says it", () => {
     // 04:30 UTC is 10:00 in India.
     expect(indiaMinutes(new Date("2026-11-10T04:30:00Z"))).toBe(600);
     expect(indiaMinutes(new Date("2026-11-10T18:45:00Z"))).toBe(15); // 00:15 the next day
+  });
+});
+
+describe("the ready-made ranges of the Custom window (2026-11-17)", () => {
+  it("are the usual ones, with a week Monday to Sunday (the way the home page counts it)", () => {
+    const presets = dashboardPresets(TODAY);
+    expect(presets.map((p) => p.label)).toEqual(["Today", "This Week", "Last Week", "Last 7 Days", "This Month", "Last Month"]);
+    const of = (label: string) => presets.find((p) => p.label === label);
+    expect(of("Today")).toMatchObject({ from: TODAY, to: TODAY });
+    expect(of("This Week")).toMatchObject({ from: "2026-11-09", to: "2026-11-15" });
+    expect(of("Last Week")).toMatchObject({ from: "2026-11-02", to: "2026-11-08" });
+    expect(of("Last 7 Days")).toMatchObject({ from: "2026-11-04", to: TODAY });
+    expect(of("This Month")).toMatchObject({ from: "2026-11-01", to: "2026-11-30" });
+    expect(of("Last Month")).toMatchObject({ from: "2026-10-01", to: "2026-10-31" });
   });
 });

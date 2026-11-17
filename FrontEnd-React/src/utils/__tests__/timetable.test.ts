@@ -417,10 +417,10 @@ describe("Pre-Primary (2026-11-10): the mother teacher and a whole day of one su
     expect(applyMotherTeacher(PP, cells, "meena", null)[2].lessons[0].room).toBe("Hall");
   });
 
-  it("the mother teacher is named in the box of a period, right after the first row", () => {
+  it("the class teacher of a Pre-Primary class is named in the box of a period, right after the first row", () => {
     const list = teacherChoices(PP, "art", 1, 1, null, "dev");
     expect(list.map((c) => c.value)).toEqual([null, "dev", "meena"]);
-    expect(list[1].note).toBe("Mother teacher");
+    expect(list[1].note).toBe("Class teacher");
     // She is shown with the teachers of the subject whether or not it is one of her subjects (it is her class); the others are not.
     expect(list.map((c) => c.teaches)).toEqual([true, true, false]);
   });

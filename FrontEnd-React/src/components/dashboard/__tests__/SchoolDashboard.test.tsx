@@ -202,24 +202,47 @@ describe("the days to look at", () => {
     expect(await screen.findByRole("button", { name: "Today, 10 Nov" })).toBeInTheDocument();
   });
 
-  /** Types a day into a date box of the Custom window: day, month and year, the cursor moving on by itself. */
-  const typeDay = async (user: ReturnType<typeof userEvent.setup>, name: string, ddmmyyyy: string) => {
-    const box = within(await screen.findByRole("dialog", { name: "Choose the days" })).getByRole("group", { name });
-    await user.click(within(box).getAllByRole("spinbutton")[0]);
-    await user.keyboard(ddmmyyyy);
-  };
+  const WINDOW = "Select date range";
 
-  it("Custom takes any days: the page asks for them when they are applied, and the tab says them", async () => {
+  it("Custom opens the window Select date range (ready-made ranges and a calendar): the page asks for the days when they are applied, and the tab says them", async () => {
     const user = userEvent.setup();
     const calls = openDashboard();
     await within(await tileWhenThere("Students")).findByText("120");
     await user.click(screen.getByRole("button", { name: "Custom" }));
-    await typeDay(user, "From", "01102026");
-    await typeDay(user, "To", "31102026");
-    await user.click(within(screen.getByRole("dialog", { name: "Choose the days" })).getByRole("button", { name: "Apply" }));
+    const dialog = await screen.findByRole("dialog", { name: WINDOW });
+    // The same ready-made ranges as everywhere, but a week is Monday to Sunday on this page.
+    expect(within(within(dialog).getByRole("group", { name: "Ready-made ranges" })).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Today",
+      "This Week",
+      "Last Week",
+      "Last 7 Days",
+      "This Month",
+      "Last Month",
+    ]);
+    await user.click(within(dialog).getByRole("button", { name: "Last Month" }));
+    await user.click(within(dialog).getByRole("button", { name: "Apply" }));
     await waitFor(() => expect(days(calls).at(-1)).toBe("2026-10-01 to 2026-10-31"));
     expect(await screen.findByRole("button", { name: "1 Oct – 31 Oct" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByRole("dialog", { name: "Choose the days" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: WINDOW })).not.toBeInTheDocument();
+  });
+
+  it("two clicks in its calendar pick any days; a first click alone is a one-day range", async () => {
+    const user = userEvent.setup();
+    const calls = openDashboard();
+    await within(await tileWhenThere("Students")).findByText("120");
+    await user.click(screen.getByRole("button", { name: "Custom" }));
+    let dialog = await screen.findByRole("dialog", { name: WINDOW });
+    await user.click(within(dialog).getByRole("button", { name: "3 November 2026" }));
+    await user.click(within(dialog).getByRole("button", { name: "12 November 2026" }));
+    await user.click(within(dialog).getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(days(calls).at(-1)).toBe("2026-11-03 to 2026-11-12"));
+    expect(await screen.findByRole("button", { name: "3 Nov – 12 Nov" })).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: "3 Nov – 12 Nov" }));
+    dialog = await screen.findByRole("dialog", { name: WINDOW });
+    await user.click(within(dialog).getByRole("button", { name: "5 November 2026" }));
+    await user.click(within(dialog).getByRole("button", { name: "Apply" }));
+    await waitFor(() => expect(days(calls).at(-1)).toBe("2026-11-05 to 2026-11-05"));
   });
 
   it("Cancel on Custom leaves everything as it was and asks for nothing new", async () => {
@@ -229,19 +252,9 @@ describe("the days to look at", () => {
     await user.click(screen.getByRole("button", { name: "This Week" }));
     await waitFor(() => expect(days(calls)).toHaveLength(2));
     await user.click(screen.getByRole("button", { name: "Custom" }));
-    await user.click(within(await screen.findByRole("dialog", { name: "Choose the days" })).getByRole("button", { name: "Cancel" }));
+    await user.click(within(await screen.findByRole("dialog", { name: WINDOW })).getByRole("button", { name: "Cancel" }));
     expect(screen.getByRole("button", { name: "This Week" })).toHaveAttribute("aria-pressed", "true");
     expect(days(calls)).toHaveLength(2);
-  });
-
-  it("Apply waits for two whole days in order", async () => {
-    const user = userEvent.setup();
-    openDashboard();
-    await within(await tileWhenThere("Students")).findByText("120");
-    await user.click(screen.getByRole("button", { name: "Custom" }));
-    await typeDay(user, "From", "31102026");
-    await typeDay(user, "To", "01102026");
-    expect(within(screen.getByRole("dialog", { name: "Choose the days" })).getByRole("button", { name: "Apply" })).toBeDisabled();
   });
 });
 

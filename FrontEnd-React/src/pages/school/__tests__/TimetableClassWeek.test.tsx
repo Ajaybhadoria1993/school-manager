@@ -7,7 +7,7 @@ import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
-import { ALLOTMENT, ART, ENGLISH, GRID, MATHS, MEENA, OVERVIEW } from "../../../test/timetableFixtures";
+import { ALLOTMENT, ART, DEV, ENGLISH, GRID, MATHS, MEENA, OVERVIEW } from "../../../test/timetableFixtures";
 import type { AcademicStructure, GridCell, GridView } from "../../../types";
 import ClassTimetablesPage from "../ClassTimetables";
 
@@ -589,13 +589,16 @@ describe("A class's timetable: saving", () => {
     expect(MON1()).not.toHaveAttribute("title");
   });
 
-  it("throws away the changes made since the last save", async () => {
+  it("has no Throw away my changes (2026-11-17): a change stays until Save, and Save is in the one row with Fill, Periods & time and the class teacher", async () => {
     const { user } = openPage();
     await screen.findByRole("table", { name: "Weekly timetable" });
     await put(user, MON1(), "Mathematics");
-    await user.click(screen.getByRole("button", { name: "Throw away my changes" }));
-    expect(MON1()).toHaveAccessibleName(/empty$/);
-    expect(screen.queryByText("Not saved")).not.toBeInTheDocument();
+    expect(screen.getByText("Not saved")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Throw away my changes" })).not.toBeInTheDocument();
+    // With a change to keep the row is the same row: nothing is added to it that could push Save to a second line.
+    const row = screen.getByRole("button", { name: "Fill the empty periods" }).parentElement!;
+    for (const name of ["Periods & time", "Add class teacher", "Save the timetable"]) expect(row).toContainElement(screen.getByRole("button", { name }));
+    expect(screen.getByRole("button", { name: "Save the timetable" })).toBeEnabled();
   });
 
   it("empties the whole week after a question, still only on the screen", async () => {
@@ -706,20 +709,18 @@ describe("A class's timetable: filling it by the program", () => {
 describe("A class's timetable: publishing and copying", () => {
   const draft: GridView = { ...GRID, exists: true, cells: [{ day: 1, period: 1, lessons: [lesson("maths")] }], stats: { ...GRID.stats, filled: 1, free: 39, placed: { maths: 1 } } };
 
-  it("a saved draft that was never published is published by the same button (it says Publish the timetable), and can be taken back", async () => {
+  it("a saved draft that was never published is published by the same button (it says Publish the timetable); once published there is nothing more to press", async () => {
     const { calls, user } = openPage(draft, {
       "POST /timetable/grid/publish": () => ({ ...draft, status: "published", publishedAt: "2026-10-31T10:00:00.000Z" }),
-      "POST /timetable/grid/unpublish": () => draft,
     });
     const header = async () => within((await screen.findByRole("heading", { name: "Class 5 - A", level: 1 })).closest("header")!);
     expect((await header()).getByText("Draft")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Publish the timetable" }));
     expect(await (await header()).findByText("Published")).toBeInTheDocument();
     expect(posts(calls, "/timetable/grid/publish")[0].body).toEqual({ classId: "c5", sectionId: "c5-A" });
-    // Published and saved: the button has nothing to do; the way back to a draft is beside it.
+    // Published and saved: the button has nothing to do. The way back to a draft is not in the toolbar any more (2026-11-17).
     expect(await screen.findByRole("button", { name: "Save the timetable" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Take back to a draft" }));
-    expect(await (await header()).findByText("Draft")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Take back to a draft" })).not.toBeInTheDocument();
   });
 
   it("with changes that are not saved the button is Save the timetable, and copying waits for it", async () => {
@@ -758,12 +759,12 @@ describe("A class's timetable: publishing and copying", () => {
     expect(posts(calls, "/timetable/grid/copy")[0].body).toEqual({ classId: "c5", sectionId: "c5-A", toSections: ["c5-B"], replace: false });
   });
 
-  it("prints the page", async () => {
-    const print = vi.spyOn(window, "print").mockImplementation(() => {});
-    const { user } = openPage();
-    await user.click(await screen.findByRole("button", { name: "Print" }));
-    expect(print).toHaveBeenCalledOnce();
-    print.mockRestore();
+  it("the toolbar has no Print, Add a teacher or Take back to a draft (2026-11-17)", async () => {
+    openPage(draft);
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    expect(screen.queryByRole("button", { name: "Print" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Add a teacher" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Take back to a draft" })).not.toBeInTheDocument();
   });
 });
 
@@ -946,7 +947,7 @@ describe("A class's timetable: choosing the teacher in the box of a period", () 
     const { user } = openPage({ ...GRID, teachers: [], exists: true, cells: [{ day: 1, period: 1, lessons: [lesson("english")] }] });
     await screen.findByRole("table", { name: "Weekly timetable" });
     await user.click(MON1());
-    // Said in the toolbar too (with Add a teacher); the box says it where the teachers would be.
+    // Said in the toolbar too; the box says it where the teachers would be.
     const inBox = await screen.findByRole("dialog", { name: /: choose the subject$/ });
     expect(await within(inBox).findByText("No teacher available in your school")).toBeInTheDocument();
     expect(screen.queryByRole("radiogroup", { name: /^Teacher for / })).not.toBeInTheDocument();
@@ -972,40 +973,42 @@ describe("A class's timetable: choosing the teacher in the box of a period", () 
   });
 });
 
-describe("A Pre-Primary class: the mother teacher and a whole day of one subject (2026-11-10)", () => {
+describe("A Pre-Primary class: its class teacher takes the periods with no teacher, and a whole day of one subject (2026-11-10; the Mother teacher box went 2026-11-17)", () => {
   const PP_STRUCTURE: AcademicStructure = { ...STRUCTURE, departments: [{ id: "d0", name: "Pre-Primary", classCount: 1 }], classes: [{ ...STRUCTURE.classes[0], departmentId: "d0" }] };
   const classTeacher = (body: unknown) => {
     const b = body as { classId: string; sectionId: string | null; teacherId: string | null };
     const teacher = b.teacherId ? { id: b.teacherId, name: b.teacherId === "meena" ? "Meena Singh" : "Dev Patel" } : null;
     return { classId: b.classId, sectionId: b.sectionId, label: "Class 5 - A", teacher };
   };
-  const openPP = (view: GridView = GRID, extra: Record<string, Handler> = {}) => openPage(view, { "GET /academics/structure": () => PP_STRUCTURE, "PUT /staff/class-teachers": classTeacher, ...extra });
-  // The class layout (which says the class is Pre-Primary) is a read of its own: the choice shows once it has come.
-  const motherBox = () => screen.findByRole("button", { name: /Mother teacher/ });
+  const openPP = (view: GridView = GRID, extra: Record<string, Handler> = {}) => openPage(view, { "GET /academics/structure": () => PP_STRUCTURE, "GET /staff/teachers": () => ({ items: [MEENA, DEV] }), "PUT /staff/class-teachers": classTeacher, ...extra });
+  // The class teacher button is in the toolbar of every class; in a Pre-Primary class the class teacher also takes the periods that have no teacher.
+  const headBox = (name: string) => screen.findByRole("button", { name });
   const withMeena = (view: GridView): GridView => ({ ...view, classTeacher: { id: "meena", name: "Meena Singh" } });
   const ctPuts = (calls: Call[]) => calls.filter((c) => c.method === "PUT" && c.path === "/staff/class-teachers");
 
-  it("has a Mother teacher choice", async () => {
+  it("has no Mother teacher box any more: the Class teacher button is the one", async () => {
     openPP();
     await screen.findByRole("table", { name: "Weekly timetable" });
-    expect(await motherBox()).toBeInTheDocument();
+    expect(await headBox("Add class teacher")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Mother teacher/ })).not.toBeInTheDocument();
   });
 
-  it("a class of another department has no Mother teacher choice and no Whole day in its box", async () => {
+  it("a class of another department has the same Class teacher button and no Whole day in its box", async () => {
     const { calls, user } = openPage();
     await screen.findByRole("table", { name: "Weekly timetable" });
     await waitFor(() => expect(calls.some((c) => c.path === "/academics/structure")).toBe(true));
+    expect(await headBox("Add class teacher")).toBeInTheDocument();
     await user.click(MON1());
     await screen.findByRole("option", { name: "English" });
     expect(screen.queryByRole("button", { name: /Mother teacher/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("radiogroup", { name: "Put the subject in" })).not.toBeInTheDocument();
   });
 
-  it("choosing her keeps her as the class teacher (one request), puts her on the periods with no teacher, and Save keeps them", async () => {
+  it("choosing the class teacher keeps them (one request), puts them on the periods with no teacher, and Save keeps them", async () => {
     const cells = [{ day: 1, period: 1, lessons: [lesson("english")] }, { day: 1, period: 2, lessons: [lesson("maths")] }];
     const { calls, user } = openPP({ ...GRID, exists: true, cells });
     await screen.findByRole("table", { name: "Weekly timetable" });
-    await user.click(await motherBox());
+    await user.click(await headBox("Add class teacher"));
     await user.click(await screen.findByRole("option", { name: "Meena Singh" }));
     await waitFor(() => expect(ctPuts(calls)).toHaveLength(1));
     expect(ctPuts(calls)[0].body).toEqual({ classId: "c5", sectionId: "c5-A", teacherId: "meena" });
@@ -1019,41 +1022,47 @@ describe("A Pre-Primary class: the mother teacher and a whole day of one subject
     expect(sent[1].lessons[0]).toMatchObject({ subjectId: "maths", teacherId: null });
   });
 
-  it("another teacher in place of the mother teacher who is there already: a window names her and asks first; Cancel keeps her and sends nothing", async () => {
+  it("another teacher in place of the class teacher who is there already: a window names them and asks first; Cancel keeps them and sends nothing", async () => {
     const cells = [{ day: 1, period: 1, lessons: [{ ...lesson("english"), teacherId: "meena" }] }];
     const { calls, user } = openPP(withMeena({ ...GRID, exists: true, cells }));
     await screen.findByRole("table", { name: "Weekly timetable" });
-    await user.click(await motherBox());
+    await user.click(await headBox("Class teacher: Meena Singh"));
     await user.click(await screen.findByRole("option", { name: "Dev Patel" }));
-    const ask = await screen.findByRole("dialog", { name: "Class 5 - A already has a mother teacher" });
-    expect(ask).toHaveTextContent("Meena Singh is the mother teacher (the class teacher) of Class 5 - A now.");
-    expect(ask).toHaveTextContent("Dev Patel becomes the mother teacher instead and Meena Singh no longer is.");
+    const ask = await screen.findByRole("dialog", { name: "Make Dev Patel the class teacher of Class 5 - A?" });
+    expect(ask).toHaveTextContent("Meena Singh will no longer be.");
     expect(ctPuts(calls)).toHaveLength(0);
 
     await user.click(within(ask).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Class 5 - A already has a mother teacher" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Make Dev Patel the class teacher of Class 5 - A?" })).not.toBeInTheDocument());
     expect(ctPuts(calls)).toHaveLength(0);
-    expect(await motherBox()).toHaveTextContent("Meena Singh");
+    expect(await headBox("Class teacher: Meena Singh")).toBeInTheDocument();
     expect(MON1()).toHaveTextContent("Meena Singh");
 
-    await user.click(await motherBox());
+    await user.click(await headBox("Class teacher: Meena Singh"));
     await user.click(await screen.findByRole("option", { name: "Dev Patel" }));
-    await user.click(within(await screen.findByRole("dialog", { name: "Class 5 - A already has a mother teacher" })).getByRole("button", { name: "Change mother teacher" }));
+    await user.click(within(await screen.findByRole("dialog", { name: "Make Dev Patel the class teacher of Class 5 - A?" })).getByRole("button", { name: "Make class teacher" }));
     await waitFor(() => expect(ctPuts(calls)).toHaveLength(1));
     expect(ctPuts(calls)[0].body).toEqual({ classId: "c5", sectionId: "c5-A", teacherId: "dev" });
     await waitFor(() => expect(MON1()).toHaveTextContent("Dev Patel"));
+    expect(await headBox("Class teacher: Dev Patel")).toBeInTheDocument();
   });
 
-  it("taking the mother teacher away (No mother teacher) asks too; a class with none yet is not asked", async () => {
-    const { calls, user } = openPP(withMeena(GRID));
+  it("No class teacher (2026-11-17): asks first, then takes them away; the periods that had them have no teacher until Save, and the button says Add class teacher again", async () => {
+    const cells = [{ day: 1, period: 1, lessons: [{ ...lesson("english"), teacherId: "meena" }] }];
+    const { calls, user } = openPP(withMeena({ ...GRID, exists: true, cells }));
     await screen.findByRole("table", { name: "Weekly timetable" });
-    await user.click(await motherBox());
-    await user.click(await screen.findByRole("option", { name: "No mother teacher" }));
-    const ask = await screen.findByRole("dialog", { name: "Take Meena Singh off as mother teacher of Class 5 - A?" });
+    expect(MON1()).toHaveTextContent("Meena Singh");
+    await user.click(await headBox("Class teacher: Meena Singh"));
+    await user.click(await screen.findByRole("button", { name: "No class teacher" }));
+    const ask = await screen.findByRole("dialog", { name: "Take Meena Singh off as the class teacher of Class 5 - A?" });
     expect(ctPuts(calls)).toHaveLength(0);
     await user.click(within(ask).getByRole("button", { name: "Take off" }));
     await waitFor(() => expect(ctPuts(calls)).toHaveLength(1));
     expect(ctPuts(calls)[0].body).toEqual({ classId: "c5", sectionId: "c5-A", teacherId: null });
+    expect(await headBox("Add class teacher")).toBeInTheDocument();
+    await waitFor(() => expect(MON1()).toHaveTextContent("no teacher"));
+    expect(screen.getByText("Not saved")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "A note" })).toHaveTextContent("The periods that had Meena Singh have no teacher now.");
   });
 
   it("with a mother teacher, a subject put in (this period, all week) has her on every day it goes on", async () => {
@@ -1093,14 +1102,14 @@ describe("A Pre-Primary class: the mother teacher and a whole day of one subject
     expect(MON2()).toHaveAccessibleName(/ENG$/);
   });
 
-  it("the box names the mother teacher first in its list of teachers", async () => {
+  it("the box names the class teacher first in its list of teachers", async () => {
     const { user } = openPP(withMeena({ ...GRID, exists: true, cells: [{ day: 1, period: 1, lessons: [lesson("english")] }] }));
     await screen.findByRole("table", { name: "Weekly timetable" });
     await user.click(MON1());
-    // Meena is the class's mother teacher, so she is listed first whether or not she teaches English; Dev (who does not) is behind Show all teachers.
+    // Meena is the class's class teacher, so she is listed first whether or not she teaches English; Dev (who does not) is behind Show all teachers.
     const radios = within(await screen.findByRole("radiogroup", { name: "Teacher for English" })).getAllByRole("radio");
     expect(radios.map((r) => r.getAttribute("aria-label"))).toEqual(["No teacher", "Meena Singh"]);
-    expect(radios[1]).toHaveTextContent("Mother teacher");
+    expect(radios[1]).toHaveTextContent("Class teacher");
     await user.click(screen.getByRole("button", { name: "Show all teachers (1 more)" }));
     expect(within(await screen.findByRole("radiogroup", { name: "Teacher for English" })).getAllByRole("radio").map((r) => r.getAttribute("aria-label"))).toEqual(["No teacher", "Meena Singh", "Dev Patel"]);
   });
@@ -1123,13 +1132,14 @@ describe("A Pre-Primary class: the mother teacher and a whole day of one subject
     expect(screen.queryByRole("button", { name: /Mother teacher/ })).not.toBeInTheDocument();
   });
 
-  it("says why when the mother teacher could not be kept, and changes nothing", async () => {
+  it("says why when the class teacher could not be kept, and changes nothing", async () => {
     const { calls, user } = openPP({ ...GRID, exists: true, cells: [{ day: 1, period: 1, lessons: [lesson("english")] }] }, { "PUT /staff/class-teachers": server(409, "Meena Singh has left the school.") });
     await screen.findByRole("table", { name: "Weekly timetable" });
-    await user.click(await motherBox());
+    await user.click(await headBox("Add class teacher"));
     await user.click(await screen.findByRole("option", { name: "Meena Singh" }));
     expect(await screen.findByText("Meena Singh has left the school.")).toBeInTheDocument();
     expect(MON1()).toHaveTextContent("no teacher");
     expect(ctPuts(calls)).toHaveLength(1);
+    expect(await headBox("Add class teacher")).toBeInTheDocument();
   });
 });

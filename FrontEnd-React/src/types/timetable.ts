@@ -56,6 +56,11 @@ export interface Schedule {
 export interface SchoolDayInput {
   departmentId?: string | null;
   days: { day: number; slots: Slot[] }[];
+  /**
+   * The winter shift, whole school only: the minutes (negative: earlier) every other timing of the school (each class's and department's
+   * own) moves by in the same save, so that when school starts later they start later too.
+   */
+  shiftOthers?: number;
 }
 
 /**

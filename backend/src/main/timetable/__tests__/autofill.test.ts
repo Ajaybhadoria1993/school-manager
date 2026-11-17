@@ -189,3 +189,82 @@ describe("what it will not do", () => {
     expect(autofill(input([])).cells).toEqual([]);
   });
 });
+
+describe("the class teacher takes the first period (2026-11-17)", () => {
+  const SUBJECTS = () => [
+    allot("english", "English", { periodsPerWeek: 5, teacherId: "dev" }),
+    allot("maths", "Mathematics", { periodsPerWeek: 6, teacherId: "meena" }),
+    allot("hindi", "Hindi", { periodsPerWeek: 5, teacherId: "asha" }),
+  ];
+  const firstOf = (cells: CellIn[]) => [1, 2, 3, 4, 5].map((day) => cells.find((c) => c.day === day && c.period === 1)?.lessons[0]?.subjectId ?? null);
+
+  it("by default the class teacher's subject is the first period of every day", () => {
+    const i = input(SUBJECTS(), { classTeacherId: "dev" });
+    const result = autofill(i);
+    expect(firstOf(result.cells)).toEqual(["english", "english", "english", "english", "english"]);
+    expect(result.unplaced).toEqual([]);
+    expect(errorsOf(i, result.cells)).toEqual([]);
+    for (const a of SUBJECTS()) expect(periodsOf(result.cells, a.subjectId), a.subjectName).toHaveLength(a.periodsPerWeek);
+  });
+
+  it("a class teacher with more periods than days has one first period a day; the rest of their periods are placed as usual", () => {
+    const i = input(SUBJECTS(), { classTeacherId: "meena" });
+    const result = autofill(i);
+    expect(firstOf(result.cells)).toEqual(["maths", "maths", "maths", "maths", "maths"]);
+    expect(periodsOf(result.cells, "maths")).toHaveLength(6);
+    expect(result.unplaced).toEqual([]);
+    expect(errorsOf(i, result.cells)).toEqual([]);
+  });
+
+  it("a class teacher with two subjects shares the first periods between them, as their periods are", () => {
+    const i = input([allot("english", "English", { periodsPerWeek: 3, teacherId: "dev" }), allot("art", "Art", { periodsPerWeek: 2, teacherId: "dev" }), allot("maths", "Mathematics", { periodsPerWeek: 5, teacherId: "meena" })], { classTeacherId: "dev" });
+    const result = autofill(i);
+    const first = firstOf(result.cells);
+    expect(first.filter((s) => s === "english")).toHaveLength(3);
+    expect(first.filter((s) => s === "art")).toHaveLength(2);
+    expect(errorsOf(i, result.cells)).toEqual([]);
+  });
+
+  it("with no class teacher, or one who teaches nothing in this class, the arrangement is the same as ever", () => {
+    const plain = autofill(input(SUBJECTS())).cells;
+    expect(autofill(input(SUBJECTS(), { classTeacherId: null })).cells).toEqual(plain);
+    expect(autofill(input(SUBJECTS(), { classTeacherId: "kiran" })).cells).toEqual(plain);
+  });
+
+  it("a lesson already in a first period is kept, and that day's first period is not taken again", () => {
+    const kept: CellIn = { day: 3, period: 1, lessons: [{ subjectId: "hindi", teacherId: null, room: null }] };
+    const i = input(SUBJECTS(), { classTeacherId: "dev", cells: [kept] });
+    const result = autofill(i);
+    expect(firstOf(result.cells)).toEqual(["english", "english", "hindi", "english", "english"]);
+    // The class teacher's fifth English period is placed on another period, not lost.
+    expect(periodsOf(result.cells, "english")).toHaveLength(5);
+    expect(result.unplaced).toEqual([]);
+  });
+
+  it("a day on which the class teacher is busy in another class in the first period, or does not come, goes on as before", () => {
+    const busy: Busy = { teacherId: "dev", room: null, day: 2, start: t("08:30"), end: t("09:10"), where: "Class 7 - B", subjectName: "English" };
+    const i = input(SUBJECTS(), { classTeacherId: "dev", busy: [busy], teachers: new Map([teacher("meena"), teacher("dev", { offDays: [4] }), teacher("asha")].map((x) => [x.id, x])) });
+    const result = autofill(i);
+    const first = firstOf(result.cells);
+    expect(first[0]).toBe("english");
+    expect(first[1]).not.toBe("english");
+    expect(first[3]).not.toBe("english");
+    expect(first[2]).toBe("english");
+    expect(errorsOf(i, result.cells)).toEqual([]);
+  });
+
+  it("only a subject taught alone in single periods goes in the first period for them: a double period or a choice does not", () => {
+    const i = input(
+      [
+        allot("lab", "Science lab", { periodsPerWeek: 4, blockSize: 2, teacherId: "dev" }),
+        allot("sanskrit", "Sanskrit", { periodsPerWeek: 4, group: "third language", teacherId: "dev" }),
+        allot("french", "French", { periodsPerWeek: 4, group: "third language", teacherId: "asha" }),
+        allot("maths", "Mathematics", { periodsPerWeek: 5, teacherId: "meena" }),
+      ],
+      { classTeacherId: "dev" }
+    );
+    const result = autofill(i);
+    // Nothing of the class teacher's is eligible, so the plain arrangement stands.
+    expect(result.cells).toEqual(autofill({ ...i, classTeacherId: null }).cells);
+  });
+});

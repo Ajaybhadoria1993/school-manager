@@ -1,4 +1,4 @@
-import { DEFAULT_SETUP, generateDay, setupFromSlots, setupProblems, slotProblems, type DaySetup } from "./timings";
+import { DEFAULT_SETUP, clockToMinutes, generateDay, setupFromSlots, setupProblems, shiftBreaks, shiftSetup, slotProblems, type DaySetup } from "./timings";
 import type { Schedule, SchoolDayInput, Slot } from "../types";
 
 /**
@@ -58,6 +58,27 @@ export function readWeek(schedules: readonly Schedule[], departmentId: string | 
   }
   const handMade = working.filter((s) => !sameRows(generateDay(setupFromSlots(s.slots)).slots, s.slots)).map((s) => s.name);
   return { plan: { usual, days }, isNew: false, handMade };
+}
+
+/** How many minutes later (negative: earlier) one start time is than another; null when either is not a whole time (a box half typed). */
+export function shiftMinutes(from: string, to: string): number | null {
+  const a = clockToMinutes(from);
+  const b = clockToMinutes(to);
+  return a === null || b === null ? null : b - a;
+}
+
+/**
+ * The usual day was changed to `next` (2026-11-17, the winter shift). When the START moved, the lunch and the short break move with it, and
+ * so does every day of the week that has hours of its own (a short Saturday), by the same minutes: school starts an hour later, so does
+ * everything. A lunch or a day that would leave the day stays as it is. `lastStart` is the last whole start the page saw: a box cleared and
+ * typed again is measured from it. Anything else that changed (a period's length, how many periods) changes only that.
+ */
+export function moveStart(plan: WeekPlan, next: DaySetup, lastStart: string): WeekPlan {
+  const was = clockToMinutes(plan.usual.start) !== null ? plan.usual.start : lastStart;
+  const delta = next.start === plan.usual.start ? null : shiftMinutes(was, next.start);
+  if (!delta) return { ...plan, usual: next };
+  const days = Object.fromEntries(WEEK_DAYS.map((d) => [d, plan.days[d].mode === "own" ? { mode: "own" as const, setup: shiftSetup(plan.days[d].setup, delta) ?? plan.days[d].setup } : plan.days[d]]));
+  return { usual: shiftBreaks(next, delta), days };
 }
 
 /** The days of the week that follow the school's usual day. */
