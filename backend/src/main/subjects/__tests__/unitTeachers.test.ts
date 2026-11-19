@@ -130,6 +130,17 @@ describe("a subject with backup teachers", () => {
 });
 
 describe("the class's teachers saved in one request", () => {
+  it("the class's list says who its class teacher is (null when nobody), so a screen can warn before another one is put in their place", async () => {
+    const r = await ready();
+    expect((await get(r.token, r.a)).body.data.classTeacher).toBeNull();
+    await request(app).put("/api/v1/staff/class-teachers").set(auth(r.token)).send({ ...r.a, teacherId: r.t.dev });
+    expect((await get(r.token, r.a)).body.data.classTeacher).toEqual({ id: r.t.dev, name: "Dev Patel" });
+    // Another section of the class has its own.
+    expect((await get(r.token, r.b)).body.data.classTeacher).toBeNull();
+    await request(app).put("/api/v1/staff/class-teachers").set(auth(r.token)).send({ ...r.a, teacherId: null });
+    expect((await get(r.token, r.a)).body.data.classTeacher).toBeNull();
+  });
+
   it("the class teacher and every subject's main and backup teachers, together; the answer is the class's list as it is now", async () => {
     const r = await ready();
     const res = await saveTeachers(r.token, {

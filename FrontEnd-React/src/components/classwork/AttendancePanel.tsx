@@ -26,8 +26,9 @@ const MARKS: { value: AttendanceStatus; label: string; on: string }[] = [
  * then says how many were present, absent, late and on leave. A child marked Absent or Late can be given a **reason** (optional, 2026-11-06:
  * "Fever"): the school and the parent see it. A holiday says so and has nothing to save.
  */
-export function AttendancePanel({ classId, sectionId }: { classId: string; sectionId: string | null }) {
+export function AttendancePanel({ classId, sectionId, canMark = false }: { classId: string; sectionId: string | null; canMark?: boolean }) {
   const today = todayInIndia();
+  // Only the class teacher takes the day (2026-11-17); the school, and anyone else who may see it, gets the marks without the buttons.
   const [date, setDate] = useState(today);
   const res = useGetAttendanceQuery({ classId, sectionId, date: date || today });
   const [save, { isLoading: saving }] = useSaveAttendanceMutation();
@@ -109,6 +110,7 @@ export function AttendancePanel({ classId, sectionId }: { classId: string; secti
                     placeholder="Reason (optional)"
                     maxLength={200}
                     value={reasons[s.id] ?? ""}
+                    readOnly={!canMark}
                     onChange={(e) => setReasons((all) => ({ ...all, [s.id]: e.target.value }))}
                     className="h-8 min-w-0 flex-1 basis-40 rounded-lg border border-border bg-surface px-2.5 text-sm text-foreground placeholder:text-foreground-muted/70 focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/15 sm:max-w-xs"
                   />
@@ -122,7 +124,7 @@ export function AttendancePanel({ classId, sectionId }: { classId: string; secti
                         (marks[s.id] ?? s.status) === m.value ? m.on : "border-border bg-surface text-foreground-muted hover:text-foreground"
                       )}
                     >
-                      <input type="radio" className="sr-only" name={`mark-${s.id}`} checked={(marks[s.id] ?? s.status) === m.value} onChange={() => setMarks((all) => ({ ...all, [s.id]: m.value }))} />
+                      <input type="radio" className="sr-only" name={`mark-${s.id}`} disabled={!canMark} checked={(marks[s.id] ?? s.status) === m.value} onChange={() => setMarks((all) => ({ ...all, [s.id]: m.value }))} />
                       {m.label}
                     </label>
                   ))}
@@ -130,10 +132,12 @@ export function AttendancePanel({ classId, sectionId }: { classId: string; secti
               </li>
             ))}
           </ul>
-          <Button size="lg" loading={saving} onClick={() => void send()}>
-            {!saving && <Save className="size-4" aria-hidden />}
-            Save attendance
-          </Button>
+          {canMark && (
+            <Button size="lg" loading={saving} onClick={() => void send()}>
+              {!saving && <Save className="size-4" aria-hidden />}
+              Save attendance
+            </Button>
+          )}
         </>
       )}
       {result.modal}

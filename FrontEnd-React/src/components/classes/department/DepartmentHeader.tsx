@@ -35,7 +35,7 @@ export function DepartmentHeader({
     <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
       <div className="min-w-0 flex-1 basis-64">
         <div className="flex items-center gap-1.5">
-          <h1 className="truncate text-2xl font-extrabold tracking-[-0.02em] text-foreground sm:text-3xl">{title}</h1>
+          <h1 className="truncate text-page-heading">{title}</h1>
           {action}
         </div>
         <p className="mt-0.5 text-sm text-foreground-muted">{facts.join(" · ")}</p>

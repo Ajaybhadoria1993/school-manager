@@ -25,7 +25,7 @@ export interface ViewRow {
 
 type Filter = "all" | "good" | "bad" | "already";
 
-const TH = "px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-foreground-muted";
+const TH = "px-4 py-3 text-left text-[13.5px] font-semibold text-foreground";
 const isGood = (r: ViewRow) => r.status === "ready" || r.status === "admitted";
 const isBad = (r: ViewRow) => r.status === "problem" || r.status === "failed";
 const isAlready = (r: ViewRow) => r.status === "already";

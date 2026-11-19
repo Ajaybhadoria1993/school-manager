@@ -275,7 +275,7 @@ export class SpreadsheetService {
       "3. Blue columns: at least one parent (Father, Mother or Guardian) with a name and a 10-digit mobile number. The first of them with a mobile number becomes the primary contact.",
       "4. A parent who already has a child in your school is found by the mobile number and linked to the new child: brothers and sisters share one parent record.",
       "5. Dates as DD-MM-YYYY, for example 14-05-2016. The student must be 2 to 25 years old on the admission date (empty Admission Date = today).",
-      "6. Class exactly as in the Classes sheet. Section is needed when the class has sections this year; leave it empty when the class has none.",
+      "6. Class exactly as in the Classes sheet. Class 11 and 12 are taught in streams: write the stream with the class, for example Class 11 Science (or add a Stream column). Section is optional: leave it empty and the students are shared between the sections of the class.",
       "7. Everything else is optional here: the address, the previous school, the IDs... Fill what your old register has and leave the rest empty. Add student on the Students page asks for more, for a new admission.",
       "8. Admission No. is optional: fill it to keep the number your school already gave the student, or leave it empty for the next number (ADM-2026-0001).",
       `9. Up to ${MAX_IMPORT_ROWS} students per file. Upload it with Bulk upload on the Students page: you see every row checked before anything is saved.`,

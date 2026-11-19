@@ -115,7 +115,7 @@ export function AcademicYearSetUp() {
           <CalendarRange className="size-5" aria-hidden />
         </span>
         <div className="min-w-0">
-          <h2 className="text-base font-bold text-foreground">Set up your current academic year</h2>
+          <h2 className="text-section-heading">Set up your current academic year</h2>
           <p className="mt-1 text-sm text-foreground-muted">
             Your school was approved before academic years were added, so none is set yet. Name the session that is running now,
             with its own first and last day. It becomes your current academic year, and the sections you already made are kept for it.

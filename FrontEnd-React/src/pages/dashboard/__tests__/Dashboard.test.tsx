@@ -96,16 +96,62 @@ describe("A teacher's home", () => {
 });
 
 describe("The school's dashboard", () => {
-  it("is still what the school admin and the principal see", async () => {
-    openPage("school_admin");
-    expect(await screen.findByText("Approved and live")).toBeInTheDocument();
-    expect(screen.getByText("Administrators")).toBeInTheDocument();
+  // The school's home (redone like Infinity Medisetu's 2026-11-10, its own tests are in components/dashboard): a greeting and the days, five figures, then the cards.
+  const SCHOOL_HOME = {
+    date: "2026-11-05",
+    academicYear: { id: "y1", name: "2026-2027" },
+    classes: 1,
+    students: { total: 2, byClass: [{ classId: "c1", name: "Class 1", enrolled: 2 }], gender: { male: 1, female: 1, other: 0 } },
+    people: { teachers: 1, staff: 0 },
+    attendance: { working: true, holiday: null, students: { present: 0, late: 0, absent: 0, leave: 0, percent: null, classesTaken: 0, classesTotal: 1 }, teachers: { total: 1, present: 0, late: 0, absent: 0 } },
+    admissions: [],
+    attention: [],
+    upcoming: [],
+    period: {
+      from: "2026-11-05",
+      to: "2026-11-05",
+      previous: { from: "2026-11-04", to: "2026-11-04" },
+      students: { admitted: 0, admittedBefore: 0 },
+      attendance: { present: 0, late: 0, absent: 0, leave: 0, percent: null, before: { absent: 0, percent: null } },
+      teachers: { present: 0, late: 0, absent: 0, percent: null, before: { percent: null } },
+      leaves: { asked: 0, askedBefore: 0 },
+      absentClasses: [],
+    },
+    day: { working: true, holiday: null, start: "08:30", end: "14:20" },
+  };
+  const SCHOOL_TREND = { period: "week", from: "2026-11-02", to: "2026-11-08", points: [], percent: null, before: null };
+
+  it("is the school's home for the school admin: the figures on top and the cards under them, no estimates or sample tiles", async () => {
+    openPage("school_admin", { "GET /dashboard/school": () => SCHOOL_HOME, "GET /dashboard/school/trend": () => SCHOOL_TREND });
+    expect(await screen.findByRole("heading", { level: 1, name: /Hello Meena/ })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Needs your attention" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Students" })).toBeInTheDocument();
+    expect(screen.queryByText("Administrators")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "About you" })).not.toBeInTheDocument();
   });
 
   it.each(["principal", "accountant"] as const)("is still what the %s sees (added from Staff, with the school's pages)", async (role) => {
-    openPage(role);
-    expect(await screen.findByText("Approved and live")).toBeInTheDocument();
+    openPage(role, { "GET /dashboard/school": () => SCHOOL_HOME, "GET /dashboard/school/trend": () => SCHOOL_TREND });
+    expect(await screen.findByRole("heading", { level: 1, name: /Hello Meena/ })).toBeInTheDocument();
+    expect(await screen.findByRole("group", { name: "Students" })).toBeInTheDocument();
+  });
+
+  // What the school allowed (Permissions)
+  it("a receptionist given the dashboard gets the school's dashboard, not the staff home", async () => {
+    openPage("receptionist", { "GET /dashboard/school": () => SCHOOL_HOME, "GET /dashboard/school/trend": () => SCHOOL_TREND }, { permissions: ["calendar.view", "dashboard.view"] });
+    expect(await screen.findByRole("heading", { level: 1, name: /Hello Meena/ })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "About you" })).not.toBeInTheDocument();
+  });
+
+  it("an accountant the school took the dashboard from has the staff home, and asks the server for no numbers", async () => {
+    const calls = openPage("accountant", {}, { permissions: ["calendar.view"] });
+    expect(await screen.findByRole("region", { name: "About you" })).toBeInTheDocument();
+    expect(calls.filter((c) => c.path.startsWith("/dashboard"))).toEqual([]);
+  });
+
+  it("the school admin and the principal always have it, even with an empty list", async () => {
+    openPage("principal", { "GET /dashboard/school": () => SCHOOL_HOME, "GET /dashboard/school/trend": () => SCHOOL_TREND }, { permissions: [] });
+    expect(await screen.findByRole("heading", { level: 1, name: /Hello Meena/ })).toBeInTheDocument();
   });
 });
 

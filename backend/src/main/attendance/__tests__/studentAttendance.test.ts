@@ -40,7 +40,7 @@ describe("a class's students, for a range of days", () => {
     await take(s.tokens.meena, "2026-11-04", [{ studentId: s.asha.id, status: "late", reason: "Bus" }, { studentId: s.kabir.id, status: "present" }]);
     const res = await students(s.token, s.a, "2026-11-01", FRI);
     expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(res.body.data).toMatchObject({ label: "Class 5 - A", from: "2026-11-01", to: FRI });
+    expect(res.body.data).toMatchObject({ label: "Class 5", from: "2026-11-01", to: FRI });
     expect(res.body.data.students.map((c: { name: string }) => c.name)).toEqual(["Asha Verma", "Kabir Rao"]);
     expect(child(res, s.asha.id).records).toEqual([
       { date: "2026-11-03", status: "present", reason: null },
@@ -94,7 +94,9 @@ describe("a class's students, for a range of days", () => {
     const b = (await request(app).post(`/api/v1/academics/classes/${s.class5.id}/sections`).set(auth(s.token)).send({ name: "B" })).body.data as { id: string };
     const res = await students(s.token, { classId: s.class5.id, sectionId: b.id }, THU, THU);
     expect(res.status).toBe(200);
-    expect(res.body.data).toMatchObject({ label: "Class 5 - B", students: [] });
+    expect(res.body.data).toMatchObject({ label: "Class 5B", students: [] });
+    // Now that Class 5 has two sections, section A is named too.
+    expect((await students(s.token, s.a, THU, THU)).body.data.label).toBe("Class 5A");
     expect((await students(s.token, s.a, THU, THU)).body.data.students).toHaveLength(2);
   });
 

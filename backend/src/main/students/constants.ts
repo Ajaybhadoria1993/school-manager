@@ -162,7 +162,8 @@ export const STUDENT_FORM_FIELDS = [
   { key: "addressCity", label: "City or village", group: "Address", default: "required", message: "Enter the city" },
   { key: "addressState", label: "State", group: "Address", default: "required", message: "Choose the state" },
   { key: "addressPincode", label: "PIN code", group: "Address", default: "required", message: "PIN code is 6 digits" },
-  { key: "aadhaarNumber", label: "Aadhaar number", group: "IDs", default: "required", message: "Enter the Aadhaar number" },
+  // Asked, not needed: a child may have no Aadhaar number yet, and a school may not refuse an admission for it. A school can make it mandatory.
+  { key: "aadhaarNumber", label: "Aadhaar number", group: "IDs", default: "optional", message: "Enter the Aadhaar number" },
   { key: "samagraId", label: "Samagra ID", group: "IDs", default: "hidden", message: "Enter the Samagra ID" },
   { key: "apaarId", label: "APAAR ID", group: "IDs", default: "hidden", message: "Enter the APAAR ID" },
   { key: "pen", label: "PEN (UDISE+)", group: "IDs", default: "hidden", message: "Enter the PEN" },
@@ -216,13 +217,17 @@ export function normaliseRules(rules: FieldRules): FieldRules {
 /**
  * What a school needs of ONE admission, by the class the student goes into: the previous school (its name, the last class there and
  * the TC number) is needed only for a student of Class 1 to 12, as the school decided; for any other class (Nursery, LKG, UKG...), or
- * when the class is not known, nothing of it is needed. The rest of the school's needs are the same for every class.
+ * when the class is not known, nothing of it is needed. A field of the school's own that is for some classes only (`classNumbers`) is
+ * needed only in those. The rest of the school's needs are the same for every class.
  */
 export function needsForClass(needs: SchoolNeeds, className: string | null | undefined): SchoolNeeds {
-  if (className && classNumber(className) !== null) return needs;
+  const custom = needs.custom.some((f) => f.mode === "required" && !customFieldIsFor(f, className))
+    ? needs.custom.map((f) => (f.mode === "required" && !customFieldIsFor(f, className) ? { ...f, mode: "optional" as const } : f))
+    : needs.custom;
+  if (className && classNumber(className) !== null) return custom === needs.custom ? needs : { ...needs, custom };
   const rules = { ...needs.rules };
   for (const key of PREVIOUS_SCHOOL_RULES) if (rules[key] === "required") rules[key] = "optional";
-  return { ...needs, rules };
+  return { ...needs, rules, custom };
 }
 
 /**
@@ -380,6 +385,17 @@ export interface CustomFieldDef {
   /** The choices of a list ("choice"); empty for the other kinds. */
   options: string[];
   mode: FieldMode;
+  /**
+   * The classes (1 to 12, by their number: "Class 11 Science" is 11) the field belongs to. Absent or empty = every class. A student of
+   * another class is never asked it: it is optional for them (`needsForClass`) and the form does not show it.
+   */
+  classNumbers?: number[];
+}
+/** The field is for this class: it has no list of classes, or the class (by its name) is one of them. */
+export function customFieldIsFor(field: Pick<CustomFieldDef, "classNumbers">, className: string | null | undefined): boolean {
+  if (!field.classNumbers || field.classNumbers.length === 0) return true;
+  const number = className ? classNumber(className) : null;
+  return number !== null && field.classNumbers.includes(number);
 }
 /**
  * The steps of Add student, and which details a school may place in any of them. The name, gender, birthday, category, the class,

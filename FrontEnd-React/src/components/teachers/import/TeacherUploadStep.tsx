@@ -106,7 +106,7 @@ export function TeacherUploadStep({
           <span aria-hidden className={cn("relative flex size-10 items-center justify-center rounded-xl", TONES.success.gradient)}>
             <FileSpreadsheet className="size-5" />
           </span>
-          <h2 className="relative mt-3 text-base font-bold text-foreground">Start from the sample file</h2>
+          <h2 className="text-section-heading relative mt-3">Start from the sample file</h2>
           <ul className="relative mt-3 space-y-2">
             {LEGEND.map((item) => (
               <li key={item.label} className="flex items-center gap-2.5 text-xs text-foreground">

@@ -140,38 +140,13 @@ const text = (what: string, max: number, required?: { empty: string; min: number
 const digits = (pattern: RegExp, message: string) =>
   z.preprocess((v) => (typeof v === "string" ? v.replace(/[\s-]/g, "") : v), z.string({ invalid_type_error: message }).regex(pattern, message));
 
-/** Verhoeff's check digit, the one the last digit of every Aadhaar number is (it catches one wrong digit and two swapped ones). */
-const VERHOEFF_D = [
-  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2, 3, 4, 0, 6, 7, 8, 9, 5], [2, 3, 4, 0, 1, 7, 8, 9, 5, 6], [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
-  [4, 0, 1, 2, 3, 9, 5, 6, 7, 8], [5, 9, 8, 7, 6, 0, 4, 3, 2, 1], [6, 5, 9, 8, 7, 1, 0, 4, 3, 2], [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
-  [8, 7, 6, 5, 9, 3, 2, 1, 0, 4], [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
-];
-const VERHOEFF_P = [
-  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 5, 7, 6, 2, 8, 3, 0, 9, 4], [5, 8, 0, 3, 7, 9, 6, 1, 4, 2], [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
-  [9, 4, 5, 3, 1, 2, 6, 8, 7, 0], [4, 2, 8, 6, 5, 7, 3, 9, 0, 1], [2, 7, 9, 3, 8, 0, 6, 4, 1, 5], [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
-];
-export const verhoeffValid = (number: string) =>
-  [...number].reverse().reduce((c, digit, i) => VERHOEFF_D[c][VERHOEFF_P[i % 8][Number(digit)]], 0) === 0;
-
 /**
- * What is wrong with an Aadhaar number, said by what is wrong (a person who typed 12 digits is not told to "enter 12 digits"): the
- * number of digits, the first digit, or the last digit (a check digit worked out from the other eleven).
+ * An Aadhaar number is 12 digits (spaces and dashes typed between them are dropped) and nothing else is checked: no rule for the first
+ * digit and no check digit. A school types what is on the card, and a file of test or old data has made-up numbers; refusing them stops
+ * an admission for a number nobody here can verify (only UIDAI can). One number is one student (a unique index), see `aadhaarTaken`.
  */
 export const AADHAAR_LENGTH_MESSAGE = "The Aadhaar number has 12 digits";
-export const AADHAAR_START_MESSAGE = "An Aadhaar number does not start with 0 or 1";
-export const AADHAAR_CHECK_MESSAGE = "This Aadhaar number is not valid: its last digit (the check digit) does not match the other digits";
-/** The one thing wrong with an Aadhaar number (digits only, spaces and dashes already dropped), or null. */
-export const aadhaarProblem = (v: string): string | null =>
-  !/^\d{12}$/.test(v) ? AADHAAR_LENGTH_MESSAGE : /^[01]/.test(v) ? AADHAAR_START_MESSAGE : !verhoeffValid(v) ? AADHAAR_CHECK_MESSAGE : null;
-/** 12 digits, not starting with 0 or 1, whose last digit is the Verhoeff check digit (a mistyped number is caught here). */
-const aadhaar = z
-  .preprocess(
-    (v) => (typeof v === "string" ? v.replace(/[\s-]/g, "") : v),
-    z.string({ invalid_type_error: AADHAAR_LENGTH_MESSAGE }).superRefine((v, ctx) => {
-      const problem = aadhaarProblem(v);
-      if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
-    })
-  );
+const aadhaar = digits(/^\d{12}$/, AADHAAR_LENGTH_MESSAGE);
 
 /**
  * A calendar day as the form sends it, "2026-04-01", turned into midnight UTC of that day (like the academic year's days). A day
@@ -364,6 +339,13 @@ const classId = z.string({ required_error: "Choose the class", invalid_type_erro
 /** "" or null: no section (only allowed for a class that has none this year; the service checks that). */
 const sectionId = z.preprocess((v) => (v === "" ? null : v), objectId.nullable().optional());
 
+/** The new seats of a full section or class: a whole number (a section has up to 200, a class up to 2000; the service checks which). */
+const raiseSeatsTo = z
+  .number({ invalid_type_error: "Seats must be a number" })
+  .int("Seats must be a whole number")
+  .min(1, "Seats must be at least 1")
+  .max(2000, "Seats cannot be more than 2000");
+
 /**
  * One admission: the student, their guardians (1 to 4, exactly one primary) and their place in the current academic year. The
  * class and section rules that need the database (the section belongs to that class and year, a seat is free...) are checked by
@@ -384,6 +366,11 @@ export const admitStudentSchema = z
       .max(MAX_GUARDIANS, `A student can have at most ${MAX_GUARDIANS} guardians`),
     /** The person saw that the section is full and wants the student in it anyway. */
     allowOverCapacity: z.boolean().default(false),
+    /**
+     * The person saw that the section (or the class, when it has no sections) is full and says: raise its seats to this number and put
+     * the student in. It must leave room for the student; the server raises the seats only when it is really full.
+     */
+    raiseSeatsTo: raiseSeatsTo.optional(),
     /** The person saw the possible duplicate (same name, birthday and primary mobile) and says it is a different child. */
     confirmNotDuplicate: z.boolean().default(false),
   })
@@ -463,6 +450,8 @@ export const moveStudentSchema = z
     sectionId,
     rollNumber,
     allowOverCapacity: z.boolean().default(false),
+    /** Raise the seats of the full place to this number and move the student in (see the admission). */
+    raiseSeatsTo: raiseSeatsTo.optional(),
     /** Why the student is moved (optional): kept with who moved them and when. */
     reason: z
       .string()
@@ -894,9 +883,9 @@ const tidyText = (v: unknown) => (typeof v === "string" ? v.trim().replace(/\s+/
  * entry never hides another's message: a name (2 to 40 characters, not one of the list's, once), a kind, the choices of a list (1 to
  * 30, each once), and needed / optional / not asked (a yes / no is never needed). The service refuses a changed kind.
  */
-export function customFieldListSchema(listNames: ReadonlyMap<string, string>, taken: (listed: string) => string) {
+export function customFieldListSchema(listNames: ReadonlyMap<string, string>, taken: (listed: string) => string, withClasses = false) {
   return z
-  .array(z.object({ key: z.unknown(), label: z.unknown(), type: z.unknown(), options: z.unknown().optional(), mode: z.unknown() }), {
+  .array(z.object({ key: z.unknown(), label: z.unknown(), type: z.unknown(), options: z.unknown().optional(), mode: z.unknown(), classNumbers: z.unknown().optional() }), {
     invalid_type_error: "Choose your school's own fields",
   })
   .max(MAX_CUSTOM_FIELDS, `Up to ${MAX_CUSTOM_FIELDS} fields of your own`)
@@ -924,6 +913,8 @@ export function customFieldListSchema(listNames: ReadonlyMap<string, string>, ta
       }
       if (!(FIELD_MODES as readonly unknown[]).includes(f.mode)) say([i, "mode"], "Choose needed, optional or not asked");
       else if (f.type === "yesNo" && f.mode === "required") say([i, "mode"], "A yes / no detail is a tick: it cannot be needed");
+      // The classes it is for (students' fields only): numbers from 1 to 12; none means every class.
+      if (withClasses && f.classNumbers !== undefined && f.classNumbers !== null && !isClassNumbers(f.classNumbers)) say([i, "classNumbers"], "Choose classes from 1 to 12");
     });
   })
   .transform((fields): CustomFieldDef[] =>
@@ -933,11 +924,14 @@ export function customFieldListSchema(listNames: ReadonlyMap<string, string>, ta
       type: f.type as CustomFieldType,
       options: f.type === "choice" && Array.isArray(f.options) ? f.options.map(tidyText) : [],
       mode: f.mode as FieldMode,
+      // Each class once, in order; a field for every class keeps no list.
+      ...(withClasses && isClassNumbers(f.classNumbers) && f.classNumbers.length > 0 ? { classNumbers: [...new Set(f.classNumbers)].sort((a, b) => a - b) } : {}),
     }))
   );
 }
+const isClassNumbers = (value: unknown): value is number[] => Array.isArray(value) && value.every((n) => Number.isInteger(n) && n >= 1 && n <= 12);
 /** The students' own fields: a name may not be one of the list's. */
-const customFieldsSchema = customFieldListSchema(LIST_NAMES, (listed) => `There is already a field called ${listed}: switch it on in the list`);
+const customFieldsSchema = customFieldListSchema(LIST_NAMES, (listed) => `There is already a field called ${listed}: switch it on in the list`, true);
 const YES_NO_KEYS = new Set<string>(STUDENT_FORM_FIELDS.filter((f) => "yesNo" in f && f.yesNo).map((f) => f.key));
 /** "A, B and C": the columns that are in every export, as a sentence. */
 const LOCKED_HEADINGS = (() => {

@@ -9,6 +9,7 @@ import type {
   CreateEventInput,
   DecideLeaveInput,
   LeaveQuery,
+  MarkStudentInput,
   SaveAttendanceInput,
   SaveDiaryInput,
   SaveMarksInput,
@@ -17,6 +18,7 @@ import type {
   UnitQuery,
   UpdateEventInput,
 } from "../schemas/classroom.schemas";
+import type { StudentsQuery } from "../../attendance/schemas/attendance.schemas";
 import { WorkService } from "../services/work.service";
 import { myClasses, teacherOfUser } from "../services/access";
 import { AttendanceService } from "../services/attendance.service";
@@ -60,6 +62,12 @@ export const attendanceSheet = asyncHandler(async (req: Request, res: Response) 
 export const saveAttendance = asyncHandler(async (req: Request, res: Response) => {
   const day = await AttendanceService.save(tenantOf(req), callerOf(req), body<SaveAttendanceInput>(req));
   return sendOk(res, day, "Attendance saved");
+});
+
+export const attendanceRegister = asyncHandler(async (req: Request, res: Response) => sendOk(res, await AttendanceService.register(tenantOf(req), callerOf(req), req.validatedQuery as StudentsQuery)));
+export const markStudentAttendance = asyncHandler(async (req: Request, res: Response) => {
+  const mark = await AttendanceService.markStudent(tenantOf(req), callerOf(req), body<MarkStudentInput>(req));
+  return sendOk(res, mark, "Attendance marked");
 });
 
 export const decideLeave = asyncHandler(async (req: Request, res: Response) => {

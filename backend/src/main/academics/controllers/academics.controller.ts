@@ -10,6 +10,7 @@ import type {
   CreateClassInput,
   CreateSectionInput,
   DepartmentInput,
+  DivideClassInput,
   QuickSetupInput,
   UpdateClassInput,
   UpdateSectionInput,
@@ -20,6 +21,7 @@ import { AcademicYearService } from "../services/academicYear.service";
 import { AcademicSettingsService } from "../services/academicSettings.service";
 import { ClassService } from "../services/class.service";
 import { DepartmentService } from "../services/department.service";
+import { DivideClassService } from "../services/divide.service";
 import { SectionService } from "../services/section.service";
 import { StructureService } from "../services/structure.service";
 
@@ -30,6 +32,8 @@ function tenantOf(req: Request): string {
 }
 
 const idOf = (req: Request) => (req.validatedParams as { id: string }).id;
+/** Who is doing it, for the record of who made a class or department inactive. */
+const actorOf = (req: Request) => ({ userId: req.user!.userId, role: req.user!.role });
 const body = <T>(req: Request) => req.validatedBody as T;
 
 export const getStructure = asyncHandler(async (req: Request, res: Response) => {
@@ -91,8 +95,12 @@ export const renameDepartment = asyncHandler(async (req: Request, res: Response)
   return sendOk(res, await DepartmentService.rename(tenantOf(req), idOf(req), name), "Department renamed");
 });
 
-export const deleteDepartment = asyncHandler(async (req: Request, res: Response) => {
-  return sendOk(res, await DepartmentService.remove(tenantOf(req), idOf(req)), "Department deleted");
+export const deactivateDepartment = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await DepartmentService.deactivate(tenantOf(req), actorOf(req), idOf(req)), "Department made inactive");
+});
+
+export const reactivateDepartment = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await DepartmentService.reactivate(tenantOf(req), idOf(req)), "Department made active");
 });
 
 export const listClasses = asyncHandler(async (req: Request, res: Response) => {
@@ -111,8 +119,17 @@ export const updateClass = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, await ClassService.update(tenantOf(req), idOf(req), body<UpdateClassInput>(req)), "Class updated");
 });
 
-export const deleteClass = asyncHandler(async (req: Request, res: Response) => {
-  return sendOk(res, await ClassService.remove(tenantOf(req), idOf(req)), "Class deleted");
+export const deactivateClass = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await ClassService.deactivate(tenantOf(req), actorOf(req), idOf(req)), "Class made inactive");
+});
+
+export const reactivateClass = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await ClassService.reactivate(tenantOf(req), idOf(req)), "Class made active");
+});
+
+export const divideClass = asyncHandler(async (req: Request, res: Response) => {
+  const result = await DivideClassService.divide(tenantOf(req), actorOf(req), idOf(req), body<DivideClassInput>(req));
+  return sendCreated(res, result, `${result.class.name} divided into ${result.sections.length} sections`);
 });
 
 export const createSection = asyncHandler(async (req: Request, res: Response) => {

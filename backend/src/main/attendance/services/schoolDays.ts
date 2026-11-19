@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { CalendarService } from "../../classroom/services/calendar.service";
 import { BellSchedule } from "../../timetable/models/BellSchedule";
+import { timingHistory, timingsOn } from "../../timetable/services/scheduleHistory";
 
 /**
  * What each day is for the school (2026-11-06): does it run, from when to when, and is it a holiday. Teachers' attendance is worked out
@@ -34,9 +35,15 @@ export async function schoolDays(tenantId: string, from: string, to: string): Pr
   const days = eachDay(from, to);
   if (days.length === 0) return [];
   const school = new Types.ObjectId(tenantId);
-  const [schedules, holidays] = await Promise.all([BellSchedule.find({ tenantId: school }).select("days slots").lean(), CalendarService.holidaysBetween(school, from, to)]);
+  const [current, history, holidays] = await Promise.all([
+    BellSchedule.find({ tenantId: school }).select("days slots").lean(),
+    timingHistory(tenantId, from),
+    CalendarService.holidaysBetween(school, from, to),
+  ]);
   return days.map((date) => {
     const weekday = weekdayOf(date);
+    // A day is read with the timing that was in force on it (a Saturday taken off later is still a school day, and an absence, before the change).
+    const schedules = timingsOn(date, history, current);
     const running = schedules.filter((s) => s.days.includes(weekday) && s.slots.length > 0);
     const holiday = holidays.find((h) => h.startDate <= date && h.endDate >= date);
     return {

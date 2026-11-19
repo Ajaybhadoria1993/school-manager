@@ -188,18 +188,136 @@ describe("a department's screen, the class on the right", () => {
   });
 });
 
-describe("a department's screen, renaming and deleting the department", () => {
-  it("is done from the pencil beside the name: one window with the name and Delete department, which asks first", async () => {
+describe("a department's screen, renaming the department and making it inactive", () => {
+  it("is done from the pencil beside the name: one window with the name, and no way to delete anything", async () => {
     department();
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("button", { name: "Rename or delete Primary" }));
+    await user.click(await screen.findByRole("button", { name: "Rename or make Primary inactive" }));
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("Department name")).toBeInTheDocument();
     expect(within(dialog).getByText("Pick a name from the list, or choose Other... to type your own.")).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Delete/)).toBeNull();
+  });
 
-    await user.click(within(dialog).getByRole("button", { name: "Delete department" }));
-    expect(await screen.findByText("Delete Primary?")).toBeInTheDocument();
-    expect(screen.getByText("Its 2 classes stay in your school, in no department.")).toBeInTheDocument();
+  it("will not make a department with active classes inactive: it says how many, and the button is off", async () => {
+    department();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Rename or make Primary inactive" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("It still has 2 active classes. Make them inactive first.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Make inactive" })).toBeDisabled();
+  });
+
+  it("asks first, then makes a department with no active class inactive and goes back to the classes", async () => {
+    const calls = fakeApi({
+      "GET /academics/structure": () => ({ ...STRUCTURE, departments: [{ id: "d1", name: "Primary", classCount: 0 }] }),
+      "GET /academics/classes": () => ({ items: [], page: 1, limit: 10, total: 0, totalPages: 1 }),
+      "POST /academics/departments/d1/deactivate": () => ({ id: "d1", name: "Primary", classCount: 0, status: "inactive" }),
+    });
+    const router = createMemoryRouter(
+      [
+        { path: "/school/classes/departments/:departmentId", element: <DepartmentManagePage /> },
+        { path: "/school/classes", element: <p>The classes list</p> },
+      ],
+      { initialEntries: ["/school/classes/departments/d1"] }
+    );
+    render(
+      <Provider store={store}>
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
+      </Provider>
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Rename or make Primary inactive" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Make inactive" }));
+
+    expect(await screen.findByText("Make Primary inactive?")).toBeInTheDocument();
+    expect(screen.getByText(/Nothing is deleted/)).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Make inactive" }));
+    expect(await screen.findByText("The classes list")).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/academics/departments/d1/deactivate"]);
+    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(0);
+  });
+});
+
+describe("a department's screen, a class is made inactive, never deleted", () => {
+  it("has Make inactive and no Delete, and asks first, saying nothing is deleted", async () => {
+    department("/school/classes/departments/d1?class=c1");
+    const user = userEvent.setup();
+    expect(await screen.findByRole("button", { name: "Make Class 1 inactive" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Delete Class 1/ })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Make Class 1 inactive" }));
+    expect(await screen.findByText("Make Class 1 inactive?")).toBeInTheDocument();
+    expect(screen.getByText(/Nothing is deleted/)).toBeInTheDocument();
+    expect(screen.getByText(/still has students cannot be made inactive/)).toBeInTheDocument();
+  });
+
+  it("sends only the deactivate request (never a delete)", async () => {
+    const { calls, user } = department("/school/classes/departments/d1?class=c1");
+    await user.click(await screen.findByRole("button", { name: "Make Class 1 inactive" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Make inactive" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+    expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/academics/classes/c1/deactivate"]);
+    expect(calls.filter((c) => c.method === "DELETE")).toHaveLength(0);
+  });
+
+  it("a class that still has students is refused: the server's words are shown in the window, and the class stays", async () => {
+    fakeApi({
+      "GET /academics/structure": () => STRUCTURE,
+      "GET /academics/classes": () => ({ items: [classOf("c1")], page: 1, limit: 10, total: 1, totalPages: 1 }),
+      "GET /academics/classes/c1": () => classOf("c1"),
+      "POST /academics/classes/c1/deactivate": () =>
+        new Response(JSON.stringify({ success: false, message: "Class 1 has 12 students. Move them to another class, or make them inactive, first.", code: "CLASS_HAS_STUDENTS" }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        }),
+    });
+    const router = createMemoryRouter([{ path: "/school/classes/departments/:departmentId", element: <DepartmentManagePage /> }], {
+      initialEntries: ["/school/classes/departments/d1?class=c1"],
+    });
+    render(
+      <Provider store={store}>
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
+      </Provider>
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Make Class 1 inactive" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Make inactive" }));
+    expect(await within(await screen.findByRole("dialog")).findByText("Class 1 has 12 students. Move them to another class, or make them inactive, first.")).toBeInTheDocument();
+    // Still on the class: the window is open over it and nothing left the screen (the page behind a window is hidden from a screen reader).
+    expect(screen.getByRole("textbox", { name: "Seats of Class 1", hidden: true })).toBeInTheDocument();
+  });
+
+  it("shows an inactive class read-only, with who made it inactive and Make active", async () => {
+    const inactive: ClassItem = { ...classOf("c1"), status: "inactive", inactive: { at: "2026-11-10T10:00:00.000Z", by: { name: "Meena Rao", role: "school_admin" } } };
+    fakeApi({
+      "GET /academics/structure": () => STRUCTURE,
+      "GET /academics/classes": () => ({ items: [], page: 1, limit: 10, total: 0, totalPages: 1 }),
+      "GET /academics/classes/c1": () => inactive,
+      "POST /academics/classes/c1/reactivate": () => ({ ...inactive, status: "active", inactive: null }),
+    });
+    const router = createMemoryRouter([{ path: "/school/classes/departments/:departmentId", element: <DepartmentManagePage /> }], {
+      initialEntries: ["/school/classes/departments/d1?class=c1"],
+    });
+    render(
+      <Provider store={store}>
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
+      </Provider>
+    );
+    expect(await screen.findByText(/made inactive by Meena Rao on/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Make Class 1 active" })).toBeInTheDocument();
+    // Read-only: nothing to type in, nothing to save, nothing to make inactive.
+    expect(screen.queryByRole("textbox", { name: "Seats of Class 1" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Make Class 1 inactive" })).toBeNull();
   });
 });
 
@@ -248,5 +366,196 @@ describe("a department's screen, adding a section to a class that has seats", ()
     await user.click(within(dialog).getByRole("button", { name: "Add section" }));
     expect(await within(dialog).findByText("At most 58 seats are left in the class.")).toBeInTheDocument();
     expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+  });
+});
+
+describe("a department's screen, a class with students in it cannot get a first section by hand", () => {
+  const REFUSED = () =>
+    new Response(
+      JSON.stringify({
+        success: false,
+        message: "Class 1 has 40 students who are not in a section. Divide the class into sections instead: the students are shared out between them.",
+        code: "CLASS_HAS_UNSECTIONED_STUDENTS",
+        details: [{ path: "classId", message: "40 students are not in a section", enrolled: 40 }],
+      }),
+      { status: 409, headers: { "Content-Type": "application/json" } }
+    );
+
+  async function openAddSection(handlers: Parameters<typeof fakeApi>[0] = {}) {
+    const calls = fakeApi({
+      "GET /academics/structure": () => ({ ...STRUCTURE, classes: STRUCTURE.classes.map((c) => (c.id === "c1" ? { ...c, capacity: 100 } : c)) }),
+      "GET /academics/classes": () => ({ items: [classOf("c1")], page: 1, limit: 10, total: 1, totalPages: 1 }),
+      "GET /academics/classes/c1": () => ({ ...classOf("c1"), capacity: 100 }),
+      "POST /academics/classes/c1/sections": REFUSED,
+      ...handlers,
+    });
+    const router = createMemoryRouter([{ path: "/school/classes/departments/:departmentId", element: <DepartmentManagePage /> }], {
+      initialEntries: ["/school/classes/departments/d1?class=c1"],
+    });
+    render(
+      <Provider store={store}>
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
+      </Provider>
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Add section A to Class 1" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByRole("textbox", { name: /Seats/ }), "40");
+    await user.click(within(dialog).getByRole("button", { name: "Add section" }));
+    return { calls, user };
+  }
+
+  it("says why, and offers to divide the class instead", async () => {
+    await openAddSection();
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText(/Class 1 has 40 students who are not in a section/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Divide Class 1 into sections" })).toBeInTheDocument();
+  });
+
+  it("divides it: the window shows where the 40 students would go, and one request makes the sections", async () => {
+    const { calls, user } = await openAddSection({
+      "POST /academics/classes/c1/divide": () => ({
+        class: classOf("c1"),
+        sections: [
+          { id: "n1", name: "A", capacity: 25, room: null, students: 20 },
+          { id: "n2", name: "B", capacity: 25, room: null, students: 20 },
+        ],
+        moved: 40,
+        classSeats: { from: 100, to: 100 },
+      }),
+    });
+    await user.click(await screen.findByRole("button", { name: "Divide Class 1 into sections" }));
+    const dialog = await screen.findByRole("dialog", { name: "Divide Class 1 into sections" });
+    expect(within(dialog).getByText("A: 20 students · B: 20 students")).toBeInTheDocument();
+    // No newcomer here: 20 students need 20 seats, rounded up to 20.
+    expect(within(dialog).getByRole("textbox", { name: "Seats in each section" })).toHaveValue("20");
+    expect(within(dialog).queryByText(/The new student goes/)).toBeNull();
+
+    await user.click(within(dialog).getByRole("button", { name: "Make sections" }));
+    await waitFor(() => expect(calls.some((c) => c.path === "/academics/classes/c1/divide")).toBe(true));
+    expect(calls.find((c) => c.path === "/academics/classes/c1/divide")).toMatchObject({ method: "POST", body: { count: 2, capacity: 20 } });
+    expect(await screen.findByText(/Class 1 is divided into A, B. 40 students shared out./)).toBeInTheDocument();
+  });
+
+  it("will not take seats too few for the students, and sends nothing", async () => {
+    const { calls, user } = await openAddSection();
+    await user.click(await screen.findByRole("button", { name: "Divide Class 1 into sections" }));
+    const dialog = await screen.findByRole("dialog", { name: "Divide Class 1 into sections" });
+    const each = within(dialog).getByRole("textbox", { name: "Seats in each section" });
+    await user.clear(each);
+    await user.type(each, "10");
+    await user.click(within(dialog).getByRole("button", { name: "Make sections" }));
+    expect(await within(dialog).findAllByText(/At least 20 seats each/)).not.toHaveLength(0);
+    expect(calls.filter((c) => c.path.endsWith("/divide"))).toHaveLength(0);
+  });
+});
+
+describe("a department's screen, a class made inactive stays in the list", () => {
+  /** Class 1 can be made inactive and active again; the server's answers follow its status, as the real one does. */
+  function withStatus(start: "active" | "inactive") {
+    let status: "active" | "inactive" = start;
+    const c1 = () => ({ ...classOf("c1"), status, inactive: status === "inactive" ? { at: "2026-11-10T10:00:00.000Z", by: { name: "Meena Rao", role: "school_admin" } } : null });
+    const calls = fakeApi({
+      "GET /academics/structure": () => STRUCTURE,
+      "GET /academics/classes": (_body, query) => {
+        const wanted = query.get("status") ?? "active";
+        const items = [c1(), classOf("c5")].filter((c) => (wanted === "all" ? true : (c.status ?? "active") === wanted));
+        return { items, page: 1, limit: 10, total: items.length, totalPages: 1 };
+      },
+      "GET /academics/classes/c1": () => c1(),
+      "GET /academics/classes/c5": () => classOf("c5"),
+      "POST /academics/classes/c1/deactivate": () => {
+        status = "inactive";
+        return c1();
+      },
+      "POST /academics/classes/c1/reactivate": () => {
+        status = "active";
+        return c1();
+      },
+    });
+    const router = createMemoryRouter([{ path: "/school/classes/departments/:departmentId", element: <DepartmentManagePage /> }], {
+      initialEntries: ["/school/classes/departments/d1?class=c1"],
+    });
+    render(
+      <Provider store={store}>
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
+      </Provider>
+    );
+    return { calls, router, user: userEvent.setup() };
+  }
+  const classList = () => screen.getAllByRole("list")[0];
+  const listed = (name: string) => within(classList()).getByText(name).closest("li") as HTMLElement;
+
+  it("the list asks for every class, active and inactive, and marks an inactive one", async () => {
+    const { calls } = withStatus("inactive");
+    expect(await screen.findByText("Inactive", { selector: "span.rounded-full" })).toBeInTheDocument();
+    const asked = calls.find((c) => c.method === "GET" && c.path === "/academics/classes");
+    expect(new URLSearchParams(asked?.query).get("status")).toBe("all");
+    // Greyed: its name is muted and it still has its place in the list, next to the active class.
+    expect(within(listed("Class 1")).getByText("Inactive")).toBeInTheDocument();
+    expect(within(listed("Class 5")).queryByText("Inactive")).toBeNull();
+  });
+
+  it("Make inactive keeps the class where it was: still in the list, still open, now marked inactive, with Make active", async () => {
+    const { user } = withStatus("active");
+    await user.click(await screen.findByRole("button", { name: "Make Class 1 inactive" }));
+    await user.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Make inactive" }));
+
+    // The class on the right says it is inactive and offers Make active; the list still has it, marked.
+    expect(await screen.findByRole("button", { name: "Make Class 1 active" })).toBeInTheDocument();
+    expect(within(listed("Class 1")).getByText("Inactive")).toBeInTheDocument();
+    expect(screen.getByText(/made inactive by Meena Rao on/)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Seats of Class 1" })).toBeNull();
+    expect(screen.getByText(/It stays in the list/)).toBeInTheDocument();
+  });
+
+  it("Make active brings it back to a class that can be changed, still in its place", async () => {
+    const { user, calls } = withStatus("inactive");
+    await user.click(await screen.findByRole("button", { name: "Make Class 1 active" }));
+    expect(await screen.findByRole("textbox", { name: "Seats of Class 1" })).toBeInTheDocument();
+    expect(within(listed("Class 1")).queryByText("Inactive")).toBeNull();
+    expect(calls.filter((c) => c.method === "POST").map((c) => c.path)).toEqual(["/academics/classes/c1/reactivate"]);
+  });
+
+  it("an inactive class can be picked from the list like any other, to be opened", async () => {
+    const { user } = withStatus("inactive");
+    await user.click(await within((await screen.findAllByRole("list"))[0]).findByText("Class 5"));
+    expect(await screen.findByRole("textbox", { name: "Seats of Class 5" })).toBeInTheDocument();
+    await user.click(within(listed("Class 1")).getByRole("button"));
+    expect(await screen.findByRole("button", { name: "Make Class 1 active" })).toBeInTheDocument();
+  });
+
+  it("the header says how many classes of the department are inactive", async () => {
+    fakeApi({
+      "GET /academics/structure": () => ({ ...STRUCTURE, inactiveClasses: [{ ...classOf("c1"), id: "c10", name: "Class 10", status: "inactive" }] }),
+      "GET /academics/classes": () => ({ items: [classOf("c5")], page: 1, limit: 10, total: 1, totalPages: 1 }),
+      "GET /academics/classes/c5": () => classOf("c5"),
+    });
+    const router = createMemoryRouter([{ path: "/school/classes/departments/:departmentId", element: <DepartmentManagePage /> }], { initialEntries: ["/school/classes/departments/d1"] });
+    render(
+      <Provider store={store}>
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
+      </Provider>
+    );
+    const title = await screen.findByRole("heading", { name: "Primary", level: 1 });
+    expect(title.closest("header")).toHaveTextContent("1 inactive");
+  });
+
+  it("a Status box shows all classes, only the active ones or only the inactive ones, and Clear brings back all", async () => {
+    const { user, calls } = withStatus("inactive");
+    await screen.findAllByRole("list");
+    await user.click(screen.getByRole("button", { name: /Show classes/ }));
+    await user.click(await screen.findByRole("option", { name: "Inactive only" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "GET" && c.path === "/academics/classes" && new URLSearchParams(c.query).get("status") === "inactive")).toBe(true));
+    expect(within(classList()).queryByText("Class 5")).toBeNull();
+    expect(within(classList()).getByText("Class 1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    await waitFor(() => expect(within(classList()).getByText("Class 5")).toBeInTheDocument());
   });
 });

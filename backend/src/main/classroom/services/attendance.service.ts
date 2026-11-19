@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
+import { isDuplicateKey } from "../../academics/services/shared";
 import { ParentService } from "../../parents/services/parent.service";
 import { Enrolment } from "../../students/models/Enrolment";
 import { Student } from "../../students/models/Student";
@@ -11,8 +12,10 @@ import { Notify } from "../../notifications/services/events";
 import { User } from "../../users/models/User";
 import { AttendanceDay, type AttendanceStatus } from "../models/AttendanceDay";
 import { LeaveRequest } from "../models/LeaveRequest";
-import type { AttendanceQuery, ChildAttendanceQuery, SaveAttendanceInput } from "../schemas/classroom.schemas";
-import { classTeacherUnits, RUNNER_ROLES, sameUnit, teacherOfUser } from "./access";
+import { StudentAttendanceService } from "../../attendance/services/student.service";
+import type { StudentsQuery } from "../../attendance/schemas/attendance.schemas";
+import type { AttendanceQuery, ChildAttendanceQuery, MarkStudentInput, SaveAttendanceInput } from "../schemas/classroom.schemas";
+import { classTeacherUnits, sameUnit, teacherOfUser, worksOnAllClasses } from "./access";
 import { CalendarService, fromDay, toDay } from "./calendar.service";
 import { childrenOf } from "./children";
 import type { Caller } from "./leave.service";
@@ -43,22 +46,35 @@ const tally = (statuses: AttendanceStatus[]): AttendanceTally => {
   return { ...c, days: statuses.length, percent: statuses.length === 0 ? null : Math.round(((c.present + c.late) / statuses.length) * 100) };
 };
 
-/** The class teacher of this class or section, or the people who run the school. */
-async function assertTakes(tenantId: string, caller: Caller, unit: { classId: string; sectionId: string | null }) {
-  if (RUNNER_ROLES.includes(caller.role)) return;
+/** Whether this caller is the class teacher of the class or section (a teacher who left, or one who teaches only a subject there, is not). */
+async function isClassTeacherOf(tenantId: string, caller: Caller, unit: { classId: string; sectionId: string | null }) {
   const teacher = caller.role === "teacher" ? await teacherOfUser(tenantId, caller.userId) : null;
   const units = teacher ? await classTeacherUnits(tenantId, teacher._id) : [];
-  if (!units.some((u) => sameUnit(u, unit))) throw ApiError.forbidden("Only the class teacher of this class or the school takes its attendance.", "NOT_CLASS_TEACHER");
+  return units.some((u) => sameUnit(u, unit));
+}
+
+/** Who may LOOK at a class's attendance: its class teacher, and the people who run the school (and any staff the school allowed to see it). */
+async function assertSees(tenantId: string, caller: Caller, unit: { classId: string; sectionId: string | null }) {
+  if (worksOnAllClasses(caller.role)) return;
+  if (!(await isClassTeacherOf(tenantId, caller, unit))) throw ApiError.forbidden("Only the class teacher of this class or the school sees its attendance.", "NOT_CLASS_TEACHER");
 }
 
 /**
- * Attendance (docs/parent-teacher-flow.md, phase 3): a section's (or a class's without sections) day, taken by its class teacher or the
- * school. A day not saved yet shows every child Present, and a child on approved leave that day Leave. Not on a holiday, not ahead.
+ * Who TAKES a class's attendance (2026-11-17): only its class teacher. The school (admin, principal, any staff) looks and never marks, whatever
+ * permission it was given; a teacher who teaches only a subject there does not mark either.
+ */
+async function assertMarks(tenantId: string, caller: Caller, unit: { classId: string; sectionId: string | null }) {
+  if (!(await isClassTeacherOf(tenantId, caller, unit))) throw ApiError.forbidden("Only the class teacher of this class takes its attendance.", "NOT_CLASS_TEACHER");
+}
+
+/**
+ * Attendance (docs/parent-teacher-flow.md, phase 3): a section's (or a class's without sections) day, taken by its class teacher ONLY (the
+ * school looks). A day not saved yet shows every child Present, and a child on approved leave that day Leave. Not on a holiday, not ahead.
  */
 export class AttendanceService {
   static async sheet(tenantId: string, caller: Caller, query: AttendanceQuery): Promise<AttendanceSheetDto> {
     const unit = await resolveUnit(tenantId, query.classId, query.sectionId === "none" ? null : query.sectionId);
-    await assertTakes(tenantId, caller, unit);
+    await assertSees(tenantId, caller, unit);
     const school = new Types.ObjectId(tenantId);
     const day = fromDay(query.date);
     const [children, holidays, saved] = await Promise.all([
@@ -83,16 +99,28 @@ export class AttendanceService {
       label: unit.label,
       date: query.date,
       holiday: holidays[0] ? { title: holidays[0].title } : null,
-      saved: !!saved,
+      // A day the school only partly marked (one child at a time) is not a day that was saved: the sheet opens unsaved, with those marks in it.
+      saved: !!saved && !saved.partial,
       markedBy: saved ? { name: saved.markedBy.name, role: saved.markedBy.role } : null,
       counts: countOf(students.map((s) => s.status)),
       students,
     };
   }
 
+  /**
+   * The register of one class or section for the days asked (the same sheet the school reads in Attendance > Student), for its class teacher
+   * (their class page) or the school. One class or section at a time: never "all".
+   */
+  static async register(tenantId: string, caller: Caller, query: StudentsQuery) {
+    if (query.sectionId === "all") throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "sectionId", message: "Choose one section, or none for a class without sections" }]);
+    const unit = await resolveUnit(tenantId, query.classId, query.sectionId === "none" ? null : query.sectionId);
+    await assertSees(tenantId, caller, unit);
+    return StudentAttendanceService.range(tenantId, query);
+  }
+
   static async save(tenantId: string, caller: Caller, input: SaveAttendanceInput): Promise<AttendanceSheetDto> {
     const unit = await resolveUnit(tenantId, input.classId, input.sectionId ?? null);
-    await assertTakes(tenantId, caller, unit);
+    await assertMarks(tenantId, caller, unit);
     if (input.date > todayInIndia()) {
       throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "date", message: "Attendance cannot be taken for a day still to come" }]);
     }
@@ -119,6 +147,8 @@ export class AttendanceService {
             return { studentId: new Types.ObjectId(c.id), status, reason: status === "present" ? null : (mark?.reason ?? null) };
           }),
           markedBy: { name: user?.name ?? "The school", role: caller.role },
+          // The whole sheet was saved: the day was taken, whatever made it before.
+          partial: false,
         },
       },
       { upsert: true, new: true }
@@ -127,6 +157,65 @@ export class AttendanceService {
     const marked = sheet.students.flatMap((c) => ((c.status === "absent" || c.status === "late") && before.get(c.id) !== c.status ? [{ id: c.id, name: c.name, status: c.status, reason: c.reason }] : []));
     Notify.attendanceSaved(tenantId, caller.userId, { unit, date: input.date, counts: sheet.counts, by: user?.name ?? "The school", marked });
     return sheet;
+  }
+
+  /**
+   * The CLASS TEACHER marks ONE child on ONE day, Present or Absent (2026-11-17): a cell of the register in their class page. Only that child's
+   * mark is written, the rest of the class is left as it was (no mark is not Present here). A day made this way is `partial` until every
+   * child has a mark (or the sheet is saved), so it does not count as taken for the "not taken today" list. The child's parent hears of an
+   * absence once, like on a saved sheet; the staff are not told (the one who marked it is staff).
+   */
+  static async markStudent(tenantId: string, caller: Caller, input: MarkStudentInput): Promise<{ studentId: string; date: string; status: "present" | "absent" }> {
+    const school = new Types.ObjectId(tenantId);
+    const studentId = new Types.ObjectId(input.studentId);
+    // The child's seat this year; a child who is not seated (left, or not of this school) is not found.
+    const yearId = await AcademicYearService.activeYearId(tenantId);
+    const seat = yearId ? await Enrolment.findOne({ tenantId: school, studentId, academicYearId: yearId, status: "active" }).select("classId sectionId").lean() : null;
+    if (!seat) throw ApiError.notFound("That child is not in one of your classes.", "STUDENT_NOT_FOUND");
+    const unit = await resolveUnit(tenantId, seat.classId.toString(), seat.sectionId ? seat.sectionId.toString() : null);
+    await assertMarks(tenantId, caller, unit);
+    if (input.date > todayInIndia()) {
+      throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "date", message: "Attendance cannot be taken for a day still to come" }]);
+    }
+    const holiday = (await CalendarService.holidaysBetween(school, input.date, input.date))[0];
+    if (holiday) throw ApiError.conflict(`${input.date} is a holiday (${holiday.title}): attendance is not taken.`, "HOLIDAY");
+
+    const user = await User.findById(caller.userId).select("name").lean();
+    const markedBy = { name: user?.name ?? "The school", role: caller.role };
+    const where = { tenantId: school, classId: seat.classId, sectionId: seat.sectionId ?? null, date: fromDay(input.date) };
+    const was = (await AttendanceDay.findOne(where).select("marks").lean())?.marks.find((m) => m.studentId.equals(studentId))?.status ?? null;
+
+    // Change the child's mark if the day has one; else add it (making the day, partly marked, if there is none). Two requests at the same
+    // moment for the same day: the unique index lets one make the day, the other goes round again and changes or adds.
+    const change = () => AttendanceDay.updateOne({ ...where, "marks.studentId": studentId }, { $set: { "marks.$.status": input.status, "marks.$.reason": null, markedBy } });
+    const add = () =>
+      AttendanceDay.updateOne(
+        { ...where, "marks.studentId": { $ne: studentId } },
+        { $push: { marks: { studentId, status: input.status, reason: null } }, $set: { markedBy }, $setOnInsert: { academicYearId: unit.yearId, partial: true } },
+        { upsert: true }
+      );
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if ((await change()).matchedCount > 0) break;
+      try {
+        await add();
+        break;
+      } catch (err) {
+        if (!isDuplicateKey(err) || attempt === 2) throw err;
+      }
+    }
+
+    // Every child marked: the day is whole now.
+    const day = await AttendanceDay.findOne(where).select("marks partial").lean();
+    if (day?.partial) {
+      const marked = new Set(day.marks.map((m) => m.studentId.toString()));
+      if ((await childrenOf(tenantId, unit)).every((c) => marked.has(c.id))) await AttendanceDay.updateOne({ ...where, partial: true }, { $set: { partial: false } });
+    }
+
+    if (input.status === "absent" && was !== "absent") {
+      const child = await Student.findOne({ tenantId: school, _id: studentId }).select("firstName lastName").lean();
+      if (child) Notify.studentMarkedAbsent(tenantId, caller.userId, { unit, date: input.date, child: { id: input.studentId, name: fullName(child) } });
+    }
+    return { studentId: input.studentId, date: input.date, status: input.status };
   }
 
   /** A child's days of a month (this month when none is asked) and the tally of the year, for their parent. */

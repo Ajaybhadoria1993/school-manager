@@ -32,6 +32,44 @@ async function uniqueSlug(name: string): Promise<string> {
   return `${base}-${generateToken(3)}`;
 }
 
+/**
+ * One more medium of an approved school: a record of its own (so everything in it stays apart) under the school's name, already approved.
+ * Its key cannot be typed as a school's name, so a side never takes one away. A side made a moment ago is returned as it is.
+ */
+export async function createMediumSide(
+  parent: Pick<ITenant, "_id" | "name" | "nameKey" | "slug" | "subscriptionTier" | "source" | "contactEmail" | "schoolEmail" | "contactPhone" | "website" | "address" | "profile" | "review" | "isActive">,
+  medium: { key: string; label: string },
+  entry: NonNullable<NonNullable<ITenant["profile"]>["boardEntries"]>[number],
+  range: { lowestClass: NonNullable<ITenant["profile"]>["lowestClass"]; highestClass: NonNullable<ITenant["profile"]>["highestClass"] }
+): Promise<ITenant> {
+  try {
+    return await Tenant.create({
+      name: parent.name,
+      nameKey: `${parent.nameKey}#${medium.key}`,
+      slug: await uniqueSlug(`${parent.slug} ${medium.key.replace("|", " ")}`),
+      parentTenantId: parent._id,
+      medium,
+      subscriptionTier: parent.subscriptionTier,
+      approvalStatus: "approved",
+      source: parent.source,
+      isActive: parent.isActive,
+      contactEmail: parent.contactEmail,
+      schoolEmail: parent.schoolEmail,
+      contactPhone: parent.contactPhone,
+      website: parent.website,
+      address: parent.address,
+      profile: { ...parent.profile, boardEntries: [entry], lowestClass: range.lowestClass, highestClass: range.highestClass },
+      onboarding: { status: "COMPLETED", currentStep: 4, completedSteps: [1, 2, 3, 4], resubmittedCount: 0 },
+      review: parent.review,
+    });
+  } catch (err) {
+    if ((err as { code?: number }).code !== 11000) throw err;
+    const made = await Tenant.findOne({ parentTenantId: parent._id, "medium.key": medium.key });
+    if (!made) throw err;
+    return made;
+  }
+}
+
 export interface NewTenantInput {
   name: string;
   contactEmail: string;

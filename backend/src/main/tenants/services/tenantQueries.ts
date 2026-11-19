@@ -25,6 +25,9 @@ export interface TenantListItem {
 /** `suspended` is counted on top of the stages: a suspended school is still an approved one. */
 export type StatusCounts = Record<ApprovalStatus, number> & { total: number; suspended: number };
 
+/** A school that teaches in two mediums has a record for each; the platform sees it as one school (matches a missing field too). */
+const ONE_ROW_PER_SCHOOL = { parentTenantId: null };
+
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -61,7 +64,7 @@ export async function toListItems(tenants: ITenant[]): Promise<TenantListItem[]>
 }
 
 export async function listTenants(query: ListTenantsQuery): Promise<TenantListItem[]> {
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { ...ONE_ROW_PER_SCHOOL };
   if (query.approvalStatus) filter.approvalStatus = query.approvalStatus;
   if (query.search) {
     const rx = new RegExp(escapeRegex(query.search), "i");
@@ -74,8 +77,8 @@ export async function listTenants(query: ListTenantsQuery): Promise<TenantListIt
 
 export async function statusCounts(): Promise<StatusCounts> {
   const [rows, suspended] = await Promise.all([
-    Tenant.aggregate<{ _id: ApprovalStatus; n: number }>([{ $group: { _id: "$approvalStatus", n: { $sum: 1 } } }]),
-    Tenant.countDocuments({ isActive: false }),
+    Tenant.aggregate<{ _id: ApprovalStatus; n: number }>([{ $match: ONE_ROW_PER_SCHOOL }, { $group: { _id: "$approvalStatus", n: { $sum: 1 } } }]),
+    Tenant.countDocuments({ ...ONE_ROW_PER_SCHOOL, isActive: false }),
   ]);
   const counts = Object.fromEntries(APPROVAL_STATUSES.map((s) => [s, 0])) as Record<ApprovalStatus, number>;
   for (const row of rows) counts[row._id] = row.n;
@@ -86,8 +89,8 @@ export async function statusCounts(): Promise<StatusCounts> {
 export async function overview(): Promise<{ counts: StatusCounts; awaiting: TenantListItem[]; recent: TenantListItem[] }> {
   const [counts, awaiting, recent] = await Promise.all([
     statusCounts(),
-    Tenant.find({ approvalStatus: "pending" }).sort({ "onboarding.submittedAt": 1 }).limit(6).lean(),
-    Tenant.find({}).sort({ createdAt: -1 }).limit(6).lean(),
+    Tenant.find({ ...ONE_ROW_PER_SCHOOL, approvalStatus: "pending" }).sort({ "onboarding.submittedAt": 1 }).limit(6).lean(),
+    Tenant.find(ONE_ROW_PER_SCHOOL).sort({ createdAt: -1 }).limit(6).lean(),
   ]);
   const [awaitingItems, recentItems] = await Promise.all([toListItems(awaiting), toListItems(recent)]);
   return { counts, awaiting: awaitingItems, recent: recentItems };

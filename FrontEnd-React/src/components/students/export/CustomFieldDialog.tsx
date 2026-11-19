@@ -19,11 +19,15 @@ import { Switch } from "../../ui/Switch";
 
 const tidy = (text: string) => text.trim().replace(/\s+/g, " ");
 
+/** The classes taught in streams: what "Class 11 and 12 only" means. */
+const SENIOR_CLASSES = [11, 12] as const;
+
 const STUDENT_WORDS = { where: "Add student and the Excel", form: "Add student", who: "students" };
 
 /**
  * Adds a field of the school's own, or changes one (`field`): its name (as Add student and the Excel show it), the kind of answer it
- * takes (fixed once it is added: the answers already kept would not fit another kind), the choices of a list, and Mandatory. Checked
+ * takes (fixed once it is added: the answers already kept would not fit another kind), the choices of a list, Mandatory, and (for the
+ * students' fields) whether it is asked of every class or only of Class 11 and 12. Checked
  * with the server's words before it is kept in the page's draft; nothing is sent until the page's Save. `others` are the school's other
  * fields (two cannot share a name). A new field can come with a `name` already typed (a word searched for, a column's title).
  * A page that saves the field at once (Add student) says so with `busy` and shows what went wrong in `error`.
@@ -59,6 +63,9 @@ export function CustomFieldDialog({
   const [type, setType] = useState<CustomFieldType>(field?.type ?? "text");
   const [options, setOptions] = useState((field?.options ?? []).join("\n"));
   const [required, setRequired] = useState(field?.mode === "required");
+  // The students' fields can be for the senior classes only (Subject group, Stream...); the teachers' have no classes.
+  const classScope = words === STUDENT_WORDS;
+  const [senior, setSenior] = useState((field?.classNumbers?.length ?? 0) > 0);
   const [tried, setTried] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -101,6 +108,7 @@ export function CustomFieldDialog({
       type,
       options: type === "choice" ? choices : [],
       mode: type !== "yesNo" && required ? "required" : "optional",
+      ...(classScope && senior ? { classNumbers: [...SENIOR_CLASSES] } : {}),
     });
   }
 
@@ -187,6 +195,34 @@ export function CustomFieldDialog({
             <Field id="custom-field-options" label="Choices" hint="One per line, for example Red, Blue, Green, Yellow." error={tried ? optionsProblem : undefined}>
               <Textarea id="custom-field-options" rows={4} value={options} onChange={(e) => setOptions(e.target.value)} aria-invalid={tried && !!optionsProblem} />
             </Field>
+          )}
+
+          {classScope && (
+            <div>
+              <p id="custom-field-classes" className="mb-1.5 text-sm font-semibold text-foreground">
+                Asked for
+              </p>
+              <div role="radiogroup" aria-labelledby="custom-field-classes" className="flex flex-wrap gap-2">
+                {[
+                  { value: false, label: "Every class" },
+                  { value: true, label: "Class 11 and 12 only" },
+                ].map((c) => (
+                  <button
+                    key={c.label}
+                    type="button"
+                    role="radio"
+                    aria-checked={senior === c.value}
+                    onClick={() => setSenior(c.value)}
+                    className={cn(
+                      "h-9 rounded-lg border px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
+                      senior === c.value ? "border-primary bg-primary-soft text-primary-deep" : "border-border bg-surface text-foreground hover:border-primary/40"
+                    )}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
 
           {type !== "yesNo" && (

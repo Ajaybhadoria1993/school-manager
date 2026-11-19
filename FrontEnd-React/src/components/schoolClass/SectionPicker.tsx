@@ -45,7 +45,7 @@ export function SectionPicker({
           </span>
           {picked === ALL_SECTIONS && <Check className="size-4 text-primary" aria-hidden />}
         </span>
-        <span className="mt-2 block text-2xl font-extrabold tracking-[-0.03em] text-foreground">{overview.students}</span>
+        <span className="mt-2 block text-stat-value">{overview.students}</span>
         <span className="text-xs text-foreground-muted">{overview.students === 1 ? "student" : "students"} in the whole class</span>
       </Link>
 
@@ -55,10 +55,10 @@ export function SectionPicker({
         return (
           <Link key={s.id} to={to(s.id)} aria-current={active ? "page" : undefined} className={card(active)}>
             <span className="flex items-center justify-between gap-2">
-              <span className="text-lg font-extrabold leading-none text-foreground">Section {s.name}</span>
+              <span className="text-lg font-bold leading-none text-foreground">Section {s.name}</span>
               {active ? <Check className="size-4 text-primary" aria-hidden /> : <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", look.badge)}>{look.label}</span>}
             </span>
-            <span className="mt-2 block text-2xl font-extrabold tracking-[-0.03em] text-foreground">{s.enrolled}</span>
+            <span className="mt-2 block text-stat-value">{s.enrolled}</span>
             <span className="text-xs text-foreground-muted">{s.capacity === null ? `${s.enrolled === 1 ? "student" : "students"}, no seat limit` : `of ${s.capacity} seats filled`}</span>
             {s.capacity !== null && (
               <span aria-hidden className="mt-2 block h-1.5 overflow-hidden rounded-full bg-surface-muted">

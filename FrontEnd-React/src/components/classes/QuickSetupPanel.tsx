@@ -38,7 +38,7 @@ export function QuickSetupPanel({
           <span className="float-slow flex size-14 items-center justify-center rounded-2xl border border-white/25 bg-white/10 backdrop-blur">
             <Wand2 className="size-7 text-sky" aria-hidden />
           </span>
-          <h2 className="mt-5 flex items-center gap-2 text-xl font-extrabold tracking-tight">
+          <h2 className="text-section-heading mt-5 flex items-center gap-2">
             Add your classes
             <span className="text-white/70">
               <InfoTip label="What does this do?">

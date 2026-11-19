@@ -56,6 +56,11 @@ export interface Schedule {
 export interface SchoolDayInput {
   departmentId?: string | null;
   days: { day: number; slots: Slot[] }[];
+  /**
+   * The winter shift, whole school only: the minutes (negative: earlier) every other timing of the school (each class's and department's
+   * own) moves by in the same save, so that when school starts later they start later too.
+   */
+  shiftOthers?: number;
 }
 
 /**
@@ -107,6 +112,8 @@ export interface AllotmentView {
   unit: AllotmentUnit;
   rows: AllotmentRow[];
   siblings: { id: string; name: string }[];
+  /** The unit's class teacher this year, null when nobody is: said before another teacher is put in their place. */
+  classTeacher: { id: string; name: string } | null;
   totals: { periods: number; available: number | null };
 }
 
@@ -196,6 +203,19 @@ export interface GridView {
   load: { teacherId: string; perDay: Record<string, number>; week: number }[];
   issues: Issue[];
   stats: { total: number; filled: number; free: number; placed: Record<string, number> };
+  /** The unit's class teacher (in a Pre-Primary class, the mother teacher put on its periods); missing from an older server. */
+  classTeacher?: { id: string; name: string } | null;
+}
+
+/**
+ * `PUT /timetable/teacher-periods`: a teacher is given a subject of a class and its periods in one request (Assign class). `slots` are the days
+ * (1 = Monday) and period numbers the subject goes in; `periodsPerWeek` is for a subject the class does not study yet (the slots say it when left out).
+ */
+export interface TeacherPeriodsInput extends UnitRef {
+  subjectId: string;
+  teacherId: string;
+  periodsPerWeek?: number;
+  slots: { day: number; period: number }[];
 }
 
 export interface AutofillAnswer {
@@ -297,4 +317,15 @@ export interface TimetableOverview {
 
 export interface PublishedUnits {
   units: { classId: string; sectionId: string | null; label: string }[];
+}
+
+/**
+ * What a class's workspace says to the title row of its page (2026-11-13, so that the toolbar of the class is one line): whether the week has
+ * changes that are not saved, how many periods have a lesson of how many, and that the school has no teacher to pick from.
+ */
+export interface ClassWeekStatus {
+  dirty: boolean;
+  filled: number;
+  total: number;
+  noTeacher: boolean;
 }

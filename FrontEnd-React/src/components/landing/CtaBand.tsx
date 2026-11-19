@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, LogIn } from "lucide-react";
 
 /** The last nudge before the footer. */
 export function CtaBand() {
@@ -7,7 +7,7 @@ export function CtaBand() {
     <section className="bg-panel py-14 text-white" aria-labelledby="cta-title">
       <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-8 px-4 sm:px-8 lg:flex-row">
         <div className="text-center lg:text-left">
-          <h2 id="cta-title" className="font-serif text-2xl font-bold tracking-tight sm:text-3xl">
+          <h2 id="cta-title" className="font-serif text-2xl font-bold sm:text-3xl">
             Begin your school&apos;s journey with EduShiksha
           </h2>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-300">
@@ -24,9 +24,10 @@ export function CtaBand() {
           </Link>
           <Link
             to="/login"
-            className="inline-flex h-12 w-full items-center justify-center rounded-lg border border-white/25 bg-white/10 px-7 text-sm font-semibold text-white transition-colors hover:bg-white/20 sm:w-auto"
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-white/25 bg-white/10 px-7 text-sm font-semibold text-white transition-colors hover:bg-white/20 sm:w-auto"
           >
-            Sign in
+            <LogIn className="size-4" aria-hidden />
+            Login
           </Link>
         </div>
       </div>

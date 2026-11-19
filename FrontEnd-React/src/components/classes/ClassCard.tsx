@@ -39,14 +39,14 @@ export function ClassCard({ classItem, tone, index }: { classItem: ClassItem; to
           <span
             aria-hidden
             className={cn(
-              "flex size-12 shrink-0 items-center justify-center rounded-2xl text-lg font-extrabold tracking-tight transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-105",
+              "flex size-12 shrink-0 items-center justify-center rounded-2xl text-lg font-bold transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-105",
               t.gradient
             )}
           >
             {classMark(classItem.name)}
           </span>
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-base font-bold tracking-tight text-foreground">{classItem.name}</h3>
+            <h3 className="text-section-heading truncate">{classItem.name}</h3>
             <p className="mt-0.5 text-xs text-foreground-muted">
               {sections.length === 0 ? "No sections" : plural(sections.length, "section")}
               {classItem.capacity === null ? <span className="font-semibold text-warning"> · Seats not set</span> : <> · {seatsLabel(classItem)}</>}

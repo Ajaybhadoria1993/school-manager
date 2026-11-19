@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../../../../middleware/auth";
+import { requirePermission, requireSchoolPermission } from "../../../../middleware/permission";
 import { yearView } from "../../../../middleware/yearView";
 import { validate } from "../../../../middleware/validate";
 import { EXAM_READERS, EXAM_WRITERS } from "../../constants";
@@ -30,16 +31,18 @@ const router = Router();
 // yearView: a school admin may look at a past year (X-Academic-Year); reads answer for it, changes are refused.
 router.use(requireAuth, yearView);
 
-const readers = requireRole(...EXAM_READERS);
-const writers = requireRole(...EXAM_WRITERS);
-// The teachers of a class read its exams and enter the marks of the subjects they teach (what each may do is the service's rule: access.ts).
-const classPeople = requireRole(...EXAM_WRITERS, "teacher");
+// The exams of the whole school are for the people who run it. A class's exams and marks follow the school's Permissions (docs/permissions.md): a
+// teacher with exams.view / exams.marks, only for the classes they teach (the service's rule: access.ts).
+const readers = requireSchoolPermission("exams.manage");
+const writers = requireSchoolPermission("exams.manage");
+const classReaders = requirePermission("exams.view", "exams.manage");
+const markers = requirePermission("exams.marks", "exams.manage");
 
 // A class's exams, its papers with the marks counts, and the exam days of its week; a paper's marks sheet and the marks (2026-11-06).
 // Declared before "/:id" so "class" and "papers" are not taken for an exam's id.
-router.get("/class", classPeople, validate(classExamsQuerySchema, "query"), getClassExams);
-router.get("/papers/:paperId/marks", classPeople, validate(paperIdParamSchema, "params"), validate(marksSheetQuerySchema, "query"), getMarksSheet);
-router.put("/papers/:paperId/marks", classPeople, validate(paperIdParamSchema, "params"), validate(saveExamMarksSchema), saveMarks);
+router.get("/class", classReaders, validate(classExamsQuerySchema, "query"), getClassExams);
+router.get("/papers/:paperId/marks", classReaders, validate(paperIdParamSchema, "params"), validate(marksSheetQuerySchema, "query"), getMarksSheet);
+router.put("/papers/:paperId/marks", markers, validate(paperIdParamSchema, "params"), validate(saveExamMarksSchema), saveMarks);
 
 router.get("/", readers, validate(listExamsQuerySchema, "query"), listExams);
 router.post("/", writers, validate(createExamSchema), createExam);

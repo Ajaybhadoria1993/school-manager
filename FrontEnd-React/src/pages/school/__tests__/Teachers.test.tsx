@@ -7,7 +7,7 @@ import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
-import { fakeApi, spreadsheet, type Call, type Handler } from "../../../test/fakeApi";
+import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
 import { DEV, ENGLISH, MATHS, MEENA } from "../../../test/timetableFixtures";
 import type { Teacher } from "../../../types";
 import TeachersPage from "../Teachers";
@@ -141,45 +141,39 @@ describe("Teachers: the list", () => {
     expect(links[0].nextElementSibling).toBe(screen.getByRole("link", { name: "Add teacher" }));
   });
 
-  it("offers Export, before Bulk upload: the teachers of the tab and the search shown, as one Excel file (2026-11-07)", async () => {
-    const saved: string[] = [];
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
-      saved.push(this.download);
-    });
-    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:teachers", revokeObjectURL: () => {} }));
+  it("offers Export, before Bulk upload: it opens the Export page with the tab and the search shown (2026-11-13)", async () => {
     const left = { ...MEENA, id: "gone", name: "Old Teacher", isActive: false };
-    const { calls, user } = openPage([MEENA, left], { "GET /staff/teachers/export": () => spreadsheet("teachers-sunrise-public-school-2026-11-07.xlsx") });
+    const { calls, user, router } = openPage([MEENA, left]);
     await screen.findByText("Meena Singh");
-    const exportButton = screen.getByRole("button", { name: "Export" });
-    expect(exportButton.nextElementSibling).toBe(screen.getByRole("link", { name: "Bulk upload" }));
-    await user.click(exportButton);
-    await waitFor(() => expect(saved).toEqual(["teachers-sunrise-public-school-2026-11-07.xlsx"]));
-    expect(Object.fromEntries(new URLSearchParams(calls.filter((c) => c.path === "/staff/teachers/export")[0].query))).toEqual({ status: "active" });
+    const exportLink = screen.getByRole("link", { name: "Export" });
+    expect(exportLink.nextElementSibling).toBe(screen.getByRole("link", { name: "Bulk upload" }));
+    expect(exportLink).toHaveAttribute("href", "/school/teachers/export?status=active");
 
-    // The Left tab and a search: the file is those.
+    // The Left tab and a search: the Export page is for those.
     await user.click(screen.getByRole("tab", { name: "Left" }));
     await screen.findByText("Old Teacher");
     await user.type(screen.getByLabelText("Search teachers"), "old");
     await waitFor(() => expect(lists(calls).at(-1)?.query).toContain("search=old"));
-    await user.click(screen.getByRole("button", { name: "Export" }));
-    await waitFor(() => expect(calls.filter((c) => c.path === "/staff/teachers/export")).toHaveLength(2));
-    expect(Object.fromEntries(new URLSearchParams(calls.filter((c) => c.path === "/staff/teachers/export")[1].query))).toEqual({ status: "inactive", search: "old" });
+    const next = screen.getByRole("link", { name: "Export" });
+    expect(Object.fromEntries(new URL(next.getAttribute("href")!, "http://x").searchParams)).toEqual({ status: "inactive", q: "old" });
+    await user.click(next);
+    expect(router.state.location.pathname).toBe("/school/teachers/export");
   });
 
-  it("has a Fields button, first in the header: the school's own fields for its teachers (2026-11-07)", async () => {
+  it("has a Fields button, first in the header: the school's fields for its teachers", async () => {
     const { user, router } = openPage([MEENA]);
     await screen.findByText("Meena Singh");
     const fields = screen.getByRole("link", { name: "Fields" });
     expect(fields).toHaveAttribute("href", "/school/teachers/fields");
-    expect(fields.nextElementSibling).toBe(screen.getByRole("button", { name: "Export" }));
+    expect(fields.nextElementSibling).toBe(screen.getByRole("link", { name: "Export" }));
     await user.click(fields);
     expect(router.state.location.pathname).toBe("/school/teachers/fields");
   });
 
-  it("has nothing to export while the school has no teacher", async () => {
+  it("still opens Export while the school has no teacher: the file is tried with a sample row (2026-11-13)", async () => {
     openPage([]);
     await screen.findByText("No teachers yet");
-    expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Export" })).toHaveAttribute("href", "/school/teachers/export?status=active");
   });
 
   it("brings back a teacher who had left", async () => {

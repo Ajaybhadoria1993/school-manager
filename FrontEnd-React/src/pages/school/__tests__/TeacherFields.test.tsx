@@ -7,21 +7,35 @@ import store from "../../../redux/store";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import { ToastProvider } from "../../../components/ui/toast-context";
 import type { CustomFieldDef } from "../../../constants/studentFields";
+import { DEFAULT_TEACHER_RULES, type TeacherFieldRules } from "../../../constants/teacherFields";
 import { fakeApi as pretendApi, type Call, type Handler } from "../../../test/fakeApi";
+import type { ExportColumn, UpdateTeacherSettingsInput } from "../../../types";
+import { defaultTeacherLayout } from "../../../utils/teacherLayout";
 import TeacherFieldsPage from "../TeacherFields";
 
-/** The school's own fields for its teachers (2026-11-07): the list, kept in a draft until Save (one request for the whole list). */
+/**
+ * Teacher > Manage fields (2026-11-13), the way the students' page works: the Add teacher form (every usual detail Asked and Mandatory, the
+ * school's own fields) and the Excel's columns (in the file or not, heading, place), one Mandatory for both, kept in a draft until one Save that
+ * sends only what changed.
+ */
 const PAN: CustomFieldDef = { key: "c_pan00001", label: "PAN Number", type: "text", options: [], mode: "optional" };
 const BLOOD: CustomFieldDef = { key: "c_blood001", label: "Blood Group", type: "choice", options: ["A+", "B+", "O+"], mode: "required" };
 const HOUSE: CustomFieldDef = { key: "c_house001", label: "House Duty", type: "yesNo", options: [], mode: "optional" };
 
-function fakeApi(initial: CustomFieldDef[], extra: Record<string, Handler> = {}) {
-  let fields = initial;
+/** A school's settings as the server keeps them: what is sent is merged in, a null layout is the usual one. */
+function fakeApi(initial: { fields?: Partial<TeacherFieldRules>; custom?: CustomFieldDef[]; columns?: ExportColumn[] | null } = {}, extra: Record<string, Handler> = {}) {
+  let fields: TeacherFieldRules = { ...DEFAULT_TEACHER_RULES, ...initial.fields };
+  let custom = initial.custom ?? [];
+  let columns: ExportColumn[] | null = initial.columns ?? null;
+  const answer = () => ({ fields, customFields: custom, exportColumns: columns ?? defaultTeacherLayout(custom), exportIsDefault: columns === null });
   return pretendApi({
-    "GET /staff/teachers/settings": () => ({ customFields: fields }),
+    "GET /staff/teachers/settings": () => answer(),
     "PUT /staff/teachers/settings": (body) => {
-      fields = (body as { customFields: CustomFieldDef[] }).customFields;
-      return { customFields: fields };
+      const sent = body as UpdateTeacherSettingsInput;
+      if (sent.fields) fields = { ...fields, ...sent.fields } as TeacherFieldRules;
+      if (sent.customFields) custom = sent.customFields;
+      if (sent.exportColumns !== undefined) columns = sent.exportColumns;
+      return answer();
     },
     ...extra,
   });
@@ -49,7 +63,9 @@ function openPage(path = "/school/teachers/fields") {
 
 const puts = (calls: Call[]) => calls.filter((c) => c.method === "PUT");
 const save = () => screen.getByRole("button", { name: "Save" });
-const names = () => within(screen.getByRole("list", { name: "Your own fields" })).getAllByRole("listitem").map((li) => li.querySelector("p")?.textContent);
+const formCard = async () => within(await screen.findByRole("region", { name: "Add teacher form" }));
+const excelCard = async () => within(await screen.findByRole("region", { name: "Excel columns" }));
+const columnTitles = async () => (await excelCard()).getAllByRole("button", { name: /^Rename / }).map((b) => b.textContent);
 
 afterEach(() => {
   cleanup();
@@ -57,101 +73,136 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("Teachers: manage the school's own fields", () => {
-  it("lists the fields in their order with their kind and whether they are needed; Save waits for a change", async () => {
-    fakeApi([BLOOD, PAN, HOUSE]);
+describe("Teacher > Manage fields", () => {
+  it("has two cards, the Add teacher form and the Excel columns, and nothing to save until something changes", async () => {
+    fakeApi();
     openPage();
-    expect(await screen.findByRole("heading", { name: "Teacher fields", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Manage fields", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Manage Teacher" })).toHaveAttribute("href", "/school/teachers");
-    await waitFor(() => expect(names()).toEqual(["Blood Group", "PAN Number", "House Duty"]));
-    const rows = within(screen.getByRole("list", { name: "Your own fields" })).getAllByRole("listitem");
-    expect(rows[0]).toHaveTextContent("List of 3");
-    expect(rows[1]).toHaveTextContent("Text");
-    expect(rows[2]).toHaveTextContent("Yes or no");
-    expect(screen.getByRole("button", { name: /(^|\s)Blood Group asked$/ })).toHaveTextContent("Needed");
-    expect(screen.getByRole("button", { name: /(^|\s)PAN Number asked$/ })).toHaveTextContent("Optional");
+    const form = await formCard();
+    // The usual details are asked and optional; the person and the login are always asked.
+    expect(form.getByText("13 asked · 0 mandatory")).toBeInTheDocument();
+    expect(form.getAllByText("Always").length).toBe(4);
+    const excel = await excelCard();
+    expect(excel.getByText("20 in the Excel · 0 out")).toBeInTheDocument();
+    expect(await columnTitles()).toContain("Qualification");
     expect(save()).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
-  });
-
-  it("says so when the school has none yet, with the way to make one", async () => {
-    fakeApi([]);
-    openPage();
-    expect(await screen.findByText("No fields of your own yet")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Add a field" }).length).toBeGreaterThan(0);
+    expect(screen.getByText("All saved")).toBeInTheDocument();
   });
 
   it("opened from Teacher, goes back to Teacher", async () => {
-    fakeApi([PAN]);
+    fakeApi();
     openPage("/teachers/fields");
     expect(await screen.findByRole("link", { name: "Teacher" })).toHaveAttribute("href", "/teachers");
   });
 
-  it("keeps everything in a draft: a new field, a changed one and the order are sent in ONE request when Save is pressed, then a window says so", async () => {
-    const calls = fakeApi([BLOOD, PAN]);
+  it("makes a detail mandatory for the form and the Excel at once: its column cannot leave the file, and one request carries only that", async () => {
+    const calls = fakeApi();
     const { user } = openPage();
-    await waitFor(() => expect(names()).toEqual(["Blood Group", "PAN Number"]));
+    const form = await formCard();
+    await user.click(form.getByRole("switch", { name: "Date of Birth mandatory" }));
+    expect(form.getByText("13 asked · 1 mandatory")).toBeInTheDocument();
+    const excel = await excelCard();
+    expect(excel.getByRole("switch", { name: "Date of Birth mandatory" })).toBeChecked();
+    expect(excel.getByRole("switch", { name: "Date of Birth in the Excel" })).toBeDisabled();
+    expect(screen.getByText("Changes not saved yet")).toBeInTheDocument();
+    expect(puts(calls)).toHaveLength(0);
 
-    await user.click(screen.getAllByRole("button", { name: "Add a field" })[0]);
+    await user.click(save());
+    expect(await screen.findByText("Saved: Add teacher and the Excel follow it from now on")).toBeInTheDocument();
+    expect(puts(calls)).toHaveLength(1);
+    expect(puts(calls)[0].body).toEqual({ fields: { dateOfBirth: "required" } });
+    await waitFor(() => expect(screen.getByText("All saved")).toBeInTheDocument());
+  });
+
+  it("does not ask a detail the school switches off, and a detail not asked cannot be made mandatory", async () => {
+    const calls = fakeApi({ fields: { qualification: "required" } });
+    const { user } = openPage();
+    const form = await formCard();
+    await user.click(form.getByRole("switch", { name: "Qualification asked" }));
+    expect(form.getByRole("switch", { name: "Qualification asked" })).not.toBeChecked();
+    // Not asked is not mandatory either: the Excel's list shows a dash where the switch was.
+    expect((await excelCard()).queryByRole("switch", { name: "Qualification mandatory" })).not.toBeInTheDocument();
+    await user.click(save());
+    await waitFor(() => expect(puts(calls)).toHaveLength(1));
+    expect(puts(calls)[0].body).toEqual({ fields: { qualification: "hidden" } });
+  });
+
+  it("takes a column out of the Excel and types a heading, without touching what the form asks; the name and the mobile number always stay", async () => {
+    const calls = fakeApi();
+    const { user } = openPage();
+    const excel = await excelCard();
+    expect(excel.getByRole("switch", { name: "Name in the Excel" })).toBeDisabled();
+    expect(excel.getByRole("switch", { name: "Mobile in the Excel" })).toBeDisabled();
+
+    await user.click(excel.getByRole("switch", { name: "Qualification in the Excel" }));
+    await user.click(excel.getByRole("button", { name: "Rename Subjects in the Excel" }));
+    const heading = await excel.findByLabelText("Heading of Subjects in the Excel");
+    await user.clear(heading);
+    await user.type(heading, "Teaches{Enter}");
+    expect(await columnTitles()).toContain("Teaches");
+
+    await user.click(save());
+    await waitFor(() => expect(puts(calls)).toHaveLength(1));
+    const sent = puts(calls)[0].body as UpdateTeacherSettingsInput;
+    expect(sent.fields).toBeUndefined();
+    expect(sent.exportColumns?.map((c) => c.key)).not.toContain("qualification");
+    expect(sent.exportColumns?.find((c) => c.key === "subjects")).toEqual({ key: "subjects", heading: "Teaches" });
+  });
+
+  it("moves a column one place with the arrows", async () => {
+    const calls = fakeApi();
+    const { user } = openPage();
+    const excel = await excelCard();
+    await user.click(excel.getByRole("button", { name: "Move Gender down" }));
+    await user.click(save());
+    await waitFor(() => expect(puts(calls)).toHaveLength(1));
+    const keys = (puts(calls)[0].body as UpdateTeacherSettingsInput).exportColumns!.map((c) => c.key);
+    expect(keys.slice(2, 4)).toEqual(["dateOfBirth", "gender"]);
+  });
+
+  it("adds a field of the school's own: asked on the form and a column of the file (the usual layout, so no layout of its own is saved), changes it, and deletes it", async () => {
+    const calls = fakeApi({ custom: [BLOOD, HOUSE] });
+    const { user } = openPage();
+    const form = await formCard();
+    expect(form.getByText("Your own field · List of choices (3)")).toBeInTheDocument();
+    expect(form.getByText("Your own field · Yes / No")).toBeInTheDocument();
+
+    await user.click(form.getByRole("button", { name: "Add your own field" }));
     const dialog = await screen.findByRole("dialog", { name: "Add your own field" });
     expect(dialog).toHaveTextContent("As Add teacher and the Excel show it");
     await user.type(within(dialog).getByLabelText(/^Name of the field/), "Hobby");
     await user.click(within(dialog).getByRole("button", { name: "Add the field" }));
-    await waitFor(() => expect(names()).toEqual(["Blood Group", "PAN Number", "Hobby"]));
-    expect(puts(calls)).toHaveLength(0);
-    expect(save()).toBeEnabled();
+    await waitFor(() => expect(form.getByText("Hobby")).toBeInTheDocument());
+    expect(await columnTitles()).toContain("Hobby");
 
-    await user.click(screen.getByRole("button", { name: "Move Hobby up" }));
-    expect(names()).toEqual(["Blood Group", "Hobby", "PAN Number"]);
-    await user.click(screen.getByRole("button", { name: /(^|\s)Blood Group asked$/ }));
-    await user.click(await screen.findByRole("option", { name: "Not asked" }));
+    await user.click(form.getByRole("button", { name: "Change Blood Group" }));
+    const change = await screen.findByRole("dialog", { name: "Change Blood Group" });
+    await user.clear(within(change).getByLabelText(/^Name of the field/));
+    await user.type(within(change).getByLabelText(/^Name of the field/), "Blood Type");
+    await user.click(within(change).getByRole("button", { name: "Keep the change" }));
+    await waitFor(() => expect(form.getByText("Blood Type")).toBeInTheDocument());
+
+    await user.click(form.getByRole("button", { name: "Change House Duty" }));
+    const gone = await screen.findByRole("dialog", { name: "Change House Duty" });
+    await user.click(within(gone).getByRole("button", { name: "Delete" }));
+    await user.click(within(gone).getByRole("button", { name: "Delete the field" }));
+    await waitFor(() => expect(form.queryByText("House Duty")).not.toBeInTheDocument());
     expect(puts(calls)).toHaveLength(0);
 
     await user.click(save());
-    const done = await screen.findByRole("dialog", { name: "Fields saved" });
-    expect(done).toHaveTextContent("Your teacher fields are saved.");
-    expect(puts(calls)).toHaveLength(1);
-    const sent = (puts(calls)[0].body as { customFields: CustomFieldDef[] }).customFields;
-    expect(sent.map((f) => [f.label, f.mode])).toEqual([["Blood Group", "hidden"], ["Hobby", "optional"], ["PAN Number", "optional"]]);
-    expect(sent[1].key).toMatch(/^c_[a-z0-9]{4,16}$/);
-    await user.click(within(done).getByRole("button", { name: "OK" }));
-    await waitFor(() => expect(save()).toBeDisabled());
-  });
-
-  it("a yes / no field cannot be needed: its list offers Optional and Not asked only", async () => {
-    fakeApi([HOUSE]);
-    const { user } = openPage();
-    await user.click(await screen.findByRole("button", { name: /(^|\s)House Duty asked$/ }));
-    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual(["Optional", "Not asked"]);
-  });
-
-  it("changes a field's name and choices (its kind stays) and takes one away with the dialog's Delete, in the draft", async () => {
-    const calls = fakeApi([BLOOD, PAN]);
-    const { user } = openPage();
-    await waitFor(() => expect(names()).toEqual(["Blood Group", "PAN Number"]));
-    await user.click(screen.getByRole("button", { name: "Change Blood Group" }));
-    const dialog = await screen.findByRole("dialog", { name: "Change Blood Group" });
-    await user.clear(within(dialog).getByLabelText(/^Name of the field/));
-    await user.type(within(dialog).getByLabelText(/^Name of the field/), "Blood Type");
-    await user.click(within(dialog).getByRole("button", { name: "Keep the change" }));
-    await waitFor(() => expect(names()).toEqual(["Blood Type", "PAN Number"]));
-
-    await user.click(screen.getByRole("button", { name: "Change PAN Number" }));
-    const second = await screen.findByRole("dialog", { name: "Change PAN Number" });
-    await user.click(within(second).getByRole("button", { name: "Delete" }));
-    await user.click(within(second).getByRole("button", { name: "Delete the field" }));
-    await waitFor(() => expect(names()).toEqual(["Blood Type"]));
-    expect(puts(calls)).toHaveLength(0);
-    await user.click(save());
-    await screen.findByRole("dialog", { name: "Fields saved" });
-    expect((puts(calls)[0].body as { customFields: CustomFieldDef[] }).customFields.map((f) => f.key)).toEqual(["c_blood001"]);
+    await waitFor(() => expect(puts(calls)).toHaveLength(1));
+    const sent = puts(calls)[0].body as UpdateTeacherSettingsInput;
+    expect(sent.customFields?.map((f) => [f.label, f.mode])).toEqual([["Blood Type", "required"], ["Hobby", "optional"]]);
+    expect(sent.customFields?.[1].key).toMatch(/^c_[a-z0-9]{4,16}$/);
+    expect(sent.exportColumns).toBeNull();
   });
 
   it("does not let a field take the name of a usual detail or of another field", async () => {
-    fakeApi([PAN]);
+    fakeApi({ custom: [PAN] });
     const { user } = openPage();
-    await screen.findByText("PAN Number");
-    await user.click(screen.getAllByRole("button", { name: "Add a field" })[0]);
+    const form = await formCard();
+    await user.click(form.getByRole("button", { name: "Add your own field" }));
     const dialog = await screen.findByRole("dialog", { name: "Add your own field" });
     const name = within(dialog).getByLabelText(/^Name of the field/);
     await user.type(name, "Designation");
@@ -163,46 +214,51 @@ describe("Teachers: manage the school's own fields", () => {
     expect(await within(dialog).findByText("Two fields cannot have the same name")).toBeInTheDocument();
   });
 
-  it("Cancel puts the list back as it was saved, and sends nothing", async () => {
-    const calls = fakeApi([PAN]);
-    const { user } = openPage();
-    await screen.findByText("PAN Number");
-    await user.click(screen.getByRole("button", { name: "Change PAN Number" }));
-    const dialog = await screen.findByRole("dialog", { name: "Change PAN Number" });
-    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
-    await user.click(within(dialog).getByRole("button", { name: "Delete the field" }));
-    await screen.findByText("No fields of your own yet");
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(names()).toEqual(["PAN Number"]));
-    expect(puts(calls)).toHaveLength(0);
+  it("a yes / no field is never mandatory", async () => {
+    fakeApi({ custom: [HOUSE] });
+    openPage();
+    const form = await formCard();
+    expect(form.queryByRole("switch", { name: "House Duty mandatory" })).not.toBeInTheDocument();
   });
 
-  it("when the server refuses, a window says why and the draft is kept for another try", async () => {
-    fakeApi([PAN], {
-      "PUT /staff/teachers/settings": () => new Response(JSON.stringify({ success: false, message: "Up to 20 fields of your own" }), { status: 400, headers: { "Content-Type": "application/json" } }),
+  it("goes back to a new school's details and columns after asking, and sends nothing until Save", async () => {
+    const calls = fakeApi({ fields: { email: "required", city: "hidden" }, custom: [PAN] });
+    const { user } = openPage();
+    const form = await formCard();
+    expect(form.getByText("13 asked · 1 mandatory")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to the default" }));
+    const ask = await screen.findByRole("dialog", { name: "Back to the default?" });
+    await user.click(within(ask).getByRole("button", { name: "Use the default" }));
+    await waitFor(() => expect(form.getByText("13 asked · 0 mandatory")).toBeInTheDocument());
+    expect(puts(calls)).toHaveLength(0);
+    // The own field stays, switched off.
+    expect(form.getByRole("switch", { name: "PAN Number asked" })).not.toBeChecked();
+    expect(save()).toBeEnabled();
+  });
+
+  it("when the server refuses, says why and keeps the draft for another try", async () => {
+    fakeApi({}, {
+      "PUT /staff/teachers/settings": () => new Response(JSON.stringify({ success: false, message: "Validation failed" }), { status: 400, headers: { "Content-Type": "application/json" } }),
     });
     const { user } = openPage();
-    await screen.findByText("PAN Number");
-    await user.click(screen.getByRole("button", { name: /(^|\s)PAN Number asked$/ }));
-    await user.click(await screen.findByRole("option", { name: "Needed" }));
+    const form = await formCard();
+    await user.click(form.getByRole("switch", { name: "Email mandatory" }));
     await user.click(save());
-    const failed = await screen.findByRole("dialog", { name: "Fields not saved" });
-    expect(failed).toHaveTextContent("Up to 20 fields of your own");
-    await user.click(within(failed).getByRole("button", { name: "OK" }));
-    expect(screen.getByRole("button", { name: /(^|\s)PAN Number asked$/ })).toHaveTextContent("Needed");
+    expect(await screen.findByText(/Validation failed/)).toBeInTheDocument();
+    expect(form.getByRole("switch", { name: "Email mandatory" })).toBeChecked();
     expect(save()).toBeEnabled();
   });
 
   it("asks before leaving with changes not saved; staying keeps them", async () => {
-    fakeApi([PAN]);
+    fakeApi();
     const { router, user } = openPage();
-    await screen.findByText("PAN Number");
-    await user.click(screen.getByRole("button", { name: /(^|\s)PAN Number asked$/ }));
-    await user.click(await screen.findByRole("option", { name: "Needed" }));
+    const form = await formCard();
+    await user.click(form.getByRole("switch", { name: "Email mandatory" }));
     await user.click(screen.getByRole("link", { name: "Manage Teacher" }));
     const ask = await screen.findByRole("dialog", { name: "Leave without saving?" });
     await user.click(within(ask).getByRole("button", { name: "Cancel" }));
     expect(router.state.location.pathname).toBe("/school/teachers/fields");
+    expect(form.getByRole("switch", { name: "Email mandatory" })).toBeChecked();
     await user.click(screen.getByRole("link", { name: "Manage Teacher" }));
     await user.click(within(await screen.findByRole("dialog", { name: "Leave without saving?" })).getByRole("button", { name: "Leave without saving" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/school/teachers"));

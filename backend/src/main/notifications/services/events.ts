@@ -155,6 +155,14 @@ export const Notify = {
     });
   },
 
+  /** The school marked ONE child absent (a cell of the attendance register): that child's parents hear of it, once. The staff are not told. */
+  studentMarkedAbsent(tenantId: string, actorId: string, facts: { unit: Unit; date: string; child: { id: string; name: string } }) {
+    NotificationService.later(tenantId, actorId, async () => {
+      const parents = await Audience.parentsOf(tenantId, [facts.child.id]);
+      return toParents([{ id: facts.child.id, parents: parents.get(facts.child.id) ?? [] }], () => ({ kind: "attendance.saved", title: `${facts.child.name} was absent`, body: joined(shortDay(facts.date), facts.unit.label) }));
+    });
+  },
+
   // ---- Diary and tests ---------------------------------------------------------------------------------------------------------------
 
   /** A subject's diary of a day was written or changed: the class's parents (the homework first) and the school. */

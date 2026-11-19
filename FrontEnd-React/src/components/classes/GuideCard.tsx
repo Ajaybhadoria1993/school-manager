@@ -41,7 +41,7 @@ export function GuideCard({ onClose }: { onClose: () => void }) {
         <X className="size-4" aria-hidden />
       </button>
       <div className="relative">
-        <h2 className="text-base font-bold text-foreground">How this page works</h2>
+        <h2 className="text-section-heading">How this page works</h2>
         <p className="mt-0.5 text-sm text-foreground-muted">
           Your school is arranged in three levels. You can reopen this guide any time with the Guide button.
         </p>

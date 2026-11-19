@@ -1,9 +1,10 @@
+import { TeacherMediumService } from "../services/teacherMedium.service";
 import { NextFunction, Request, Response } from "express";
 import { ApiError } from "../../../utils/ApiError";
 import { asyncHandler } from "../../../utils/asyncHandler";
 import { sendCreated, sendFile, sendOk } from "../../../utils/response";
 import { readSheet } from "../../students/services/sheetReader";
-import { MAX_TEACHER_IMPORT_ROWS, STAFF_WRITERS } from "../constants";
+import { MAX_TEACHER_EXPORT_PREVIEW_ROWS, MAX_TEACHER_IMPORT_ROWS, STAFF_WRITERS } from "../constants";
 import type { ChangeUsernameInput, CreateStaffMemberInput, CreateTeacherInput, ImportTeachersInput, ListStaffMembersQuery, UpdateStaffMemberInput, UpdateTeacherSettingsInput, ListTeachersQuery, LoginAccountInput, ResetPasswordInput, SetClassTeacherInput, UpdateTeacherInput, UsernameCheckQuery } from "../schemas/staff.schemas";
 import { ClassTeacherService } from "../services/classTeacher.service";
 import { StaffMemberService } from "../services/staffMember.service";
@@ -72,6 +73,14 @@ export const checkUsernameFree = asyncHandler(async (req: Request, res: Response
   return sendOk(res, await checkUsername((req.validatedQuery as UsernameCheckQuery).username));
 });
 
+export const listTeacherMediums = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await TeacherMediumService.list(tenantOf(req), idOf(req)));
+});
+
+export const addTeacherToMedium = asyncHandler(async (req: Request, res: Response) => {
+  return sendCreated(res, await TeacherMediumService.add(tenantOf(req), idOf(req), body<{ mediumId: string }>(req).mediumId), "Added");
+});
+
 export const createTeacherLogin = asyncHandler(async (req: Request, res: Response) => {
   return sendCreated(res, await TeacherService.createLogin(tenantOf(req), idOf(req), body<LoginAccountInput>(req)), "Login made");
 });
@@ -106,7 +115,12 @@ export const exportTeachers = asyncHandler(async (req: Request, res: Response) =
   return sendFile(res, await TeacherExportService.export(tenantOf(req), req.validatedQuery as ListTeachersQuery));
 });
 
-/** The school's own fields for its teachers. */
+/** The first teachers of the export (every column's value) and how many there are, for the Export screen's preview; one sample row for a school with none. */
+export const exportTeachersPreview = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await TeacherExportService.rows(tenantOf(req), req.validatedQuery as ListTeachersQuery, MAX_TEACHER_EXPORT_PREVIEW_ROWS));
+});
+
+/** How the school keeps its teachers' details: what Add teacher needs, its own fields, the Excel's columns. */
 export const getTeacherSettings = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, await TeacherSettingsService.get(tenantOf(req)));
 });

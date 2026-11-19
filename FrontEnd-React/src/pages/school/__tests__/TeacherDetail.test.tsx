@@ -5,8 +5,11 @@ import { Provider } from "react-redux";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
+import { sessionStarted, signedOut } from "../../../redux/slices/authSlice";
 import store from "../../../redux/store";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
+import { signInAs, signOut } from "../../../test/session";
+import type { UserRole } from "../../../types";
 import { DEV, ENGLISH, MATHS, MEENA } from "../../../test/timetableFixtures";
 import type { Teacher } from "../../../types";
 import TeacherDetailPage from "../TeacherDetail";
@@ -27,7 +30,10 @@ const FULL: Teacher = {
   login: { username: "meena.singh", isActive: true },
 };
 
-function openPage(teacher: Teacher, extra: Record<string, Handler> = {}) {
+function openPage(teacher: Teacher, extra: Record<string, Handler> = {}, who?: { role: UserRole; permissions: string[] }) {
+  // The school admin unless a test signed somebody in first: the page asks who is looking (what the school allowed them).
+  if (who) signInAs(who.role, who.permissions);
+  else if (!store.getState().auth.user) signInAs("school_admin");
   const calls = fakeApi({
     [`GET /staff/teachers/${teacher.id}`]: () => teacher,
     [`GET /staff/teachers/${teacher.id}/classes`]: () => ({ classTeacherOf: [], subjects: [] }),
@@ -55,8 +61,10 @@ function openPage(teacher: Teacher, extra: Record<string, Handler> = {}) {
 }
 
 afterEach(() => {
+  signOut();
   cleanup();
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
+  store.dispatch(signedOut());
   vi.unstubAllGlobals();
 });
 
@@ -215,5 +223,102 @@ describe("A teacher who leaves, from their page", () => {
     await screen.findByRole("heading", { name: "Meena Singh" });
     expect(screen.queryByRole("button", { name: "Has left" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Give classes" })).toBeInTheDocument();
+  });
+});
+
+describe("A teacher who teaches in more than one medium", () => {
+  const SIDES = [
+    { id: "t1", label: "English Medium" },
+    { id: "t2", label: "Hindi Medium" },
+  ];
+  const signIn = (role: string, mediums: typeof SIDES = SIDES) =>
+    store.dispatch(
+      sessionStarted({
+        user: { id: "u1", name: "Asha", email: "a@school.example", username: null, role, tenantId: "t1", emailVerifiedAt: null },
+        tenant: { id: "t1", name: "Sunrise", approvalStatus: "approved", isActive: true, mediums },
+      } as never)
+    );
+  const list = (teaches: boolean) => ({
+    items: [
+      { id: "t1", label: "English Medium", here: true, teaches: true },
+      { id: "t2", label: "Hindi Medium", here: false, teaches },
+    ],
+  });
+  const asked = (calls: Call[]) => calls.some((c) => c.path === `/staff/teachers/${FULL.id}/mediums`);
+
+  it("the administrator sees where they teach, and can add the other medium", async () => {
+    signIn("school_admin");
+    let teaches = false;
+    const { calls, user } = openPage(FULL, {
+      [`GET /staff/teachers/${FULL.id}/mediums`]: () => list(teaches),
+      [`POST /staff/teachers/${FULL.id}/mediums`]: () => {
+        teaches = true;
+        return list(true);
+      },
+    });
+    const card = await screen.findByRole("region", { name: "Teaches in" });
+    expect(within(card).getByText("This medium")).toBeInTheDocument();
+    await user.click(within(card).getByRole("button", { name: "Add to Hindi Medium" }));
+    expect(await within(card).findByText("Teaches here")).toBeInTheDocument();
+    expect(writes(calls)).toMatchObject([{ method: "POST", body: { mediumId: "t2" } }]);
+    expect(await screen.findByText("Meena Singh now teaches in Hindi Medium")).toBeInTheDocument();
+  });
+
+  it("says what the server refuses", async () => {
+    signIn("school_admin");
+    const { user } = openPage(FULL, {
+      [`GET /staff/teachers/${FULL.id}/mediums`]: () => list(false),
+      [`POST /staff/teachers/${FULL.id}/mediums`]: server(409, "Meena Singh has no login yet. Make a login first.", "TEACHER_HAS_NO_LOGIN"),
+    });
+    await user.click(await screen.findByRole("button", { name: "Add to Hindi Medium" }));
+    expect(await screen.findByText("Meena Singh has no login yet. Make a login first.")).toBeInTheDocument();
+  });
+
+  it("offers nothing for a teacher who has left", async () => {
+    signIn("school_admin");
+    openPage({ ...FULL, isActive: false }, { [`GET /staff/teachers/${FULL.id}/mediums`]: () => list(false) });
+    const card = await screen.findByRole("region", { name: "Teaches in" });
+    expect(within(card).queryByRole("button", { name: "Add to Hindi Medium" })).not.toBeInTheDocument();
+  });
+
+  it("is not asked for in a school with one medium", async () => {
+    signIn("school_admin", []);
+    const { calls } = openPage(FULL);
+    await screen.findByRole("heading", { name: "Meena Singh" });
+    expect(screen.queryByRole("region", { name: "Teaches in" })).not.toBeInTheDocument();
+    expect(asked(calls)).toBe(false);
+  });
+
+  it("is not shown to a teacher looking at a colleague", async () => {
+    signIn("teacher");
+    const { calls } = openPage(FULL);
+    await screen.findByRole("heading", { name: "Meena Singh" });
+    expect(asked(calls)).toBe(false);
+  });
+});
+
+describe("a teacher's page for a person the school allowed (Permissions)", () => {
+  const reception = (permissions: string[]) => ({ role: "receptionist" as UserRole, permissions });
+
+  it("a person who may only see teachers reads their details, classes and login, and has nothing to change", async () => {
+    openPage(FULL, {}, reception(["teachers.view"]));
+    expect(await screen.findByRole("heading", { name: FULL.name, level: 1 })).toBeInTheDocument();
+    for (const name of ["Change", "Give classes", "Has left", "Assign class", "New password", "Change username", "Make a login", "Week"]) {
+      expect(screen.queryByRole("button", { name }) ?? screen.queryByRole("link", { name }), name).toBeNull();
+    }
+  });
+
+  it("allowed to change them, they get Change, Give classes or Has left, Assign class, and the login's buttons", async () => {
+    openPage(FULL, {}, reception(["teachers.view", "teachers.edit"]));
+    expect(await screen.findByRole("link", { name: "Change" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Assign class" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New password" })).toBeInTheDocument();
+    // The week is the timetable's page: its own permission.
+    expect(screen.queryByRole("link", { name: "Week" })).not.toBeInTheDocument();
+  });
+
+  it("the week of the teacher is for the people who make timetables", async () => {
+    openPage(FULL, {}, reception(["teachers.view", "timetable.edit"]));
+    expect(await screen.findByRole("link", { name: "Week" })).toBeInTheDocument();
   });
 });

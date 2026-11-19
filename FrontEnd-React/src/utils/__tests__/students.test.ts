@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_FIELD_RULES } from "../../constants/studentFields";
 import type { Relation } from "../../types";
-import { checkStudentForm, emptyGuardian, emptyStudentForm, admitLink, formatMoment, istDay, freeRelation, namesPreview, takenRelations, type StudentFormValues } from "../students";
+import { checkStudentForm, emptyGuardian, emptyStudentForm, admitLink, importLink, manageStudentsLink, formatMoment, istDay, freeRelation, namesPreview, takenRelations, type StudentFormValues } from "../students";
 
 /** An admission with every detail a new school needs by default, and these parents. */
 function admission(parents: { relation: Relation | ""; mobile?: string; name?: string; isPrimary?: boolean }[]): StudentFormValues {
@@ -100,6 +100,16 @@ describe("the admission form opened for a class", () => {
   });
 });
 
+describe("the Manage Students page opened for a class", () => {
+  it("carries the class, and the section only with a class", () => {
+    expect(manageStudentsLink()).toBe("/school/students");
+    expect(manageStudentsLink({ classId: "c5" })).toBe("/school/students?class=c5");
+    expect(manageStudentsLink({ classId: "c5", sectionId: "c5-A" })).toBe("/school/students?class=c5&section=c5-A");
+    expect(manageStudentsLink({ sectionId: "c5-A" })).toBe("/school/students");
+    expect(manageStudentsLink({ classId: "", sectionId: "" })).toBe("/school/students");
+  });
+});
+
 describe("the day in India of a moment", () => {
   it("is the calendar day there, not in the computer's own zone", () => {
     expect(istDay("2026-09-02T04:00:00.000Z")).toBe("2026-09-02");
@@ -107,21 +117,27 @@ describe("the day in India of a moment", () => {
   });
 });
 
-describe("what is wrong with an Aadhaar number is said by what is wrong", () => {
-  const CHECK_DIGIT = "This Aadhaar number is not valid: its last digit (the check digit) does not match the other digits";
+describe("an Aadhaar number is 12 digits, and nothing else is checked", () => {
   const aadhaarOf = (value: string) => check({ ...admission([{ relation: "Father" }]), admissionDate: "2026-06-01", aadhaarNumber: value }).aadhaarNumber;
 
-  it("a good number (spaces and dashes between the digits do not matter) has nothing said", () => {
-    expect(aadhaarOf("234567890124")).toBeUndefined();
+  it("any 12 digits are fine (a school types what is on the card, and a test file has made-up numbers): no first-digit rule, no check digit", () => {
+    for (const any of ["234567890124", "999900000003", "123456789012", "023456789012", "000000000000", "234567890120", "596001338908"]) {
+      expect(aadhaarOf(any), any).toBeUndefined();
+    }
+  });
+
+  it("spaces and dashes between the digits do not matter", () => {
     expect(aadhaarOf("2345 6789 0124")).toBeUndefined();
     expect(aadhaarOf("2345-6789-0124")).toBeUndefined();
   });
 
-  it("the number of digits, the first digit and the check digit each have their own message", () => {
-    for (const short of ["12345", "23456789012", "2345678901234", "abcdefghijkl"]) expect(aadhaarOf(short), short).toBe("The Aadhaar number has 12 digits");
-    for (const start of ["123456789012", "023456789012"]) expect(aadhaarOf(start), start).toBe("An Aadhaar number does not start with 0 or 1");
-    // 12 digits that look right (a number from a dummy file): the last digit does not fit the others.
-    for (const wrong of ["234567890120", "596001338908"]) expect(aadhaarOf(wrong), wrong).toBe(CHECK_DIGIT);
+  it("only the number of digits is wrong", () => {
+    for (const bad of ["12345", "23456789012", "2345678901234", "abcdefghijkl"]) expect(aadhaarOf(bad), bad).toBe("The Aadhaar number has 12 digits");
+  });
+
+  it("a new school does not need it: the Aadhaar number is asked, and may be left empty", () => {
+    expect(DEFAULT_FIELD_RULES.aadhaarNumber).toBe("optional");
+    expect(aadhaarOf("")).toBeUndefined();
   });
 });
 
@@ -142,5 +158,15 @@ describe("the age message says how old the student was on which day", () => {
   it("a student of a right age has nothing said", () => {
     expect(dobProblem("2016-05-14", "2026-06-01")).toBeUndefined();
     expect(dobProblem("2020-06-18", "2022-06-18")).toBeUndefined();
+  });
+});
+
+describe("the bulk upload opened for a class", () => {
+  it("carries the class, and the section only with a class", () => {
+    expect(importLink()).toBe("/school/students/import");
+    expect(importLink({ classId: "c5" })).toBe("/school/students/import?class=c5");
+    expect(importLink({ classId: "c5", sectionId: "c5-A" })).toBe("/school/students/import?class=c5&section=c5-A");
+    expect(importLink({ sectionId: "c5-A" })).toBe("/school/students/import");
+    expect(importLink({ classId: "", sectionId: "" })).toBe("/school/students/import");
   });
 });

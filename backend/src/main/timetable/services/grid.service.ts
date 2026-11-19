@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import type { UserRole } from "../../users/models/User";
 import { isDuplicateKey } from "../../academics/services/shared";
+import { ClassTeacher } from "../../staff/models/ClassTeacher";
 import { Allotment } from "../../subjects/models/Allotment";
 import { MAX_PERIODS_PER_WEEK } from "../../subjects/constants";
 import { DAY_NAMES, type SlotKind } from "../constants";
@@ -39,6 +40,8 @@ export interface GridView {
   load: { teacherId: string; perDay: Record<string, number>; week: number }[];
   issues: Issue[];
   stats: { total: number; filled: number; free: number; placed: Record<string, number> };
+  /** The unit's class teacher this year (in a Pre-Primary class, the mother teacher the screen puts on its periods), or nobody. */
+  classTeacher: { id: string; name: string } | null;
 }
 
 const NO_TIMING = (label: string) => ApiError.conflict(`${label} has no timing yet. Set the school's timings first.`, "NO_TIMING");
@@ -124,6 +127,7 @@ export function buildView(world: World, unit: Unit, cells?: CellIn[]): GridView 
     load: [...load].map(([teacherId, v]) => ({ teacherId, ...v })),
     issues: result.issues,
     stats: { total: result.total, filled: result.total - result.free, free: result.free, placed: Object.fromEntries(result.placed) },
+    classTeacher: null,
   };
 }
 
@@ -134,12 +138,16 @@ export function clashError(errors: Issue[]): ApiError {
   return ApiError.conflict(message, "TIMETABLE_CLASHES", errors.map((e) => ({ path: e.day && e.period ? `d${e.day}p${e.period}` : "cells", message: e.message, code: e.code })));
 }
 
-/** What is stored of a class's timetable that the view cannot say (who changed it, when it was published). */
-async function stamps(tenantId: string, unit: Unit): Promise<{ publishedAt: string | null; updatedAt: string | null }> {
+/** What is stored of a class's timetable that the view cannot say (when it was changed and published), and the unit's class teacher. */
+async function stamps(tenantId: string, unit: Unit, world: World): Promise<{ publishedAt: string | null; updatedAt: string | null; classTeacher: GridView["classTeacher"] }> {
   const doc = await Timetable.findOne({ tenantId: new Types.ObjectId(tenantId), academicYearId: unit.yearId, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null })
     .select("publishedAt updatedAt")
     .lean();
-  return { publishedAt: doc?.publishedAt ? doc.publishedAt.toISOString() : null, updatedAt: doc ? doc.updatedAt.toISOString() : null };
+  const head = await ClassTeacher.findOne({ tenantId: new Types.ObjectId(tenantId), academicYearId: unit.yearId, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null })
+    .select("teacherId")
+    .lean();
+  const teacher = head ? world.teachers.get(head.teacherId.toString()) : undefined;
+  return { publishedAt: doc?.publishedAt ? doc.publishedAt.toISOString() : null, updatedAt: doc ? doc.updatedAt.toISOString() : null, classTeacher: teacher ? { id: teacher.id, name: teacher.name } : null };
 }
 
 export class GridService {
@@ -151,7 +159,7 @@ export class GridService {
     if (role === "teacher" && stored?.status !== "published") {
       throw ApiError.notFound("This timetable has not been published yet.", "TIMETABLE_NOT_PUBLISHED");
     }
-    return { ...buildView(world, unit), ...(await stamps(tenantId, unit)) };
+    return { ...buildView(world, unit), ...(await stamps(tenantId, unit, world)) };
   }
 
   /**
@@ -216,8 +224,35 @@ export class GridService {
       period: c.period,
       lessons: c.lessons.map((l) => ({ subjectId: new Types.ObjectId(l.subjectId), teacherId: l.teacherId ? new Types.ObjectId(l.teacherId) : null, room: l.room })),
     }));
+    const previous = world.timetables.get(key)?.cells ?? null;
     await GridService.upsert(filter, { $set: { cells: document, updatedBy: new Types.ObjectId(userId) } });
+    // Another class saved at the same moment may have taken the same teacher: checked once more against what is stored now (see `settleRace`).
+    const raced = await GridService.settleRace(tenantId, unit, key, cells, allotments);
+    if (raced.length > 0) {
+      await Timetable.updateOne(filter, { $set: { cells: previous ? GridService.toDocument(previous) : [] } });
+      throw clashError(raced);
+    }
     return GridService.reload(tenantId, unit);
+  }
+
+  /**
+   * The checks of a save are made on what the database held a moment BEFORE the write, and there are no transactions: two classes saved at
+   * the same moment with the same teacher could each pass them and both be kept (a teacher in two places, 2026-11-18). So a timetable that was
+   * just written is checked once more against what is stored NOW; if the other class got there first (or at the same time), the one just written
+   * is put back as it was and refused. When both land at once both may be refused: nobody is ever left in two places, and the person saves again.
+   */
+  static async settleRace(tenantId: string, unit: Unit, key: string, cells: CellIn[], allotments: Map<string, AllotmentInfo>): Promise<Issue[]> {
+    const fresh = await loadWorld(tenantId, unit.yearId);
+    return analyse({ days: unitDays(fresh, unit.classId), cells, allotments, teachers: fresh.teachers, busy: busyFrom(fresh, key) }).issues.filter((i) => i.level === "error");
+  }
+
+  /** Stored cells as the document keeps them (ids as ObjectIds). */
+  static toDocument(cells: CellIn[]) {
+    return cells.map((c) => ({
+      day: c.day,
+      period: c.period,
+      lessons: c.lessons.map((l) => ({ subjectId: new Types.ObjectId(l.subjectId), teacherId: l.teacherId ? new Types.ObjectId(l.teacherId) : null, room: l.room })),
+    }));
   }
 
   /**
@@ -256,7 +291,7 @@ export class GridService {
   /** The view as it is now, read again from the database. */
   static async reload(tenantId: string, unit: Unit): Promise<GridView> {
     const world = await loadWorld(tenantId, unit.yearId);
-    return { ...buildView(world, unit), ...(await stamps(tenantId, unit)) };
+    return { ...buildView(world, unit), ...(await stamps(tenantId, unit, world)) };
   }
 
   /** Creates the timetable of a unit on its first save (a race between two first saves is settled by the unique index). */

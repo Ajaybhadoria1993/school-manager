@@ -37,6 +37,8 @@ export interface AllotmentView {
   rows: AllotmentRowDto[];
   /** The class's other sections (of the same year), which the same list can be given to. */
   siblings: { id: string; name: string }[];
+  /** The unit's class teacher this year (null when nobody is): a screen says so before it puts another teacher in their place. */
+  classTeacher: { id: string; name: string } | null;
   totals: {
     /** The periods a week the list has to place (the subjects of a choice share their periods, so a choice counts once). */
     periods: number;
@@ -318,16 +320,24 @@ export class AllotmentService {
     const school = new Types.ObjectId(tenantId);
     const unitFilter = { tenantId: school, academicYearId: unit.yearId, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null };
     const rows = await Allotment.find(unitFilter).sort({ position: 1, _id: 1 }).lean();
-    const [subjects, teachers, siblings, available] = await Promise.all([
+    const [subjects, siblings, available, post] = await Promise.all([
       Subject.find({ tenantId: school, _id: { $in: rows.map((r) => r.subjectId) } }).lean(),
-      Teacher.find({ tenantId: school, _id: { $in: rows.flatMap((r) => [...(r.teacherId ? [r.teacherId] : []), ...(r.backupTeacherIds ?? [])]) } }).select("name").lean(),
       unit.sectionId
         ? Section.find({ tenantId: school, classId: new Types.ObjectId(unit.classId), academicYearId: unit.yearId, _id: { $ne: new Types.ObjectId(unit.sectionId) } }).select("name").lean()
         : Promise.resolve([]),
       AllotmentService.availablePeriods(tenantId, unit.classId),
+      ClassTeacher.findOne(unitFilter).select("teacherId").lean(),
     ]);
+    // The teachers of the rows and the class teacher are named in one read.
+    const teachers = await Teacher.find({
+      tenantId: school,
+      _id: { $in: [...rows.flatMap((r) => [...(r.teacherId ? [r.teacherId] : []), ...(r.backupTeacherIds ?? [])]), ...(post ? [post.teacherId] : [])] },
+    })
+      .select("name")
+      .lean();
     const subjectById = new Map(subjects.map((s) => [s._id.toString(), s]));
     const teacherById = new Map(teachers.map((t) => [t._id.toString(), t]));
+    const headName = post ? teacherById.get(post.teacherId.toString())?.name : undefined;
     const dtos: AllotmentRowDto[] = rows.flatMap((r) => {
       const subject = subjectById.get(r.subjectId.toString());
       if (!subject) return [];
@@ -356,6 +366,7 @@ export class AllotmentService {
       siblings: siblings
         .map((s) => ({ id: s._id.toString(), name: s.name }))
         .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })),
+      classTeacher: post && headName ? { id: post.teacherId.toString(), name: headName } : null,
       totals: { periods: periodsToPlace(dtos), available },
     };
   }

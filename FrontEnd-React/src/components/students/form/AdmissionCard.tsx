@@ -2,7 +2,7 @@ import { CalendarPlus } from "lucide-react";
 import type { StudentForm } from "../../../hooks/useStudentForm";
 import { asks } from "../../../utils/fieldRules";
 import { AdmissionDateField } from "./AdmissionDateField";
-import { FormCard } from "./FormCard";
+import { FormSection } from "./FormSection";
 import { FORM_GRID } from "./formGrid";
 
 /**
@@ -12,17 +12,15 @@ import { FORM_GRID } from "./formGrid";
 export function AdmissionCard({ form, index = 0 }: { form: StudentForm; index?: number }) {
   if (!asks(form.rules, "admissionDate")) return null;
   return (
-    <FormCard
+    <FormSection
       index={index}
       icon={CalendarPlus}
-      tone="info"
       title="Admission"
-      description="The day the student joined. The admission number is made for you when you press Admit."
       tip="The admission number (for example ADM-2026-0001) is not typed: the school's counter gives the next one when you press Admit, and it never changes."
     >
       <div className={FORM_GRID}>
         <AdmissionDateField form={form} mode="admit" />
       </div>
-    </FormCard>
+    </FormSection>
   );
 }

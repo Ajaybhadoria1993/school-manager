@@ -10,7 +10,8 @@ import { Student, type IGuardianLink } from "../models/Student";
 import { todayInIndia, type AdmitStudentInput, type GuardianEntryInput } from "../schemas/students.schemas";
 import { nextAdmissionNumber } from "./admissionNumber";
 import { GuardianService } from "./guardian.service";
-import { assertRollNumberFree, assertSeat, resolvePlacement, rollNumberTaken, sectionFull, seatHeld, type Placement } from "./placement";
+import { assertRollNumberFree, assertSeat, resolvePlacement, rollNumberTaken, seatsFull, seatHeld, type Placement } from "./placement";
+import { raiseSeats, type SeatRaise } from "./seatRaise";
 import { aadhaarTaken, addressOf, customAnswersOf, day, fullName, nameKeyOf, NO_ACTIVE_YEAR, placesOf, placeTitle, recordsOf, type GuardianMatchDto, type StudentDetailDto } from "./shared";
 import { StudentService } from "./student.service";
 
@@ -23,6 +24,8 @@ export type AdmissionYear = Pick<IAcademicYear, "_id" | "name" | "startDate">;
 /** What the checks of an admission found out, for the writes that follow. */
 export interface AdmissionPlan {
   placement: Placement;
+  /** The seats to raise the full section (or class) to before the student is put in; null when nothing needs raising. */
+  raiseSeatsTo: number | null;
   rollNumber: number | null;
   /** The guardians picked by id, by their index in the request. */
   linked: Map<number, IGuardian>;
@@ -127,7 +130,7 @@ export class AdmissionService {
       if (holder) throw aadhaarTaken(input.aadhaarNumber, holder);
     }
     const placement = await resolvePlacement(school, year._id, input.classId, input.sectionId);
-    await assertSeat(school, year._id, placement, input.allowOverCapacity);
+    const raiseSeatsTo = (await assertSeat(school, year._id, placement, input.allowOverCapacity, undefined, input.raiseSeatsTo)) ? (input.raiseSeatsTo ?? null) : null;
     const rollNumber = input.rollNumber ?? null;
     await assertRollNumberFree(school, year._id, placement, rollNumber);
 
@@ -170,7 +173,7 @@ export class AdmissionService {
       const existing = await Guardian.findOne({ tenantId: school, mobile: entry.mobile }).lean();
       if (existing) throw await guardianExists(school, index, existing);
     }
-    return { placement, rollNumber, linked, nameKey };
+    return { placement, raiseSeatsTo, rollNumber, linked, nameKey };
   }
 
   /**
@@ -187,16 +190,18 @@ export class AdmissionService {
     const own = options.admissionNumber ?? null;
 
     // 1. Checks. Nothing has been written yet, so a refusal leaves nothing behind.
-    const { placement, rollNumber, linked, nameKey } = await AdmissionService.plan(school, year, input, own);
+    const { placement, raiseSeatsTo, rollNumber, linked, nameKey } = await AdmissionService.plan(school, year, input, own);
 
     // 2. Writes, each one only adding. 3. What this request made is taken away again if a later step fails.
     const madeGuardians: Types.ObjectId[] = [];
     let studentId: Types.ObjectId | null = null;
     let admissionNumber: string | null = null;
     let enrolmentId: Types.ObjectId | null = null;
+    let seats: SeatRaise | null = null;
     const undo = async () => {
       try {
         if (enrolmentId) await Enrolment.deleteOne({ _id: enrolmentId, tenantId: school });
+        await seats?.undo();
         if (studentId) await Student.deleteOne({ _id: studentId, tenantId: school });
         for (const id of madeGuardians) {
           // Another admission may have linked this new guardian in the meantime: then they stay.
@@ -208,6 +213,11 @@ export class AdmissionService {
     };
 
     try {
+      // The person said "raise the seats and admit": the seats grow first (and are put back if this admission fails), so the student has one.
+      if (raiseSeatsTo !== null) {
+        seats = await raiseSeats(school, year._id, placement, raiseSeatsTo);
+        if (seats.changed) placement.capacity = seats.changed.to;
+      }
       const links: IGuardianLink[] = [];
       for (const [index, entry] of input.guardians.entries()) {
         const existing = linked.get(index);
@@ -280,7 +290,7 @@ export class AdmissionService {
 
       if (!input.allowOverCapacity) {
         const seat = await seatHeld(school, year._id, placement, enrolmentId);
-        if (!seat.held) throw sectionFull(placement, Math.max(seat.enrolled, placement.capacity ?? 0));
+        if (!seat.held) throw seatsFull(placement, Math.max(seat.enrolled, placement.capacity ?? 0));
       }
 
       // 4. Only now, and only when the person chose "update", the details of a guardian the school already had.

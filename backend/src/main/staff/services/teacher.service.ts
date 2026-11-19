@@ -1,3 +1,5 @@
+import { recordsOfSchool } from "../../tenants/services/schoolSides";
+import { TeacherMediumService } from "./teacherMedium.service";
 import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { isDuplicateKey } from "../../academics/services/shared";
@@ -55,6 +57,8 @@ export interface TeachingDto extends UnitRefDto {
   subjectId: string;
   subjectName: string;
   periodsPerWeek: number;
+  /** How many of those periods a lesson of the class's timetable has been placed in (the periods not placed yet are not in anyone's week). */
+  placedPeriods: number;
 }
 
 /** What a teacher has been given, from their page: the classes they are the class teacher of and the subjects they teach. */
@@ -175,7 +179,8 @@ export class TeacherService {
       const pattern = new RegExp(escapeRegex(query.search.trim().toLowerCase().replace(/\s+/g, " ")), "i");
       const either: Record<string, unknown>[] = [{ nameKey: pattern }, { mobile: pattern }, { employeeCode: pattern }, { email: pattern }];
       if (!colleague) {
-        const users = await User.find({ tenantId: school, role: "teacher", username: pattern }).select("_id").lean();
+        // A teacher who also works on another medium has their login there.
+        const users = await User.find({ tenantId: { $in: await recordsOfSchool(school) }, role: "teacher", username: pattern }).select("_id").lean();
         if (users.length > 0) either.push({ userId: { $in: users.map((u) => u._id) } });
       }
       and.push({ $or: either });
@@ -257,10 +262,34 @@ export class TeacherService {
     const subjects = await Subject.find({ tenantId: school, _id: { $in: rows.map((r) => r.subjectId) } }).select("name").lean();
     const subjectName = new Map(subjects.map((s) => [s._id.toString(), s.name]));
     const named = await describeUnits(tenantId, rows);
+    // How many periods of each subject a lesson has been placed in, in the timetable of its class or section.
+    const placed = new Map<string, number>();
+    if (rows.length > 0) {
+      const timetables = await Timetable.find({ tenantId: school, academicYearId: { $in: years }, classId: { $in: [...new Set(rows.map((r) => r.classId.toString()))].map((c) => new Types.ObjectId(c)) } })
+        .select("academicYearId classId sectionId cells")
+        .lean();
+      for (const t of timetables) {
+        for (const cell of t.cells) {
+          for (const lesson of cell.lessons) {
+            const key = `${t.academicYearId}:${t.classId}:${t.sectionId ?? "-"}:${lesson.subjectId}`;
+            placed.set(key, (placed.get(key) ?? 0) + 1);
+          }
+        }
+      }
+    }
     return {
       classTeacherOf,
       subjects: named
-        .map((r) => ({ row: r, dto: { ...r.ref, subjectId: r.subjectId.toString(), subjectName: subjectName.get(r.subjectId.toString()) ?? "A subject", periodsPerWeek: r.periodsPerWeek } }))
+        .map((r) => ({
+          row: r,
+          dto: {
+            ...r.ref,
+            subjectId: r.subjectId.toString(),
+            subjectName: subjectName.get(r.subjectId.toString()) ?? "A subject",
+            periodsPerWeek: r.periodsPerWeek,
+            placedPeriods: placed.get(`${r.academicYearId}:${r.classId}:${r.sectionId ?? "-"}:${r.subjectId}`) ?? 0,
+          },
+        }))
         // In teaching order (the year, the class's place, the section), then by subject within one unit.
         .sort(
           (a, b) =>
@@ -295,11 +324,16 @@ export class TeacherService {
    */
   static async create(tenantId: string, input: CreateTeacherInput, options: { custom?: "admit" | "format" } = {}): Promise<TeacherDto> {
     if ((await Teacher.countDocuments({ tenantId })) >= MAX_TEACHERS) throw LIMIT();
+    // The usual details the school needs are held to for a teacher who is added by hand; a bulk upload row is only read.
+    if ((options.custom ?? "admit") === "admit") await TeacherSettingsService.checkDetails(tenantId, input, "admit");
     const answers = await TeacherSettingsService.check(tenantId, input.custom, options.custom ?? "admit");
     await TeacherService.assertSubjects(tenantId, input.subjectIds);
     await TeacherService.assertFree(tenantId, input.mobile ?? null, input.employeeCode ?? null, null);
     // Everything that can be checked is checked before anything is made: a refusal leaves nothing behind.
-    if (input.login) await TeacherLogin.assertFree(input.login.username, input.email ?? null);
+    if (input.login) {
+      await TeacherLogin.assertFree(input.login.username, input.email ?? null);
+      await TeacherMediumService.assertNoLoginElsewhere(tenantId, input.mobile);
+    }
 
     let teacher;
     try {
@@ -364,6 +398,7 @@ export class TeacherService {
         throw ApiError.conflict(`${current.name} is named on lessons of a timetable. Give those lessons to another teacher first.`, "TEACHER_HAS_LESSONS");
       }
     }
+    await TeacherSettingsService.checkDetails(tenantId, input, "change");
     if (input.subjectIds) await TeacherService.assertSubjects(tenantId, input.subjectIds);
     await TeacherService.assertFree(tenantId, input.mobile ?? null, input.employeeCode ?? null, id);
     // The login repeats the email: it must be free before the teacher is changed.
@@ -389,7 +424,8 @@ export class TeacherService {
         ...(input.mobile !== undefined ? { phone: input.mobile } : {}),
         ...(input.email !== undefined ? { email: input.email } : {}),
       });
-      if (input.isActive !== undefined) await TeacherLogin.setActive(current.userId, input.isActive);
+      await TeacherMediumService.mirror(tenantId, current.userId, { name: input.name, mobile: input.mobile, email: input.email });
+      if (input.isActive !== undefined) await TeacherMediumService.loginFollows(tenantId, current.userId, input.isActive);
     }
     // A teacher who has left is nobody's class teacher any more (the classes show no class teacher until the school picks one).
     if (input.isActive === false && current.isActive) await ClassTeacherService.release(tenantId, id);
@@ -405,6 +441,7 @@ export class TeacherService {
     if (teacher.userId) throw ApiError.conflict(`${teacher.name} already has a login.`, "TEACHER_HAS_LOGIN");
     if (!teacher.mobile) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "mobile", message: NEEDS_MOBILE_MESSAGE }]);
     await TeacherLogin.assertFree(login.username, teacher.email ?? null);
+    await TeacherMediumService.assertNoLoginElsewhere(tenantId, teacher.mobile);
 
     const userId = await TeacherLogin.create(tenantId, { name: teacher.name, mobile: teacher.mobile, email: teacher.email ?? null, isActive: teacher.isActive }, login);
     const linked = await Teacher.updateOne({ _id: id, tenantId, userId: null }, { $set: { userId } });

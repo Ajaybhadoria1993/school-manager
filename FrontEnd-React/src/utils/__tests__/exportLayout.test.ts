@@ -138,7 +138,9 @@ describe("the Excel's columns and the form's details: two lists, one Mandatory",
   });
 
   it("a column that is mandatory (or one every school has) cannot be taken out: the list stays as it was", () => {
-    const draft = draftOf(fresh());
+    // A new school does not need the Aadhaar number; this one made it mandatory.
+    expect(columnIsMandatory(draftOf(fresh()), "aadhaarNumber")).toBe(false);
+    const draft = setRequired(draftOf(fresh()), { kind: "rule", rule: "aadhaarNumber" }, true);
     expect(columnIsMandatory(draft, "aadhaarNumber")).toBe(true);
     expect(switchRow(draft, "aadhaarNumber", false)).toBe(draft);
     expect(columnIsMandatory(draft, "gender")).toBe(true);
@@ -183,7 +185,8 @@ describe("the Excel's columns and the form's details: two lists, one Mandatory",
     draft = setAsked(draft, { kind: "rule", rule: "aadhaarNumber" }, true);
     expect(draft.rules.aadhaarNumber).toBe("optional");
     // Asked again, a mandatory one stays mandatory.
-    expect(setAsked(draftOf(fresh()), { kind: "rule", rule: "aadhaarNumber" }, true).rules.aadhaarNumber).toBe("required");
+    const mandatory = setRequired(draftOf(fresh()), { kind: "rule", rule: "aadhaarNumber" }, true);
+    expect(setAsked(mandatory, { kind: "rule", rule: "aadhaarNumber" }, true).rules.aadhaarNumber).toBe("required");
   });
 
   it("what the software always asks cannot be switched off; both parents are never 'not asked'", () => {

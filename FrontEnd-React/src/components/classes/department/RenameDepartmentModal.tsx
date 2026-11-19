@@ -1,8 +1,8 @@
-import { Pencil, Trash2 } from "lucide-react";
+import { Archive, Pencil } from "lucide-react";
 import { Button as HeroButton } from "@heroui/react";
 import { useRenameDepartmentMutation } from "../../../redux/api/academicsApi";
 import { getApiError } from "../../../utils/apiErrors";
-import { departmentNameRows } from "../../../utils/academics";
+import { departmentNameRows, plural } from "../../../utils/academics";
 import type { AcademicStructure, DepartmentItem } from "../../../types";
 import { AppModal } from "../../ui/AppModal";
 import { Button } from "../../ui/Button";
@@ -12,19 +12,20 @@ import { OtherSelect } from "./OtherSelect";
 /**
  * Change a department in a small window: its name (a dropdown of the usual names no department uses yet, or "Other..." to type a
  * name of your own; picking one renames it at once, and a name another department uses is refused with a message while the box
- * stays open), or Delete department (the caller asks "are you sure?" after this window has closed; the classes stay, in no
- * department). It is only a heading, so neither changes anything else.
+ * stays open), or Make inactive (the caller asks "are you sure?" after this window has closed). A department is never deleted: it is
+ * made inactive when the school no longer uses it, which needs all of its classes to be inactive first. It is only a heading, so neither
+ * changes anything else.
  */
 export function RenameDepartmentModal({
   department,
   structure,
   onClose,
-  onDelete,
+  onDeactivate,
 }: {
   department: DepartmentItem;
   structure: AcademicStructure;
   onClose: () => void;
-  onDelete: () => void;
+  onDeactivate: () => void;
 }) {
   const { push } = useToast();
   const [rename] = useRenameDepartmentMutation();
@@ -40,9 +41,11 @@ export function RenameDepartmentModal({
     }
   }
 
+  const blocked = department.classCount > 0;
+
   return (
     <AppModal
-      title={`Rename or delete ${department.name}`}
+      title={`Rename or make ${department.name} inactive`}
       icon={Pencil}
       onClose={onClose}
       footer={
@@ -64,23 +67,24 @@ export function RenameDepartmentModal({
         <p className="mt-1.5 text-xs text-foreground-muted">Pick a name from the list, or choose Other... to type your own.</p>
       </div>
 
-      <div className="rounded-xl border border-danger/25 p-4">
-        <p className="text-sm font-semibold text-foreground">Delete this department</p>
+      <div className="rounded-xl border border-border p-4">
+        <p className="text-sm font-semibold text-foreground">Make this department inactive</p>
         <p className="mt-1 text-xs text-foreground-muted">
-          {department.classCount > 0
-            ? `Its ${department.classCount === 1 ? "class stays" : `${department.classCount} classes stay`} in your school, in no department.`
-            : "It has no classes."}
+          {blocked
+            ? `It still has ${plural(department.classCount, "active class")}. Make ${department.classCount === 1 ? "it" : "them"} inactive first.`
+            : "Nothing is deleted. You can make it active again from the Inactive list on the Classes & Sections page."}
         </p>
         <Button
-          variant="ghost"
-          className="mt-3 text-danger hover:bg-danger-soft hover:text-danger"
+          variant="outline"
+          className="mt-3"
+          disabled={blocked}
           onClick={() => {
             onClose();
-            onDelete();
+            onDeactivate();
           }}
         >
-          <Trash2 className="size-4" aria-hidden />
-          Delete department
+          <Archive className="size-4" aria-hidden />
+          Make inactive
         </Button>
       </div>
     </AppModal>

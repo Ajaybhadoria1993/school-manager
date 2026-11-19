@@ -4,6 +4,7 @@ import { Button as HeroButton } from "@heroui/react";
 import { useAuth } from "../../hooks/useAuth";
 import { useDeleteEventMutation, useGetCalendarQuery, useSetStandardHolidayMutation } from "../../redux/api/classroomApi";
 import { getApiError } from "../../utils/apiErrors";
+import { can } from "../../utils/permissions";
 import { eventsOnDay, eventsTouching, monthBounds, monthTitle, shiftMonth, shiftYear, yearRange } from "../../utils/calendar";
 import { cn } from "../../utils/helpers";
 import { todayInIndia } from "../../utils/students";
@@ -33,7 +34,7 @@ export default function CalendarPage() {
   const { user } = useAuth();
   // A year that is over is only looked at: no adding or changing of holidays and events (the server refuses it too).
   const readOnly = useReadOnlyYear();
-  const canEdit = (user?.role === "school_admin" || user?.role === "principal") && !readOnly;
+  const canEdit = can(user, "calendar.manage") && !readOnly;
   const today = useMemo(() => todayInIndia(), []);
   const [view, setView] = useState<CalendarView>("month");
   const [month, setMonth] = useState(today.slice(0, 7));

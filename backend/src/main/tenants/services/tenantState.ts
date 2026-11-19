@@ -21,6 +21,8 @@ export interface TenantState {
   onboarding: OnboardingProgress;
   /** Only while the school is rejected: why, so the admin knows what to fix. */
   rejectionReason: string | null;
+  /** The sides the school's administrator can move between (English Medium, Hindi Medium); empty when there is nothing to switch. */
+  mediums: { id: string; label: string }[];
 }
 
 type TenantLike = Pick<ITenant, "_id" | "name" | "slug" | "isActive" | "approvalStatus" | "onboarding" | "review">;
@@ -45,6 +47,7 @@ export function toTenantState(tenant: TenantLike): TenantState {
     approvalStatus: tenant.approvalStatus,
     onboarding: toOnboardingProgress(tenant),
     rejectionReason: tenant.approvalStatus === "rejected" ? (tenant.review?.rejectionReason ?? null) : null,
+    mediums: [],
   };
 }
 

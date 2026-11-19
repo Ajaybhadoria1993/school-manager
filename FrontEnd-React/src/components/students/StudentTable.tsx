@@ -8,7 +8,7 @@ import type { StudentRow } from "../../types";
 import { Skeleton } from "../ui/Skeleton";
 import { StudentAvatar } from "./StudentAvatar";
 
-const TH = "px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-foreground-muted";
+const TH = "px-4 py-3 text-left text-[13.5px] font-semibold text-foreground";
 
 /** The class and section as a coloured chip (the colour is the student's, as on their card), with the roll number under it. */
 function ClassChip({ student }: { student: StudentRow }) {

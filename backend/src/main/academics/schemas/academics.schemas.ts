@@ -85,6 +85,8 @@ export const listClassesQuerySchema = z
       .optional()
       .transform((value) => value || undefined),
     departmentId: z.union([objectId, z.literal("none")]).optional(),
+    /** The classes a school works with are the active ones; the inactive ones are asked for, to be made active again. */
+    status: z.enum(["active", "inactive", "all"]).default("active"),
     seatsMin: optionalCount(MAX_CLASS_CAPACITY),
     seatsMax: optionalCount(MAX_CLASS_CAPACITY),
     sort: z.enum(["order", "name", "seats"]).default("order"),
@@ -126,12 +128,31 @@ export const createSectionSchema = z.object({
   name: label("section name", 20),
   capacity: capacity.nullable().optional(),
   room: room.nullable().optional(),
+  /**
+   * The class's seats are shared by its sections: when this section does not fit in what its other sections leave, the class's seats grow
+   * to hold it (instead of the request being refused). Asked by the Add student window when a section is full and a new one is added.
+   */
+  raiseClassSeats: z.boolean({ invalid_type_error: "Choose yes or no" }).optional(),
 });
 
 export const updateSectionSchema = z
   .object({ name: label("section name", 20), capacity: capacity.nullable(), room: room.nullable() })
   .partial()
   .refine(hasAChange, NOTHING_TO_CHANGE);
+
+/**
+ * "Divide this class into sections": `count` sections (A, B...), each with `capacity` seats and a room, and the students that sit in the
+ * class are shared out between them. At least two (one section is no division).
+ */
+export const divideClassSchema = z.object({
+  count: z
+    .number({ required_error: "Choose how many sections", invalid_type_error: "Choose how many sections" })
+    .int("Choose how many sections")
+    .min(2, "A class is divided into at least 2 sections")
+    .max(MAX_NEW_SECTIONS, `You can add up to ${MAX_NEW_SECTIONS} sections at once`),
+  capacity: capacity.refine((v) => v !== null, "Enter the seats"),
+  rooms: z.array(room.nullable()).max(MAX_NEW_SECTIONS).optional(),
+});
 
 export const quickSetupSchema = z
   .object({
@@ -154,4 +175,5 @@ export type UpdateClassInput = z.infer<typeof updateClassSchema>;
 export type CreateSectionInput = z.infer<typeof createSectionSchema>;
 export type AcademicSettingsInput = z.infer<typeof academicSettingsSchema>;
 export type UpdateSectionInput = z.infer<typeof updateSectionSchema>;
+export type DivideClassInput = z.infer<typeof divideClassSchema>;
 export type QuickSetupInput = z.infer<typeof quickSetupSchema>;

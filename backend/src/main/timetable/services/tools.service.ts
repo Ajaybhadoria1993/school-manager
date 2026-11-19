@@ -1,5 +1,7 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
+import { ClassTeacher } from "../../staff/models/ClassTeacher";
+import { Timetable } from "../models/Timetable";
 import type { AutofillBody, CopyBody } from "../schemas/timetable.schemas";
 import { autofill } from "./autofill";
 import { analyse, type CellIn, type Issue } from "./checker";
@@ -52,7 +54,16 @@ export class ToolsService {
     const { kept, dropped } = withoutClashes(sent, analyse({ days, cells: sent, allotments, teachers: world.teachers, busy }).issues);
 
     const seed = input.seed ?? 1;
-    const result = autofill({ days, cells: kept, allotments, teachers: world.teachers, busy, seed });
+    // The class's class teacher takes the first period of every day, by default (the person can change any of it after).
+    const head = await ClassTeacher.findOne({
+      tenantId: new Types.ObjectId(tenantId),
+      academicYearId: unit.yearId,
+      classId: new Types.ObjectId(unit.classId),
+      sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null,
+    })
+      .select("teacherId")
+      .lean();
+    const result = autofill({ days, cells: kept, allotments, teachers: world.teachers, busy, seed, classTeacherId: head ? head.teacherId.toString() : null });
     const view = buildView(world, unit, result.cells);
     return { cells: result.cells, issues: view.issues, stats: view.stats, unplaced: result.unplaced, dropped, seed };
   }
@@ -99,15 +110,19 @@ export class ToolsService {
       const cells = candidate.filter((c) => !bad.has(`${c.day}:${c.period}`));
       for (const c of candidate) if (bad.has(`${c.day}:${c.period}`)) left.push({ day: c.day, period: c.period, reason: bad.get(`${c.day}:${c.period}`)! });
 
-      await GridService.upsert(
-        { tenantId: new Types.ObjectId(tenantId), academicYearId: target.yearId, classId: new Types.ObjectId(target.classId), sectionId: new Types.ObjectId(target.sectionId!) },
-        {
-          $set: {
-            cells: cells.map((c) => ({ day: c.day, period: c.period, lessons: c.lessons.map((l) => ({ subjectId: new Types.ObjectId(l.subjectId), teacherId: null, room: null })) })),
-            updatedBy: new Types.ObjectId(userId),
-          },
-        }
-      );
+      const filter = { tenantId: new Types.ObjectId(tenantId), academicYearId: target.yearId, classId: new Types.ObjectId(target.classId), sectionId: new Types.ObjectId(target.sectionId!) };
+      await GridService.upsert(filter, {
+        $set: {
+          cells: cells.map((c) => ({ day: c.day, period: c.period, lessons: c.lessons.map((l) => ({ subjectId: new Types.ObjectId(l.subjectId), teacherId: null, room: null })) })),
+          updatedBy: new Types.ObjectId(userId),
+        },
+      });
+      // Checked again against what is stored now (another class saved at the same moment with the same teacher): put back and said.
+      if ((await GridService.settleRace(tenantId, target, key, cells, allotments)).length > 0) {
+        await Timetable.updateOne(filter, { $set: { cells: existing ? GridService.toDocument(existing.cells) : [] } });
+        results.push({ sectionId: target.sectionId!, label: target.label, status: "skipped", copied: 0, reason: "A teacher was given to another class at the same moment. Copy again.", left: [] });
+        continue;
+      }
       // The next section is checked against this one as it now is.
       world.timetables.set(key, { id: existing?.id ?? "new", classId: target.classId, sectionId: target.sectionId, cells, status: existing?.status ?? "draft" });
       results.push({ sectionId: target.sectionId!, label: target.label, status: "copied", copied: cells.length, left });

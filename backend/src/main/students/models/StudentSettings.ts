@@ -76,6 +76,8 @@ const studentSettingsSchema = new Schema<IStudentSettings>(
             type: { type: String, enum: CUSTOM_FIELD_TYPES, required: true },
             options: { type: [{ type: String, trim: true, maxlength: MAX_CUSTOM_OPTION }], default: [] },
             mode: { type: String, enum: FIELD_MODES, required: true },
+            // The classes (1 to 12) the field is for; not stored at all for a field of every class.
+            classNumbers: { type: [{ type: Number, min: 1, max: 12 }], default: undefined },
           },
           { _id: false }
         ),

@@ -11,6 +11,8 @@ import { BellSchedule, type IBellSchedule } from "../models/BellSchedule";
 import { Timetable } from "../models/Timetable";
 import type { ClassDayInput, CreateScheduleInput, SchoolDayInput, UpdateScheduleInput } from "../schemas/timetable.schemas";
 import { minutesToClock } from "../time";
+import { rememberTimings } from "./scheduleHistory";
+import { assertNoNewClashes } from "./timingClashes";
 import { FUTURE_CLASS, clashes, periodsOf, resolveSchedule, slotProblems, type Clash, type ScheduleRule, type Slot } from "./scheduleRules";
 
 /** One row of a day as it leaves the API: times as "08:30". */
@@ -113,7 +115,10 @@ export class ScheduleService {
     await ScheduleService.assertClasses(tenantId, input.classIds);
     ScheduleService.assertRows(input.slots);
     await ScheduleService.assertNoClash(tenantId, null, { name: input.name, days: input.days, scope: input.scope, classIds: input.classIds });
-    await ScheduleService.assertNoOrphans(tenantId, [...(await loadRules(tenantId)), { id: "new", name: input.name, days: input.days, scope: input.scope, classIds: input.classIds, slots: input.slots }]);
+    const proposed: ScheduleRule[] = [...(await loadRules(tenantId)), { id: "new", name: input.name, days: input.days, scope: input.scope, classIds: input.classIds, slots: input.slots }];
+    await ScheduleService.assertNoOrphans(tenantId, proposed);
+    await assertNoNewClashes(tenantId, proposed);
+    await rememberTimings(tenantId);
     try {
       const schedule = await BellSchedule.create({
         tenantId,
@@ -152,13 +157,16 @@ export class ScheduleService {
     await ScheduleService.assertClasses(tenantId, classIds);
     if (input.slots) ScheduleService.assertRows(input.slots);
     await ScheduleService.assertNoClash(tenantId, id, next);
-    await ScheduleService.assertNoOrphans(tenantId, [...(await loadRules(tenantId)).filter((r) => r.id !== id), next]);
+    const proposed: ScheduleRule[] = [...(await loadRules(tenantId)).filter((r) => r.id !== id), next];
+    await ScheduleService.assertNoOrphans(tenantId, proposed);
+    await assertNoNewClashes(tenantId, proposed);
 
     const changes: Record<string, unknown> = {};
     if (input.name !== undefined) Object.assign(changes, { name: input.name, nameKey: nameKeyOf(input.name) });
     if (input.days !== undefined) changes.days = input.days;
     if (input.scope !== undefined || input.classIds !== undefined) Object.assign(changes, { scope: next.scope, classIds });
     if (input.slots !== undefined) changes.slots = input.slots;
+    await rememberTimings(tenantId);
     try {
       const schedule = await BellSchedule.findOneAndUpdate({ _id: id, tenantId }, { $set: changes }, { new: true });
       if (!schedule) throw NOT_FOUND();
@@ -173,7 +181,10 @@ export class ScheduleService {
     const current = await BellSchedule.findOne({ _id: id, tenantId }).select("name departmentId").lean();
     if (!current) throw NOT_FOUND();
     if (current.departmentId) throw OF_DEPARTMENT(current.name);
-    await ScheduleService.assertNoOrphans(tenantId, (await loadRules(tenantId)).filter((r) => r.id !== id));
+    const remaining = (await loadRules(tenantId)).filter((r) => r.id !== id);
+    await ScheduleService.assertNoOrphans(tenantId, remaining);
+    await assertNoNewClashes(tenantId, remaining);
+    await rememberTimings(tenantId);
     const deleted = await BellSchedule.findOneAndDelete({ _id: id, tenantId });
     if (!deleted) throw NOT_FOUND();
   }
@@ -303,6 +314,17 @@ export class ScheduleService {
       throw ApiError.conflict(`A school can have up to ${MAX_SCHEDULES} timings.`, "LIMIT_REACHED");
     }
 
+    // The winter shift: every other timing moves by the same minutes. All of them are checked first (none may go past midnight), written after.
+    const shift = departmentId ? 0 : (input.shiftOthers ?? 0);
+    const moved = shift === 0 ? [] : kept.filter((r) => r.slots.length > 0).map((r) => ({ ...r, slots: r.slots.map((s) => ({ ...s, start: s.start + shift, end: s.end + shift })) }));
+    const outside = moved.find((r) => r.slots.some((s) => s.start < 0 || s.end > 1439));
+    if (outside) {
+      throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [
+        { path: "shiftOthers", message: `${outside.name} would go past midnight if the timings move by ${Math.abs(shift)} minutes ${shift > 0 ? "later" : "earlier"}` },
+      ]);
+    }
+    const shiftedById = new Map(moved.map((r) => [r.id, r]));
+
     const usualName = department ? department.name : (rules.filter(replaced).sort((a, b) => b.days.length - a.days.length || a.id.localeCompare(b.id))[0]?.name ?? "Regular");
     const daysName = (days: number[]) => (days.length === 1 ? DAY_NAMES[days[0]] : days.map((d) => DAY_NAMES[d].slice(0, 3)).join(", "));
     const members = departmentId ? (await classesByDepartment(tenantId)).get(departmentId) ?? [] : [];
@@ -318,10 +340,13 @@ export class ScheduleService {
         : { id: `new-${i}`, name, days: g.days, scope: "all", classIds: [], departmentId: null, slots: g.slots };
     });
 
-    const proposed = [...kept, ...named];
+    const proposed = [...kept.map((r) => shiftedById.get(r.id) ?? r), ...named];
     await ScheduleService.assertNoClashes(tenantId, proposed, named);
     await ScheduleService.assertNoOrphans(tenantId, proposed);
+    await assertNoNewClashes(tenantId, proposed);
 
+    // What is replaced is remembered first, with today's date, so the days before it keep the timing they had.
+    await rememberTimings(tenantId);
     await BellSchedule.deleteMany(departmentId ? { tenantId: school, departmentId: new Types.ObjectId(departmentId) } : { tenantId: school, scope: "all" });
     await BellSchedule.create(
       named.map((r) => ({
@@ -336,6 +361,10 @@ export class ScheduleService {
         slots: r.slots,
       }))
     );
+    // The other timings, moved (the same rows an hour later, say): only their hours change, so no lesson loses its period.
+    for (const r of moved) {
+      await BellSchedule.updateOne({ _id: new Types.ObjectId(r.id), tenantId: school }, { $set: { slots: r.slots } });
+    }
     return ScheduleService.list(tenantId);
   }
 
@@ -392,7 +421,9 @@ export class ScheduleService {
     if (others.length > 0) throw await ScheduleService.orphanError(tenantId, others);
     const mine = lost.filter((u) => u.classId === classId);
     if (mine.length > 0 && !input.removeLessons) throw await ScheduleService.lessonsError(tenantId, klass.name, mine);
+    await assertNoNewClashes(tenantId, proposed);
 
+    await rememberTimings(tenantId);
     await BellSchedule.deleteMany({ tenantId: school, departmentId: null, scope: "only", classIds: [klass._id] });
     if (named.length > 0) {
       await BellSchedule.create(
@@ -410,7 +441,10 @@ export class ScheduleService {
   static async removeDepartmentDay(tenantId: string, departmentId: string): Promise<{ items: ScheduleDto[] }> {
     const school = new Types.ObjectId(tenantId);
     if (!(await Department.exists({ _id: new Types.ObjectId(departmentId), tenantId: school }))) throw DEPARTMENT_NOT_FOUND();
-    await ScheduleService.assertNoOrphans(tenantId, (await loadRules(tenantId)).filter((r) => r.departmentId !== departmentId));
+    const remaining = (await loadRules(tenantId)).filter((r) => r.departmentId !== departmentId);
+    await ScheduleService.assertNoOrphans(tenantId, remaining);
+    await assertNoNewClashes(tenantId, remaining);
+    await rememberTimings(tenantId);
     await BellSchedule.deleteMany({ tenantId: school, departmentId: new Types.ObjectId(departmentId) });
     return ScheduleService.list(tenantId);
   }

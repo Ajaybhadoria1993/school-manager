@@ -68,7 +68,7 @@ AdmissionCounter (one per school and academic year: the running number behind ad
 | `address` | `line1`, `line2` (area or landmark), `city`, `state` (from `INDIAN_STATES`), `pincode` (6 digits); each part null when not given (whether it is needed is the school's choice) |
 | `bloodGroup`, `category` | A+ ... O-; General, OBC, SC, ST, EWS, Prefer not to say |
 | `previousSchool` | `{ name, lastClass, tcNumber, tcDate }`; once anything is filled the name is required |
-| `aadhaarNumber` | 12 digits with Verhoeff's check digit (spaces and dashes typed between are dropped; the message says what is wrong: "The Aadhaar number has 12 digits", "An Aadhaar number does not start with 0 or 1", or "This Aadhaar number is not valid: its last digit (the check digit) does not match the other digits", the last for 12 digits that start right but whose last digit does not fit, like the random numbers of a dummy file), **stored as it is** (the school chose to see it whole); unique in the school (`AADHAAR_TAKEN` names whose it is) |
+| `aadhaarNumber` | any 12 digits (2026-11-12: spaces and dashes typed between are dropped; the only message is "The Aadhaar number has 12 digits". There is NO first-digit rule and NO Verhoeff check digit any more: a school types what is on the card, a dummy file has made-up numbers, and only UIDAI can verify one. The box takes digits only and stops at 12). **Optional by default** (asked, may be left empty: a child may have no Aadhaar yet and an admission cannot be refused for it); a school can make it mandatory on Manage fields. **Stored as it is** (the school chose to see it whole); unique in the school (`AADHAAR_TAKEN` names whose it is) |
 | `samagraId`, `apaarId`, `pen`, `srNumber` | 8 or 9 digits; 12 digits; 11 digits (UDISE+); text up to 30 |
 | `religion`, `disability` | from `RELIGIONS` and `DISABILITIES` ("None" first) |
 | `nationality`, `emergencyMobile`, `medicalNotes` | text up to 40; 10 digits starting 6 to 9; text up to 300 |
@@ -261,7 +261,7 @@ or hidden, never required.
 - **Editing** refuses only emptying a required detail that was saved; a detail never filled (a student admitted before the rule, or
   from an old register) is not forced on every later save.
 - **The bulk upload is flexible: it accepts what an old register has** (the user's rule, 2026-10-24). Add student is the strict one;
-  an upload needs only the five basics (first and last name, gender, date of birth, class and its section) and a parent's name and mobile
+  an upload needs only the basics (first and last name, gender, date of birth and class; the section is placed, see below) and a parent's name and mobile
   number (a student is placed by class, and a parent is linked by mobile). The address, the previous school, the category, the IDs...
   are optional there: every row is held to `LENIENT_FIELD_RULES` on the screen (`prepareRow`) and the server asks only what the
   schema asks (`ImportService.one`); what the school's own form needs and the row lacks is said by the server as a warning (*Not in the
@@ -270,7 +270,11 @@ or hidden, never required.
 - **The school's own fields** (a house, a bus pass number...: *Add your own field* on Manage fields or on the last step of Add student). Each has a name (2 to 40
   characters, not one of the list's names, once), a kind (`CUSTOM_FIELD_TYPES`: text up to 200, a number, a day 1900 to 2100, yes /
   no, a list of 1 to 30 choices) fixed once added (the answers kept would not fit another kind; the server refuses a change), and
-  needed / optional / not asked like the others (a yes / no is never needed). Up to 20. Keys are `c_` and letters and digits, made by
+  needed / optional / not asked like the others (a yes / no is never needed), and (2026-11-12) the classes it is asked for: every class, or
+  `classNumbers: [11, 12]` ("Class 11 and 12 only"; numbers 1 to 12, a stream or section does not matter, `classNumber()`). A field for some
+  classes only is not shown, not needed and not checked for any other class: the form narrows `form.custom` by the class chosen
+  (`customForClass`; before a class is picked none of them), the server's `needsForClass` makes it optional for another class, a bulk row
+  of another class is not told it lacks it, the student's page lists it for those classes and for any student with an answer. Up to 20. Keys are `c_` and letters and digits, made by
   the screen. They are asked on Add student and Edit (the card *Your school's own details*), shown on the student's page, checked by
   the server with the form's words (`customIssues`: "Choose the House", "Choose the House from the list", "Enter a number for
   Height (cm)", "This is not one of your school's fields"), and are columns of the export and its preview (a day as DD-MM-YYYY, a tick
@@ -328,7 +332,7 @@ or hidden, never required.
 | `GET /import/template` | the sample file `.xlsx`, made with the school's own classes and sections | writers |
 | `POST /import/read` | `multipart/form-data`, one `file` (`.xlsx` or `.csv`, up to 5 MB, up to 1000 rows): `{ fileName, sheetName, headerRow, headers, rows: [{ row, cells }] }`. Nothing is kept | writers |
 | `POST /import/match` | `{ rows: [{ row, firstName, lastName, dateOfBirth, mobile?, admissionNumber?, aadhaarNumber? }] }`, 1 to 1000 rows: which rows of a file are students the school already has, in ONE request, before anything is uploaded. `{ matches: [{ row, kind, student: { id, name, admissionNumber, dateOfBirth, className, sectionName, inactive } }] }`, only the rows that meet somebody; nothing is written. `kind`: `same` (the same child), `maybe` (same name and birthday, another parent's mobile), `number` / `aadhaar` (the admission number, or the Aadhaar number, of ANOTHER child). 400 for a bad day or more than 1000 rows | writers |
-| `POST /import` | `{ dryRun, allowOverCapacity, rows: [{ row, admissionNumber?, student }] }`, 1 to 100 rows: `{ dryRun, results: [{ row, ok, errors, warnings, student? }], ok, failed }` | writers |
+| `POST /import` | `{ dryRun, allowOverCapacity, rows: [{ row, admissionNumber?, student }] }`, 1 to 100 rows: `{ dryRun, results: [{ row, ok, errors, warnings, student? }], ok, failed, seatsRaised }`. With `allowOverCapacity` (not a check) a section left with more students than seats gets as many seats as it has students, and its class as many as its sections hold when they no longer fit: `seatsRaised: [{ classId, className, sectionId, sectionName, from, to, classFrom, classTo }]` (`classFrom/classTo` null when the class was not changed; empty otherwise) | writers |
 | `POST /deactivate` | `{ ids, reason? }` (1 to 200; the reason up to 200 letters): makes active students inactive. `{ deactivated, skipped }` | writers |
 | `GET /inactive` | the inactive students: `q`, `page`, `limit` (1 to 50, default 20); newest first. A row has the student, the class and section they were in, the roll number they had, the primary parent, `reason`, `inactiveAt` and `inactiveBy: { name, role }` | writers |
 | `POST /reactivate` | `{ ids, placement?: { classId, sectionId? } }`: active again, in their class and section. A student with no place in the running year (they left in an earlier year) needs the `placement`; without it they are left as they are and counted in `needsPlacement`. `{ reactivated, skipped, rollNumbersLost, needsPlacement? }` | writers |
@@ -350,6 +354,22 @@ validated, so a wrong body tells another school nothing.
 
 Every message a person can see is written once in `schemas/students.schemas.ts`; the screens repeat the same words
 (`FrontEnd-React/src/constants/students.ts`) to say what is wrong before anything is sent. The server checks everything anyway.
+
+## Class 11 and 12: the stream (2026-11-10)
+
+A student of Class 11 or 12 is put in a **stream's class** ("Class 11 Science"), never in "Class 11" as a whole. A stream is a class of its
+own (onboarding makes one per stream, or the school adds the class), with its own sections; it is read from the class name
+(`streamOf` / `needsStream`, the same rules in `backend/src/main/students/classNumber.ts` and `FrontEnd-React/src/utils/classNumber.ts`; a
+single letter after the number is a section, a stream's name is two letters or more).
+
+- **Server:** `resolvePlacement` refuses Class 11/12 as a whole with 400 `STREAM_REQUIRED` (admission, bulk import, move, reactivation
+  placement). The message names the streams the school has, or says it has none and where to add them. A move that does not change the class
+  (a new roll number for a student who sits in Class 11 from before) is allowed (`allowNoStream`). Promotion approval is not checked.
+- **Add / Edit student:** Class 11 and 12 are one chip each; picking one asks "Stream of Class 11" (chips), the class stays empty until a stream
+  is chosen (*Choose the stream*), then the stream's sections show.
+- **Bulk upload:** the Stream column (titles Stream, Group, Faculty, Subject Group) is added empty when a row names Class 11/12 without a stream;
+  the stream may also be written in the class cell ("11 Science", "XI-Commerce"). A missing or unknown stream is a red Stream box; the school's
+  Class 11 as a whole is never an answer.
 
 ## Active and inactive students
 
@@ -433,18 +453,24 @@ row; it checks each row with the admission form's own `checkStudentForm`. The **
      "Mobile No", "DOB", "Village", "Pin", "Aadhar No", "Samagra ID", "SR No", "CWSN", "RTE"...), first by the headings of the school's
      own export layout, and the school's own fields by their name or export heading (`ownColumnsOf`; an own field's heading stays that
      field even when it is also a usual name, such as Route), so a file it exported comes back as it is. Change it only when a column was read wrong (a detail is in one column only). A whole-name column is split at its last word;
-   - a column every student needs that the file lacks (the name, gender, date of birth, class, a parent's name and mobile, and the
-     Section when a class of the file has sections) is **added empty at the right** when the file opens (`columnsToAdd`): its red boxes
-     say what to type. No other column is added: the address and the previous school are never asked of a file (a column for one of them,
+   - a column every student needs that the file lacks (the name, gender, date of birth, class, a parent's name and mobile) is
+     **added empty at the right** when the file opens (`columnsToAdd`): its red boxes say what to type. The Section is NOT one of them
+     (the user's rule, 2026-11-10: a section is never a reason to stop a row). No other column is added: the address and the previous school are never asked of a file (a column for one of them,
      or for any detail, is added from the **+**, with one value for every row if wanted). When a value that fixes a box is typed, the
      screen offers it for the other rows with the same problem (`SameValueOffer`: *1 more row has "Class 9" in Class. Change it to
      "Class 8" too?*);
    - every cell can be changed in place (list columns suggest their values; a date column says DD-MM-YYYY); the bin leaves a row out;
    - each value of the Class column is matched to a class of the school (`matchClass`: "V", "5th", "5 th", "Std 5", "5th Std",
      "Class-5", "LKG", "KG 1", and with a section, "5-A", "V B", "LKG A"). A value that is no class of the school says so in its box
-     (*Your school has no "Class 9": type one of your classes*); a class with sections and no section says so in the **Section** box
-     (*Class 6 has sections A, B: type one*), where the section is typed; a section written in the class cell that is not the class's
-     ("5-C") says so in that cell (*Class 5 has sections A, B, not "C"*), not as an unknown class. After a box that needed a fix is changed, the other rows with the same value that need
+     (*Your school has no "Class 9": type one of your classes*); a class with sections and no section given (no Section column, an empty box, or a section the class does not have, "5-C" in
+     a class of A and B) is **no problem**: `placeInSections` puts the student in one of the class's sections, the table says so under Ready
+     (*Goes to Class 5 - B*) and the server gets that `sectionId`. Rule: the sections are filled evenly in the order of the file, each student
+     to the section with the fewest (the students the school already has this year and the rows of the file that name their section
+     count); a section with seats left is preferred, a full one only when every section is full (then the seats warning asks, as always);
+     a roll number is kept free (roll 1 does not go where roll 1 is taken); blank rows and students the school already has take no seat.
+     A section the file names that the class does not have is said on that row (*Class 5 has no section "C": the student goes to section A.*);
+     typing a real section in the Section box (or adding the column from the **+**) decides it. NOT done: creating the missing section
+     from the file. A class without sections ignores a section of the file, with a note, as before. After a box that needed a fix is changed, the other rows with the same value that need
      the same fix are offered the same change at once (*1 more row has "Class 9" in Class. Change it to "Class 8" too?*);
    - the **+ Add a column** at the end of the headings adds a column: a detail of the list or one of the school's own fields, with one
      value for every row if wanted, or a **new field of the school's own** made there (the same dialog as on Export; saved at once with
@@ -463,8 +489,9 @@ row; it checks each row with the admission form's own `checkStudentForm`. The **
      admission number, Aadhaar number or roll number twice in the file is found too (the same name and birthday twice with another
      parent's mobile is a note on the later row, "Maybe the same student as row 4"). Tabs show all rows, the ones to fix or the ready ones; **Need a
      fix** keeps the rows it opened with while they are fixed (a fixed row shows Ready there until the tab is opened again). The rows to
-     fix can be downloaded as CSV. Seats are counted for the whole file on screen; sections that would go over ask the person
-     (`allowOverCapacity`). Nothing is sent while the table is changed (only a new field of the school's own is saved).
+     fix can be downloaded as CSV. Seats are counted for the whole file on screen; a section that would go over is only TOLD (a note,
+     no question): everyone is admitted and the section's seats are raised to fit (2026-11-12: the upload always sends `allowOverCapacity: true`),
+     with the advice to divide the class into more sections. Nothing is sent while the table is changed (only a new field of the school's own is saved).
    - **students the school already has** are found when the file opens: ONE request (`POST /import/match`, all the rows, only what tells
      one child from another: the name, the birthday, the primary parent's mobile, the admission number, the Aadhaar number). A row whose
      student is already there (`same`) says **Already in your school** with who they are and where (name, admission number, class and
@@ -477,8 +504,8 @@ row; it checks each row with the admission form's own `checkStudentForm`. The **
      before and says so;
 3. *Done.* **Upload** admits the ready rows, 100 a request (`dryRun: false`); the list and the seats are refreshed once
    (`refreshAfterImport`). Admitted rows leave the table. A row the server refuses (a child already admitted, a taken admission
-   number, a full section) stays in the table with the server's reason (each result carries the refusal's `code`; a `SECTION_FULL` row
-   is ready again once the person says to go over the seats), and **Fix the N rows** goes back to it. The rows already admitted from the
+   number) stays in the table with the server's reason (each result carries the refusal's `code`), and **Fix the N rows** goes back to it. A full
+   section is no reason any more: the server admits everyone and raises the seats, and the Done card lists `seatsRaised` with "Recommended: divide ... into more sections". The rows already admitted from the
    file are still compared with the rows left ("The same student as row 4"). A failed request stops the run; Upload sends the rest.
    The API's `dryRun: true` (check without saving) is kept for other screens; this one uploads directly.
 
@@ -494,6 +521,10 @@ row; it checks each row with the admission form's own `checkStudentForm`. The **
   one-Aadhaar-one-child rule refuse a row already admitted, so the same file can be uploaded again, and a file that holds some of the
   school's students can be uploaded, after fixing some rows. The screen says so before the upload (`POST /import/match`); the server
   still decides at the upload, and a row it refuses as `DUPLICATE_STUDENT` moves to **Already in school** (not to Need a fix).
+- **A file for one class or one section** (2026-11-12): the **Upload for** box (Whole school / a class / a class and one of its sections, chosen on
+  step 1 and still changeable on step 2) tells the page whom the file is for. A row with no class is of that class (and section), so a register of
+  Class 5 needs no Class column; a row that names another class or section is red and says what the file is for, so nobody is admitted into the wrong
+  class by a slip. Whole school stays the default, and it comes back after each upload. No API change: each row still carries its class and section.
 - **What "the same student" is** (one rule, on the server, used by the check and the upload): the name (any capitals, any spaces), the
   birthday and the primary parent's mobile are the same; or the school's own admission number, or the Aadhaar number, belongs to a
   student with the same name and birthday (the parent changed the mobile). **The same name alone is never the same student** (two
@@ -542,10 +573,13 @@ uploaded; the table's + Add a column brings any other). The export itself is Exc
 ## Classes & Sections now count real students
 
 `backend/src/main/academics/services/usage.ts` is implemented: `studentCountsBySection` counts the active enrolments of each section,
-and `enrolmentCountsByClass` counts a class's enrolments this year and in every other year. So a section with students cannot be
-deleted (`SECTION_HAS_STUDENTS`), a class whose sections or whose own whole-class enrolments have students cannot be deleted
-(`CLASS_HAS_STUDENTS`), and a class with students in another academic year cannot be deleted either (`CLASS_HAS_HISTORY`), because
-history keeps a class alive.
+and `activeStudentsInClass` counts the students still sitting in a class (active, this year or in the year that waits). So a section with
+students cannot be deleted (`SECTION_HAS_STUDENTS`) and a class with students cannot be made inactive (`CLASS_HAS_STUDENTS`). A class is never
+deleted: history (students who left, past years) stays with it, and does not stop it from being made inactive. An inactive class takes no
+admission, move or reactivation (`400 CLASS_INACTIVE`). **A class with no sections is held to its own seats** (`CLASS_FULL`, like a section's
+`SECTION_FULL`): the admission and the move take `raiseSeatsTo` (raise the full place's seats, then put the student in), a bulk upload raises
+the seats of a full class, and `POST /academics/classes/:id/divide` divides a class into sections and shares its students out
+(`students/__tests__/classFull.test.ts`, `divideClass.test.ts`).
 
 ## The School Class page: Classes (`/school-class`) and Students (`/school-class/students`)
 
@@ -574,14 +608,17 @@ edit, import, export, inactive), like Manage Teacher, so no two entries are both
 
   **A class's seats** (`seats` of `GET /class-overview`, 2026-11-04): its sections' seats added up (3 sections of 40 = 120); a class
   without sections, or whose sections have no limit, has its own seats (the number set when it was made); nothing set: 0, and no bar.
-  `seatsLeft` and `percent` follow. The class's own page says the same ("39 of 40 seats left").
+  `seatsLeft` and `percent` follow. (The class's own page does not show these numbers: since 2026-11-13 it has no line of numbers under the title and no
+  "Students of ..." heading; the class cards of School Class show them.)
 * **Students**: search name or admission number, Department, Class, Section (once a class with sections is picked), Gender, Order (the
   usual class-and-section order is the list's first row) -> `GET /students`, with the pager (its "Showing 1 to 12 of 40" is the count).
 
 Every filter is a request to the server and stays in the address. *Clear filters* sits over the content when a filter is on. The search
 waits 300 ms after the last key and then reads the newest address, so a dropdown picked meanwhile is kept.
 
-**One class** (`/school-class/:classId`): the class teacher is named beside the title, "Class teacher: N/A" when there is none (for a class
+**One class** (`/school-class/:classId`, layout since 2026-11-13: the header is the title, the class teacher and the arrows to the classes before and after;
+under the section cards ONE row holds the search box at the left (only once students are listed) and the buttons at the right: Timetable & teachers,
+Class work, Export, Bulk upload, Add student): the class teacher is named beside the title, "Class teacher: N/A" when there is none (for a class
 with sections: the picked section's; with no section picked each section's card names its own). **Timetable & teachers** opens
 `/school-class/:classId/timetable` (`?section=`, a class with sections opens on its first one and switches with the section links), only that
 class: four tiles (class teacher or N/A, subjects, periods a week, school day), the **Teachers of ...** box (class teacher and each subject's
@@ -601,7 +638,7 @@ read: `GET /timetable/grid` for the class.
   by `guardians.N.relation`, any number of Guardians and Others admitted; the same in a bulk-upload row).
 - `students.isolation.test.ts`: `itKeepsSchoolsApart` for the list, the seats, reading / changing / moving a student and changing a
   guardian, plus another school's class, section and guardian sent in a body, and the lookup searching only the caller's school.
-- `usage.test.ts`: the real counts and the class / section delete guards with real students, including a class with students in a past year.
+- `usage.test.ts`: the real counts and the section delete / class Make inactive guards with real students, including a class with students in a past year.
 - `importMatch.test.ts` (13): the same student by name, birthday and mobile (capitals and spaces do not matter, who and where come
   back), only the rows that meet somebody, the same name alone is nobody, twins and brothers are not matches, the same name and birthday
   with another or no mobile is a `maybe`, the school's own number and the Aadhaar number (the same child with a new mobile is the same

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { DEFAULT_TEACHER_RULES, type TeacherFieldRules } from "../constants/teacherFields";
 import { emptyTeacherForm, formKeyOfPath, teacherProblems, type TeacherFormKey, type TeacherFormValues, type TeacherProblems } from "../utils/teachers";
 
 export const teacherFieldId = (key: TeacherFormKey) => `teacher-${key}`;
@@ -8,7 +9,8 @@ export const teacherFieldId = (key: TeacherFormKey) => `teacher-${key}`;
  * wrong (`reveal`), never while they are still typing the first time. What the server refused is shown under its box until that box is
  * typed in again. Nothing is sent from here.
  */
-export function useTeacherForm(initial: TeacherFormValues, options: { login: boolean; requireGender?: boolean }) {
+export function useTeacherForm(initial: TeacherFormValues, options: { login: boolean; requireGender?: boolean; rules?: TeacherFieldRules }) {
+  const rules = options.rules ?? DEFAULT_TEACHER_RULES;
   const [values, setValues] = useState<TeacherFormValues>(initial);
   const [revealed, setRevealed] = useState<ReadonlySet<TeacherFormKey>>(new Set());
   const [refused, setRefused] = useState<TeacherProblems>({});
@@ -86,7 +88,7 @@ export function useTeacherForm(initial: TeacherFormValues, options: { login: boo
 
   const wasTyped = (key: TeacherFormKey) => typedKeys.current.has(key);
 
-  return { values, set, bind, errorOf, problems, reveal, showServerErrors, focusFirst, reset, changed, wasTyped };
+  return { values, set, bind, errorOf, problems, reveal, showServerErrors, focusFirst, reset, changed, wasTyped, rules };
 }
 
 export type TeacherForm = ReturnType<typeof useTeacherForm>;

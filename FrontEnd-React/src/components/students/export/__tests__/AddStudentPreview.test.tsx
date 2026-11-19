@@ -73,12 +73,12 @@ describe("the preview of Add student", () => {
     for (let i = 1; i < labels.length; i++) expect(labels[i - 1].compareDocumentPosition(labels[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("the side column of the page is there too (the live card, how much is filled in, the tips)", async () => {
+  it("has no side column, like the page", async () => {
     show(draftOf(settings()));
-    expect(await screen.findByText("Form completion")).toBeInTheDocument();
-    expect(screen.getByText("Quick tips")).toBeInTheDocument();
+    await screen.findByRole("dialog", { name: "Preview of Add student" });
+    expect(screen.queryByText("Form completion")).not.toBeInTheDocument();
+    expect(screen.queryByText("Quick tips")).not.toBeInTheDocument();
   });
-
   it("a step the school adds is a step of its name once something asked is placed in it; More details, with nothing asked in it, is not there", async () => {
     const steps = [{ key: "more", name: "More details" }, HEALTH];
     let draft = draftOf(settings(steps));

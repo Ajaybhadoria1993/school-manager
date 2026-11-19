@@ -189,9 +189,13 @@ describe("Manage fields: the form and the Excel, on a page of their own", () => 
     await ready();
     const onForm = () => within(formRow("Academic", "aadhaarNumber")).getByRole("switch", { name: "Aadhaar number mandatory" });
     const inExcel = () => within(excelCard()).getByRole("switch", { name: "Aadhaar No. mandatory" });
+    // A new school asks for the Aadhaar number and does not insist on it.
+    expect(onForm()).not.toBeChecked();
+    expect(inExcel()).not.toBeChecked();
+    await user.click(onForm());
     expect(onForm()).toBeChecked();
     expect(inExcel()).toBeChecked();
-    await user.click(onForm());
+    await user.click(inExcel());
     expect(onForm()).not.toBeChecked();
     expect(inExcel()).not.toBeChecked();
     await user.click(inExcel());
@@ -204,6 +208,9 @@ describe("Manage fields: the form and the Excel, on a page of their own", () => 
     const { user } = open();
     await ready();
     const column = () => within(excelCard()).getByRole("switch", { name: "Aadhaar No. in the Excel" });
+    // Optional (a new school): the column can go. Made mandatory, it cannot.
+    expect(column()).toBeEnabled();
+    await user.click(within(formRow("Academic", "aadhaarNumber")).getByRole("switch", { name: "Aadhaar number mandatory" }));
     expect(column()).toBeChecked();
     expect(column()).toBeDisabled();
     expect(column()).toHaveAttribute("title", expect.stringContaining("Mandatory"));
@@ -329,6 +336,42 @@ describe("Manage fields: your own fields are made on the form and are columns of
     expect(sent.exportColumns.length).toBeGreaterThan(defaultLayout().length);
     // More details is the usual place of an own field: nothing about places is sent.
     expect(sent.placements).toBeUndefined();
+  });
+
+  it("an own field can be asked for Class 11 and 12 only: the window offers it (every class is the usual answer) and Save sends the classes", async () => {
+    const calls = server();
+    const { user } = open();
+    await ready();
+    await user.click(within(formCard()).getByRole("button", { name: "Add your own field" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add your own field" });
+    await user.type(within(dialog).getByLabelText(/^Name of the field/), "Subject group");
+    expect(within(dialog).getByRole("radio", { name: "Every class" })).toBeChecked();
+    await user.click(within(dialog).getByRole("radio", { name: "Class 11 and 12 only" }));
+    expect(within(dialog).getByRole("radio", { name: "Class 11 and 12 only" })).toBeChecked();
+    await user.click(within(dialog).getByRole("button", { name: "Add the field" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("All saved")).toBeInTheDocument();
+    const sent = puts(calls)[0].body as { customFields: { label: string; classNumbers?: number[] }[] };
+    expect(sent.customFields).toEqual([expect.objectContaining({ label: "Subject group", classNumbers: [11, 12] })]);
+  });
+
+  it("a field for every class sends no classes, and one for Class 11 and 12 comes back chosen when it is changed", async () => {
+    const calls = server({}, withOwn(HOUSE, { ...ROOM, classNumbers: [11, 12] }));
+    const { user } = open();
+    await ready();
+    // The list says which of its fields are for some classes only.
+    expect(within(formRow("More details", "c_roomno1")).getByText("Class 11 and 12 only")).toBeInTheDocument();
+    expect(within(formRow("More details", "c_house1")).queryByText(/only$/)).not.toBeInTheDocument();
+    await user.click(within(formRow("More details", "c_roomno1")).getByRole("button", { name: "Change or delete Hostel room" }));
+    const dialog = await screen.findByRole("dialog", { name: "Change Hostel room" });
+    expect(within(dialog).getByRole("radio", { name: "Class 11 and 12 only" })).toBeChecked();
+    await user.click(within(dialog).getByRole("radio", { name: "Every class" }));
+    await user.click(within(dialog).getByRole("button", { name: "Keep the change" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByText("All saved");
+    const sent = puts(calls)[0].body as { customFields: { key: string; classNumbers?: number[] }[] };
+    expect(sent.customFields.find((f) => f.key === "c_roomno1")?.classNumbers).toBeUndefined();
+    expect(sent.customFields.find((f) => f.key === "c_house1")?.classNumbers).toBeUndefined();
   });
 
   it("a field of its own is moved to another step with its Move list; Save sends the places and nothing else", async () => {

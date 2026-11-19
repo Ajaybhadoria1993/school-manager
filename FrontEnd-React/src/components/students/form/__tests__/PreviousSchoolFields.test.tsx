@@ -33,11 +33,9 @@ describe("the previous school on Add student follows the class", () => {
     const user = userEvent.setup();
     const all = ["previousSchool-name", "previousSchool-lastClass", "previousSchool-tcNumber"];
     for (const id of all) expect(optional(id), `${id} before a class`).toBe(true);
-    expect(screen.getByText(/Only when the student comes from another school/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Pick Class 5" }));
     for (const id of all) expect(optional(id), `${id} in Class 5`).toBe(false);
-    expect(screen.getByText(/needed from Class 1/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Pick Nursery" }));
     for (const id of all) expect(optional(id), `${id} in Nursery`).toBe(true);

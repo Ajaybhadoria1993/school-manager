@@ -1,10 +1,10 @@
 import { useRef, useState } from "react";
-import type { BoardEntry } from "../../types";
+import type { BoardDraft } from "../../types";
 
 export type FieldErrors = Record<string, string>;
 
-/** A box holds text; a multiple choice holds a list; the boards hold a list of board entries. */
-export type FormValue = string | string[] | BoardEntry[];
+/** A box holds text; a multiple choice holds a list; the boards hold a list of boards being filled in. */
+export type FormValue = string | string[] | BoardDraft[];
 export type FormValues = Record<string, FormValue>;
 
 /**
@@ -19,11 +19,11 @@ export interface FormDraft {
 /**
  * Local state for one form step: the typed values, and the error shown under each field. Typing in a
  * field clears that field's error, and the errors of its parts ("boards.0.mediums" belongs to "boards").
- * Starts from the saved answers, with any unsaved draft laid over them.
+ * Starts from the saved answers, with any unsaved draft laid over them (and `initialErrors` shown, for a screen opened to say what was wrong).
  */
-export function useFormValues<T extends FormValues>(initial: T, draft?: FormDraft) {
+export function useFormValues<T extends FormValues>(initial: T, draft?: FormDraft, initialErrors?: FieldErrors) {
   const [values, setValues] = useState<T>(() => ({ ...initial, ...draft?.values }));
-  const [errors, setErrors] = useState<FieldErrors>({});
+  const [errors, setErrors] = useState<FieldErrors>(initialErrors ?? {});
   const latest = useRef(values);
 
   function set(key: keyof T & string, value: FormValue) {

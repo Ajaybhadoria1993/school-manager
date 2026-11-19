@@ -76,6 +76,13 @@ describe("Sign in: email or username", () => {
     expect(writes(calls)[0].body).toMatchObject({ identifier: "admin@school.example" });
   });
 
+  it("shows what is typed in small letters (an email or a username is never kept in capitals)", async () => {
+    const { user } = openPage();
+    const box = await screen.findByLabelText("Email or username");
+    await user.type(box, "Admin@School.example");
+    expect(box).toHaveValue("admin@school.example");
+  });
+
   it("says what is wrong with the box before anything is sent", async () => {
     const { calls, user } = openPage();
     await user.type(await screen.findByLabelText("Email or username"), "two words");

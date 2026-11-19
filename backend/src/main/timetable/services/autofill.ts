@@ -24,6 +24,11 @@ export interface AutofillInput {
   /** What other classes already take of the teachers' time. */
   busy: Busy[];
   seed: number;
+  /**
+   * The class's class teacher (2026-11-17): by default they take the first period of every day, with a subject they teach this class (see the
+   * pass before the placing). None: the first period is nobody's in particular.
+   */
+  classTeacherId?: string | null;
 }
 
 export interface AutofillResult {
@@ -94,6 +99,54 @@ export function autofill(input: AutofillInput): AutofillResult {
   const elsewhereWeek = (teacherId: string) => input.busy.filter((b) => b.teacherId === teacherId).length;
   const weekOwn = (teacherId: string) => [...(teacherDay.get(teacherId)?.values() ?? [])].reduce((sum, n) => sum + n, 0);
 
+  // ---- Placing ---------------------------------------------------------------------------------------------------------------------
+
+  const teacherFree = (subject: AllotmentInfo, day: number, span: PeriodSpan): boolean => {
+    if (!subject.teacherId) return true;
+    const teacher = input.teachers.get(subject.teacherId);
+    if (!teacher || !teacher.isActive || teacher.offDays.includes(day)) return false;
+    if (teacherOwn.get(subject.teacherId)?.has(keyOf(day, span.period))) return false;
+    return !input.busy.some((b) => b.teacherId === subject.teacherId && b.day === day && overlaps(b, span));
+  };
+
+  /** The periods of a subject on a day, as runs of periods that follow each other without a break between. */
+  const runsOn = (subjectId: string, day: number): number => {
+    const periods = [...(subjectPeriods.get(subjectId)?.get(day) ?? [])].sort((a, b) => a - b);
+    const list = spans.get(day) ?? [];
+    let runs = 0;
+    let previous: PeriodSpan | undefined;
+    for (const p of periods) {
+      const now = list.find((s) => s.period === p);
+      if (!(previous && now && previous.period === p - 1 && previous.end === now.start)) runs += 1;
+      previous = now;
+    }
+    return runs;
+  };
+
+  const lessonsOnDay = (day: number) => [...filled.values()].filter((c) => c.day === day).length;
+
+  // ---- The class teacher's first periods ---------------------------------------------------------------------------------------------
+  // By default the class teacher takes the first period of every day (2026-11-17), with a subject they teach this class alone in single periods
+  // (not a double period, not a choice). Their periods are shared between their subjects as their periods are. A day whose first period is
+  // already taken, or on which they are busy in another class or do not come, goes on as before. The person can change any of it after.
+  if (input.classTeacherId) {
+    const mine = [...input.allotments.values()].filter((a) => a.teacherId === input.classTeacherId && !a.group && a.blockSize === 1);
+    const left = new Map(mine.map((a) => [a.subjectId, Math.max(0, a.periodsPerWeek - (placedBySubject.get(a.subjectId) ?? 0))]));
+    const rankOf = new Map(mine.map((a, i) => [a.subjectId, i]));
+    for (const [day, list] of [...spans].sort((a, b) => a[0] - b[0])) {
+      const first = list[0];
+      if (!first || filled.has(keyOf(day, first.period))) continue;
+      const choice = mine
+        .filter((a) => (left.get(a.subjectId) ?? 0) > 0 && teacherFree(a, day, first) && runsOn(a.subjectId, day) === 0)
+        .sort((a, b) => (left.get(b.subjectId) ?? 0) - (left.get(a.subjectId) ?? 0) || (rankOf.get(a.subjectId) ?? 0) - (rankOf.get(b.subjectId) ?? 0))[0];
+      if (!choice) continue;
+      filled.set(keyOf(day, first.period), { day, period: first.period, lessons: [{ subjectId: choice.subjectId, teacherId: null, room: null }] });
+      noteLesson(choice.subjectId, day, first.period);
+      noteTeacher(choice.teacherId, day, first.period);
+      left.set(choice.subjectId, (left.get(choice.subjectId) ?? 1) - 1);
+    }
+  }
+
   // ---- What is still to place ------------------------------------------------------------------------------------------------------
 
   const pieces: Piece[] = [];
@@ -127,32 +180,6 @@ export function autofill(input: AutofillInput): AutofillResult {
     .sort((a, b) => rank(a.piece) - rank(b.piece) || weight(b.piece) - weight(a.piece) || (order.get(a.piece.subjects[0].subjectId) ?? 0) - (order.get(b.piece.subjects[0].subjectId) ?? 0) || a.index - b.index)
     .map((x) => x.piece);
 
-  // ---- Placing ---------------------------------------------------------------------------------------------------------------------
-
-  const teacherFree = (subject: AllotmentInfo, day: number, span: PeriodSpan): boolean => {
-    if (!subject.teacherId) return true;
-    const teacher = input.teachers.get(subject.teacherId);
-    if (!teacher || !teacher.isActive || teacher.offDays.includes(day)) return false;
-    if (teacherOwn.get(subject.teacherId)?.has(keyOf(day, span.period))) return false;
-    return !input.busy.some((b) => b.teacherId === subject.teacherId && b.day === day && overlaps(b, span));
-  };
-
-  /** The periods of a subject on a day, as runs of periods that follow each other without a break between. */
-  const runsOn = (subjectId: string, day: number): number => {
-    const periods = [...(subjectPeriods.get(subjectId)?.get(day) ?? [])].sort((a, b) => a - b);
-    const list = spans.get(day) ?? [];
-    let runs = 0;
-    let previous: PeriodSpan | undefined;
-    for (const p of periods) {
-      const now = list.find((s) => s.period === p);
-      if (!(previous && now && previous.period === p - 1 && previous.end === now.start)) runs += 1;
-      previous = now;
-    }
-    return runs;
-  };
-
-  const lessonsOnDay = (day: number) => [...filled.values()].filter((c) => c.day === day).length;
-
   const place = (piece: Piece): boolean => {
     let best: { day: number; start: number; score: number } | null = null;
     for (const [day, list] of spans) {
@@ -163,7 +190,9 @@ export function autofill(input: AutofillInput): AutofillResult {
         if (run.some((span) => filled.has(keyOf(day, span.period)))) continue;
         if (piece.subjects.some((s) => run.some((span) => !teacherFree(s, day, span)))) continue;
 
-        let score = 2 * lessonsOnDay(day) + rng() * 3;
+        // A class's day ends after its last lesson, so lessons are packed from the first period: a period that leaves a gap before it
+        // costs more than any other choice here, and of the rest the earlier one wins.
+        let score = 2 * lessonsOnDay(day) + rng() * 3 + 10 * Math.max(0, i - lessonsOnDay(day)) + 0.5 * i;
         for (const subject of piece.subjects) {
           const runs = runsOn(subject.subjectId, day);
           score += 100 * runs + (runs >= MAX_SAME_SUBJECT_PER_DAY ? 1000 : 0);

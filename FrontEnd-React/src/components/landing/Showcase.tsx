@@ -44,7 +44,7 @@ export function Showcase() {
 
           <div className="lg:col-span-6">
             <p className="text-xs font-bold uppercase tracking-wider text-primary">For principals and administrators</p>
-            <h2 className="mt-2 font-serif text-3xl font-bold leading-snug tracking-tight text-foreground sm:text-4xl">
+            <h2 className="mt-2 font-serif text-3xl font-bold leading-snug text-foreground sm:text-4xl">
               Everything about your school, in one place
             </h2>
             <p className="mt-4 text-sm leading-relaxed text-foreground-muted sm:text-base">
@@ -72,7 +72,7 @@ export function Showcase() {
         <div className="grid items-center gap-12 lg:grid-cols-12">
           <div className="order-2 lg:order-1 lg:col-span-6">
             <p className="text-xs font-bold uppercase tracking-wider text-primary">Made for India</p>
-            <h2 className="mt-2 font-serif text-3xl font-bold leading-snug tracking-tight text-foreground sm:text-4xl">
+            <h2 className="mt-2 font-serif text-3xl font-bold leading-snug text-foreground sm:text-4xl">
               Fields that match how Indian schools are run
             </h2>
             <p className="mt-4 text-sm leading-relaxed text-foreground-muted sm:text-base">
@@ -82,7 +82,7 @@ export function Showcase() {
             <div className="mb-8 mt-6 grid grid-cols-2 gap-4">
               {CHECKS.map((c) => (
                 <div key={c.value} className="rounded-xl border border-border bg-surface p-4">
-                  <p className="mb-1 text-2xl font-bold tracking-tight text-primary">{c.value}</p>
+                  <p className="mb-1 text-2xl font-bold text-primary">{c.value}</p>
                   <p className="text-xs font-medium text-foreground-muted">{c.label}</p>
                 </div>
               ))}

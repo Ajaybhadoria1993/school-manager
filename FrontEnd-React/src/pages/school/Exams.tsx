@@ -33,7 +33,7 @@ function ExamCard({ exam: e }: { exam: Exam }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-wide text-primary-deep">{e.typeLabel}</p>
-          <h3 className="mt-1 truncate text-lg font-bold tracking-tight text-foreground">{e.name}</h3>
+          <h3 className="text-section-heading mt-1 truncate">{e.name}</h3>
         </div>
         <Badge tone={look.tone}>{look.label}</Badge>
       </div>

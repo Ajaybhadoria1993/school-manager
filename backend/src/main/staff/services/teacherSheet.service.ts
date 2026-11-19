@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import { Types } from "mongoose";
 import { Subject } from "../../subjects/models/Subject";
 import type { SheetFile } from "../../students/services/spreadsheet.service";
+import type { FieldMode } from "../../students/constants";
 import { INDIAN_STATES } from "../../tenants/constants";
 import { Tenant } from "../../tenants/models/Tenant";
 import { TeacherSettingsService } from "./teacherSettings.service";
@@ -44,10 +45,13 @@ export class TeacherSheetService {
       Subject.find({ tenantId: new Types.ObjectId(tenantId), isActive: true }).select("name").lean(),
       TeacherSettingsService.get(tenantId),
     ]);
+    // What the school needs follows into the file: a detail it needs is a green column (with its star), one it does not ask has no column.
+    const rules = settings.fields as Record<string, FieldMode>;
+    const usual = TEACHER_SHEET_COLUMNS.filter((c) => rules[c.key] !== "hidden").map((c): TeacherSheetColumn => (rules[c.key] === "required" ? { ...c, kind: "required" } : c));
     // The school's own fields (the ones it asks) come after the usual columns, as optional ones, with their kind in the note.
     const own = settings.customFields.filter((f) => f.mode !== "hidden");
     const columns: TeacherSheetColumn[] = [
-      ...TEACHER_SHEET_COLUMNS,
+      ...usual,
       ...own.map((f): TeacherSheetColumn => ({ key: f.key, header: f.label, kind: "optional", width: Math.max(16, Math.min(30, f.label.length + 6)), note: `Your own field: ${f.label}.${f.mode === "required" ? " Your school asks for it." : ""}${f.type === "date" ? " DD-MM-YYYY." : f.type === "number" ? " A number." : f.type === "yesNo" ? " Yes or No." : f.type === "choice" ? " Pick from the list." : ""}` })),
     ];
     const letterOf = (key: string) => lettersOf(columns.findIndex((c) => c.key === key) + 1);
@@ -78,7 +82,8 @@ export class TeacherSheetService {
     });
     header.height = 20;
     sheet.views = [{ state: "frozen", ySplit: 2 }];
-    for (const key of [...TEXT_COLUMNS, ...own.filter((f) => f.type === "text" || f.type === "date").map((f) => f.key)]) sheet.getColumn(letterOf(key)).numFmt = "@";
+    const has = (key: string) => columns.some((c) => c.key === key);
+    for (const key of [...TEXT_COLUMNS, ...own.filter((f) => f.type === "text" || f.type === "date").map((f) => f.key)]) if (has(key)) sheet.getColumn(letterOf(key)).numFmt = "@";
 
     const lists: { key: string; formula: string; title: string; message: string; strict: boolean }[] = [
       { key: "gender", formula: `"${TEACHER_GENDERS.join(",")}"`, title: "Gender", message: "Pick Male, Female or Other.", strict: true },
@@ -92,8 +97,9 @@ export class TeacherSheetService {
         return formula && formula.length <= 250 ? [{ key: f.key, formula, title: f.label, message: f.type === "yesNo" ? "Yes or No." : `Pick ${f.label} from the list.`, strict: true }] : [];
       }),
     ];
+    const shownLists = lists.filter((list) => has(list.key));
     for (let row = 3; row < 3 + MAX_TEACHER_IMPORT_ROWS; row += 1) {
-      for (const list of lists) {
+      for (const list of shownLists) {
         sheet.getCell(`${letterOf(list.key)}${row}`).dataValidation = {
           type: "list",
           allowBlank: true,
@@ -126,7 +132,7 @@ export class TeacherSheetService {
     listSheet.getColumn(2).width = 34;
 
     // ---- How to fill ----------------------------------------------------------------------------------------------------------
-    const needed = TEACHER_SHEET_COLUMNS.filter((c) => c.kind === "required").map((c) => c.header);
+    const needed = columns.filter((c) => c.kind === "required").map((c) => c.header);
     const help = workbook.addWorksheet("How to fill");
     help.getColumn(1).width = 120;
     [

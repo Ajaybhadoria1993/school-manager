@@ -7,7 +7,8 @@ import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
-import type { StaffMember, StaffMemberStatus } from "../../../types";
+import { signInAs, signOut } from "../../../test/session";
+import type { StaffMember, StaffMemberStatus, UserRole } from "../../../types";
 import StaffDirectoryPage from "../StaffDirectory";
 
 const member = (over: Partial<StaffMember>): StaffMember => ({
@@ -37,7 +38,9 @@ const RAVI = member({ id: "ravi", name: "Ravi Menon", email: "ravi@school.exampl
 const SUNITA = member({ id: "sunita", name: "Sunita Bose", role: "accountant", roleLabel: "Accountant", status: "invited", login: null });
 const KABIR = member({ id: "kabir", name: "Kabir Khan", role: "accountant", roleLabel: "Accountant", status: "inactive", login: { username: "kabir.khan_52", isActive: false } });
 
-function openPage(people: StaffMember[] = [ASHA, RAVI, SUNITA, KABIR], extra: Record<string, Handler> = {}) {
+function openPage(people: StaffMember[] = [ASHA, RAVI, SUNITA, KABIR], extra: Record<string, Handler> = {}, who: { role?: UserRole; permissions?: string[] } = {}) {
+  // The school admin unless said: the page asks who is looking (what the school allowed them).
+  signInAs(who.role ?? "school_admin", who.permissions);
   const calls = fakeApi({
     "GET /staff/usernames/check": () => ({ available: true, suggestions: [] }),
     "GET /staff/members": (_body, query) => {
@@ -76,6 +79,7 @@ function openPage(people: StaffMember[] = [ASHA, RAVI, SUNITA, KABIR], extra: Re
 }
 
 afterEach(() => {
+  signOut();
   cleanup();
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
   vi.unstubAllGlobals();
@@ -288,5 +292,31 @@ describe("Staff: the roles and who also teaches (2026-11-08)", () => {
     await user.click(screen.getByRole("option", { name: "Other" }));
     await waitFor(() => expect(names()).toEqual(["Lata Das"]));
     expect(new URLSearchParams(lists(calls).at(-1)!.query).get("role")).toBe("other");
+  });
+});
+
+describe("the Staff page for a person the school allowed (Permissions)", () => {
+  const person = (permissions: string[]) => ({ role: "receptionist" as UserRole, permissions });
+
+  it("a person who may only see the staff reads the list: no Add staff, no names that open a change form, no login or inactive buttons", async () => {
+    openPage(undefined, {}, person(["staff.view"]));
+    expect(await screen.findByRole("heading", { name: "Staff", level: 1 })).toBeInTheDocument();
+    await screen.findByText("Asha Rao");
+    expect(screen.queryByRole("link", { name: "Add staff" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Asha Rao" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Make .* inactive|New password for|Change the username of|Make a login for|Remove /i })).not.toBeInTheDocument();
+  });
+
+  it("allowed to add, they get Add staff; allowed to change, they get the buttons on each row", async () => {
+    openPage(undefined, {}, person(["staff.view", "staff.add"]));
+    expect(await screen.findByRole("link", { name: "Add staff" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /New password for/ })).not.toBeInTheDocument();
+    cleanup();
+
+    openPage(undefined, {}, person(["staff.view", "staff.edit"]));
+    await screen.findByText("Asha Rao");
+    expect(screen.queryByRole("link", { name: "Add staff" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New password for Asha Rao" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Asha Rao" })).toBeInTheDocument();
   });
 });

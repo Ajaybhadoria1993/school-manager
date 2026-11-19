@@ -1,5 +1,8 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
+import { SchoolClass } from "../../academics/models/SchoolClass";
+import { Section } from "../../academics/models/Section";
+import { seatsHeldBySections } from "../../academics/services/seats";
 import { Guardian } from "../models/Guardian";
 import { needsForClass, STUDENT_FORM_FIELDS, type SchoolNeeds } from "../constants";
 import {
@@ -13,6 +16,7 @@ import {
 } from "../schemas/students.schemas";
 import { AdmissionService, type AdmissionYear } from "./admission.service";
 import { classNameOf } from "./classNames";
+import { classSeatsTaken, seatsTaken } from "./placement";
 import { StudentSettingsService } from "./settings.service";
 
 type Problem = { path: string; message: string };
@@ -32,12 +36,32 @@ export interface ImportRowResult {
   student?: { id: string; name: string; admissionNumber: string };
 }
 
+/**
+ * A section whose seats were raised because the file brought more students than it had seats (and the class's, when its sections no
+ * longer fitted); or, with no section, a class that has none and whose own seats were raised the same way.
+ */
+export interface SeatsRaised {
+  classId: string;
+  className: string;
+  /** Null when it is a class with no sections that was raised (then `from` and `to` are the class's own seats). */
+  sectionId: string | null;
+  sectionName: string | null;
+  /** The section's (or the class's own) seats before and after. */
+  from: number;
+  to: number;
+  /** The class's seats before and after; null when the class had room enough and was not changed. */
+  classFrom: number | null;
+  classTo: number | null;
+}
+
 export interface ImportResult {
   dryRun: boolean;
   results: ImportRowResult[];
   /** Rows that can be (check) or were (import) admitted, and the others. */
   ok: number;
   failed: number;
+  /** Import with `allowOverCapacity` only: the sections that were given more seats so that everyone admitted has one. Empty otherwise. */
+  seatsRaised: SeatsRaised[];
 }
 
 const tidy = (text: string) => text.trim().replace(/\s+/g, " ");
@@ -59,6 +83,18 @@ function fromApiError(err: ApiError): Problem[] {
   const details = Array.isArray(err.details) ? (err.details as Partial<Problem>[]) : [];
   const listed = details.filter((d): d is Problem => typeof d.path === "string" && typeof d.message === "string").map(({ path, message }) => ({ path, message }));
   return listed.length > 0 ? listed : [{ path: "", message: err.message }];
+}
+
+/** The sections (once each) that the admitted rows of this request were put in. */
+function sectionsOfAdmitted(input: ImportStudentsInput, results: ImportRowResult[]): string[] {
+  const admitted = new Set(results.filter((r) => r.ok).map((r) => r.row));
+  return [...new Set(input.rows.filter((r) => admitted.has(r.row) && r.student.sectionId).map((r) => String(r.student.sectionId)))];
+}
+
+/** The classes (once each) that admitted rows went into with no section: they sit in the class itself. */
+function classesOfAdmitted(input: ImportStudentsInput, results: ImportRowResult[]): string[] {
+  const admitted = new Set(results.filter((r) => r.ok).map((r) => r.row));
+  return [...new Set(input.rows.filter((r) => admitted.has(r.row) && !r.student.sectionId && r.student.classId).map((r) => String(r.student.classId)))];
 }
 
 export class ImportService {
@@ -85,7 +121,65 @@ export class ImportService {
     const results: ImportRowResult[] = [];
     for (const row of input.rows) results.push(await ImportService.one(tenantId, school, year, row, input, needs, className));
     const ok = results.filter((r) => r.ok).length;
-    return { dryRun: input.dryRun, results, ok, failed: results.length - ok };
+    // The person said to go over the seats: nobody sits beyond them, the seats grow to hold everyone who was admitted.
+    const seatsRaised =
+      !input.dryRun && input.allowOverCapacity
+        ? [
+            ...(await ImportService.raiseSeats(school, year, sectionsOfAdmitted(input, results))),
+            ...(await ImportService.raiseClassSeats(school, year, classesOfAdmitted(input, results))),
+          ]
+        : [];
+    return { dryRun: input.dryRun, results, ok, failed: results.length - ok, seatsRaised };
+  }
+
+  /**
+   * The same for a class that has no sections: its own seats grow to the students it has now, when it has more than seats (a class whose
+   * seats are not set is left alone). A class that has sections is raised through them (`raiseSeats`).
+   */
+  private static async raiseClassSeats(school: Types.ObjectId, year: AdmissionYear, classIds: string[]): Promise<SeatsRaised[]> {
+    const raised: SeatsRaised[] = [];
+    for (const classId of classIds) {
+      if (await Section.exists({ tenantId: school, classId, academicYearId: year._id })) continue;
+      const klass = await SchoolClass.findOne({ _id: classId, tenantId: school }).select("name capacity").lean();
+      if (!klass || klass.capacity == null) continue;
+      const students = await classSeatsTaken(school, year._id, klass._id);
+      if (students <= klass.capacity) continue;
+      await SchoolClass.updateOne({ _id: klass._id, tenantId: school }, { $set: { capacity: students } });
+      raised.push({ classId, className: klass.name, sectionId: null, sectionName: null, from: klass.capacity, to: students, classFrom: null, classTo: null });
+    }
+    return raised;
+  }
+
+  /**
+   * Gives each of these sections as many seats as it has students now, when it has more students than seats (a section with no seat
+   * limit is left alone), and the class as many as its sections hold together, when they no longer fit in it. A section is never
+   * given fewer seats, and a class is never given fewer.
+   */
+  private static async raiseSeats(school: Types.ObjectId, year: AdmissionYear, sectionIds: string[]): Promise<SeatsRaised[]> {
+    const raised: SeatsRaised[] = [];
+    for (const sectionId of sectionIds) {
+      const section = await Section.findOne({ _id: sectionId, tenantId: school, academicYearId: year._id }).select("classId name capacity").lean();
+      if (!section || section.capacity == null) continue;
+      const students = await seatsTaken(school, year._id, section._id);
+      if (students <= section.capacity) continue;
+      await Section.updateOne({ _id: section._id, tenantId: school }, { $set: { capacity: students } });
+
+      const klass = await SchoolClass.findOne({ _id: section.classId, tenantId: school }).select("name capacity").lean();
+      const held = await seatsHeldBySections(school.toString(), section.classId.toString(), year._id);
+      const classRaised = !!klass && klass.capacity != null && held > klass.capacity;
+      if (classRaised) await SchoolClass.updateOne({ _id: klass._id, tenantId: school }, { $set: { capacity: held } });
+      raised.push({
+        classId: section.classId.toString(),
+        className: klass?.name ?? "",
+        sectionId: section._id.toString(),
+        sectionName: section.name,
+        from: section.capacity,
+        to: students,
+        classFrom: classRaised ? klass.capacity! : null,
+        classTo: classRaised ? held : null,
+      });
+    }
+    return raised;
   }
 
   private static async one(
@@ -116,8 +210,10 @@ export class ImportService {
     // What the school's admission form needs but the row lacks (the address, the previous school of a student of Class 1 to 12, the IDs...):
     // said, never refused. A school brings in the students it already has, and an old register seldom holds every detail; the student's
     // page shows what is still to fill in. A detail that IS given is still checked (a PIN code of 5 digits is refused above).
-    const rules = needsForClass(needs, await className(student.classId)).rules;
-    const ownLacking = needs.custom.filter((f) => f.mode === "required" && f.type !== "yesNo" && !hasAnswer(student.custom?.[f.key])).map((f) => f.label);
+    const forClass = needsForClass(needs, await className(student.classId));
+    const rules = forClass.rules;
+    // A field of the school's own for some classes only (Stream: Class 11 and 12) is lacking only in a row of those classes.
+    const ownLacking = forClass.custom.filter((f) => f.mode === "required" && f.type !== "yesNo" && !hasAnswer(student.custom?.[f.key])).map((f) => f.label);
     const lacks = [...new Set([...missingForSchool(student, rules).map((issue) => labelOfIssue(issue.path)), ...ownLacking])];
     if (lacks.length > 0) warnings.push(`Not in the file, but your school needs it: ${lacks.join(", ")}.`);
     // A parent the school already has (another child, or a brother earlier in this file) is linked as saved.

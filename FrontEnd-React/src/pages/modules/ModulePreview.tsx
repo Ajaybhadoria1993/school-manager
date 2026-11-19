@@ -57,7 +57,7 @@ export default function ModulePreview() {
               <Hammer className="size-3" aria-hidden />
               Planned, not built yet
             </p>
-            <h1 className="mt-3 text-3xl font-extrabold tracking-[-0.02em] text-foreground">
+            <h1 className="mt-3 text-page-heading">
               {mod.label}
             </h1>
             <p className="mt-1 text-base font-semibold text-foreground-muted">
@@ -74,7 +74,7 @@ export default function ModulePreview() {
         <section className="lg:col-span-2" aria-labelledby="covers">
           <h2
             id="covers"
-            className="mb-3 text-lg font-bold tracking-tight text-foreground"
+            className="mb-3 text-lg font-bold text-foreground"
           >
             What it will cover
           </h2>

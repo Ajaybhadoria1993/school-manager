@@ -75,6 +75,11 @@ export const STATES = [
 export const OTHER_CHOICE = "Other";
 export const DESIGNATIONS = ["Owner", "Chairman", "Director", "Principal", "Trustee", "Administrator", "Other"] as const;
 export const MEDIUMS = ["English", "Hindi", "Regional"] as const;
+/** The streams of Class 11 and 12: a medium that runs them gets one class per stream ("Class 11 Science"). */
+export const SENIOR_STREAMS = ["Science", "Commerce", "Arts", "Maths"] as const;
+/** A medium can run up to this many streams, and a stream's name is up to this long (the server checks the same). */
+export const MAX_SENIOR_STREAMS = 8;
+export const MAX_STREAM_NAME = 30;
 export const CLASS_LEVELS = [
   "Pre-Nursery",
   "Nursery",
@@ -108,21 +113,16 @@ export const MONTHS = [
   "December",
 ] as const;
 
-export const STEP_TITLES = ["School details", "Address and contact", "About you", "Review and submit"] as const;
-export const STEP_SUBTITLES = [
-  "The basics about your school",
-  "Where the school is and how to reach it",
-  "Who is registering this school",
-  "Check everything, then send it to us",
-] as const;
+export const STEP_TITLES = ["School details", "Academic year", "About you", "Review and submit"] as const;
 
 /** The stepper above the form: the four things to fill in, then the platform team's check. */
-export const STEPPER_LABELS = ["School Details", "Address & Contact", "Your Profile", "Review & Submit", "Verification"] as const;
+export const STEPPER_LABELS = ["School Details", "Academic Year", "Your Profile", "Review & Submit", "Verification"] as const;
+
 
 /** The headline in the side panel changes with the step, like a guide walking you through. */
 export const STAGE_COPY = [
-  { lead: "Let's set up", accent: "your school", text: "Tell us what it is, which boards it follows and in which medium, which classes it runs and how big it is." },
-  { lead: "Where can we", accent: "find you?", text: "Your address and contact details help us verify that the school is real." },
+  { lead: "Let's set up", accent: "your school", text: "Tell us what it is, where it is and how to reach it. Your address and contact details help us verify that the school is real." },
+  { lead: "Pick the session", accent: "and the boards", text: "The academic year, which boards the school follows and in which medium, which classes it runs and when school is on." },
   { lead: "Tell us about", accent: "yourself", text: "Who is registering the school, and how our team can reach you." },
   { lead: "You're almost", accent: "there", text: "Check everything once, then send it to our team for approval." },
   { lead: "We're reviewing", accent: "your school", text: "A person on our team checks every school. Your dashboard opens as soon as it is approved." },

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
@@ -8,6 +8,7 @@ import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import type { InactivePage, InactiveStudent, StudentDetail } from "../../../types";
 import { fakeApi } from "../../../test/fakeApi";
+import { signInAs, signOut } from "../../../test/session";
 import { STRUCTURE } from "../../../test/fixtures";
 import InactiveStudentsPage from "../InactiveStudents";
 import StudentDetailPage from "../StudentDetail";
@@ -38,9 +39,12 @@ const pickIn = async (user: ReturnType<typeof userEvent.setup>, id: string, opti
   await user.click(await screen.findByRole("option", { name: option }));
 };
 
+beforeEach(() => signInAs("school_admin"));
+
 afterEach(() => {
   cleanup();
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
+  signOut();
   vi.unstubAllGlobals();
 });
 

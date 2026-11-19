@@ -1,7 +1,10 @@
+import type { ReactNode } from "react";
 import { Armchair, Download, FileSpreadsheet, PartyPopper, PencilLine, RefreshCw, TriangleAlert, Upload, UsersRound } from "lucide-react";
 import { Link } from "react-router";
 import { TONES } from "../../../constants/tones";
+import type { SeatsRaised } from "../../../types";
 import { cn } from "../../../utils/helpers";
+import { joinNames } from "../../../utils/studentImport";
 import { Button } from "../../ui/Button";
 import { Card } from "../../ui/Card";
 
@@ -20,7 +23,10 @@ export function FileBar({
   already = 0,
   onChangeFile,
   disabled,
+  children,
 }: {
+  /** A row under the file: who it is for (the whole school, one class or one section). */
+  children?: ReactNode;
   file: { name: string; size: number };
   sheetName: string;
   rows: number;
@@ -62,17 +68,21 @@ export function FileBar({
         <RefreshCw className="size-3.5" aria-hidden />
         Choose another file
       </Button>
+      {children && <div className="w-full border-t border-border pt-3">{children}</div>}
     </Card>
   );
 }
 
-/** The sections the ready rows would fill past their seats, and the person's answer. */
-export function SeatWarning({ over, allow, onAllow, disabled }: { over: { label: string; coming: number; seatsLeft: number }[]; allow: boolean; onAllow: (allow: boolean) => void; disabled?: boolean }) {
+/**
+ * The sections the ready rows would fill past their seats. Nobody is turned away: everyone is admitted and the seats are raised to fit
+ * them, so this only tells the person (no question), and recommends dividing the class into more sections.
+ */
+export function SeatWarning({ over }: { over: { label: string; className: string; coming: number; seatsLeft: number }[] }) {
   return (
     <div className="fade-in rounded-2xl border border-warning-line bg-warning-soft p-4 sm:p-5">
       <p className="flex items-center gap-2 text-sm font-bold text-warning">
         <Armchair className="size-4" aria-hidden />
-        {over.length === 1 ? "One section would go over its seats" : `${over.length} sections would go over their seats`}
+        {over.length === 1 ? `${over[0].label} will get more seats` : `${over.length} sections will get more seats`}
       </p>
       <ul className="mt-2 space-y-1 text-sm text-foreground">
         {over.map((o) => (
@@ -81,13 +91,9 @@ export function SeatWarning({ over, allow, onAllow, disabled }: { over: { label:
           </li>
         ))}
       </ul>
-      <label className={cn("mt-3 flex cursor-pointer items-start gap-2.5 text-sm text-foreground", disabled && "pointer-events-none opacity-60")}>
-        <input type="checkbox" className="mt-0.5 size-4 accent-[var(--color-primary)]" checked={allow} onChange={(e) => onAllow(e.target.checked)} disabled={disabled} />
-        <span>
-          <span className="font-semibold">Admit them all anyway.</span> These sections will have more students than seats (you can raise the seats in
-          Classes & Sections). Without this, the students after the last seat are not admitted.
-        </span>
-      </label>
+      <p className="mt-3 text-sm text-foreground">
+        Everyone is admitted and the seats are raised to fit. <span className="font-semibold">Recommended: divide {joinNames(over.map((o) => o.className))} into more sections.</span>
+      </p>
     </div>
   );
 }
@@ -130,17 +136,25 @@ export function DoneCard({
   notAdmitted,
   already = 0,
   linked,
+  raised = [],
   year,
+  studentsTo = "/school/students",
+  studentsLabel,
   onFix,
   onDownloadProblems,
   onAnother,
 }: {
+  /** Where the last button leads: the students (the default), or the class page the upload was opened from, named by `studentsLabel`. */
+  studentsTo?: string;
+  studentsLabel?: string;
   admitted: number;
   /** Rows that still need a fix. */
   notAdmitted: number;
   /** Rows whose student was in the school already. */
   already?: number;
   linked: number;
+  /** The sections that were given more seats so that everyone had one. */
+  raised?: SeatsRaised[];
   year: string;
   onFix: () => void;
   onDownloadProblems: () => void;
@@ -152,7 +166,7 @@ export function DoneCard({
       <span aria-hidden className={cn("relative mx-auto flex size-14 items-center justify-center rounded-2xl", admitted > 0 ? TONES.success.gradient : TONES.warning.gradient)}>
         {admitted > 0 ? <PartyPopper className="size-7" /> : <TriangleAlert className="size-7" />}
       </span>
-      <h2 className="relative mt-4 text-xl font-extrabold tracking-tight text-foreground">
+      <h2 className="text-section-heading relative mt-4">
         {admitted > 0 ? `${admitted} student${admitted === 1 ? "" : "s"} admitted to ${year}` : "No student was admitted"}
       </h2>
       <div className="relative mx-auto mt-2 max-w-xl space-y-1 text-sm text-foreground-muted">
@@ -166,6 +180,20 @@ export function DoneCard({
           <p>
             {already} row{already === 1 ? " was" : "s were"} already in your school: {already === 1 ? "it was" : "they were"} not admitted again.
           </p>
+        )}
+        {raised.length > 0 && (
+          <div className="mx-auto max-w-xl rounded-xl border border-warning-line bg-warning-soft px-4 py-3 text-left text-sm text-foreground">
+            {raised.map((r) => (
+              <p key={r.sectionId ?? r.classId} className="flex items-start gap-2">
+                <Armchair className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+                <span>
+                  {r.sectionName ? `${r.className} - ${r.sectionName}` : r.className}: seats raised from {r.from} to {r.to}.
+                  {r.classTo !== null && ` ${r.className} now has ${r.classTo} seats.`}
+                </span>
+              </p>
+            ))}
+            <p className="mt-1.5 font-semibold text-warning">Recommended: divide {joinNames(raised.map((r) => r.className))} into more sections.</p>
+          </div>
         )}
         {notAdmitted > 0 ? (
           <p>
@@ -194,13 +222,13 @@ export function DoneCard({
           Upload another file
         </Button>
         <Link
-          to="/school/students"
+          to={studentsTo}
           className={cn(
             "inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-all",
             notAdmitted > 0 ? "border border-border bg-surface text-foreground shadow-sm hover:bg-background" : "bg-primary text-primary-foreground hover:bg-primary-hover"
           )}
         >
-          Go to students
+          Go to {studentsLabel ?? "students"}
         </Link>
       </div>
     </Card>

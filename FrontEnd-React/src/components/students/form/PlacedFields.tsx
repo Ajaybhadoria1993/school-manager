@@ -7,7 +7,7 @@ import { isTick } from "../../../utils/exportLayout";
 import { keysIn } from "../../../utils/placement";
 import { Button } from "../../ui/Button";
 import { CustomBox, CustomTick, FieldBox, TickBox } from "./FieldBox";
-import { FormCard } from "./FormCard";
+import { FormSection } from "./FormSection";
 import { FORM_GRID } from "./formGrid";
 
 /**
@@ -44,12 +44,10 @@ export function PlacedFields({
   const ticks = asked.filter(isTickKey);
 
   return (
-    <FormCard
+    <FormSection
       index={index}
       icon={ClipboardList}
-      tone="navy"
       title={title ?? (step === "more" ? "More details" : "Other details")}
-      description={step === "more" ? "Health, quota and fee concession, the school bus and your own fields." : "The details your school asks in this step."}
       action={
         onAddField && (
           <Button type="button" variant="outline" size="sm" onClick={onAddField}>
@@ -63,6 +61,6 @@ export function PlacedFields({
         {boxes.length > 0 && <div className={FORM_GRID}>{boxes.map(show)}</div>}
         {ticks.length > 0 && <div className="flex flex-wrap gap-x-8 gap-y-3 rounded-xl bg-background px-4 py-3">{ticks.map(show)}</div>}
       </div>
-    </FormCard>
+    </FormSection>
   );
 }

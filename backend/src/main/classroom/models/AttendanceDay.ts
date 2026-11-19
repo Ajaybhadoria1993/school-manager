@@ -18,6 +18,11 @@ export interface IAttendanceDay {
   sectionId: Types.ObjectId | null;
   date: Date;
   marks: { studentId: Types.ObjectId; status: AttendanceStatus; reason?: string | null }[];
+  /**
+   * Made by the school marking ONE child (the register's cell), so only some children have a mark: not a day that was taken. It stays so until
+   * every child has a mark or the day's sheet is saved. Missing (older days) is the same as false.
+   */
+  partial?: boolean;
   markedBy: { name: string; role: string };
   createdAt: Date;
   updatedAt: Date;
@@ -33,6 +38,7 @@ const attendanceDaySchema = new Schema<IAttendanceDay>(
       type: [new Schema({ studentId: { type: Schema.Types.ObjectId, ref: "Student", required: true }, status: { type: String, enum: ATTENDANCE_STATUSES, required: true }, reason: { type: String, default: null, trim: true, maxlength: MAX_REASON } }, { _id: false })],
       default: [],
     },
+    partial: { type: Boolean, default: false },
     markedBy: { type: new Schema({ name: String, role: String }, { _id: false }), required: true },
   },
   { timestamps: true }

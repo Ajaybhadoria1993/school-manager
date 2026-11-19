@@ -1,5 +1,5 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type { ApiResponse, AttendanceSheet, AttendanceStatus, CalendarDays, CalendarEvent, CalendarEventInput, ClassTestDetail, ClassTestItem, DiaryDay, Leave, MyClass } from "../../types";
+import type { ApiResponse, AttendanceSheet, AttendanceStatus, CalendarDays, CalendarEvent, CalendarEventInput, ClassTestDetail, ClassTestItem, DateRange, DiaryDay, Leave, MarkStudentInput, MyClass, StudentRange } from "../../types";
 import { baseQueryWithReauth } from "./baseQueryWithReauth";
 
 /**
@@ -55,6 +55,19 @@ export const classroomApi = createApi({
       providesTags: ["Attendance"],
       keepUnusedDataFor: 0,
     }),
+    /**
+     * One class's (or section's) register for the days asked (2026-11-17), in the class teacher's class page: the same sheet the school reads in
+     * Attendance > Student, for the one class. It reads again after every mark and every saved sheet (the "Attendance" tag).
+     */
+    getRegister: build.query<ApiResponse<StudentRange>, { classId: string; sectionId: string | null } & DateRange>({
+      query: ({ classId, sectionId, from, to }) => ({ url: "/classroom/attendance/register", params: { classId, sectionId: sectionId ?? "none", from, to } }),
+      providesTags: ["Attendance"],
+    }),
+    /** The class teacher marks ONE child on ONE day (a cell of the register): Present or Absent. Nobody else is marked. */
+    markStudentDay: build.mutation<ApiResponse<MarkStudentInput>, MarkStudentInput>({
+      query: (body) => ({ url: "/classroom/attendance/student", method: "PUT", body }),
+      invalidatesTags: ["Attendance"],
+    }),
     saveAttendance: build.mutation<ApiResponse<AttendanceSheet>, { classId: string; sectionId: string | null; date: string; marks: { studentId: string; status: AttendanceStatus; reason?: string | null }[] }>({
       query: (body) => ({ url: "/classroom/attendance", method: "PUT", body }),
       invalidatesTags: ["Attendance"],
@@ -103,6 +116,8 @@ export const {
   useDecideLeaveMutation,
   useGetMyClassesQuery,
   useGetAttendanceQuery,
+  useGetRegisterQuery,
+  useMarkStudentDayMutation,
   useSaveAttendanceMutation,
   useGetDiaryQuery,
   useSaveDiaryMutation,

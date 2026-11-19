@@ -103,7 +103,7 @@ export default function StaffAddPage() {
         <StudentFormHeader title="Add staff" crumbs={crumbs} />
         <Card role="status" className="flex items-center gap-3 border-success-line bg-success-soft/40 px-5 py-4">
           <CircleCheck className="size-6 shrink-0 text-success" aria-hidden />
-          <h2 className="text-lg font-bold tracking-tight text-foreground">{added.member.name} is added</h2>
+          <h2 className="text-section-heading">{added.member.name} is added</h2>
         </Card>
         <CredentialsCard teacher={added.member.name} username={added.username} password={added.password} />
         <div className="flex flex-wrap items-center gap-2.5">

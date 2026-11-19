@@ -12,9 +12,12 @@ export function useCountUp(target: number, duration = 900) {
       raf = requestAnimationFrame(() => setValue(target));
       return () => cancelAnimationFrame(raf);
     }
-    const start = performance.now();
+    // The count starts at the first frame, by the frames' own clock: it is not always the clock of performance.now(), and a start taken from
+    // that one can lie after the frame, which counted backwards (a tile showing 0 read "-0").
+    let start: number | null = null;
     const tick = (now: number) => {
-      const p = Math.min(1, (now - start) / duration);
+      start ??= now;
+      const p = Math.min(1, Math.max(0, (now - start) / duration));
       setValue(Math.round(target * (1 - Math.pow(1 - p, 3))));
       if (p < 1) raf = requestAnimationFrame(tick);
     };

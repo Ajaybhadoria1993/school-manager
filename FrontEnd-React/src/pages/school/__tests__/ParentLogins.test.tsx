@@ -8,6 +8,7 @@ import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import type { StudentDetail, StudentGuardian } from "../../../types";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
+import { signInAs, signOut } from "../../../test/session";
 import StudentDetailPage from "../StudentDetail";
 
 /**
@@ -58,6 +59,7 @@ const ASHA: StudentDetail = {
 };
 
 function openPage(extra: Record<string, Handler> = {}, state?: object) {
+  signInAs("school_admin");
   const calls = fakeApi({
     "GET /students/s1": () => ASHA,
     "GET /staff/usernames/check": () => ({ available: true, suggestions: [] }),
@@ -84,6 +86,7 @@ function openPage(extra: Record<string, Handler> = {}, state?: object) {
 }
 
 afterEach(() => {
+  signOut();
   cleanup();
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
   vi.unstubAllGlobals();

@@ -5,7 +5,7 @@ import type { StudentForm } from "../../../hooks/useStudentForm";
 import { asks, mayLeave } from "../../../utils/fieldRules";
 import { cn } from "../../../utils/helpers";
 import { FieldBox, TickBox } from "./FieldBox";
-import { FormCard } from "./FormCard";
+import { FormSection } from "./FormSection";
 import { FORM_GRID } from "./formGrid";
 
 /** The details of this card: the personal ones, then fees and transport. */
@@ -31,12 +31,10 @@ export function MoreFields({ form, startOpen, index = 0 }: { form: StudentForm; 
   if (shown.length === 0) return null;
 
   return (
-    <FormCard
+    <FormSection
       index={index}
       icon={ClipboardList}
-      tone="navy"
       title="More details"
-      description="Health, an emergency number, quota and fee concession, and the school bus."
       action={
         !needed && (
           <button
@@ -69,6 +67,6 @@ export function MoreFields({ form, startOpen, index = 0 }: { form: StudentForm; 
       ) : (
         <p className="text-xs text-foreground-muted">Nothing here is needed to admit the student. Press Show to fill it in.</p>
       )}
-    </FormCard>
+    </FormSection>
   );
 }

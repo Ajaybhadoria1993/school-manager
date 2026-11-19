@@ -20,6 +20,14 @@ export function minutesToClock(minutes: number): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
 }
 
+/** A time of day moved by some minutes ("08:30" + 60 = "09:30"); null when it is not a time, or would leave the day (before 00:00, after 23:59). */
+export function shiftClock(clock: string, delta: number): string | null {
+  const minutes = clockToMinutes(clock);
+  if (minutes === null) return null;
+  const moved = minutes + delta;
+  return moved < 0 || moved > 1439 ? null : minutesToClock(moved);
+}
+
 /** What the head tells: the day's numbers. */
 export interface DaySetup {
   start: string;
@@ -118,6 +126,44 @@ export function generateDay(setup: DaySetup): { slots: Slot[]; notes: string[] }
     notes.push(`${noun[0].toUpperCase()}${noun.slice(1)} (${minutesToClock(left.start)} to ${minutesToClock(left.end)}) comes after the last period, so no ${left.label.toLowerCase()} row was added.`);
   }
   return { slots, notes };
+}
+
+/** One pair of times (a lunch, a short break) moved together; both stay as they are when either would leave the day. */
+function shiftPair(from: string | null, to: string | null, delta: number): [string | null, string | null] {
+  if (from === null || to === null) return [from, to];
+  const a = shiftClock(from, delta);
+  const b = shiftClock(to, delta);
+  return a !== null && b !== null ? [a, b] : [from, to];
+}
+
+/** A day's lunch and short break moved by some minutes, the start left as it is (the start is what the head just changed). */
+export function shiftBreaks(setup: DaySetup, delta: number): DaySetup {
+  const [lunchStart, lunchEnd] = shiftPair(setup.lunchStart, setup.lunchEnd, delta);
+  const [breakStart, breakEnd] = shiftPair(setup.breakStart, setup.breakEnd, delta);
+  return { ...setup, lunchStart, lunchEnd, breakStart, breakEnd };
+}
+
+/** A whole day moved by some minutes: the start, the lunch and the short break; the length of a period and how many stay. Null when any of it would leave the day. */
+export function shiftSetup(setup: DaySetup, delta: number): DaySetup | null {
+  const start = shiftClock(setup.start, delta);
+  if (start === null) return null;
+  const moved = shiftBreaks({ ...setup, start }, delta);
+  const same = (a: string | null, b: string | null) => a === b;
+  // A break that did not move (it would have left the day) means the day cannot move as a whole.
+  const stuck = (setup.lunchStart !== null && same(setup.lunchStart, moved.lunchStart)) || (setup.breakStart !== null && same(setup.breakStart, moved.breakStart));
+  return delta !== 0 && stuck ? null : moved;
+}
+
+/** The rows of a day moved by some minutes, kinds and names kept; null when any would leave the day. */
+export function shiftSlots(slots: readonly Slot[], delta: number): Slot[] | null {
+  const moved: Slot[] = [];
+  for (const slot of slots) {
+    const start = shiftClock(slot.start, delta);
+    const end = shiftClock(slot.end, delta);
+    if (start === null || end === null) return null;
+    moved.push({ ...slot, start, end });
+  }
+  return moved;
 }
 
 /**

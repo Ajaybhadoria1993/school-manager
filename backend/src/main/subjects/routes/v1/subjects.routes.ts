@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../../../../middleware/auth";
+import { requirePermission } from "../../../../middleware/permission";
 import { yearView } from "../../../../middleware/yearView";
 import { validate } from "../../../../middleware/validate";
 import { assignAllotmentTeacher, createSubject, getAllotments, listSubjects, quickAddSubjects, saveAllotments, saveUnitTeachers, subjectExists, updateSubject } from "../../controllers/subjects.controller";
@@ -22,11 +23,12 @@ const router = Router();
 // yearView: a school admin may look at a past year (X-Academic-Year); reads answer for it, changes are refused.
 router.use(requireAuth, yearView);
 
-router.get("/", requireRole(...SUBJECT_READERS), validate(listSubjectsQuerySchema, "query"), listSubjects);
+router.get("/", requirePermission("timetable.view", "timetable.edit", "classwork.view", "exams.view", "exams.manage", "teachers.view"), validate(listSubjectsQuerySchema, "query"), listSubjects);
 // What one class (or section) studies: the subjects, the periods a week and the teacher of each.
-router.get("/allotments", requireRole(...SUBJECT_READERS), validate(unitQuerySchema, "query"), getAllotments);
+router.get("/allotments", requirePermission("timetable.view", "timetable.edit", "classwork.view", "exams.view", "exams.manage", "teachers.view"), validate(unitQuerySchema, "query"), getAllotments);
 
-router.use(requireRole(...SUBJECT_WRITERS));
+// Changing subjects and who teaches them: the timetable's and the teachers' pages.
+router.use(requirePermission("timetable.edit", "teachers.add", "teachers.edit", "classes.manage"));
 router.put("/allotments", validate(saveAllotmentsSchema), saveAllotments);
 // One subject's teacher, the rest of the list as it is (a teacher's page and a class's page give classes this way).
 router.put("/allotments/teacher", validate(assignTeacherSchema), assignAllotmentTeacher);

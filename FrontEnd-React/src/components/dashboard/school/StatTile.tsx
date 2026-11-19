@@ -33,11 +33,11 @@ export function StatTile({ label, value, hint, icon: Icon, tone, href }: StatTil
         <Icon className="size-5" aria-hidden />
       </span>
       <span className="min-w-0">
-        <span className="block text-sm font-medium text-foreground-muted">{label}</span>
-        <span className="block truncate text-2xl font-bold tracking-[-0.02em] text-foreground">
+        <span className="block text-body-label">{label}</span>
+        <span className="block truncate text-stat-value">
           {shown ?? <span className="text-foreground-muted/60">-</span>}
         </span>
-        {hint && <span className="block truncate text-xs text-foreground-muted">{hint}</span>}
+        {hint && <span className="block truncate text-caption-subtle">{hint}</span>}
       </span>
     </>
   );

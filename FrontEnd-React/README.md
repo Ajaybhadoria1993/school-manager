@@ -110,6 +110,25 @@ utils/                       auth (cookies), apiErrors, helpers, status, validat
 Imports are relative (no `@/` alias), types live in `src/types/`, and a new API slice must be added to
 `redux/api/apiRoot.ts`: the store builds its reducers and middleware from that list.
 
+## Text: one font, one set of sizes (Medisetu's)
+
+The whole app is set in **Outfit** (`@fontsource/outfit`, weights 400 to 700, loaded in `index.css`). Text sizes are not
+written per page: use the classes from the `@layer utilities` block at the end of `index.css`.
+
+| Class | Where | Size / weight |
+|---|---|---|
+| `text-app-title` | top bar title | 18px / 600 |
+| `text-page-heading` | the page's one `h1` | 18px up to 26px / 600 |
+| `text-section-heading` | card titles | 15px up to 16px / 600 |
+| `text-metric-headline` | the big figure of a chart card | large / 700 |
+| `text-stat-value` | the number on a stat tile | 17px up to 22px / 700 |
+| `text-body-label` | labels, stat captions | 12px up to 13.5px / 500 |
+| `text-caption-subtle` | hints under a figure, small notes | 11px up to 12px |
+| `text-action-link` | links such as "View" | 12px up to 13.5px / 500 |
+
+Table headings are sentence case, 13.5px, semibold (never upper case). Cards have a flat hairline shadow (`--elev-card`).
+Only the typography and the plainness changed: the colours (blue brand, navy sidebar) are the same as before.
+
 ## What differs from the Next.js app
 
 Nothing you can see. Under the hood:
@@ -126,8 +145,9 @@ Nothing you can see. Under the hood:
 
 # Manage school: Classes & Sections
 
-The first page under **Manage school** in the menu: click the **Manage school** row in the sidebar and **Classes &
-Sections** (`/school/classes`) opens underneath it. It is where the principal or school admin
+The **Classes** page (`/school-class`) is the single sidebar entry for the school's classes. It shows class cards and student counts; its
+**Manage classes** button opens **Classes & Sections** (`/school/classes`) for setup and editing. Both addresses highlight the same
+Classes entry. The setup screen is where the principal or school admin
 builds the layout of the school *before* any student or teacher exists: which classes the school runs, and which
 sections each class has. Students, attendance, timetable and fees will all point at these sections later.
 
@@ -143,7 +163,10 @@ Department   a heading that groups classes          Primary          (optional)
     Section  a group of students who sit together   Class 5 - A, Class 5 - B
 ```
 
-- A **department** is only a label. Deleting one never deletes classes; they move to "Other classes".
+- A **department** is only a label. **A department and a class are never deleted** (a class holds students and their history): the school makes
+  them **inactive**, and active again. An inactive one leaves every picker and list (admission, timetable, promotion, fees, the dashboard) and
+  waits in the **Inactive** list at the bottom of the Classes & Sections page, with who made it inactive and when, and a Make active button.
+  Their names stay taken ("Class 5" cannot be made again while an inactive Class 5 exists; the message says to make it active instead).
 - A **class** has a name, a place in the teaching order and its **seats**: how many students the whole class can take, **with or without
   sections**. The seats are decided when the class is made (the *Add class* dialog and the department screen's *Add class* box ask for
   them; the server refuses a new class without them, `400` with `details: [{ path: "capacity" }]`) and can be changed later from the class's
@@ -166,7 +189,7 @@ Department   a heading that groups classes          Primary          (optional)
 | Add one class | **Add class** (header) | Everything is picked with one click on chips: the usual classes of a school in India (Pre-Nursery, Nursery, LKG, UKG, Class 1 to 12; the ones the school already has are left out) or **Other...**, which opens a box for a name of your own; then the department (it follows the class you pick, until you pick one yourself) and how many sections to start with (None, or 1 to 10), with what they will be called written right under it ("Class 5 will have 3 sections: A, B, C."). When the school already has every usual class, the box for a name of your own is open at once. See *Adding a class* below. |
 | Group classes in a department | **Add department** on the "Other classes" heading (or **Create department** in the header) | One dialog: pick the department with one click on a chip (Pre-Primary, Primary, Middle, Secondary, Senior Secondary, Kindergarten, the NEP stages...; the ones the school already has say *In school*) or choose **Other...** and type a name of your own, then tick the classes that go in it. Picking a usual name ticks its usual classes (Primary: Class 1 to 5, Pre-Primary: Nursery to UKG); a name of your own ticks every loose class, and the ticks can be changed. A department the school already has is reused, so the same dialog also moves classes into it. See *Adding a department* below. |
 | Rename a department | **Manage** on its heading, then the small **pencil** beside its name | A small window: pick a usual name from the dropdown (the ones no department uses yet) or choose **Other...** and type your own. Picking renames it at once; a name another department already has is refused with a message and the box stays open. It is only a heading, so nothing else changes. |
-| Delete a department | **Manage** on its heading, then the small **pencil** beside its name, then **Delete department** in the window | Asks first. Only the heading goes: its classes stay in your school, under "Other classes". |
+| Make a department inactive | **Manage** on its heading, then the small **pencil** beside its name, then **Make inactive** in the window | Asks first. Only when none of its classes is active (the window says how many are, and the button is off): the order is the student, the class, the department. Nothing is deleted; it comes back from the Inactive list. |
 | Change a department's classes, or any class or section in it | **Manage** on the department's heading | Opens the department's own screen: everything below is done there, see *One department's own screen*. The list only shows: its department headings have no pencil and no bin, only **Manage**. |
 | Put the classes that are in no department somewhere | **Manage** on the "Other classes" heading (a department dropdown on each class), or **Add department** there to give several classes a department at once | |
 
@@ -257,7 +280,10 @@ per page, the arrows) appear only when there is more than one page, or when a pa
   part of Save), changes no data, and a toast says what it is now. Sections that have neither (made together with their class by *Add
   class* or quick setup, or before the rule) are not blocked while they are left alone, but they say *Add the seats and the room* and
   cannot be changed (not even renamed) until they have both.
-- **The class's bin** is in the header, beside Save (there is no "Delete this class" strip); it asks first, like a section's bin.
+- **Make inactive** is in the header, beside Save (a class has no Delete): it asks first and says nothing is deleted. The server refuses it while
+  students are still in the class (the window shows its sentence: "Class 1 has 12 students. Move them to another class, or make them inactive,
+  first."). An inactive class opened by a link is shown read-only (`department/InactiveClassView.tsx`): who made it inactive and when, its
+  sections as they were, and Make active. A section still has its bin (a section with no students can be deleted).
 - **A class's department is not asked for here.** You came in through a department, so the class is already in it and nothing about
   departments is shown on the right. Only a class that is in no department (the **Other classes** screen) shows a row of the school's
   departments as chips, each in its colour, under the name: one click puts the class in it (the chip shows as picked straight away) and a
@@ -266,8 +292,8 @@ per page, the arrows) appear only when there is more than one page, or when a pa
 - **Renaming or deleting the department** (`department/DepartmentSettings.tsx`) has no button of its own on the page, because it is
   rarely needed: a small pencil beside the department's name opens a window with the name as a dropdown (a usual name, or
   **Other...** to type your own; picking renames it at once; a name another department uses is refused with a message and the box
-  stays open) and **Delete department** (asks first; its classes stay, in no department). The window is
-  `department/RenameDepartmentModal.tsx`. This pencil is the only way to rename or delete a department: the list page's heading has
+  stays open) and **Make inactive** (asks first; needs all its classes to be inactive). The window is
+  `department/RenameDepartmentModal.tsx`. This pencil is the only way to rename or make a department inactive: the list page's heading has
   just Manage.
 - **Few notes on this screen, on purpose.** Under the class's name there is one line only when it has something to say: *Seats not set.
   Enter them and press Save.* (a warning), or *42 of 100 seats are in sections, 58 free.* A class with no sections has no such line (the
@@ -285,8 +311,8 @@ per page, the arrows) appear only when there is more than one page, or when a pa
   Class 3 to a school that has Class 2 and Class 4 puts it between them, and adding Class 12 puts it right behind Class 11 even
   if the school has classes of its own after that. A numbered class ("Class 13") continues the count; a name of its own
   ("Hobby Club") goes last. The same applies to the header's **Add class**. There is no re-order screen: the order is always the teaching order.
-- **Deleting** is the one thing that asks first (a class, a section, a department; the classes of a deleted department stay, in no
-  department). The question keeps its own copy of what it asks about, so "this class has students" stays on screen.
+- **Deleting a section, and making a class or a department inactive,** are what ask first. The question keeps its own copy of what it asks
+  about, so "this class has students" stays on screen.
 - On a phone the list is above and the class below it; picking a class scrolls it into view.
 - The screen reads the same `getStructure` query as the list page for the department names, so the two always agree.
 
@@ -372,8 +398,10 @@ components/classes/
   QuickSetupForm.tsx                "create all my classes" with the live preview (page and dialog use it)
   GuideCard.tsx                     the "how this page works" card
   ConfirmModal.tsx, useSave.ts      "are you sure?"; the "Save" logic every dialog shares
-  department/RenameDepartmentModal.tsx the rename window (usual names / Other...) with its Delete department part; opened from the workspace's
-  department/DepartmentSettings.tsx the pencil beside the name on the workspace and the window it opens (rename + Delete department)
+  department/RenameDepartmentModal.tsx the rename window (usual names / Other...) with its Make inactive part; opened from the workspace's
+  department/DepartmentSettings.tsx the pencil beside the name on the workspace and the window it opens (rename + Make inactive)
+  department/InactiveClassView.tsx   an inactive class, read-only, with Make active
+  InactiveList.tsx                  the Inactive list at the bottom of the list page: inactive departments and classes, Make active
   department/ClassFilters.tsx       the slim row across the top: the class-name search (waits 300 ms after typing), the sort and its direction
   department/ClassList.tsx          the page of classes the server sent; with more than a page, "Showing 1 to 10 of 16", the arrows, rows per page
   department/DepartmentHeader.tsx   the plain top of the screen (as on Students): the name, what is in it, the Back trail, the neighbours
@@ -411,8 +439,8 @@ How a few details work:
 - **Grouping.** The server sends departments already in display order (by where their first class sits) and classes in
   teaching order. `groupClasses()` only lays them out wing by wing and adds an "Other classes" group when needed.
 - **Menu highlight.** `activeNavItem()` in `nav-config.ts` picks the *longest* matching address, so when one menu address is
-  the start of another only one item lights up. The menu now holds only Dashboard and Manage school > Classes & Sections and Students
-  (plus Schools for the super admin); the planned modules in `constants/modules.ts` keep their preview pages but are not in the menu.
+  the start of another only one item lights up. Classes overview and class setup share the **Classes** entry; Students remains separate.
+  The planned modules in `constants/modules.ts` keep their preview pages but are not in the menu.
 - **The "Manage school" row folds.** Groups listed in `FOLDING_GROUPS` (`nav-config.ts`) are drawn by the sidebar as one row
   with a chevron instead of a heading: click it and the group's pages slide open underneath (the same in the icon-only
   menu and in the phone drawer). A group is open by itself when you arrive on one of its pages (a reload, a link, the back
@@ -446,10 +474,13 @@ login, never from the request, and every query filters by it, so one school can 
 | `GET /classes` | the class list, each with its sections, filtered, sorted and paged by the database (one aggregation): `search` (part of the name), `departmentId` (an id or `none`), `seatsMin` / `seatsMax` (a class's own seats; a class with no seats set is left out when filtering by seats), `sort` (`order`, `name`, `seats`; names in natural order, Class 2 before Class 10), `dir`, `page`, `limit` (1 to 50, default 10). Answers `{ items, page, limit, total, totalPages }` | school admin, principal, accountant, teacher |
 | `GET /classes/:id` | one class with its sections | school admin, principal, accountant, teacher |
 | `POST /quick-setup` | `{ fromClass, toClass, sectionsPerClass }` (0 to 6; 0 makes the classes only) creates the usual classes, skipping those that exist | admin, principal |
-| `POST /departments`, `PATCH /departments/:id`, `DELETE /departments/:id` | create, rename, delete (its classes are kept) | admin, principal |
+| `POST /departments`, `PATCH /departments/:id` | create, rename (an inactive department is not renamed: 409 `DEPARTMENT_INACTIVE`) | admin, principal |
+| `POST /departments/:id/deactivate`, `POST /departments/:id/reactivate` | make it inactive (409 `DEPARTMENT_HAS_CLASSES` while it has an active class) or active again. **There is no DELETE** | admin, principal |
 | `POST /departments/assign` | `{ name, classIds }`: put those classes in the department with that name, creating it if the school has none; answers `{ department, created, assigned }` | admin, principal |
 | `POST /departments/:id/classes` | `{ classIds, names, capacity, sectionCount }` (`capacity`, the seats of each new class, is asked for when `names` is not empty): move those classes into the department and create the named ones in it (standard classes land in teaching order); answers `{ department, moved, created }` | admin, principal |
-| `POST /classes`, `PATCH /classes/:id`, `DELETE /classes/:id` | create (with `capacity`, the class's seats, and `sectionCount`), change its name, department or seats (seats can be changed, never cleared, and not below what its sections hold), delete with its sections | admin, principal |
+| `POST /classes`, `PATCH /classes/:id` | create (with `capacity`, the class's seats, and `sectionCount`), change its name, department or seats (seats can be changed, never cleared, and not below what its sections hold). An inactive class is not changed (409 `CLASS_INACTIVE`), nor are its sections | admin, principal |
+| `POST /classes/:id/deactivate`, `POST /classes/:id/reactivate` | make it inactive (409 `CLASS_HAS_STUDENTS` while an active student sits in it, this year or in the year that waits; history does not stop it) or active again (409 `DEPARTMENT_INACTIVE` when its department is inactive). **There is no DELETE**; `GET /classes?status=active|inactive|all` (active by default) | admin, principal |
+| `POST /classes/:id/divide` | `{ count, capacity, rooms? }`: a class with no sections is divided into `count` sections and the students sitting in the class are shared out between them by name (see "Seats" below) | admin, principal |
 | `POST /classes/:id/sections`, `PATCH /sections/:id`, `DELETE /sections/:id` | add, change (name, seats, room), delete. Seats and room are required unless the school made them optional (400 `SECTION_DETAILS_REQUIRED`, per missing box) | admin, principal |
 | `GET /settings`, `PUT /settings` | the school's switches: `{ sectionDetailsRequired }` (also in `GET /structure` as `settings`) | read: everyone at the school; change: admin, principal |
 
@@ -457,10 +488,30 @@ Good to know:
 
 - Names are trimmed, inner spaces collapsed, and compared without regard to case. A section's seats are a whole number from 1 to 200
   (or empty), a class's from 1 to 2000. Limits: 15 departments, 60 classes, 30 sections per class.
-- **A class or section that has students cannot be deleted** (`CLASS_HAS_STUDENTS`, `SECTION_HAS_STUDENTS`): the Students module counts
-  them (`backend/src/main/academics/services/usage.ts`), by section and by class (a class without sections holds its students itself), and
-  a class with students in another academic year is kept as history (`CLASS_HAS_HISTORY`). The delete dialog shows the server's sentence
-  ("This class has 5 students. Move them to another class first.").
+- **A class with students cannot be made inactive** (`CLASS_HAS_STUDENTS`) and **a section with students cannot be deleted**
+  (`SECTION_HAS_STUDENTS`): the Students module counts them (`backend/src/main/academics/services/usage.ts`), by section and by class (a class
+  without sections holds its students itself). Students who left, and the students of past years, are history: they stay with the class and do
+  not stop it. The dialog shows the server's sentence. The structure answer (`GET /structure`) holds the active classes and departments in
+  `classes` / `departments` (so every picker offers only those) and the inactive ones in `inactiveClasses` / `inactiveDepartments`; looking at a
+  past year it holds all of them in `classes`, because that year's students sat in them.
+- **Seats.** A class that has no sections is held to its own seats when a student is admitted, moved, brought back or imported: a full one
+  answers 409 `CLASS_FULL` (a section: `SECTION_FULL`) with `{ capacity, enrolled, classId, sectionId }`. Add student then asks what to do
+  (`components/students/form/SeatsFullDialog.tsx`): **Add seats** (`raiseSeatsTo` on the admission or the move; the server raises the seats only when
+  the place really is full, and puts them back if the admission fails) or, for a class with no sections and someone who may manage classes,
+  **Make sections** (`POST /classes/:id/divide`, with the students shared out and a preview of how many go where). A bulk upload raises a full
+  class's seats and says so. **It is asked in the Academic step** (2026-11-13): picking a full section on the page asks at the pick, and a place a
+  link chose (`?class=&section=` from a class's page) is asked when **Next** is pressed on the Academic step (`fullPlaceOf` in `utils/placeSeats.ts`,
+  `goNext` in `StudentAdmit.tsx`; the dialog is opened with `next: true`, so once a seat is added or sections are made the form goes on to the next
+  step; Cancel stays on the Academic step and Next asks again). A place already answered (`raise` for that place) is not asked again, and
+  the server's `SECTION_FULL` / `CLASS_FULL` at Admit stays as the last word (a place that filled up while the form was open).
+  **A class with one section has it picked** with the class (`PlacementFields.pickOnlySection`: Add student "always", even a full one, which is then
+  asked at Next; a student's page and a transfer "withRoom"), and a link that names only the class (`?class=`) picks it too; a class with several
+  sections still asks. **The seats a person added show at once**: the picked section's card and note say "30 of 31 seats", not "Full" (the seats are
+  written when the student is admitted). **A full section's window has a second answer for someone who may manage classes: Add a section**
+  (name = the next letter, seats = the full section's, room only when the school requires it): `POST /classes/:id/sections` with
+  `raiseClassSeats: true`, which makes the class's seats grow when the new section would not fit in what its sections share (refused above 2000, put
+  back if the section cannot be made; without the flag the old `SECTION_SEATS_OVER_CLASS` stays). The new section is picked for the student and the form
+  goes on; the seat counts are read again (`createSection` invalidates `Capacity`). A class with no sections still offers **Make sections** (divide).
 - Quick setup uses these departments: Pre-Primary (Pre-Nursery to UKG), Primary (1-5), Middle (6-8), Secondary (9-10),
   Senior Secondary (11-12). The names must match `backend/src/main/academics/constants.ts`.
 - Tests: `backend/src/main/academics/__tests__/academics.test.ts` (66 cases: permissions, every rule above, and that one
@@ -745,7 +796,7 @@ download, fill and upload), but any sheet opens as an editable table first, beca
 1  [ drop your file here, or browse ]            | Start from the sample file  [ Download sample template ]
    How it works / Note                           | Already have a students sheet? Upload it as it is.
 2  sunrise-list.xlsx . 14 rows . 7 ready . 7 need a fix                                   [ Choose another file ]
-   One section would go over its seats: Class 5 - B ...  [ ] Admit them all anyway          (only when it would)
+   Class 5 - B will get more seats: 3 students in the file, 1 seat left. Recommended: divide Class 5 into more sections.   (a note, only when it would)
    [ All rows 14 | Need a fix 7 | Ready 7 ]                                                [ Rows to fix (CSV) ]
    (1 more row has "Class 9" in Class. Change it to "Class 8" too?  [ Change it ] [ No ])  (after a fix, when others match)
    +-----+-----------------+-------------+--------------------+---------------------+---------------------+-------------------+
@@ -755,8 +806,8 @@ download, fill and upload), but any sheet opens as an editable table first, beca
    | 9 🗑| [Class]         |             | Meera Joshi        | [Class 9] red       |                     |   field)          |
    |     |                 |             |                    | Your school has no  |                     |                   |
    |     |                 |             |                    | "Class 9": type one |                     |                   |
-   | 17🗑| [Section]       |             | Sara Khan          | 6                   | [ ] red: Class 6 has|                   |
-   |     |                 |             |                    |                     | sections A: type one|                   |
+   | 17🗑| Ready           |             | Sara Khan          | 6                   |                     |                   |
+   |     | Goes to Class 6 - A                                                                                                    |
    +-----+-----------------+-------------+--------------------+---------------------+---------------------+-------------------+
                                                        7 rows need a fix and are not uploaded.  [ Upload 7 students ]
 3  8 students admitted to 2026-2027 . [ Fix the 3 rows ] [ Download them ] [ Upload another file ] [ Go to students ]
@@ -775,13 +826,32 @@ download, fill and upload), but any sheet opens as an editable table first, beca
   (`matchProblemOf`); `maybe` = a note on a Ready row (`matchNoteOf`). Inside the file `crossCheck` finds the same student, admission number
   or Aadhaar number twice and `lookAlikes` the same name and birthday with another mobile. A failed check says so and the table works as
   before. A row the server refuses as `DUPLICATE_STUDENT` at the upload moves to Already in school. The typed table is not asked about.
+- **A file for one class, or one section** (`components/students/import/TargetPicker.tsx`, `ImportTarget` in `types/students.ts`, `usableTarget` / `targetLabel`
+  in `utils/studentImport.ts`): the **Upload for** box on step 1 (and the same two boxes under the file bar on step 2, so it can still be chosen or
+  changed) is *Whole school* (the default: each row names its class), one class, or one class + one section (the Section box appears only for a class
+  that has sections: *Any section (shared evenly)* or A, B...). It is the page's own state, not saved, and "Upload another file" sets it back to the
+  whole school, so a Class 6 file is never put in Class 5 by forgetting. `prepareRow(row, mapping, structure, own, target)`: a row that names no class
+  is of the target class (for a stream's class also a cell that says only 11 / XI), and of its section when one is chosen; a row that names ANOTHER
+  class (or section) is red in its own box: *This file is for Class 5, but this row says "Class 6"*. `columnsToAdd(..., forOneClass)` and
+  `typedTableFields(rules, forOneClass)` add no Class / Section / Stream column then. With no section chosen the class's sections are filled evenly
+  as always (`placeInSections`, "Goes to Class 5 - B" under Ready); with one chosen every student goes to it. Choosing it changes only the
+  rows read again: nothing more is asked of the server (the "already in your school" check does not depend on the class). The server needs
+  nothing new: every row still carries its own `classId` / `sectionId`.
+  **Opened for a class** (2026-11-13): a class's page (`/school-class/:id`) has a **Bulk upload** button (also beside *Add a student* when the class is
+  empty), and the Students list's own Bulk upload carries the class and section picked in the list; both use `importLink` (`/school/students/import?class=&section=`,
+  like `admitLink`). The page reads `?class=` / `?section=` once as the target (`opened`; an unknown class or section is ignored by `usableTarget`),
+  "Upload another file" goes back to it (a plain Bulk upload: the whole school), and when the link carries `cameFrom` the crumb, the Back arrow, the
+  leave dialog and the Done card's **Go to Class 5** lead back to that class page. The button is for `students.add` in a running year.
 - **Step 2** is just the table (`PreviewGrid`; `PreviewPanels` has the tabs, the "+" panel and the same-change offer). The page keeps
   the file in its state and changes it there: a cell (`onBlur` / Enter; Escape puts it back), a column's detail (`placeColumn`: a
   detail of the list through `assignColumn`, or one of the school's own fields in `ownColumns`; one column each), a new column
   (`addColumn`, from the "+", or `addMissing` when a Status label points at a detail with no column), the same change for other rows
   (`SameValueOffer`), a row left out. Each heading is the shared HeroUI `Select` made small with `triggerClassName` (never a native
   `<select>`). When a file opens, `columnsToAdd` appends empty columns for what every student needs and the file lacks (the name, gender,
-  date of birth, class, a parent's name and mobile, the section of a class that has sections: never the address or the previous school), and
+  date of birth, class, a parent's name and mobile: never the address, the previous school or the section), and
+  `placeInSections(rows, classes, loads, skip)` gives a row of a class with sections and none given (no column, an empty box, or a
+  section the class lacks) its section: evenly, the emptier section first, free seats and free roll numbers preferred, so a section is never
+  a problem of a row (the page runs it over the prepared rows and sends the chosen `sectionId`), and
   `ownColumnsOf` finds the school's own fields. `utils/studentImport.ts` does the rest: `autoMap` (titles to details by
   `IMPORT_FIELDS[].synonyms`, the school's export headings first), `matchClass`, and `prepareRow(row, mapping, structure, ownColumns)`,
   which cleans each value (`normaliseDay`, `normaliseGender`, `normaliseMobile`, `normaliseState`...; an own field by its kind), builds
@@ -795,7 +865,7 @@ download, fill and upload), but any sheet opens as an editable table first, beca
   column).
 - **Step 3**: **Upload** sends the ready rows, 100 a request; then `refreshAfterImport()` marks the list, the seats and the cached student
   pages stale once. Admitted rows leave the table; refused ones stay with the server's reason until they are changed (a `SECTION_FULL`
-  one is ready again when Admit them all anyway is ticked). The rows to fix are a CSV made in the browser (`problemsCsv`: the file's
+  one is ready again once the person says to go over the seats; the bulk upload no longer asks). The rows to fix are a CSV made in the browser (`problemsCsv`: the file's
   columns plus *Problem*). Closing the tab while uploading asks first; **Back** asks while rows are in the table.
 - The school's settings (`GET /students/settings`, read once) give the export headings and own fields a file is read with, and the
   typed table's columns (`typedTableFields(rules)`: the usual ones plus every detail the school needs, then its own fields). Its needs
@@ -995,9 +1065,9 @@ names of every field, one father and one mother).
 
 # Manage school: Timetable
 
-Everything is on **one page**, `/school/timetable` (menu: Manage school > Timetable), in **two tabs**; the tab and the class are in the
-address (`?tab=timings|classes&class=&section=`). A school with no timing opens on School timings, otherwise on Class timetables. The two tabs
-are in the header, at the right of the title (the Subjects / Teachers buttons and the line under the title were taken away on 2026-11-03; the
+It is **two pages nested under one Timetable row of the menu** (2026-11-09 pages, 2026-11-10 nested; they were two tabs of one page): **School timings** (`/school/timings`) and **Class timetables**
+(`/school/timetable?class=&section=`), both under Manage school. The old `?tab=` addresses lead to the right page. No tabs, and the header has only the
+title (the Subjects / Teachers buttons and the line under the title were taken away on 2026-11-03; the
 Subjects is still a page of its own, `/school/timetable/subjects`; **Teachers is Manage school > Teachers**, `/school/teachers`, with Add teacher in four
 steps, a teacher's page and a login for each teacher: `../docs/teachers.md`). The full description, the API, the rules the server holds,
 the real cases covered and not covered: `../docs/timetable.md`.
@@ -1024,8 +1094,8 @@ Timing for: (Whole school) (Pre-Primary: own) (Primary: same as school)
 | File | What it does |
 | :--- | :--- |
 | `pages/school/Timetable.tsx` | the page: the title with the two tabs at its right |
-| `components/timetable/SchoolTimingsTab.tsx` + `DayFields.tsx` | **Timing for** Whole school or a department (its own week, made from the school's, or "same as school"); the usual day from a few numbers (start, period length and assembly in minutes with "= 1 hr" in words, periods, a lunch and one short break each from when to when) drawn period by period; each day Usual / Different / Holiday; one Save for the week; changes not saved are asked about before another group, tab or page is opened (`SaveFirstModal`: Save and continue / Don't save / Cancel; the editor tells the tab through a `Draft` ref, and `useBlocker` catches the tab and the page). No timings for a few named classes here any more (the `TimingDialog` is gone): a class's own periods are on its timetable |
-| `components/timetable/ClassTimetablesTab.tsx` | the class list (search and status asked of the server, `GET /timetable/overview`) and the class picked |
+| `components/timetable/SchoolTimings.tsx` (page: `pages/school/SchoolTimings.tsx`) + `DayFields.tsx` | **Timing for** Whole school or a department (its own week, made from the school's, or "same as school"); the usual day from a few numbers (start, period length and assembly in minutes with "= 1 hr" in words, periods, a lunch and one short break each from when to when) drawn period by period; each day Usual / Different / Holiday; one Save for the week; changes not saved are asked about before another group, tab or page is opened (`SaveFirstModal`: Save and continue / Don't save / Cancel; the editor tells the tab through a `Draft` ref, and `useBlocker` catches the tab and the page). No timings for a few named classes here any more (the `TimingDialog` is gone): a class's own periods are on its timetable |
+| `components/timetable/ClassTimetables.tsx` (page: `pages/school/ClassTimetables.tsx`) | the class list (search and status asked of the server, `GET /timetable/overview`) and the class picked |
 | `components/timetable/ClassWeek.tsx` + `GridTable.tsx`, `GridDialogs.tsx` | one class's week: click a period and `PeriodPicker.tsx` opens beside it (type the subject, Enter or click; the class's subjects, the school's others, the usual ones not added yet, or a new one typed; list and matching in `utils/timetable.ts`: `subjectChoices`, `matchChoices`, `teacherTrouble`), fill by the program, save, publish, copy, print; asks before leaving it unsaved (another page, class or tab) |
 | `components/timetable/ClassPeriodsDialog.tsx` + `utils/classWeek.ts` | **Periods per day**: a − n + for each day of the week (0 = no school), "Same on every school day", "Back to the school's periods"; the rows are made from the numbers (`withPeriods`, `rowsFor`) and only the days that differ from what the class follows anyway are sent (`PUT /timetable/class-day`); lessons in periods that go are asked about first (`LESSONS_IN_REMOVED_PERIODS`). The old "Periods & teachers" button is gone: the subjects' periods a week open from the fill when no subject has any |
 | `components/timetable/PeriodPicker.tsx` | the box beside a period: search + list (keys: arrows, Enter, Escape), the period's teacher & room and Take it out when it has a lesson; HeroUI `Popover.Content` used on its own (`isOpen`, `triggerRef`), non-modal on a desktop, modal on a phone |
@@ -1047,3 +1117,97 @@ holidays, what is sent, refusals), `TimetableClassWeek.test.tsx` (painting a gri
 week, the leave-without-saving question), `components/timetable/__tests__/ClassSubjectsEditor.test.tsx`, and the subjects / teachers /
 teacher's week pages. The browser journey (`j15`, real Chrome on the throwaway stack) was written for the old step pages and needs its
 selectors moved to the tabs before it is run again.
+
+## The sign-up form (onboarding), the look of the EduShiksha kit
+
+A school admin whose school is not approved yet sees `Layouts/OnboardingLayout.tsx`: a dark-blue **side panel** (`OnboardingSidebar`: the
+logo, "Onboarding Progress" with the five screens down the side, a green tick for what is done, the open one lit with its note, the school
+picture and "Better Education Brighter Future" at the bottom), a light page, a white **card at the top** (`OnboardingHeader`: the school
+building, the heading of the screen and one line, and on a wide screen the handwritten "Let's build a better learning journey" with the
+graduation cap) and the **bell and the person** at the top right (`OnboardingUserMenu`: Sign out is in its small menu). On a phone the panel
+is replaced by "Step 3 of 5" with a bar. The pictures are the login kit's SVGs in `public/images/onboarding/`; the colours are the tokens
+`--onboard*` in `index.css`; the handwritten lines use the `.font-script` class (a system script font: add `@fontsource/caveat` to make it the
+same everywhere).
+
+**Five screens, three saved steps.** School Details (server step 1), Academic Year (year, boards, mediums), Class Sections (each medium's
+classes) and Your Profile (step 3), then Review & Submit. The Academic Year and Class Sections screens are one server step (2): Academic Year's
+Save & Continue checks its boxes and opens Class Sections without a request; Class Sections saves the whole step 2. The two share one draft in
+the wizard, so going back and forth loses nothing, and a problem in the year or a board found when Class Sections is saved opens Academic Year
+with the message (`constants/onboardingStages.ts` maps the screens to the steps; `components/onboarding/stage.tsx` tells the frame where the
+school is).
+
+**Class Sections** (`PlanSections.tsx`, `ClassCard.tsx`, `QuickFill.tsx`, `PlanExtras.tsx`): a bar with the academic year (press it to go back
+and change it), the class range (two selects; the classes in between get a card), "N Classes Selected" with the classes listed, and **Quick
+Fill** (the same sections, seats and, if wanted, the first room number: the others count up from it, one for each class that has sections);
+then a pastel card per class (the colour and the mark follow the class: `constants/classTones.ts`) with its **Sections** (a stepper), **Seats
+in each** and **Room No.**, and an **All Set!** card. A medium with no classes offers the usual ranges in one click. Below: the streams of
+Class 11 and 12, and the school days and timing of the medium. The room is the first section's room when the school is approved (the others are
+filled in later in Classes & Sections); a class with no sections has none. The server keeps it as an optional `room` on each class of a plan.
+
+**Round 2 and 3 of the same look (after the screenshots).** There is no bell and no person at the top right: **Sign out is a small icon beside
+the logo** in the dark panel (`SignOutButton`; on a phone, beside the logo on the light page). The heading card holds the building, the heading
+and its line and, at its right on a wide screen, the handwritten "Let's build a better learning journey" and the cap side by side
+(`HeaderTagline`), so the words never lie across the cap. Under the card is a row with two empty `slots` the frame draws (`useSlotRef` in
+`stage.tsx`): a medium alone on Class Sections fills them with a portal (its academic year, class range and count at the left; Quick Fill at the
+right); several mediums keep their own bar and Quick Fill on the page. The class range is one box ("Nursery to 10th", `RangePicker`) that opens
+a window with the first and the last class as chips. **The buttons at the end of a screen are only the buttons** (Previous at the left, Save &
+Continue at the right): no bar, no white background, nothing fixed to the window; they are at the bottom of the form. Every box of the form uses
+the **soft** look (`SoftControls` in `ui/Input.tsx`: tall, white, rounded, a blue icon inside), and each part of a screen is a white card with its
+icon in a soft blue square (`OnboardSection`), instead of the gold strip of the student form.
+
+**Review & Submit** (`StepReview.tsx`) is two cards side by side (one under the other on a phone): **School and contact** (the school, its address and
+contact, and who is registering it) and **Academics** (the academic year and boards, then one part for each medium with its classes, sections and
+seats added up, how many classes have a room, the streams, the school days and the timing: `planFacts` in `utils/mediumPlans.ts`). Each part has
+its own **Edit** that opens the screen it was filled in on (`onEdit` is given the screen's number: 1 School Details, 2 Academic Year, 3 Class
+Sections, 4 Your Profile), and what was typed there is still there. Below them: the confirmation, Previous and Submit.
+
+**An inactive class stays in its department's list.** The workspace list asks the server for `status=all` (a **Status** box above it: All classes /
+Active only / Inactive only, in the address as `?status=`; Clear brings back all), so Make inactive does not make the class vanish: it stays in
+its place, greyed and marked **Inactive**, stays open on the right (now the read-only view with Make active), and the header says "N inactive".
+Make active returns it to a class that can be changed. (The Inactive list at the bottom of the Classes & Sections page still lists them too.)
+
+## Themes (Settings > Appearance > Theme, `src/theme/`)
+
+The signed-in app has a **Theme** choice at the top of Settings > Appearance, kept on this device (`edushiksha.appearance.v1`, with the accent and the
+mode). It is only a look: no page, rule or request changes.
+
+- **Classic** (the default, and what an appearance saved before themes existed is): the app as it was, with its own **Accent color** and **Display mode**
+  (`appearanceStyle` in `AppThemeProvider.tsx`, untouched).
+- **Onboarding** (deep blue menu, tinted page, white cards, soft rounded boxes) and **Evergreen** (the same in deep green): the look of the sign-up form.
+  They are light only and have colours of their own (`themes.ts`: one `Palette` each, `themeStyle`), so the accent and the mode belong to Classic: the
+  Settings page and the account menu show them only in Classic, and going back to Classic finds them as they were. A new look is one more entry in
+  `THEMES` and `PALETTES`.
+- **How a look reaches the screen.** The shell (`Layouts/MainLayout.tsx`) puts the look's tokens on itself with `data-theme`, and `useRootTheme` puts
+  them on the page's root too, because a dialog or a dropdown list is drawn outside the shell (Classic puts nothing there). `ThemeScope`
+  (`themeScope.tsx`) tells the boxes and the menu which look they are in; outside the shell (public pages, the sign-up form) it is Classic.
+- **The menu.** `.app-sidebar` (both the desktop and the phone menu) is made deep by one rule in `index.css`: inside it the tokens `--surface`,
+  `--foreground`, `--border`, `--primary`... take deep values from `--menu-from/-to/-active`, so no row of the menu was changed. The wordmark uses the
+  `BrandMark` "inverse" tone.
+- **The boxes.** `useControlStyle()` (`components/ui/Input.tsx`) maps the style a form asked for by the look: in Onboarding / Evergreen a plain box is
+  `round` (the soft look at its own size, so toolbars and tables do not grow) and a form's tall `boxed` box is `soft` (the sign-up form's box); the
+  sign-in `filled` boxes stay. Input, Textarea, Select, DateBox, ComboBox and SearchSelect all follow. The strip that starts each part of a form
+  (`--gold`) takes the look's colour.
+- Tests: `theme/__tests__` (storage, colours, scope, root), `components/ui/__tests__/ControlThemes.test.tsx`, `pages/settings/__tests__/Settings.test.tsx`,
+  `components/layout/__tests__/SidebarTheme.test.tsx`. Not looked at in a browser by the author of the first version: check the three looks on the
+  student form, a list with filters and a dialog.
+
+## The top bar (`components/layout/Topbar.tsx`), in the look of Infinity Medisetu's (2026-11-13)
+
+At the left the school and the page name (and the menu button on a phone). At the right, in this order: **New**, the **time and date**, the **medium**
+(and the **year** when a past year can be looked at), the bell and the account menu.
+
+- **New** (`NewMenu.tsx`): a primary button that opens a card of what can be added from anywhere, each row with an icon, its words, a line about it and
+  its shortcut as two key chips: **Add student** (`Alt S`, `/school/students/new`) and **Add teacher** (`Alt T`, `/teachers/new`). The list is one
+  array (`NEW_ITEMS`: label, note, route, `KeyboardEvent.code`, permission): another entry is one more line. The shortcuts work with the card closed,
+  on every page of the signed-in app, by `event.code` (so a Mac's Option key and other keyboard layouts work), only with Alt alone (Shift, Ctrl or
+  Command make it another shortcut), a held key is one press, and never while a dialog is open. Only what this person may add (`students.add`,
+  `teachers.add`, from the Permissions page) is offered; nothing to add, or a past year open (read only): no button and no shortcut.
+- **Time and date** (`HeaderClock.tsx`): "11:03 AM" over "Fri, Nov 13, 2026" in a `<time>` element, always in India's time (`Asia/Kolkata`), moving on at
+  each whole minute with one timer that stops when it leaves the screen; not drawn under `md` (the old date chip is gone).
+- **Dropdowns** (`HeaderMenu.tsx`: `HeaderMenu` + `MenuRow`): the medium and the year are bordered boxes (icon, what is chosen, chevron); open, a card with
+  a small heading ("Switch medium", "Switch year") and a row per choice (an icon tile, the words, a tick on the one in use). Escape or a press outside closes.
+  The roles (`menuitemradio`, `aria-checked`) and the box names ("Medium", "Academic year") are as before. A past year makes the year box amber.
+- **The class page's arrows** (`/school-class/:id`): the arrows to the class before and after sit right beside the class name (a missing neighbour is
+  a dimmed arrow, `aria-disabled`, so the pair never moves), then the class teacher's badge; they used to stand alone at the far right of the page.
+- Tests: `layout/__tests__/{HeaderClock,NewMenu,Topbar,MediumSwitcher,YearSwitcher}.test.tsx`, `pages/school/__tests__/SchoolClassDetail.test.tsx`. The
+  Topbar tests need `AppThemeProvider` (the account menu reads the theme), as in the app.

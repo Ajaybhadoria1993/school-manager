@@ -25,6 +25,8 @@ export interface ClassTeacherDto {
   sectionId: string | null;
   label: string;
   teacher: { id: string; name: string } | null;
+  /** Only when `releaseOthers` was asked: the classes the teacher left to come here ("Class 5 - A"), in teaching order. */
+  released?: string[];
 }
 
 /** The key of a unit in the maps below: "classId:sectionId", "classId:none" for a class without sections. */
@@ -100,6 +102,13 @@ export class ClassTeacherService {
     if (!teacher) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "teacherId", message: "Choose a teacher from your school's list" }]);
     if (!teacher.isActive) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "teacherId", message: `${teacher.name} is no longer teaching here` }]);
 
+    // Moving (`releaseOthers`): the teacher's other posts of this year, found before anything is written.
+    const others = input.releaseOthers
+      ? (await ClassTeacher.find({ tenantId: school, academicYearId: unit.yearId, teacherId: teacher._id }).lean()).filter(
+          (post) => !(post.classId.toString() === unit.classId && (post.sectionId ? post.sectionId.toString() : null) === unit.sectionId)
+        )
+      : [];
+
     const write = () => ClassTeacher.updateOne(where, { $set: { teacherId: teacher._id } }, { upsert: true });
     try {
       await write();
@@ -110,7 +119,22 @@ export class ClassTeacherService {
     }
     const now = { id: teacher._id.toString(), name: teacher.name };
     if (actorId) Notify.classTeacherChanged(tenantId, actorId, unit, now, before);
-    return { ...base, teacher: now };
+
+    let released: string[] | undefined;
+    if (input.releaseOthers) {
+      // The new post is kept first; then the teacher is taken off the others, and each of those classes (and the teacher) hears of it.
+      released = (await describeUnits(tenantId, others)).map((p) => p.ref.label);
+      if (others.length > 0) await ClassTeacher.deleteMany({ tenantId: school, _id: { $in: others.map((post) => post._id) } });
+      for (const post of others) {
+        try {
+          const left = await resolveUnit(tenantId, post.classId.toString(), post.sectionId ? post.sectionId.toString() : null);
+          if (actorId) Notify.classTeacherChanged(tenantId, actorId, left, null, now.id);
+        } catch {
+          // A class that cannot be read any more has nobody to tell; the post is gone all the same.
+        }
+      }
+    }
+    return { ...base, teacher: now, ...(released ? { released } : {}) };
   }
 
   /** Every class teacher of a year, by unit key (for the class pages). */

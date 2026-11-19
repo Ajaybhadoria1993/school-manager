@@ -21,7 +21,7 @@ export default function RunningYearRoute() {
       <span className="flex size-12 items-center justify-center rounded-2xl bg-warning-soft text-warning">
         <History className="size-6" aria-hidden />
       </span>
-      <h1 className="text-lg font-bold text-foreground">{viewing.name} is over</h1>
+      <h1 className="text-page-heading">{viewing.name} is over</h1>
       <button
         type="button"
         onClick={() => choose(null)}
