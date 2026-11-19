@@ -15,6 +15,7 @@ import { Guardian } from "../main/students/models/Guardian";
 import { Student } from "../main/students/models/Student";
 import { Teacher } from "../main/staff/models/Teacher";
 import { BellSchedule } from "../main/timetable/models/BellSchedule";
+import { BellScheduleVersion } from "../main/timetable/models/BellScheduleVersion";
 import { Allotment } from "../main/subjects/models/Allotment";
 import { Subject } from "../main/subjects/models/Subject";
 import { HiddenHoliday } from "../main/classroom/models/HiddenHoliday";
@@ -49,6 +50,7 @@ beforeAll(async () => {
     Allotment.syncIndexes(),
     Teacher.syncIndexes(),
     BellSchedule.syncIndexes(),
+    BellScheduleVersion.syncIndexes(),
     HiddenHoliday.syncIndexes(),
     Exam.syncIndexes(),
     ExamPaper.syncIndexes(),

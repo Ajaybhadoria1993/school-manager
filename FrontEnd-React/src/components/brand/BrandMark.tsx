@@ -43,13 +43,13 @@ export function BrandMark({
       <span className={cn("min-w-0 leading-none", compact && "sr-only")}>
         <span
           className={cn(
-            "block font-extrabold tracking-[-0.02em]",
+            "block font-bold",
             size === "lg" ? "text-2xl" : "text-lg",
-            inverse ? "text-white" : "text-navy",
+            inverse ? "text-white" : "text-foreground",
           )}
         >
           Edu
-          <span className={inverse ? "text-sky" : "text-primary"}>Shiksha</span>
+          <span className={inverse ? "text-sky" : "text-brand"}>Shiksha</span>
         </span>
         <span
           className={cn(

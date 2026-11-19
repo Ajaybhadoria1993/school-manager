@@ -34,6 +34,17 @@ export const sectionsOverClass = (classSeats: number | null, held: number): bool
 /** "Class 5 - A". */
 export const sectionTitle = (className: string, sectionName: string) => `${className} - ${sectionName}`;
 
+/**
+ * What a class or section is called where children are looked at (2026-11-17): a class with ONE section (or none) is just "Class 5",
+ * the section says nothing; a class with two or more is "Class 5A", "Class 5B". The letter is joined to a class name that ends in a
+ * number; any other name keeps the dash ("Nursery - A", "Class 5 - 1"). The server has the same rule (`sectionedName` in
+ * backend/src/main/timetable/services/unit.ts), so a name from there and one made here read alike.
+ */
+export function sectionedName(className: string, sectionName: string | null, sectionCount: number): string {
+  if (!sectionName || sectionCount <= 1) return className;
+  return /\d$/.test(className) && /^[A-Za-z]{1,2}$/.test(sectionName) ? `${className}${sectionName}` : `${className} - ${sectionName}`;
+}
+
 /** What "N sections" will be called: 2 -> "A, B", 3 -> "A, B, C", 8 -> "A to H". */
 export function describeSections(count: number): string {
   const letters = sectionLetters(count);
@@ -119,7 +130,7 @@ export interface ClassGroup {
 
 /**
  * The classes laid out wing by wing, in the order the API sends them. A school that uses no departments gets one
- * group without a heading. Departments with no class yet are kept, so they can be renamed, filled or deleted.
+ * group without a heading. Departments with no class yet are kept, so they can be renamed, filled or made inactive.
  */
 export function groupClasses(structure: AcademicStructure): ClassGroup[] {
   const groups: ClassGroup[] = structure.departments.map((department, position) => ({
@@ -149,10 +160,10 @@ const DEPARTMENT_ICONS: Record<string, LucideIcon> = {
 };
 export const departmentIcon = (name: string): LucideIcon => DEPARTMENT_ICONS[keyOf(name)] ?? Layers;
 
-/** The big mark on a class card: "5" for Class 5, "LKG" as it is, "PN" for Pre-Nursery. */
+/** The big mark on a class card: "5" for Class 5, "11" for Class 11 Science, "LKG" as it is, "PN" for Pre-Nursery. */
 export function classMark(name: string): string {
   const clean = name.trim();
-  const number = /^class\s*(\d{1,2})$/i.exec(clean)?.[1];
+  const number = /^class\s*(\d{1,2})(\s|$)/i.exec(clean)?.[1];
   if (number) return number;
   if (clean.length <= 3) return clean.toUpperCase();
   const words = clean.split(/[^A-Za-z0-9]+/).filter(Boolean);
@@ -195,4 +206,28 @@ export function departmentNameRows(departments: readonly DepartmentItem[], curre
 export function toneOf(structure: Pick<AcademicStructure, "departments">, departmentId: string | null): Tone {
   const position = departmentId ? structure.departments.findIndex((d) => d.id === departmentId) : -1;
   return position >= 0 ? departmentTone(position) : "navy";
+}
+
+/**
+ * How many of `students` go into each of `count` sections when they are shared out evenly: the first sections get one more when it does
+ * not divide, so 41 students in 2 sections is 21 and 20. The server shares them the same way (`splitEvenly` in
+ * backend/src/main/academics/services/divide.service.ts): the screen shows these numbers before anything is changed.
+ */
+export function splitEvenly(students: number, count: number): number[] {
+  const base = Math.floor(students / count);
+  const extra = students % count;
+  return Array.from({ length: count }, (_, i) => base + (i < extra ? 1 : 0));
+}
+
+/**
+ * Dividing a class into `count` sections: how the students would sit. With a `newcomer` (a full class, and one more student being
+ * admitted) the new student goes to the section with the fewest students (the first when equal), so every section needs seats for the
+ * students it gets and that section for one more. `minSeats` is the least each section can have for that (at least 1);
+ * `newcomerIn` is -1 when there is no newcomer.
+ */
+export function divisionPlan(enrolled: number, count: number, newcomer = true): { sizes: number[]; newcomerIn: number; minSeats: number } {
+  const sizes = splitEvenly(enrolled, count);
+  if (!newcomer) return { sizes, newcomerIn: -1, minSeats: Math.max(1, sizes[0]) };
+  const newcomerIn = sizes.indexOf(Math.min(...sizes));
+  return { sizes, newcomerIn, minSeats: Math.max(sizes[0], sizes[newcomerIn] + 1) };
 }

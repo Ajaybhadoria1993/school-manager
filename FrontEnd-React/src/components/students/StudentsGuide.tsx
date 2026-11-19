@@ -38,7 +38,7 @@ export function StudentsGuide({ onClose }: { onClose: () => void }) {
         <X className="size-4" aria-hidden />
       </button>
       <div className="relative">
-        <h2 className="text-base font-bold text-foreground">How students work</h2>
+        <h2 className="text-section-heading">How students work</h2>
         <p className="mt-0.5 pr-8 text-sm text-foreground-muted">Three ideas, then you are ready. You can reopen this guide any time with the Guide button.</p>
         <ol className="mt-4 grid items-stretch gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr]">
           {STEPS.map((step, i) => (

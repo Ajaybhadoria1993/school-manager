@@ -5,7 +5,7 @@ import { fieldId, type StudentForm } from "../../../hooks/useStudentForm";
 import { asks, mayLeave } from "../../../utils/fieldRules";
 import { Field } from "../../ui/Field";
 import { Input } from "../../ui/Input";
-import { FormCard } from "./FormCard";
+import { FormSection } from "./FormSection";
 import { ChoiceSelect } from "./ChoiceSelect";
 import { FORM_GRID } from "./formGrid";
 
@@ -19,7 +19,7 @@ export function AddressFields({ form, index = 0 }: { form: StudentForm; index?: 
   const r = form.rules;
   if (!ADDRESS_RULES.some((k) => asks(r, k))) return null;
   return (
-    <FormCard index={index} icon={MapPin} tone="info" title="Address" description="Where the student lives now.">
+    <FormSection index={index} icon={MapPin} title="Address">
       <div className={FORM_GRID}>
         {asks(r, "addressLine1") && (
           <Field id={fieldId("address.line1")} label="House and street" optional={mayLeave(r, "addressLine1")} error={form.errorOf("address.line1")}>
@@ -47,6 +47,6 @@ export function AddressFields({ form, index = 0 }: { form: StudentForm; index?: 
           </Field>
         )}
       </div>
-    </FormCard>
+    </FormSection>
   );
 }

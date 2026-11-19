@@ -25,6 +25,7 @@ import { formatDay } from "../../../utils/academicYear";
 import { cn } from "../../../utils/helpers";
 import { GuardianLogin } from "./GuardianLogin";
 import { MovesList } from "./MovesList";
+import { customFieldIsFor } from "../../../utils/fieldRules";
 import { ageText, avatarTone, formatAadhaar, formatMobile, placeLabel } from "../../../utils/students";
 import type { StudentDetail } from "../../../types";
 import { Card } from "../../ui/Card";
@@ -36,7 +37,7 @@ function Block({ icon: Icon, tone, title, tip, index, className, children }: { i
   return (
     <Card className={cn("stagger-item relative overflow-hidden p-5", className)} style={{ "--i": index } as React.CSSProperties}>
       <div aria-hidden className={cn("pointer-events-none absolute -right-12 -top-12 size-40 rounded-full bg-gradient-to-br to-transparent blur-2xl", t.glow)} />
-      <h2 className="relative flex items-center gap-2.5 text-base font-bold tracking-tight text-foreground">
+      <h2 className="text-section-heading relative flex items-center gap-2.5">
         <span aria-hidden className={cn("flex size-9 items-center justify-center rounded-xl", t.gradient)}>
           <Icon className="size-4.5" />
         </span>
@@ -73,7 +74,8 @@ function ownAnswer(field: CustomFieldDef, answer: string | number | boolean | un
  * the school's own fields (`custom`: the ones asked, and any other this student has an answer for).
  */
 export function StudentOverview({ student, custom = [] }: { student: StudentDetail; custom?: CustomFieldDef[] }) {
-  const own = custom.filter((f) => f.mode !== "hidden" || student.custom?.[f.key] !== undefined);
+  // A field for some classes only (Subject group: Class 11 and 12) is listed for a student of those, and for any student who has an answer to it.
+  const own = custom.filter((f) => (f.mode !== "hidden" && customFieldIsFor(f, student.place?.className)) || student.custom?.[f.key] !== undefined);
   const t = TONES[avatarTone(student.admissionNumber)];
   const place = student.place;
   const a = student.address;
@@ -86,7 +88,7 @@ export function StudentOverview({ student, custom = [] }: { student: StudentDeta
         {place ? (
           <>
             <div className="flex flex-wrap items-center gap-3">
-              <span className={cn("rounded-xl px-4 py-2 text-lg font-extrabold ring-1 ring-inset", t.chip)}>{placeLabel(place)}</span>
+              <span className={cn("rounded-xl px-4 py-2 text-lg font-bold ring-1 ring-inset", t.chip)}>{placeLabel(place)}</span>
               <span className="text-sm text-foreground-muted">{place.rollNumber != null ? `Roll number ${place.rollNumber}` : "No roll number yet"}</span>
             </div>
             {current && (

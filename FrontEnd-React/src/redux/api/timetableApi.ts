@@ -1,5 +1,5 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type {
+import type { TeacherMedium,
   ApiResponse,
   AllotmentView,
   AssignTeacherInput,
@@ -9,6 +9,7 @@ import type {
   ClassDayInput,
   CopyAnswer,
   CopyInput,
+  ExportPreview,
   GridCell,
   GridView,
   ImportSheet,
@@ -27,6 +28,7 @@ import type {
   TeacherImportResult,
   TeacherSettings,
   TeacherImportRowInput,
+  TeacherPeriodsInput,
   Teacher,
   TeacherClasses,
   TeacherInput,
@@ -35,6 +37,7 @@ import type {
   TeacherWeek,
   TimetableOverview,
   UnitRef,
+  UpdateTeacherSettingsInput,
   UsernameCheck,
 } from "../../types";
 import { baseQueryWithReauth } from "./baseQueryWithReauth";
@@ -58,7 +61,7 @@ export const unitTag = (unit: UnitRef) => `${unit.classId}:${sectionOf(unit)}`;
 export const timetableApi = createApi({
   reducerPath: "timetableApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Subject", "Teacher", "Schedule", "Allotment", "Overview", "TeacherWeek", "Grid", "TeacherSettings"],
+  tagTypes: ["TeacherMediums", "Subject", "Teacher", "Schedule", "Allotment", "Overview", "TeacherWeek", "Grid", "TeacherSettings"],
   refetchOnMountOrArgChange: 60,
   refetchOnReconnect: true,
   endpoints: (build) => ({
@@ -123,6 +126,15 @@ export const timetableApi = createApi({
       query: ({ id, ...body }) => ({ url: `/staff/teachers/${id}/login`, method: "PATCH", body }),
       invalidatesTags: ["Teacher"],
     }),
+    // Where a teacher teaches, in a school with more than one medium, and adding them to another with the login they have.
+    getTeacherMediums: build.query<ApiResponse<{ items: TeacherMedium[] }>, string>({
+      query: (id) => `/staff/teachers/${id}/mediums`,
+      providesTags: ["TeacherMediums"],
+    }),
+    addTeacherToMedium: build.mutation<ApiResponse<{ items: TeacherMedium[] }>, { id: string; mediumId: string }>({
+      query: ({ id, mediumId }) => ({ url: `/staff/teachers/${id}/mediums`, method: "POST", body: { mediumId } }),
+      invalidatesTags: ["TeacherMediums"],
+    }),
     // What a teacher has been given (their page): class teacher of, and the subjects of classes they teach.
     getTeacherClasses: build.query<ApiResponse<TeacherClasses>, string>({
       query: (id) => `/staff/teachers/${id}/classes`,
@@ -146,12 +158,22 @@ export const timetableApi = createApi({
       query: (body) => ({ url: "/subjects/allotments/teacher", method: "PUT", body }),
       invalidatesTags: ["Teacher", "Allotment", "Overview", "Subject", "TeacherWeek", "Grid"],
     }),
+    // A teacher given a subject of a class AND its days and periods in one request (Assign class): the answer is the class's timetable as it is now.
+    placeTeacherPeriods: build.mutation<ApiResponse<GridView>, TeacherPeriodsInput>({
+      query: (body) => ({ url: "/timetable/teacher-periods", method: "PUT", body }),
+      invalidatesTags: ["Teacher", "Allotment", "Overview", "Subject", "TeacherWeek", "Grid"],
+    }),
     // The school's own fields for its teachers (one read, kept until they are changed).
     getTeacherSettings: build.query<ApiResponse<TeacherSettings>, void>({
       query: () => "/staff/teachers/settings",
       providesTags: ["TeacherSettings"],
     }),
-    updateTeacherSettings: build.mutation<ApiResponse<TeacherSettings>, TeacherSettings>({
+    // What the Export page shows before the file is made: the first teachers (or one sample row for a school with none) in every column.
+    getTeacherExportPreview: build.query<ApiResponse<ExportPreview>, TeacherQuery>({
+      query: (params) => ({ url: "/staff/teachers/export/preview", params: Object.fromEntries(Object.entries(params).filter(([, value]) => value !== undefined && value !== "")) }),
+      providesTags: ["Teacher"],
+    }),
+    updateTeacherSettings: build.mutation<ApiResponse<TeacherSettings>, UpdateTeacherSettingsInput>({
       query: (body) => ({ url: "/staff/teachers/settings", method: "PUT", body }),
       // The answer is the list as it is now: it is put into the read.
       async onQueryStarted(_input, { dispatch, queryFulfilled }) {
@@ -354,15 +376,19 @@ export const {
   useGetTeacherQuery,
   useGetMyTeacherQuery,
   useCreateTeacherLoginMutation,
+  useGetTeacherMediumsQuery,
+  useAddTeacherToMediumMutation,
   useResetTeacherPasswordMutation,
   useCheckUsernameQuery,
   useChangeTeacherUsernameMutation,
   useGetTeacherClassesQuery,
   useSetClassTeacherMutation,
   useAssignTeacherMutation,
+  usePlaceTeacherPeriodsMutation,
   useSaveUnitTeachersMutation,
   useReadTeacherFileMutation,
   useGetTeacherSettingsQuery,
+  useGetTeacherExportPreviewQuery,
   useUpdateTeacherSettingsMutation,
   useImportTeachersMutation,
   useCreateTeacherMutation,

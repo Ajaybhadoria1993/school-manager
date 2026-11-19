@@ -16,7 +16,7 @@ import {
 } from "../utils/students";
 import { MAX_GUARDIANS } from "../constants/students";
 import type { CustomFieldDef, FieldRules } from "../constants/studentFields";
-import { effectiveRules } from "../utils/fieldRules";
+import { customFieldIsFor, effectiveRules } from "../utils/fieldRules";
 
 /** The id a box gets from its path, so a message, a label and "go to the first mistake" all find it. */
 export const fieldId = (path: string) => `student-${path.replace(/\./g, "-")}`;
@@ -77,9 +77,17 @@ export function useStudentForm(
   const latest = useRef(values);
   latest.current = values;
 
-  const { classHasSections, lookup, mode, rules: schoolRules, classNameOf, custom } = options;
+  const { classHasSections, lookup, mode, rules: schoolRules, classNameOf, custom: allCustom } = options;
   // What the school needs of THIS admission: its rules with the address always needed and the previous school needed by the class chosen.
   const rules = useMemo(() => (schoolRules ? effectiveRules(schoolRules, classNameOf?.(values.classId)) : undefined), [schoolRules, classNameOf, values.classId]);
+  // The school's own fields asked for the class chosen (Subject group for Class 11 and 12 only: not before a class is picked, not for LKG).
+  // On a student's page one that already has an answer stays, whatever the class. A form that cannot say which class is which (the preview
+  // of Manage fields) shows them all.
+  const custom = useMemo(() => {
+    if (!classNameOf) return allCustom;
+    const className = classNameOf(values.classId);
+    return allCustom?.filter((f) => customFieldIsFor(f, className) || (mode === "edit" && String(saved.custom[f.key] ?? "").trim() !== ""));
+  }, [allCustom, classNameOf, values.classId, mode, saved.custom]);
   const problems = useMemo(
     () =>
       checkStudentForm(values, {
@@ -220,14 +228,16 @@ export function useStudentForm(
 
   /**
    * The props of a text box at `path`: its id, value, what typing does, the message's id for a screen reader, Escape to revert.
-   * `digits` keeps only digits (a PIN code, a roll number).
+   * `digits` keeps only digits (a PIN code, a roll number), and no more than `limit` of them when one is given (an Aadhaar number is
+   * 12: a number pasted with its spaces keeps every digit, a 13th is not taken). The box has no maxLength for that: the browser would
+   * cut "2345 6789 0124" at 12 characters, spaces included.
    */
   const bind = useCallback(
-    (path: string, kind: "text" | "digits" = "text") => ({
+    (path: string, kind: "text" | "digits" = "text", limit?: number) => ({
       id: fieldId(path),
       name: path,
       value: String(getAt(values, path) ?? ""),
-      onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(path, kind === "digits" ? e.target.value.replace(/\D/g, "") : e.target.value),
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(path, kind === "digits" ? e.target.value.replace(/\D/g, "").slice(0, limit) : e.target.value),
       onBlur: () => touch(path),
       onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === "Escape") {

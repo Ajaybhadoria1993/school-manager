@@ -13,6 +13,8 @@ export interface TenantState {
   onboarding: OnboardingProgress;
   /** Only while the school is rejected. */
   rejectionReason: string | null;
+  /** The sides the school's administrator can move between (English Medium, Hindi Medium). Empty when there is nothing to switch. */
+  mediums?: { id: string; label: string }[];
 }
 
 export type SubscriptionTier = "basic" | "standard" | "premium";

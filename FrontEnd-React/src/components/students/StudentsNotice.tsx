@@ -16,7 +16,7 @@ export function StudentsNotice({ icon: Icon, tone, title, children, actions }: {
       <span aria-hidden className={cn("relative mx-auto flex size-14 items-center justify-center rounded-2xl", TONES[tone].gradient)}>
         <Icon className="size-7" />
       </span>
-      <h2 className="relative mt-4 text-lg font-bold tracking-tight text-foreground">{title}</h2>
+      <h2 className="text-section-heading relative mt-4">{title}</h2>
       {children && <div className="relative mx-auto mt-1.5 max-w-xl space-y-1 text-sm text-foreground-muted">{children}</div>}
       {actions && <div className="relative mt-5 flex flex-wrap items-center justify-center gap-2.5">{actions}</div>}
     </Card>

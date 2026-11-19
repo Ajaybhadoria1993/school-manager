@@ -3,6 +3,7 @@ import { ApiError } from "../../../utils/ApiError";
 import { AcademicYear } from "../../academics/models/AcademicYear";
 import { SchoolClass } from "../../academics/models/SchoolClass";
 import { Section } from "../../academics/models/Section";
+import { NOT_INACTIVE } from "../../academics/models/status";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { isViewing } from "../../academics/services/viewedYear";
 
@@ -26,6 +27,17 @@ export interface Unit {
 
 /** A section is "Class 5 - A"; a class that is not split is "Class 1". */
 export const unitLabel = (className: string, sectionName: string | null) => (sectionName ? `${className} - ${sectionName}` : className);
+
+/**
+ * What a class or section is called where children are looked at (2026-11-17): a class with ONE section (or none) is just "Class 5",
+ * the section says nothing; a class with two or more is "Class 5A", "Class 5B". The letter is joined to a class name that ends in a number
+ * ("Class 5" + "A"); any other name keeps the dash ("Nursery - A", "Class 5 - 1"). The frontend has the same rule (`sectionedName`
+ * in utils/academics.ts).
+ */
+export function sectionedName(className: string, sectionName: string | null, sectionCount: number): string {
+  if (!sectionName || sectionCount <= 1) return className;
+  return /\d$/.test(className) && /^[A-Za-z]{1,2}$/.test(sectionName) ? `${className}${sectionName}` : `${className} - ${sectionName}`;
+}
 
 /**
  * The unit a request is about, checked against the school: the class exists; the section (if any) is the class's and belongs to the
@@ -58,19 +70,24 @@ export async function resolveUnit(tenantId: string, classId: string, sectionId: 
 /** Every unit of the school's running year, in teaching order: each section, and each class that has none. */
 export async function activeUnits(tenantId: string): Promise<Unit[]> {
   const school = new Types.ObjectId(tenantId);
-  return unitsOf(school, await AcademicYear.findOne({ tenantId: school, status: "active" }).select("name").lean());
+  return unitsOf(school, await AcademicYear.findOne({ tenantId: school, status: "active" }).select("name").lean(), false);
 }
 
 /** The same for the year a screen is about: the running year, or a past one the school is looking at (academics/services/viewedYear.ts). */
 export async function shownUnits(tenantId: string): Promise<Unit[]> {
   const school = new Types.ObjectId(tenantId);
-  return unitsOf(school, await AcademicYearService.shownYear(school));
+  const year = await AcademicYearService.shownYear(school);
+  return unitsOf(school, year, year !== null && year.status !== "active");
 }
 
-async function unitsOf(school: Types.ObjectId, year: { _id: Types.ObjectId; name: string } | null): Promise<Unit[]> {
+/**
+ * The classes the school runs, with their sections. A class made inactive is left out, except when a past year is looked at: its
+ * students and timetable were in it then.
+ */
+async function unitsOf(school: Types.ObjectId, year: { _id: Types.ObjectId; name: string } | null, withInactive: boolean): Promise<Unit[]> {
   if (!year) return [];
   const [classes, sections] = await Promise.all([
-    SchoolClass.find({ tenantId: school }).sort({ order: 1, _id: 1 }).select("name order").lean(),
+    SchoolClass.find({ tenantId: school, ...(withInactive ? {} : NOT_INACTIVE) }).sort({ order: 1, _id: 1 }).select("name order").lean(),
     Section.find({ tenantId: school, academicYearId: year._id }).select("name classId").lean(),
   ]);
   const byClass = new Map<string, typeof sections>();

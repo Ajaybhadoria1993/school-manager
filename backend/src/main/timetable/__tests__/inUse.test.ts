@@ -135,7 +135,7 @@ describe("teachers named on lessons", () => {
   });
 });
 
-describe("when a section or a class is deleted", () => {
+describe("when a section is deleted, or a class is made inactive", () => {
   it("its subject list and timetable go with the section, and no other section's", async () => {
     const r = await ready();
     await put(r.token, r.a, [cell(1, 1, lesson(r.maths))]);
@@ -148,7 +148,7 @@ describe("when a section or a class is deleted", () => {
     expect(await Allotment.countDocuments({ tenantId: r.tenantId, sectionId: r.b.sectionId })).toBe(2);
   });
 
-  it("its lists, timetables and place in the timings go with the class: a timing made only for it goes, others just lose it", async () => {
+  it("a class's lists, timetables and place in the timings are all kept when it is made inactive (it is never deleted)", async () => {
     const r = await ready();
     const nursery = await addClass(r.token, "Nursery");
     const six = await addClass(r.token, "Class 6");
@@ -156,14 +156,14 @@ describe("when a section or a class is deleted", () => {
     await addTiming(r.token, { name: "Saturday", scope: "except", classIds: [nursery.id, six.id], days: [6] });
     await addTiming(r.token, { name: "Sunday", scope: "only", classIds: [nursery.id, six.id], days: [7] });
     await saveAllotments(r.token, { classId: nursery.id, sectionId: null }, [{ subjectId: r.maths, periodsPerWeek: 3 }]);
-    expect((await request(app).delete(`/api/v1/academics/classes/${nursery.id}`).set(auth(r.token))).status).toBe(200);
-    expect(await Allotment.countDocuments({ tenantId: r.tenantId, classId: nursery.id })).toBe(0);
-    const names = (await BellSchedule.find({ tenantId: r.tenantId }).sort({ _id: 1 })).map((s) => `${s.name}:${s.scope}:${s.classIds.length}`);
-    expect(names).toEqual(["Regular:all:0", "Saturday:except:1", "Sunday:only:1"]);
+    const before = (await BellSchedule.find({ tenantId: r.tenantId }).sort({ _id: 1 })).map((s) => `${s.name}:${s.scope}:${s.classIds.length}`);
 
-    // The last class of an "all but" timing: it becomes an "all" timing.
-    expect((await request(app).delete(`/api/v1/academics/classes/${six.id}`).set(auth(r.token))).status).toBe(200);
+    expect((await request(app).delete(`/api/v1/academics/classes/${nursery.id}`).set(auth(r.token))).status).toBe(404);
+    expect((await request(app).post(`/api/v1/academics/classes/${nursery.id}/deactivate`).set(auth(r.token))).status).toBe(200);
+    expect((await request(app).post(`/api/v1/academics/classes/${six.id}/deactivate`).set(auth(r.token))).status).toBe(200);
+
+    expect(await Allotment.countDocuments({ tenantId: r.tenantId, classId: nursery.id })).toBe(1);
     const after = (await BellSchedule.find({ tenantId: r.tenantId }).sort({ _id: 1 })).map((s) => `${s.name}:${s.scope}:${s.classIds.length}`);
-    expect(after).toEqual(["Regular:all:0", "Saturday:all:0"]);
+    expect(after).toEqual(before);
   });
 });

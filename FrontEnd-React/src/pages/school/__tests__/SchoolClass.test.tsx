@@ -25,6 +25,8 @@ function openPage(entry = "/school-class", structure: AcademicStructure = STRUCT
       { path: "/school-class", element: <SchoolClassPage /> },
       { path: "/school-class/students", element: <SchoolClassPage /> },
       { path: "/school-class/:classId", element: <p>One class</p> },
+      { path: "/school/students", element: <p>Manage Students</p> },
+      { path: "/school/students/new", element: <p>The admission form</p> },
       { path: "/dashboard", element: <p>Dashboard</p> },
     ],
     { initialEntries: [entry] }
@@ -232,6 +234,15 @@ describe("School Class: the Students page (/school-class/students, the menu's St
     expect(screen.queryByRole("link", { name: /^Class 5:/ })).not.toBeInTheDocument();
   });
 
+  it("Add student goes to the Manage Students page (2026-11-09), with the chosen class and section in the address", async () => {
+    const { router, user } = openPage("/school-class/students?class=c5&section=c5-B");
+    await screen.findByText("Bina Rao");
+    await user.click(screen.getByRole("link", { name: "Add student" }));
+    expect(await screen.findByText("Manage Students")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/school/students");
+    expect(router.state.location.search).toBe("?class=c5&section=c5-B");
+  });
+
   it("an old address (/school-class?view=students&...) goes to the new one with its filters", async () => {
     const { router } = openPage("/school-class/students?class=c5&section=c5-B");
     expect(await screen.findByText("Bina Rao")).toBeInTheDocument();
@@ -306,10 +317,14 @@ describe("School Class: the Students page (/school-class/students, the menu's St
     expect(box("school-class-section")).toBeDisabled();
   });
 
-  it("Add student opens the admission form with the chosen class and section filled in", async () => {
+  it("Add student is a link to Manage Students with the chosen class and section (none chosen: no filters)", async () => {
     openPage("/school-class/students?class=c5&section=c5-B");
     expect(await screen.findByText("Bina Rao")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Add student" })).toHaveAttribute("href", "/school/students/new?class=c5&section=c5-B");
+    expect(screen.getByRole("link", { name: "Add student" })).toHaveAttribute("href", "/school/students?class=c5&section=c5-B");
+    cleanup();
+    openPage("/school-class/students");
+    expect(await screen.findByText("Dev Rao")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Add student" })).toHaveAttribute("href", "/school/students");
   });
 
   it("says Nobody matches, with a way back, when the filters keep nobody", async () => {

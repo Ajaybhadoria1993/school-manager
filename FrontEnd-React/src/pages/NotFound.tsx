@@ -10,7 +10,7 @@ export default function NotFound() {
       <BrandMark />
       <div>
         <p className="text-sm font-bold uppercase tracking-widest text-primary">404</p>
-        <h1 className="mt-2 text-2xl font-bold tracking-[-0.02em] text-foreground">This page could not be found</h1>
+        <h1 className="mt-2 text-page-heading">This page could not be found</h1>
         <p className="mt-1 text-sm text-foreground-muted">The address may have a typo, or the page may have moved.</p>
       </div>
       <Link to={getToken() ? "/dashboard" : "/"}>

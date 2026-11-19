@@ -45,6 +45,8 @@ describe("the form and the Excel: independent, but a mandatory detail is in both
 
   it("an Excel without the column of a mandatory detail is refused, naming the column", async () => {
     const s = await createSchool("Sunrise Public School", "school_admin", "default");
+    // A new school does not need the Aadhaar number; this one made it mandatory.
+    await put(s.token, { fields: { aadhaarNumber: "required" } });
     const layout = (await get(s.token)).body.data.exportColumns as { key: string; heading: string }[];
     const res = await put(s.token, { exportColumns: layout.filter((c) => c.key !== "aadhaarNumber") });
     expect(res.status).toBe(400);

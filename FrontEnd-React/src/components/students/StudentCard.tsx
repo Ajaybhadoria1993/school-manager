@@ -28,7 +28,7 @@ export function StudentCard({ student, index }: { student: StudentRow; index: nu
         <div className="relative flex items-start gap-3.5">
           <StudentAvatar name={student.name} seed={student.admissionNumber} className="transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-105" />
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-base font-bold tracking-tight text-foreground">{student.name}</h3>
+            <h3 className="text-section-heading truncate">{student.name}</h3>
             <p className="truncate font-mono text-xs font-semibold text-foreground-muted">{student.admissionNumber}</p>
           </div>
           <ChevronRight className="mt-1 size-4 shrink-0 text-foreground-muted/60 transition-transform group-hover:translate-x-0.5" aria-hidden />

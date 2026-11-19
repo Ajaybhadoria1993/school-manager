@@ -33,7 +33,7 @@ export function EventRow({
   return (
     <li className="flex items-start gap-3 rounded-xl p-2.5 transition-colors hover:bg-surface-muted/60">
       <span aria-hidden className={cn("flex size-12 shrink-0 flex-col items-center justify-center rounded-xl text-center leading-none", taken ? "bg-surface-muted text-foreground-muted" : look.tile)}>
-        <span className="text-lg font-extrabold">{Number(e.startDate.slice(8, 10))}</span>
+        <span className="text-lg font-bold">{Number(e.startDate.slice(8, 10))}</span>
         <span className="mt-0.5 text-[10px] font-bold uppercase tracking-wide">{MONTH_SHORT[Number(e.startDate.slice(5, 7)) - 1]}</span>
       </span>
       <span className="min-w-0 flex-1">

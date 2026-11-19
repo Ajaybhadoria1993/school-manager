@@ -1,14 +1,15 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { Check, CircleCheck, FolderTree, Hash, Info, Users, Wand2 } from "lucide-react";
+import { Check, CircleCheck, FolderTree, Hash, Users, Wand2 } from "lucide-react";
 import { MAX_ROLL_NUMBER } from "../../../constants/students";
 import { fieldId, type StudentForm } from "../../../hooks/useStudentForm";
 import { plural } from "../../../utils/academics";
+import { classNumber, streamOf } from "../../../utils/classNumber";
 import { cn } from "../../../utils/helpers";
 import type { AcademicStructure, ClassItem, SectionItem, SectionLoad, StudentCapacity } from "../../../types";
 import { Field } from "../../ui/Field";
 import { Input } from "../../ui/Input";
-import { FormCard } from "./FormCard";
+import { FormSection } from "./FormSection";
 
 type SeatState = "open" | "almost" | "full" | "unlimited";
 
@@ -31,6 +32,12 @@ const BADGE: Record<SeatState, { label: string; className: string; bar: string }
 
 /** "Class 5" is shown as 5 among the school's numbered classes; any other name as it is. */
 const shortName = (name: string) => /^class\s*(\d{1,2})$/i.exec(name.trim())?.[1] ?? null;
+
+/** 11 or 12 for a class of the last two years (taught in streams), else null. */
+const seniorOf = (c: ClassItem): 11 | 12 | null => {
+  const number = classNumber(c.name);
+  return number === 11 || number === 12 ? number : null;
+};
 
 const PRE_PRIMARY = /^(pre[-\s]?nursery|nursery|play\s?group|pg|lkg|ukg|kg|kg\s?[12]|jr\.?\s?kg|sr\.?\s?kg|pre[-\s]?primary|prep)$/i;
 
@@ -103,6 +110,9 @@ export function PlacementFields({
   capacity,
   ownSectionId,
   onPickFull,
+  onFullClass,
+  raisedTo = null,
+  pickOnlySection = "withRoom",
   index = 0,
 }: {
   form: StudentForm;
@@ -112,14 +122,30 @@ export function PlacementFields({
   ownSectionId?: string | null;
   /** A full section was pressed: the page asks first, and picks it only on "yes". */
   onPickFull: (section: SectionItem, load: SectionLoad) => void;
+  /** The class that is picked has no sections and no seat left: the page asks what to do. Without it the class box only says it is full. */
+  onFullClass?: (klass: ClassItem, enrolled: number, capacity: number) => void;
+  /** The seats the picked section (or class) will be raised to when the student is admitted, because the person said so. */
+  raisedTo?: number | null;
+  /**
+   * A class with just one section has it picked with the class (there is nothing to choose). "always": even when it is full (Add student
+   * asks what to do when Next is pressed on the Academic step). "withRoom": only when it has a seat (a student's page and a transfer have
+   * no such question, so a full one is left for the person to press).
+   */
+  pickOnlySection?: "always" | "withRoom";
   index?: number;
 }) {
   const name = useId();
   const { values } = form;
   const klass = structure.classes.find((c) => c.id === values.classId);
   const loads = new Map((capacity?.sections ?? []).map((s) => [s.sectionId, s]));
-  const year = structure.academicYear?.name;
   const picked = klass?.sections.find((s) => s.id === values.sectionId);
+
+  // Class 11 and 12 are taught in streams, each its own class ("Class 11 Science"): they show as one chip each, and the stream is asked
+  // before anything else. The class stays empty until a stream is picked, so a student is never put in "Class 11" as a whole.
+  const [asked, setAsked] = useState<11 | 12 | null>(null);
+  const seniorNumber = (klass ? seniorOf(klass) : null) ?? asked;
+  const streamClasses = seniorNumber ? structure.classes.filter((c) => seniorOf(c) === seniorNumber && streamOf(c.name) !== null) : [];
+  const streamMissing = seniorNumber !== null && !values.classId;
 
   // The next free roll number where the student is going: the picked section's, or the whole class's for a class without sections.
   const nextFree = !klass
@@ -132,9 +158,20 @@ export function PlacementFields({
   const roll = values.rollNumber.trim();
   const rollOk = /^\d+$/.test(roll) && Number(roll) >= 1 && Number(roll) <= MAX_ROLL_NUMBER && !form.errorOf("rollNumber");
 
-  function pickClass(id: string) {
+  function pickClass(id: string, fromStream = false) {
+    if (!fromStream) setAsked(null);
     if (id === values.classId) return;
     form.set("classId", id);
+    const chosen = structure.classes.find((c) => c.id === id);
+    const only = chosen?.sections.length === 1 ? chosen.sections[0] : null;
+    const fits = only ? seatState(loads.get(only.id), only.id === ownSectionId).state !== "full" : false;
+    form.set("sectionId", only && (pickOnlySection === "always" || fits) ? only.id : "");
+  }
+
+  function pickSenior(number: 11 | 12) {
+    if (seniorNumber === number) return;
+    setAsked(number);
+    form.set("classId", "");
     form.set("sectionId", "");
   }
 
@@ -145,14 +182,66 @@ export function PlacementFields({
     else form.set("sectionId", id);
   }
 
-  const pickedSeat = picked ? seatState(loads.get(picked.id), picked.id === ownSectionId) : null;
+  // The seats the person added to the picked section (they are written when the student is admitted) are on the page already.
+  const seatsOf = (s: SectionItem) => {
+    const load = loads.get(s.id);
+    const lifted = raisedTo !== null && s.id === values.sectionId && load?.capacity != null && raisedTo > load.capacity;
+    return { seat: seatState(lifted && load ? { ...load, capacity: raisedTo } : load, s.id === ownSectionId), lifted };
+  };
+  const pickedSeats = picked ? seatsOf(picked) : null;
+  const pickedSeat = pickedSeats?.seat ?? null;
   const sectionNote = picked && pickedSeat
     ? pickedSeat.capacity === null
       ? `${klass?.name} - ${picked.name}: ${pickedSeat.enrolled} student${pickedSeat.enrolled === 1 ? "" : "s"}, no seat limit.`
-      : `${klass?.name} - ${picked.name}: ${pickedSeat.enrolled} of ${pickedSeat.capacity} seats taken${pickedSeat.enrolled >= pickedSeat.capacity && picked.id !== ownSectionId ? " (over the limit, as you chose)" : `, ${Math.max(0, pickedSeat.capacity - pickedSeat.enrolled)} left`}.`
+      : pickedSeats?.lifted
+        ? `${klass?.name} - ${picked.name}: ${pickedSeat.enrolled} of ${pickedSeat.capacity} seats taken, ${Math.max(0, pickedSeat.capacity - pickedSeat.enrolled)} left. Its seats become ${raisedTo} when you admit.`
+        : `${klass?.name} - ${picked.name}: ${pickedSeat.enrolled} of ${pickedSeat.capacity} seats taken${pickedSeat.enrolled >= pickedSeat.capacity && picked.id !== ownSectionId ? " (over the limit, as you chose)" : `, ${Math.max(0, pickedSeat.capacity - pickedSeat.enrolled)} left`}.`
     : klass && klass.sections.length > 0
       ? `${plural(klass.sections.length, "section")} this year. Pick one.`
       : "";
+
+  // A class with no sections holds its students itself, so its own seats are the limit (none set: no limit).
+  const wholeClass =
+    klass && klass.sections.length === 0 && klass.capacity !== null
+      ? { capacity: klass.capacity, enrolled: capacity?.classes.find((c) => c.classId === klass.id)?.enrolled ?? 0 }
+      : null;
+  const wholeClassFull = wholeClass !== null && wholeClass.enrolled >= wholeClass.capacity && !(raisedTo !== null);
+
+  /** The chips of the groups: a numbered class as its number, Class 11 and 12 once each (their streams are asked next). */
+  const seen = new Set<number>();
+  const chipsOf = (classes: ClassItem[]) =>
+    classes.flatMap((c): ({ kind: "class"; c: ClassItem } | { kind: "senior"; number: 11 | 12 })[] => {
+      const number = seniorOf(c);
+      if (number === null) return [{ kind: "class", c }];
+      if (seen.has(number)) return [];
+      seen.add(number);
+      return [{ kind: "senior", number }];
+    });
+
+  /** One round chip of the class or stream list. */
+  const chip = (key: string, label: string, on: boolean, onPick: () => void, opts: { short?: string | null; title?: string; text?: ReactNode; group?: string } = {}) => (
+    <label key={key} className="relative block" title={opts.title ?? label}>
+      <input type="radio" name={`${name}-${opts.group ?? "class"}`} value={key} checked={on} onChange={onPick} aria-label={label} className="peer sr-only" />
+      <span
+        className={cn(
+          "inline-flex h-10 cursor-pointer select-none items-center justify-center gap-1 rounded-lg border text-sm font-semibold transition-all duration-150",
+          opts.short ? "w-[3.25rem]" : "px-4",
+          "peer-focus-visible:ring-4 peer-focus-visible:ring-primary/20",
+          on ? "border-primary bg-primary text-primary-foreground shadow-card" : "border-border bg-surface text-foreground hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-card"
+        )}
+      >
+        {on && <Check className="size-3.5" aria-hidden />}
+        {opts.short ? (
+          <>
+            <span className="sr-only">Class </span>
+            {opts.short}
+          </>
+        ) : (
+          (opts.text ?? label)
+        )}
+      </span>
+    </label>
+  );
 
   const summary = klass && (
     <p aria-live="polite" className="absolute -top-1 right-0 inline-flex h-7 max-w-[70%] items-center overflow-hidden whitespace-nowrap divide-x divide-emerald-300/70 rounded-full border border-emerald-300/70 bg-success-soft text-xs font-bold text-success">
@@ -164,12 +253,10 @@ export function PlacementFields({
   );
 
   return (
-    <FormCard
+    <FormSection
       index={index}
       icon={FolderTree}
-      tone="success"
       title="Class and section"
-      description={year ? `Where the student sits in ${year}. Only this year's sections are offered.` : "Where the student sits this year."}
       tip="A student has one class (and section) in each academic year. Next year's class is given at promotion; this year's place stays in their history."
     >
       {structure.classes.length === 0 ? (
@@ -183,86 +270,101 @@ export function PlacementFields({
       ) : (
         <div className="space-y-5">
           {/* The live summary sits on the label's line, out of the flow, so it never changes the card's height. */}
-          <Field id={fieldId("classId")} label="Class" error={form.errorOf("classId")} className="relative">
+          <Field id={fieldId("classId")} label="Class" error={streamMissing ? undefined : form.errorOf("classId")} className="relative">
             {summary}
             <div
               id={fieldId("classId")}
               tabIndex={-1}
               role="radiogroup"
               aria-label="Class"
-              className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-background/60 outline-none"
+              className="flex flex-wrap gap-x-9 gap-y-4 rounded-xl border border-border bg-background/60 px-4 py-3.5 outline-none"
             >
+              {/* The groups sit side by side (Pre-primary, Primary, Middle, Secondary...) and wrap on a narrow screen: the whole picker is
+                  one or two short lines, so the section and the roll number are on the screen at the same time. */}
               {classGroups(structure).map((group) => (
-                <div key={group.key} className="grid min-w-0 items-center gap-x-4 gap-y-2 px-4 py-3 sm:grid-cols-[8.5rem_minmax(0,1fr)]">
-                  {group.title && <p className="text-[11px] font-bold uppercase tracking-wider text-foreground-muted sm:col-start-1">{group.title}</p>}
-                  <div className={cn("flex flex-wrap gap-2", !group.title && "sm:col-span-2")}>
-                    {group.classes.map((c) => {
-                      const short = shortName(c.name);
-                      const on = c.id === values.classId;
-                      return (
-                        <label key={c.id} className="relative block" title={c.name}>
-                          <input type="radio" name={`${name}-class`} value={c.id} checked={on} onChange={() => pickClass(c.id)} aria-label={c.name} className="peer sr-only" />
-                          <span
-                            className={cn(
-                              "inline-flex h-10 cursor-pointer select-none items-center justify-center gap-1 rounded-lg border text-sm font-semibold transition-all duration-150",
-                              short ? "min-w-11 px-3" : "px-4",
-                              "peer-focus-visible:ring-4 peer-focus-visible:ring-primary/20",
-                              on
-                                ? "border-primary bg-primary text-primary-foreground shadow-card"
-                                : "border-border bg-surface text-foreground hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-card"
-                            )}
-                          >
-                            {on && <Check className="size-3.5" aria-hidden />}
-                            {short ? (
-                              <>
-                                <span className="sr-only">Class </span>
-                                {short}
-                              </>
-                            ) : (
-                              c.name
-                            )}
-                          </span>
-                        </label>
-                      );
-                    })}
+                <div key={group.key} className="min-w-0">
+                  {group.title && <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-foreground-muted">{group.title}</p>}
+                  <div className="flex flex-wrap gap-2">
+                    {chipsOf(group.classes).map((entry) =>
+                      entry.kind === "senior"
+                        ? chip(`senior-${entry.number}`, `Class ${entry.number}`, seniorNumber === entry.number, () => pickSenior(entry.number), { short: String(entry.number) })
+                        : chip(entry.c.id, entry.c.name, entry.c.id === values.classId, () => pickClass(entry.c.id), { short: shortName(entry.c.name), text: entry.c.name })
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           </Field>
 
-          {/* The section (one row whose height never changes), then the roll number under it. */}
-          <div className="space-y-5">
+          {seniorNumber !== null && (
+            <Field id={fieldId("stream")} label={`Stream of Class ${seniorNumber}`} error={streamMissing && form.errorOf("classId") ? "Choose the stream" : undefined}>
+              {streamClasses.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-border bg-background px-4 py-4 text-sm text-foreground-muted">
+                  Class {seniorNumber} has no streams yet.{" "}
+                  <Link to="/school/classes" className="font-semibold text-primary-deep underline-offset-2 hover:underline">
+                    Add them in Classes & Sections
+                  </Link>{" "}
+                  first.
+                </p>
+              ) : (
+                <div role="radiogroup" aria-label={`Stream of Class ${seniorNumber}`} className="flex flex-wrap gap-2">
+                  {streamClasses.map((c) => chip(c.id, c.name, c.id === values.classId, () => pickClass(c.id, true), { text: streamOf(c.name), group: "stream" }))}
+                </div>
+              )}
+            </Field>
+          )}
+
+          {/* The section (one row whose height never changes) with the roll number beside it; under each other on a narrow screen. */}
+          <div className="grid gap-x-8 gap-y-5 lg:grid-cols-[minmax(0,1fr)_17rem]">
             <Field
               id={fieldId("sectionId")}
               label={klass ? `Section of ${klass.name}` : "Section"}
               optional={!!klass && klass.sections.length === 0}
               error={form.errorOf("sectionId")}
               hint={<span className="block truncate">{sectionNote || " "}</span>}
-              className="relative min-w-0"
+              className="min-w-0"
             >
-              <span className="pointer-events-none absolute right-0 top-0 hidden items-center gap-1 text-[11px] font-semibold text-foreground-muted sm:inline-flex">
-                <Info className="size-3" aria-hidden />
-                Seats shown live
-              </span>
               <div id={fieldId("sectionId")} tabIndex={-1} className="outline-none">
                 {!klass ? (
-                  <p className={emptyBox}>Pick a class to see its sections.</p>
+                  <p className={emptyBox}>{seniorNumber !== null ? "Pick the stream to see its sections." : "Pick a class to see its sections."}</p>
                 ) : klass.sections.length === 0 ? (
-                  <div className="flex h-[5.5rem] w-full items-center gap-3 rounded-xl border border-primary/40 bg-primary-soft/50 px-4">
-                    <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary-deep">
+                  <div
+                    className={cn(
+                      "flex h-[5.5rem] w-full items-center gap-3 rounded-xl border px-4",
+                      wholeClassFull ? "border-warning-line bg-warning-soft" : "border-primary/40 bg-primary-soft/50"
+                    )}
+                  >
+                    <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-full", wholeClassFull ? "bg-warning-soft text-warning" : "bg-primary-soft text-primary-deep")}>
                       <Users className="size-5" aria-hidden />
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-foreground">No section</p>
-                      <p className="mt-0.5 text-xs text-foreground-muted">{klass.name} has no sections this year: the student joins the whole class.</p>
+                      <p className="mt-0.5 text-xs text-foreground-muted">
+                        {wholeClass === null
+                          ? `${klass.name} has no sections this year: the student joins the whole class.`
+                          : wholeClassFull
+                            ? `${klass.name} is full: ${wholeClass.enrolled} of ${wholeClass.capacity} seats are taken.`
+                            : raisedTo !== null && wholeClass.enrolled >= wholeClass.capacity
+                              ? `${klass.name} has ${wholeClass.enrolled} of ${raisedTo} seats taken. Its seats become ${raisedTo} when you admit.`
+                              : `${klass.name} has no sections this year: the student joins the whole class. ${wholeClass.enrolled} of ${wholeClass.capacity} seats taken.`}
+                      </p>
                     </div>
-                    <CircleCheck className="size-5 shrink-0 text-primary" aria-hidden />
+                    {wholeClassFull && onFullClass ? (
+                      <button
+                        type="button"
+                        onClick={() => onFullClass(klass, wholeClass.enrolled, wholeClass.capacity)}
+                        className="shrink-0 rounded-lg border border-warning-line bg-surface px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-background"
+                      >
+                        Add seats or make sections
+                      </button>
+                    ) : (
+                      <CircleCheck className="size-5 shrink-0 text-primary" aria-hidden />
+                    )}
                   </div>
                 ) : (
                   <ScrollRow key={klass.id} label={`Section of ${klass.name}`}>
                     {klass.sections.map((s) => {
-                      const seat = seatState(loads.get(s.id), s.id === ownSectionId);
+                      const { seat } = seatsOf(s);
                       const badge = BADGE[seat.state];
                       const on = s.id === values.sectionId;
                       const percent = seat.capacity ? Math.min(100, Math.round((seat.enrolled / seat.capacity) * 100)) : 0;
@@ -278,7 +380,7 @@ export function PlacementFields({
                             )}
                           >
                             <span className="flex items-center justify-between gap-2">
-                              <span className="text-lg font-extrabold leading-none text-foreground">{s.name}</span>
+                              <span className="text-lg font-bold leading-none text-foreground">{s.name}</span>
                               {on ? (
                                 <span className="flex size-5 items-center justify-center rounded-full bg-primary text-white">
                                   <Check className="size-3" aria-hidden />
@@ -304,34 +406,34 @@ export function PlacementFields({
             </Field>
 
             <Field id={fieldId("rollNumber")} label="Roll number" optional error={form.errorOf("rollNumber")} hint={`1 to ${MAX_ROLL_NUMBER}, once in a section.`}>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <div className="relative w-full sm:w-56">
+              <div className="space-y-2">
+                <div className="relative">
                   <Input {...form.bind("rollNumber", "digits")} icon={Hash} inputMode="numeric" maxLength={3} placeholder="For example 12" className="pr-9" />
                   {rollOk && <CircleCheck className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-success" aria-hidden />}
                 </div>
-                <div className="flex h-10 items-center gap-2">
-                <span className="rounded-md bg-surface-muted px-2 py-1 text-xs font-semibold text-foreground-muted">
-                  Next free: <span className="text-foreground">{nextFree ?? "-"}</span>
-                </span>
-                <button
-                  type="button"
-                  disabled={nextFree === null || roll === String(nextFree)}
-                  onClick={() => {
-                    if (nextFree === null) return;
-                    form.set("rollNumber", String(nextFree));
-                    form.touch("rollNumber");
-                  }}
-                  className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-semibold text-primary-deep transition-colors hover:border-primary/50 hover:bg-primary-soft disabled:pointer-events-none disabled:opacity-50"
-                >
-                  <Wand2 className="size-3.5" aria-hidden />
-                  Auto-assign
-                </button>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="rounded-md bg-surface-muted px-2 py-1 text-xs font-semibold text-foreground-muted">
+                    Next free: <span className="text-foreground">{nextFree ?? "-"}</span>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={nextFree === null || roll === String(nextFree)}
+                    onClick={() => {
+                      if (nextFree === null) return;
+                      form.set("rollNumber", String(nextFree));
+                      form.touch("rollNumber");
+                    }}
+                    className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-semibold text-primary-deep transition-colors hover:border-primary/50 hover:bg-primary-soft disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    <Wand2 className="size-3.5" aria-hidden />
+                    Auto-assign
+                  </button>
                 </div>
               </div>
             </Field>
           </div>
         </div>
       )}
-    </FormCard>
+    </FormSection>
   );
 }

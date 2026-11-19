@@ -25,7 +25,7 @@ export function ReviewChecklist({ signals, submitted, index }: { signals: Signal
             <ListChecks className="size-5" aria-hidden />
           </span>
           <div>
-            <h2 className="text-base font-semibold tracking-tight text-foreground">{submitted ? "Before you decide" : "Filled in so far"}</h2>
+            <h2 className="text-section-heading">{submitted ? "Before you decide" : "Filled in so far"}</h2>
             <p className="text-xs text-foreground-muted">
               {!submitted
                 ? "The school has not submitted yet"

@@ -14,6 +14,7 @@ export function StudentFormHeader({
   crumbs = [{ label: "Students", to: "/school/students" }],
   onBack,
   actions,
+  meta,
   info,
 }: {
   title: string;
@@ -24,6 +25,8 @@ export function StudentFormHeader({
   onBack?: () => void;
   /** Buttons at the right of the header (a student's page: Admit a sibling, Edit). */
   actions?: ReactNode;
+  /** A line of facts under the buttons, at the right (the class timetable: periods filled, not saved). */
+  meta?: ReactNode;
   /** A small button right after the title (an (i) that explains the page). */
   info?: ReactNode;
 }) {
@@ -31,13 +34,18 @@ export function StudentFormHeader({
     <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
       <div className="min-w-0 flex-1 basis-64">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-          <h1 className="text-2xl font-extrabold tracking-[-0.02em] text-foreground sm:text-[1.75rem]">{title}</h1>
+          <h1 className="text-page-heading">{title}</h1>
           {info}
           {subtitle && <p className="text-sm text-foreground-muted">{subtitle}</p>}
         </div>
         <PageBackNav className="mt-2" crumbs={[...crumbs, { label: current ?? title }]} onBack={onBack} />
       </div>
-      {actions && <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>}
+      {(actions || meta) && (
+        <div className="flex min-w-0 max-w-full flex-col items-end gap-2">
+          {actions && <div className="flex max-w-full flex-wrap items-center justify-end gap-2">{actions}</div>}
+          {meta && <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-sm print:hidden">{meta}</div>}
+        </div>
+      )}
     </header>
   );
 }

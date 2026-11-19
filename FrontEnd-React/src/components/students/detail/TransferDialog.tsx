@@ -84,7 +84,7 @@ export function TransferDialog({ student, onClose }: { student: StudentDetail; o
     });
   }
 
-  const full = error?.code === "SECTION_FULL";
+  const full = error?.code === "SECTION_FULL" || error?.code === "CLASS_FULL";
 
   return (
     <AppModal

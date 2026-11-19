@@ -13,6 +13,7 @@ export function AppModal({
   tone = "primary",
   busy = false,
   size = "md",
+  wide = false,
   onClose,
   children,
   footer,
@@ -24,6 +25,8 @@ export function AppModal({
   busy?: boolean;
   /** "cover": the whole screen (a wide table, such as the Excel preview). */
   size?: "sm" | "md" | "lg" | "cover";
+  /** Wider than "lg" on a screen that has the room (the date window: the ready-made ranges beside two months). */
+  wide?: boolean;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
@@ -41,7 +44,7 @@ export function AppModal({
       }}
     >
       <Modal.Container size={size}>
-        <Modal.Dialog aria-label={title}>
+        <Modal.Dialog aria-label={title} className={wide ? "sm:max-w-[52rem]!" : undefined}>
           <Modal.CloseTrigger />
           <Modal.Header>
             <Modal.Icon className={tone === "danger" ? "bg-danger-soft text-danger" : "bg-primary-soft text-primary"}>

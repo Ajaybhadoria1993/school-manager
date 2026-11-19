@@ -1,8 +1,10 @@
 import { NextFunction, Request, Response } from "express";
+import { Types } from "mongoose";
 import { ApiError } from "../utils/ApiError";
 import { verifyAccessToken } from "../utils/authUtils";
 import { asyncHandler } from "../utils/asyncHandler";
 import { User, type UserRole } from "../main/users/models/User";
+import { Teacher } from "../main/staff/models/Teacher";
 import { Tenant } from "../main/tenants/models/Tenant";
 
 function bearerToken(req: Request): string | null {
@@ -74,9 +76,32 @@ export async function userFromToken(token: string | null | undefined, requireApp
   };
 }
 
-/** Default guard for business routes: signed in, account active, and the school is approved. */
+const MEDIUM_NOT_FOUND = () => ApiError.forbidden("That medium is not part of your school.", "MEDIUM_NOT_FOUND");
+
+/**
+ * Moving to another medium of the school (see MediumService): for this request every query of every module is about that side, because the
+ * side is what `req.user.tenantId` now says. The school's administrator can open any of its mediums; a teacher, the ones they teach in.
+ * Anything else is refused rather than ignored: quietly answering (or worse, writing) for the wrong medium would be the bigger harm.
+ */
+async function openMedium(req: Request): Promise<void> {
+  const wanted = req.header("X-School-Medium");
+  const user = req.user;
+  if (!wanted || !user?.tenantId || wanted === user.tenantId) return;
+  if (!Types.ObjectId.isValid(wanted)) throw MEDIUM_NOT_FOUND();
+  const allowed =
+    user.role === "school_admin"
+      ? await Tenant.exists({ _id: wanted, parentTenantId: user.tenantId })
+      : user.role === "teacher"
+        ? await Teacher.exists({ tenantId: new Types.ObjectId(wanted), userId: new Types.ObjectId(user.userId), isActive: true })
+        : null;
+  if (!allowed) throw MEDIUM_NOT_FOUND();
+  user.tenantId = wanted;
+}
+
+/** Default guard for business routes: signed in, account active, the school is approved, and on the medium the request names. */
 export const requireAuth = asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
   await authenticate(req, true);
+  await openMedium(req);
   next();
 });
 

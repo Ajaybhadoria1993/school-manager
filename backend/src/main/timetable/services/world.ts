@@ -1,9 +1,11 @@
 import { Types } from "mongoose";
+import { AcademicYear } from "../../academics/models/AcademicYear";
 import { SchoolClass } from "../../academics/models/SchoolClass";
 import { Section } from "../../academics/models/Section";
 import { Teacher } from "../../staff/models/Teacher";
 import { Allotment } from "../../subjects/models/Allotment";
 import { Subject } from "../../subjects/models/Subject";
+import { sidesOfSchool } from "../../tenants/services/schoolSides";
 import { Timetable, type ICell } from "../models/Timetable";
 import { unitLabel } from "./unit";
 import type { AllotmentInfo, Busy, TeacherInfo } from "./checker";
@@ -35,6 +37,13 @@ export interface World {
   teachers: Map<string, WorldTeacher>;
   allotments: Map<string, Map<string, AllotmentInfo>>;
   timetables: Map<string, StoredTimetable>;
+  /**
+   * What the same people already teach on the school's OTHER mediums at the same time (2026-11-18): a teacher of both English and Hindi medium is one
+   * person with one login and a record on each side, and a medium is run on its own, so each side only saw its own timetables and could put the
+   * teacher in two places. These are the other sides' lessons of the teachers this side shares with them, as busy time of THIS side's teacher
+   * records. Empty for a school with one medium.
+   */
+  outsideBusy: Busy[];
 }
 
 /** A teacher as the rules read them, with the subjects they can teach (to suggest them first). */
@@ -49,7 +58,11 @@ const toCells = (cells: ICell[]): StoredTimetable["cells"] =>
     lessons: c.lessons.map((l) => ({ subjectId: l.subjectId.toString(), teacherId: l.teacherId ? l.teacherId.toString() : null, room: l.room ?? null })),
   }));
 
-export async function loadWorld(tenantId: string, yearId: Types.ObjectId): Promise<World> {
+/**
+ * Reads the world of one school's year. `outside: false` leaves out the other mediums' lessons (reading the OTHER side's world to find them must not
+ * read back again).
+ */
+export async function loadWorld(tenantId: string, yearId: Types.ObjectId, options: { outside?: boolean } = {}): Promise<World> {
   const school = new Types.ObjectId(tenantId);
   const [rules, classes, sections, subjects, teachers, allotments, timetables] = await Promise.all([
     loadRules(tenantId),
@@ -77,7 +90,7 @@ export async function loadWorld(tenantId: string, yearId: Types.ObjectId): Promi
     allotmentMap.set(key, unit);
   }
 
-  return {
+  const world: World = {
     tenantId,
     yearId,
     rules,
@@ -106,7 +119,38 @@ export async function loadWorld(tenantId: string, yearId: Types.ObjectId): Promi
         return [unitKey(classId, sectionId), { id: t._id.toString(), classId, sectionId, cells: toCells(t.cells), status: t.status }];
       })
     ),
+    outsideBusy: [],
   };
+  if (options.outside !== false) world.outsideBusy = await otherSidesBusy(tenantId, yearId, teachers);
+  return world;
+}
+
+/**
+ * The lessons the people of this side teach on the school's other mediums (see `World.outsideBusy`). A person is the same person when the two
+ * teacher records point to the same login (`userId`); the other side's year is the one with the same name. Each lesson is put down against THIS
+ * side's teacher record, with the other side's class and medium in its words ("Class 1 - A, English Medium").
+ */
+async function otherSidesBusy(tenantId: string, yearId: Types.ObjectId, teachers: { _id: Types.ObjectId; userId?: Types.ObjectId | null }[]): Promise<Busy[]> {
+  const mine = new Map(teachers.flatMap((t) => (t.userId ? [[t.userId.toString(), t._id.toString()] as [string, string]] : [])));
+  if (mine.size === 0) return [];
+  const others = (await sidesOfSchool(tenantId)).filter((side) => side.id.toString() !== tenantId);
+  if (others.length === 0) return [];
+  const year = await AcademicYear.findOne({ _id: yearId, tenantId: new Types.ObjectId(tenantId) }).select("name").lean();
+  if (!year) return [];
+  const found: Busy[] = [];
+  for (const side of others) {
+    const theirYear = await AcademicYear.findOne({ tenantId: side.id, name: year.name }).select("_id").lean();
+    if (!theirYear) continue;
+    const theirTeachers = await Teacher.find({ tenantId: side.id, userId: { $in: [...mine.keys()] } }).select("userId").lean();
+    if (theirTeachers.length === 0) continue;
+    const asMine = new Map(theirTeachers.map((t) => [t._id.toString(), mine.get(t.userId!.toString())!]));
+    const there = await loadWorld(side.id.toString(), theirYear._id, { outside: false });
+    for (const busy of busyFrom(there, null)) {
+      const local = busy.teacherId ? asMine.get(busy.teacherId) : undefined;
+      if (local) found.push({ ...busy, teacherId: local, room: null, where: `${busy.where}, ${side.label}` });
+    }
+  }
+  return found;
 }
 
 /** The periods a class has on each day it has school, from the timing it follows that day. */
@@ -152,5 +196,7 @@ export function busyFrom(world: World, exceptKey: string | null, only?: (t: Stor
       }
     }
   }
+  // The other mediums' lessons of the same people, unless a caller narrowed to some timetables (a teacher sees the published ones of this side).
+  if (!only) busy.push(...world.outsideBusy);
   return busy;
 }

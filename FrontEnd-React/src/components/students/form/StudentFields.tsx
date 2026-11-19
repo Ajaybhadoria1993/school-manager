@@ -10,7 +10,7 @@ import { Select } from "../../ui/Select";
 import { AdmissionDateField } from "./AdmissionDateField";
 import { ChoiceSelect } from "./ChoiceSelect";
 import { FieldBox } from "./FieldBox";
-import { FormCard } from "./FormCard";
+import { FormSection } from "./FormSection";
 import { FORM_GRID } from "./formGrid";
 
 /**
@@ -39,12 +39,10 @@ export function StudentFields({
   const ageOk = age !== null && age >= MIN_AGE && age <= MAX_AGE;
 
   return (
-    <FormCard
+    <FormSection
       index={index}
       icon={UserRound}
-      tone="primary"
       title="Student"
-      description="The child's name as it should appear on the school's records."
       tip="The admission number (for example ADM-2026-0001) is not typed: the school's counter gives the next one when you press Admit, and it never changes."
     >
       <div className={FORM_GRID}>
@@ -78,7 +76,7 @@ export function StudentFields({
           <p
             aria-live="polite"
             className={cn(
-              "flex h-10 items-center gap-2 rounded-lg border border-dashed px-3.5 text-sm",
+              "flex h-12 items-center gap-2 rounded-[10px] border border-dashed px-3.5 text-sm",
               age === null ? "border-border text-foreground-muted" : ageOk ? "border-success-line bg-success-soft/50 font-semibold text-success" : "border-danger-line bg-danger-soft/50 font-semibold text-danger"
             )}
           >
@@ -96,6 +94,6 @@ export function StudentFields({
         {extras && <FieldBox form={form} rule="bloodGroup" />}
         {extras && <FieldBox form={form} rule="religion" />}
       </div>
-    </FormCard>
+    </FormSection>
   );
 }

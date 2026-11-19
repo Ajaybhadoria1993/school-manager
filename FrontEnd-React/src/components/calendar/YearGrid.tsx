@@ -22,7 +22,7 @@ function MiniMonth({ month, events, kinds, today, onPick, onOpenMonth }: { month
           type="button"
           aria-label={monthTitle(month)}
           onClick={() => onOpenMonth(month)}
-          className={cn("cursor-pointer rounded-md px-1.5 py-0.5 text-sm font-extrabold tracking-tight transition-colors hover:bg-primary-soft hover:text-primary-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40", isCurrent ? "text-primary-deep" : "text-foreground")}
+          className={cn("cursor-pointer rounded-md px-1.5 py-0.5 text-sm font-bold transition-colors hover:bg-primary-soft hover:text-primary-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40", isCurrent ? "text-primary-deep" : "text-foreground")}
         >
           {MONTH_NAMES[Number(month.slice(5, 7)) - 1]}
         </button>

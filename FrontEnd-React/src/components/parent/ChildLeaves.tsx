@@ -111,7 +111,7 @@ export function ChildLeaves({ childId, childName }: { childId: string; childName
   return (
     <section aria-label="Leave" className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-lg font-bold tracking-tight text-foreground">
+        <h2 className="text-section-heading flex items-center gap-2">
           <CalendarMinus className="size-5 text-primary" aria-hidden />
           Leave
         </h2>

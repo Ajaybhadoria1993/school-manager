@@ -1,3 +1,4 @@
+import type { FieldMode } from "../students/constants";
 import type { UserRole } from "../users/models/User";
 
 /**
@@ -73,6 +74,96 @@ export const TEACHER_SHEET_COLUMNS: readonly TeacherSheetColumn[] = [
   { key: "username", header: "Username", kind: "optional", width: 20, note: "Leave empty to have one made from the name (meena.singh_41). A username is one on the whole platform." },
   { key: "password", header: "Password", kind: "optional", width: 18, note: "Leave empty to have one made. 8 to 72 characters with an uppercase letter, a lowercase letter, a number and a symbol." },
 ];
+
+/**
+ * The usual details of a teacher the school decides about (Teacher > Manage fields): needed, optional or not asked. The name, the mobile
+ * number (the login needs it) and the gender are always asked, so they are not here. Each is also a column of the Excel under the same key.
+ */
+export const TEACHER_DETAILS = [
+  { key: "dateOfBirth", label: "Date of birth" },
+  { key: "email", label: "Email" },
+  { key: "address", label: "House and street" },
+  { key: "city", label: "City or village" },
+  { key: "state", label: "State" },
+  { key: "pincode", label: "PIN code" },
+  { key: "employeeCode", label: "Employee code" },
+  { key: "designation", label: "Designation" },
+  { key: "qualification", label: "Qualification" },
+  { key: "experienceYears", label: "Experience (years)" },
+  { key: "joiningDate", label: "Joining date" },
+  { key: "employmentType", label: "Employment type" },
+  { key: "subjects", label: "Subjects they can teach" },
+] as const;
+export type TeacherDetailKey = (typeof TEACHER_DETAILS)[number]["key"];
+export const TEACHER_DETAIL_KEYS: readonly string[] = TEACHER_DETAILS.map((d) => d.key);
+export type TeacherFieldRules = Record<TeacherDetailKey, FieldMode>;
+/** A new school asks every detail and needs none (as Add teacher always did). */
+export const DEFAULT_TEACHER_RULES: TeacherFieldRules = Object.fromEntries(TEACHER_DETAILS.map((d) => [d.key, "optional"])) as TeacherFieldRules;
+
+/** One column the teachers' Excel can have: the sample file's columns, the login's username and what only says more about the teacher. */
+export interface TeacherExportColumn {
+  key: string;
+  /** The heading a new school's file has. */
+  heading: string;
+  group: string;
+  /** In every export (the name and the mobile number: the upload needs them). */
+  locked?: true;
+  /** Only says more about the teacher: an upload does not read it. */
+  extra?: true;
+}
+
+export const TEACHER_EXPORT_COLUMNS: readonly TeacherExportColumn[] = [
+  { key: "name", heading: "Name", group: "Personal", locked: true },
+  { key: "mobile", heading: "Mobile", group: "Personal", locked: true },
+  { key: "gender", heading: "Gender", group: "Personal" },
+  { key: "dateOfBirth", heading: "Date of Birth", group: "Personal" },
+  { key: "email", heading: "Email", group: "Personal" },
+  { key: "address", heading: "Address", group: "Address" },
+  { key: "city", heading: "City", group: "Address" },
+  { key: "state", heading: "State", group: "Address" },
+  { key: "pincode", heading: "PIN Code", group: "Address" },
+  { key: "employeeCode", heading: "Employee Code", group: "Job" },
+  { key: "designation", heading: "Designation", group: "Job" },
+  { key: "qualification", heading: "Qualification", group: "Job" },
+  { key: "experienceYears", heading: "Experience (years)", group: "Job" },
+  { key: "joiningDate", heading: "Joining Date", group: "Job" },
+  { key: "employmentType", heading: "Employment Type", group: "Job" },
+  { key: "subjects", heading: "Subjects", group: "Teaching" },
+  { key: "username", heading: "Username", group: "Login" },
+  { key: "status", heading: "Status", group: "About the teacher", extra: true },
+  { key: "classTeacherOf", heading: "Class teacher of", group: "About the teacher", extra: true },
+  { key: "given", heading: "Classes given", group: "About the teacher", extra: true },
+];
+export const TEACHER_COLUMN_KEYS: ReadonlySet<string> = new Set(TEACHER_EXPORT_COLUMNS.map((c) => c.key));
+/** The columns in every export. */
+export const LOCKED_TEACHER_COLUMNS: readonly string[] = TEACHER_EXPORT_COLUMNS.filter((c) => c.locked).map((c) => c.key);
+
+/** What the file looks like for a school that has no teacher yet: one sample row, only for trying the file. */
+export const TEACHER_SAMPLE_ROW: Record<string, string | number> = {
+  name: "Sample Teacher",
+  mobile: "9876500000",
+  gender: "Female",
+  dateOfBirth: "14-07-1988",
+  email: "sample.teacher@example.com",
+  address: "12 MG Road",
+  city: "Bhopal",
+  state: "Madhya Pradesh",
+  pincode: "462001",
+  employeeCode: "T-001",
+  designation: "PGT (Post graduate teacher)",
+  qualification: "M.Sc., B.Ed.",
+  experienceYears: 8,
+  joiningDate: "01-06-2018",
+  employmentType: "Full time",
+  subjects: "Mathematics, Science",
+  username: "sample.teacher_01",
+  status: "Teaching",
+  classTeacherOf: "",
+  given: "",
+};
+
+/** How many teachers the Export page's preview shows. */
+export const MAX_TEACHER_EXPORT_PREVIEW_ROWS = 10;
 
 /** The names a school's own field may not take: the columns of the sample file, and the ones of the export that only say more. */
 export const TEACHER_FIELD_NAMES: readonly string[] = [...TEACHER_SHEET_COLUMNS.map((c) => c.header), "Status", "Class teacher of", "Classes given"];

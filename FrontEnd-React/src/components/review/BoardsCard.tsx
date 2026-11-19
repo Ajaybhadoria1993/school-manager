@@ -2,6 +2,7 @@ import { BookOpen, Languages } from "lucide-react";
 import { Chip } from "@heroui/react";
 import { boardLabel } from "../../constants/schoolOptions";
 import type { BoardEntry } from "../../types";
+import { planSummary } from "../../utils/mediumPlans";
 import { DetailCard } from "./DetailCard";
 import { CopyButton } from "./RowActions";
 
@@ -21,7 +22,8 @@ export function BoardsCard({ boards, index }: { boards: BoardEntry[]; index: num
       ) : (
         <ul className="divide-y divide-border">
           {boards.map((entry) => (
-            <li key={`${entry.board}-${entry.stateBoard}-${entry.otherBoard}`} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <li key={`${entry.board}-${entry.stateBoard}-${entry.otherBoard}`} className="py-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 <p className="text-base font-semibold text-foreground">{boardLabel(entry)}</p>
                 {entry.board === "State Board" && <p className="text-xs text-foreground-muted">State board</p>}
@@ -53,6 +55,16 @@ export function BoardsCard({ boards, index }: { boards: BoardEntry[]; index: num
                   </Chip>
                 )}
               </div>
+              </div>
+              {(entry.plans ?? []).length > 0 && (
+                <ul aria-label={`${boardLabel(entry)} mediums`} className="mt-3 space-y-1 text-sm">
+                  {entry.plans.map((plan) => (
+                    <li key={plan.medium}>
+                      <span className="font-semibold text-foreground">{plan.medium} Medium:</span> <span className="text-foreground-muted">{planSummary(plan)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
           ))}
         </ul>

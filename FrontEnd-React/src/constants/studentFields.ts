@@ -39,7 +39,8 @@ export const STUDENT_FORM_FIELDS = [
   { key: "addressCity", label: "City or village", group: "Address", default: "required", message: "Enter the city" },
   { key: "addressState", label: "State", group: "Address", default: "required", message: "Choose the state" },
   { key: "addressPincode", label: "PIN code", group: "Address", default: "required", message: "PIN code is 6 digits" },
-  { key: "aadhaarNumber", label: "Aadhaar number", group: "IDs", default: "required", message: "Enter the Aadhaar number" },
+  // Asked, not needed: a child may have no Aadhaar number yet, and a school may not refuse an admission for it (as on the server).
+  { key: "aadhaarNumber", label: "Aadhaar number", group: "IDs", default: "optional", message: "Enter the Aadhaar number" },
   { key: "samagraId", label: "Samagra ID", group: "IDs", default: "hidden", message: "Enter the Samagra ID" },
   { key: "apaarId", label: "APAAR ID", group: "IDs", default: "hidden", message: "Enter the APAAR ID" },
   { key: "pen", label: "PEN (UDISE+)", group: "IDs", default: "hidden", message: "Enter the PEN" },
@@ -153,6 +154,8 @@ export interface CustomFieldDef {
   /** The choices of a list; empty for the other kinds. */
   options: string[];
   mode: FieldMode;
+  /** The classes (1 to 12, by number: "Class 11 Science" is 11) it is asked for; none (or no list) = every class. */
+  classNumbers?: number[];
 }
 export const MAX_CUSTOM_FIELDS = 20;
 export const MAX_CUSTOM_LABEL = 40;

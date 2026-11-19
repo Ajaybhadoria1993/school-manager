@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { AtSign, BookOpen, Briefcase, CalendarDays, KeyRound, ListPlus, LogOut, Pencil, Repeat2, RotateCcw, UserRound, UserRoundCog } from "lucide-react";
 import { employmentLabel } from "../../constants/teachers";
+import { useMedium } from "../../hooks/useMedium";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useTeacherBase } from "../../hooks/useTeacherBase";
 import { DAY_SHORT } from "../../constants/timetable";
@@ -11,11 +12,12 @@ import { getApiError } from "../../utils/apiErrors";
 import { askedFields, ownAnswerText } from "../../utils/teacherOwn";
 import { formatMobile } from "../../utils/students";
 import type { Teacher } from "../../types";
-import { AssignClassDialog } from "../../components/teachers/AssignClassDialog";
 import { ChangeUsernameDialog } from "../../components/teachers/ChangeUsernameDialog";
 import { Block, None, Row } from "../../components/teachers/DetailBlocks";
 import { LeaveTeacherModal } from "../../components/teachers/LeaveTeacherModal";
 import { TeacherClassesBlock } from "../../components/teachers/TeacherClassesBlock";
+import { useCan } from "../../hooks/useCan";
+import { TeacherMediumsBlock } from "../../components/teachers/TeacherMediumsBlock";
 import { MakeLoginDialog, ResetPasswordDialog } from "../../components/teachers/LoginDialogs";
 import { ReplaceTeacherDialog } from "../../components/teachers/ReplaceTeacherDialog";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
@@ -39,6 +41,11 @@ const addressText = (a: Teacher["address"]) => [a.line1, a.city, a.state, a.pinc
 export default function TeacherDetailPage() {
   // A year that is over is only looked at: no Change, Give classes, Has left, login changes (the server refuses them too).
   const readOnly = useReadOnlyYear();
+  // Changing a teacher, their classes and their login is a permission of its own (the school's Permissions page).
+  const can = useCan();
+  const mayChange = can("teachers.edit");
+  // Only the administrator sees every medium of the school, and a school with one medium has none to add a teacher to.
+  const medium = useMedium();
   const { id = "" } = useParams();
   const { base, label } = useTeacherBase();
   const res = useGetTeacherQuery(id);
@@ -47,7 +54,8 @@ export default function TeacherDetailPage() {
   // The school's own fields the school asks (Teacher > Fields): a card of their answers.
   const own = askedFields(useGetTeacherSettingsQuery().data?.data.customFields);
   const { push } = useToast();
-  const [dialog, setDialog] = useState<"password" | "login" | "leave" | "replace" | "username" | "assign" | null>(null);
+  const navigate = useNavigate();
+  const [dialog, setDialog] = useState<"password" | "login" | "leave" | "replace" | "username" | null>(null);
   const t = res.data?.data;
   const crumbs = [{ label, to: base }];
 
@@ -94,11 +102,13 @@ export default function TeacherDetailPage() {
           <>
             {t.isActive ? (
               <>
-                <Link to={`/school/timetable/teacher/${t.id}`} className={linkClass}>
-                  <CalendarDays className="size-4" aria-hidden />
-                  Week
-                </Link>
-                {!readOnly && (
+                {can("timetable.edit") && (
+                  <Link to={`/school/timetable/teacher/${t.id}`} className={linkClass}>
+                    <CalendarDays className="size-4" aria-hidden />
+                    Week
+                  </Link>
+                )}
+                {!readOnly && mayChange && (
                   <>
                     <Link to={`${base}/${t.id}/edit`} className={linkClass}>
                       <Pencil className="size-4" aria-hidden />
@@ -118,7 +128,7 @@ export default function TeacherDetailPage() {
                   </>
                 )}
               </>
-            ) : readOnly ? null : (
+            ) : readOnly || !mayChange ? null : (
               <Button onClick={bringBack}>
                 <RotateCcw className="size-4" aria-hidden />
                 Bring back
@@ -128,7 +138,7 @@ export default function TeacherDetailPage() {
         }
       />
 
-      <TeacherClassesBlock teacher={t} onAssign={() => setDialog("assign")} />
+      <TeacherClassesBlock teacher={t} onAssign={() => navigate(`${base}/${t.id}/assign-class`)} canChange={mayChange} />
 
       <div className="grid items-start gap-6 md:grid-cols-2">
         <Block icon={UserRound} tone="primary" title="Personal" index={0}>
@@ -183,7 +193,7 @@ export default function TeacherDetailPage() {
                 <span className="font-mono">{t.login.username}</span>
               </Row>
               <Row label="Status">{t.login.isActive ? <Badge tone="success">Active</Badge> : <Badge tone="warning">Closed</Badge>}</Row>
-              <div className={readOnly ? "hidden" : "flex flex-wrap gap-2 pt-3"}>
+              <div hidden={!mayChange} className={readOnly ? "hidden" : "flex flex-wrap gap-2 pt-3"}>
                 <Button variant="outline" onClick={() => setDialog("username")}>
                   <AtSign className="size-4" aria-hidden />
                   Change username
@@ -197,7 +207,7 @@ export default function TeacherDetailPage() {
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-foreground-muted">No login yet</p>
-              {!readOnly && (
+              {!readOnly && mayChange && (
                 <Button variant="outline" onClick={() => setDialog("login")}>
                   <UserRoundCog className="size-4" aria-hidden />
                   Make a login
@@ -206,6 +216,8 @@ export default function TeacherDetailPage() {
             </div>
           )}
         </Block>
+
+        {medium.isAdmin && medium.mediums.length > 1 && <TeacherMediumsBlock teacher={t} readOnly={readOnly} index={5} />}
       </div>
 
       {dialog === "password" && <ResetPasswordDialog teacher={t} onClose={() => setDialog(null)} />}
@@ -213,7 +225,6 @@ export default function TeacherDetailPage() {
       {dialog === "leave" && <LeaveTeacherModal teacher={t} onClose={() => setDialog(null)} />}
       {dialog === "replace" && <ReplaceTeacherDialog teacher={t} onClose={() => setDialog(null)} />}
       {dialog === "username" && <ChangeUsernameDialog teacher={t} onClose={() => setDialog(null)} />}
-      {dialog === "assign" && <AssignClassDialog teacher={t} onClose={() => setDialog(null)} />}
     </div>
   );
 }

@@ -97,7 +97,7 @@ export function DepartmentPanel({ name, departmentId, tone, classes }: { name: s
             </span>
             <div className="min-w-[10rem] flex-1">
               <div className="flex flex-wrap items-center gap-2.5">
-                <h2 className="text-lg font-bold tracking-tight text-foreground">{name}</h2>
+                <h2 className="text-section-heading">{name}</h2>
                 <Badge tone={BADGE_TONE[tone]}>{plural(classes.length, "class")}</Badge>
               </div>
               {range && <p className="mt-0.5 text-sm text-foreground-muted">{range}</p>}

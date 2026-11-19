@@ -9,8 +9,8 @@ import { NotificationService } from "../../notifications/services/notification.s
 import { todayInIndia } from "../../students/schemas/students.schemas";
 
 /**
- * Attendance (docs/parent-teacher-flow.md, phase 3): taken once a day for a section (or a class without sections) by its class teacher or
- * the school: everyone is Present to start with, an approved leave is already Leave; one Save. Not on a holiday, not in the future. The
+ * Attendance (docs/parent-teacher-flow.md, phase 3): taken once a day for a section (or a class without sections) by its class teacher ONLY
+ * (2026-11-17: the school looks, it does not mark): everyone is Present to start with, an approved leave is already Leave; one Save. Not on a holiday, not in the future. The
  * parent sees their child's days and percentage.
  */
 
@@ -54,7 +54,7 @@ describe("taking attendance", () => {
     expect(saved.status).toBe(200);
     expect(saved.body.data).toMatchObject({ saved: true, counts: { present: 1, absent: 1, late: 0, leave: 0 }, markedBy: { name: "Meena Singh" } });
     expect((await sheet(s.token, s.a, today)).body.data.students.map((st: { status: string }) => st.status)).toEqual(["present", "absent"]);
-    const again = await save(s.token, s.a, today, [
+    const again = await save(s.tokens.meena, s.a, today, [
       { studentId: s.asha.id, status: "late" },
       { studentId: s.kabir.id, status: "present" },
     ]);
@@ -76,7 +76,7 @@ describe("taking attendance", () => {
     expect(stranger.body.code).toBe("NOT_IN_CLASS");
   });
 
-  it("is taken only by the class teacher of that class or the people who run the school", async () => {
+  it("is taken only by the class teacher of that class; the school may open the day to look, but not take it", async () => {
     const s = await classroomSchool();
     for (const token of [s.tokens.dev, s.tokens.kiran]) {
       const res = await save(token, s.a, today, [{ studentId: s.asha.id, status: "present" }]);
@@ -85,6 +85,12 @@ describe("taking attendance", () => {
       expect((await sheet(token, s.a, today)).status).toBe(403);
     }
     expect((await save(s.tokens.ravi, s.a, today, [])).status).toBe(403);
+    // The school (admin) sees the day and can not take it.
+    expect((await sheet(s.token, s.a, today)).status).toBe(200);
+    const school = await save(s.token, s.a, today, [{ studentId: s.asha.id, status: "absent" }]);
+    expect(school.status).toBe(403);
+    expect(school.body.code).toBe("NOT_CLASS_TEACHER");
+    expect((await sheet(s.tokens.meena, s.a, today)).body.data.saved).toBe(false);
   });
 });
 

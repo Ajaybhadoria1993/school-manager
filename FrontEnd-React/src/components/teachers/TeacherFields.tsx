@@ -4,7 +4,7 @@ import { STATES } from "../../constants/schoolOptions";
 import { GENDERS } from "../../constants/students";
 import { teacherFieldId, type TeacherForm } from "../../hooks/useTeacherForm";
 import type { UsernameStatus } from "../../hooks/useUsernameCheck";
-import { birthDateRange, generatePassword, joiningShortcuts, latestJoiningDate, onlyDigits } from "../../utils/teachers";
+import { birthDateRange, generatePassword, jobAsked, joiningShortcuts, latestJoiningDate, onlyDigits } from "../../utils/teachers";
 import { mobileDigits, todayInIndia } from "../../utils/students";
 import { FormCard } from "../students/form/FormCard";
 import { ChipPicker } from "../ui/ChipPicker";
@@ -30,8 +30,9 @@ export const TEACHER_GRID = "grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-3"
 const twoDigits = onlyDigits(2);
 
 export function PersonalFields({ form, needed, genderNeeded = needed, index = 0 }: { form: TeacherForm; needed: boolean; genderNeeded?: boolean; index?: number }) {
-  const { values } = form;
+  const { values, rules } = form;
   const born = birthDateRange(todayInIndia());
+  const addressAsked = (["address", "city", "state", "pincode"] as const).some((k) => rules[k] !== "hidden");
   return (
     <>
       <FormCard index={index} icon={UserRound} tone="primary" title="Teacher">
@@ -50,7 +51,8 @@ export function PersonalFields({ form, needed, genderNeeded = needed, index = 0 
               }}
             />
           </Field>
-          <Field id={teacherFieldId("dateOfBirth")} label="Date of birth" optional error={form.errorOf("dateOfBirth")}>
+          {rules.dateOfBirth !== "hidden" && (
+          <Field id={teacherFieldId("dateOfBirth")} label="Date of birth" optional={rules.dateOfBirth !== "required"} error={form.errorOf("dateOfBirth")}>
             <DateBox
               id={teacherFieldId("dateOfBirth")}
               label="Date of birth"
@@ -62,47 +64,64 @@ export function PersonalFields({ form, needed, genderNeeded = needed, index = 0 
               invalid={form.errorOf("dateOfBirth") !== undefined}
             />
           </Field>
+          )}
           <Field id={teacherFieldId("mobile")} label="Mobile number" optional={!needed} error={form.errorOf("mobile")}>
             <Input {...form.bind("mobile", mobileDigits)} icon={Phone} prefix="+91" type="tel" inputMode="numeric" autoComplete="off" placeholder="98765 43210" />
           </Field>
-          <Field id={teacherFieldId("email")} label="Email" optional error={form.errorOf("email")}>
-            <Input {...form.bind("email")} icon={Mail} type="email" maxLength={254} autoComplete="off" placeholder="meena@example.com" />
-          </Field>
+          {rules.email !== "hidden" && (
+            <Field id={teacherFieldId("email")} label="Email" optional={rules.email !== "required"} error={form.errorOf("email")}>
+              <Input {...form.bind("email")} icon={Mail} type="email" maxLength={254} autoComplete="off" placeholder="meena@example.com" />
+            </Field>
+          )}
         </div>
       </FormCard>
 
       {/* autoComplete off: the browser would fill in the address of the person typing, not the teacher's. */}
-      <FormCard index={index + 1} icon={Home} tone="info" title="Address">
-        <div className={TEACHER_GRID}>
-          <Field id={teacherFieldId("addressLine1")} label="House and street" optional error={form.errorOf("addressLine1")}>
-            <Input {...form.bind("addressLine1")} icon={Home} maxLength={200} autoComplete="off" placeholder="12, MG Road" />
-          </Field>
-          <Field id={teacherFieldId("city")} label="City or village" optional error={form.errorOf("city")}>
-            <Input {...form.bind("city")} maxLength={80} autoComplete="off" />
-          </Field>
-          <Field id={teacherFieldId("state")} label="State" optional error={form.errorOf("state")}>
-            <Select id={teacherFieldId("state")} value={values.state} options={STATES} placeholder="Choose the state" onChange={(s) => form.set("state", s)} />
-          </Field>
-          <Field id={teacherFieldId("pincode")} label="PIN code" optional error={form.errorOf("pincode")}>
-            <Input {...form.bind("pincode", onlyDigits(6))} icon={Hash} inputMode="numeric" autoComplete="off" placeholder="6 digits" />
-          </Field>
-        </div>
-      </FormCard>
+      {addressAsked && (
+        <FormCard index={index + 1} icon={Home} tone="info" title="Address">
+          <div className={TEACHER_GRID}>
+            {rules.address !== "hidden" && (
+              <Field id={teacherFieldId("addressLine1")} label="House and street" optional={rules.address !== "required"} error={form.errorOf("addressLine1")}>
+                <Input {...form.bind("addressLine1")} icon={Home} maxLength={200} autoComplete="off" placeholder="12, MG Road" />
+              </Field>
+            )}
+            {rules.city !== "hidden" && (
+              <Field id={teacherFieldId("city")} label="City or village" optional={rules.city !== "required"} error={form.errorOf("city")}>
+                <Input {...form.bind("city")} maxLength={80} autoComplete="off" />
+              </Field>
+            )}
+            {rules.state !== "hidden" && (
+              <Field id={teacherFieldId("state")} label="State" optional={rules.state !== "required"} error={form.errorOf("state")}>
+                <Select id={teacherFieldId("state")} value={values.state} options={STATES} placeholder="Choose the state" onChange={(s) => form.set("state", s)} />
+              </Field>
+            )}
+            {rules.pincode !== "hidden" && (
+              <Field id={teacherFieldId("pincode")} label="PIN code" optional={rules.pincode !== "required"} error={form.errorOf("pincode")}>
+                <Input {...form.bind("pincode", onlyDigits(6))} icon={Hash} inputMode="numeric" autoComplete="off" placeholder="6 digits" />
+              </Field>
+            )}
+          </div>
+        </FormCard>
+      )}
     </>
   );
 }
 
 export function JobFields({ form, index = 0 }: { form: TeacherForm; index?: number }) {
-  const { values } = form;
+  const { values, rules } = form;
+  if (!jobAsked(rules)) return null;
   // A post typed by hand is one of the choices from then on.
   const posts = values.designation && !(DESIGNATIONS as readonly string[]).includes(values.designation) ? [values.designation, ...DESIGNATIONS] : [...DESIGNATIONS];
   return (
     <FormCard index={index} icon={Briefcase} tone="navy" title="Job">
       <div className={TEACHER_GRID}>
-        <Field id={teacherFieldId("employeeCode")} label="Employee code" optional error={form.errorOf("employeeCode")}>
-          <Input {...form.bind("employeeCode")} icon={Hash} maxLength={TEACHER_LIMITS.employeeCode} autoComplete="off" placeholder="T-014" />
-        </Field>
-        <Field id={teacherFieldId("designation")} label="Designation" optional error={form.errorOf("designation")}>
+        {rules.employeeCode !== "hidden" && (
+          <Field id={teacherFieldId("employeeCode")} label="Employee code" optional={rules.employeeCode !== "required"} error={form.errorOf("employeeCode")}>
+            <Input {...form.bind("employeeCode")} icon={Hash} maxLength={TEACHER_LIMITS.employeeCode} autoComplete="off" placeholder="T-014" />
+          </Field>
+        )}
+        {rules.designation !== "hidden" && (
+        <Field id={teacherFieldId("designation")} label="Designation" optional={rules.designation !== "required"} error={form.errorOf("designation")}>
           <SearchSelect
             id={teacherFieldId("designation")}
             value={values.designation}
@@ -112,10 +131,14 @@ export function JobFields({ form, index = 0 }: { form: TeacherForm; index?: numb
             create={{ idle: "Type another post…", typed: (text) => `Use “${text}”`, onCreate: (text) => form.set("designation", text.trim().slice(0, TEACHER_LIMITS.designation)) }}
           />
         </Field>
-        <Field id={teacherFieldId("qualification")} label="Qualification" optional error={form.errorOf("qualification")}>
-          <Input {...form.bind("qualification")} maxLength={TEACHER_LIMITS.qualification} placeholder="M.Sc., B.Ed." />
-        </Field>
-        <Field id={teacherFieldId("employmentType")} label="Employment type" optional error={form.errorOf("employmentType")}>
+        )}
+        {rules.qualification !== "hidden" && (
+          <Field id={teacherFieldId("qualification")} label="Qualification" optional={rules.qualification !== "required"} error={form.errorOf("qualification")}>
+            <Input {...form.bind("qualification")} maxLength={TEACHER_LIMITS.qualification} placeholder="M.Sc., B.Ed." />
+          </Field>
+        )}
+        {rules.employmentType !== "hidden" && (
+        <Field id={teacherFieldId("employmentType")} label="Employment type" optional={rules.employmentType !== "required"} error={form.errorOf("employmentType")}>
           <ChipPicker
             label="Employment type"
             value={values.employmentType}
@@ -123,7 +146,9 @@ export function JobFields({ form, index = 0 }: { form: TeacherForm; index?: numb
             onChange={(t) => form.set("employmentType", t as typeof values.employmentType)}
           />
         </Field>
-        <Field id={teacherFieldId("joiningDate")} label="Joining date" optional error={form.errorOf("joiningDate")}>
+        )}
+        {rules.joiningDate !== "hidden" && (
+        <Field id={teacherFieldId("joiningDate")} label="Joining date" optional={rules.joiningDate !== "required"} error={form.errorOf("joiningDate")}>
           <DateBox
             id={teacherFieldId("joiningDate")}
             label="Joining date"
@@ -136,26 +161,31 @@ export function JobFields({ form, index = 0 }: { form: TeacherForm; index?: numb
             shortcuts={joiningShortcuts(todayInIndia())}
           />
         </Field>
-        <Field id={teacherFieldId("experienceYears")} label="Experience (years)" optional error={form.errorOf("experienceYears")}>
-          <Input {...form.bind("experienceYears", twoDigits)} inputMode="numeric" autoComplete="off" placeholder="5" />
-        </Field>
+        )}
+        {rules.experienceYears !== "hidden" && (
+          <Field id={teacherFieldId("experienceYears")} label="Experience (years)" optional={rules.experienceYears !== "required"} error={form.errorOf("experienceYears")}>
+            <Input {...form.bind("experienceYears", twoDigits)} inputMode="numeric" autoComplete="off" placeholder="5" />
+          </Field>
+        )}
       </div>
     </FormCard>
   );
 }
 
 export function TeachingFields({ form, index = 0 }: { form: TeacherForm; index?: number }) {
-  const { values } = form;
+  const { values, rules } = form;
   return (
     <FormCard index={index} icon={BookOpen} tone="success" title="Teaching">
       <div className="space-y-5">
-        <div>
-          <p className="mb-1.5 text-sm font-semibold text-foreground">
-            Subjects they can teach <span className="font-normal text-foreground-muted">(optional)</span>
-          </p>
-          <SubjectChips value={values.subjectIds} onChange={(ids) => form.set("subjectIds", ids)} />
-          {form.errorOf("subjectIds") && <p role="alert" className="mt-1.5 text-xs font-medium text-danger">{form.errorOf("subjectIds")}</p>}
-        </div>
+        {rules.subjects !== "hidden" && (
+          <div>
+            <p className="mb-1.5 text-sm font-semibold text-foreground">
+              Subjects they can teach {rules.subjects === "required" ? <span className="text-danger">*</span> : <span className="font-normal text-foreground-muted">(optional)</span>}
+            </p>
+            <SubjectChips value={values.subjectIds} onChange={(ids) => form.set("subjectIds", ids)} />
+            {form.errorOf("subjectIds") && <p role="alert" className="mt-1.5 text-xs font-medium text-danger">{form.errorOf("subjectIds")}</p>}
+          </div>
+        )}
 
         <div className={TEACHER_GRID}>
           <Field id={teacherFieldId("maxPeriodsPerDay")} label="Most periods a day" optional error={form.errorOf("maxPeriodsPerDay")}>

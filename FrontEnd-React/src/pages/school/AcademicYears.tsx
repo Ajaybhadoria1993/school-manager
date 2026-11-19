@@ -164,7 +164,7 @@ export default function AcademicYearsPage() {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold uppercase tracking-wider text-foreground-muted">Running year</p>
-                <p className="text-xl font-extrabold tracking-tight text-foreground">{running.name}</p>
+                <p className="text-xl font-bold text-foreground">{running.name}</p>
                 <p className="text-sm text-foreground-muted">{formatDayRange(running.startDate, running.endDate)}</p>
               </div>
               <span className="rounded-full bg-success-soft px-3 py-1 text-xs font-bold text-success">Running</span>
@@ -179,7 +179,7 @@ export default function AcademicYearsPage() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-bold uppercase tracking-wider text-foreground-muted">Next year</p>
-                  <p className="text-lg font-extrabold tracking-tight text-foreground">{next ? next.name : "Not made yet"}</p>
+                  <p className="text-lg font-bold text-foreground">{next ? next.name : "Not made yet"}</p>
                   {next && <p className="text-sm text-foreground-muted">{formatDayRange(next.startDate, next.endDate)}</p>}
                 </div>
                 {next && <span className="rounded-full bg-warning-soft px-3 py-1 text-xs font-bold text-warning">Waiting</span>}
@@ -231,7 +231,7 @@ export default function AcademicYearsPage() {
           {over.length > 0 && (
             <section aria-label="Years that are over">
               <Card className="p-5">
-                <h2 className="mb-3 flex items-center gap-2 text-base font-bold text-foreground">
+                <h2 className="text-section-heading mb-3 flex items-center gap-2">
                   <History className="size-4 text-foreground-muted" aria-hidden />
                   Years that are over
                 </h2>

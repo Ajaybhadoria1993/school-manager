@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { CalendarX2, ChevronLeft, ChevronRight, FolderTree, LogOut, UserPlus } from "lucide-react";
 import { isCustomKey, type CustomFieldDef } from "../../constants/studentFields";
 import { IMPORT_ROWS_PER_PAGE, MAX_IMPORT_ROWS_PER_REQUEST } from "../../constants/students";
+import { cameFromOf } from "../../components/layout/nav-config";
 import { useSampleDownload } from "../../hooks/useSampleDownload";
 import { useAppDispatch } from "../../redux/hooks";
-import { useGetStructureQuery } from "../../redux/api/academicsApi";
+import { refreshClass, useGetStructureQuery } from "../../redux/api/academicsApi";
 import {
   refreshAfterImport,
   studentsApi,
@@ -23,11 +24,13 @@ import {
   autoMap,
   columnChoices,
   columnsToAdd,
+  placeInSections,
   emptyMapping,
   crossCheck,
   fieldDef,
   fieldsByColumn,
   lookAlikes,
+  mergeSeatsRaised,
   matchInputOf,
   matchNoteOf,
   matchProblemOf,
@@ -37,20 +40,23 @@ import {
   problemsCsv,
   saveBlob,
   takenNameNote,
+  targetLabel,
   tidy,
   typedTableFields,
+  usableTarget,
   type ColumnMapping,
   type ImportField,
   type OwnColumn,
   type PreparedRow,
   type RowProblem,
 } from "../../utils/studentImport";
-import type { ImportMatch, ImportSheet } from "../../types";
+import type { ImportMatch, ImportSheet, ImportTarget, SeatsRaised } from "../../types";
 import { CustomFieldDialog } from "../../components/students/export/CustomFieldDialog";
 import { DoneCard, FileBar, ProgressCard, SeatWarning, StoppedNote } from "../../components/students/import/ImportPanels";
 import { ImportRowsTable, type ViewRow } from "../../components/students/import/ImportRowsTable";
 import { ImportStepper } from "../../components/students/import/ImportStepper";
 import { PreviewGrid, type GridRow } from "../../components/students/import/PreviewGrid";
+import { TargetPicker } from "../../components/students/import/TargetPicker";
 import { AddColumnPanel, GridHint, PreviewToolbar, SameValueOffer, type RowFilter } from "../../components/students/import/PreviewPanels";
 import { UploadStep } from "../../components/students/import/UploadStep";
 import { AskDialog } from "../../components/students/form/AskDialog";
@@ -102,7 +108,7 @@ function inParts<T>(items: T[]): T[][] {
 }
 
 /**
- * Manage school > Students > Bulk upload (`/school/students/import`): the students a school already has, from any spreadsheet, in three
+ * Students > Bulk upload (`/school/students/import`): the students a school already has, from any spreadsheet, in three
  * steps.
  *  1. Upload: the sample file (made by the server with the school's own classes) or the school's own sheet (.xlsx / .csv). The server
  *     reads it (nothing is kept) and sends back its column titles and rows.
@@ -133,7 +139,21 @@ export default function StudentImportPage() {
   const rules = settings?.fields;
   const custom = settings?.customFields ?? NO_FIELDS;
 
+  const here = useLocation();
+  const [params] = useSearchParams();
+  // Opened from a class's page (or the list filtered by a class) the way back leads there, and the file is for that class.
+  const from = cameFromOf(here.state);
   const [step, setStep] = useState(0);
+  // The class (and section) the page was opened for, from the address (`?class=&section=`); a class that is not the school's is ignored
+  // below (`usableTarget`). A plain Bulk upload has none: the whole school.
+  const [opened] = useState<ImportTarget | null>(() => {
+    const classId = params.get("class");
+    return classId ? { classId, sectionId: params.get("section") || null } : null;
+  });
+  // Who the file is for: null is the whole school (each row names its class); a class, or one section of it, for a register of one class.
+  // Not saved: after an upload the next file is for what the page was opened for (the whole school for a plain Bulk upload), so a Class 6
+  // file is never put in Class 5 by forgetting to change it.
+  const [chosen, setChosen] = useState<ImportTarget | null>(opened);
   const [file, setFile] = useState<{ name: string; size: number } | null>(null);
   const [sheet, setSheet] = useState<ImportSheet | null>(null);
   const [reading, setReading] = useState(false);
@@ -148,7 +168,7 @@ export default function StudentImportPage() {
   const [checkFor, setCheckFor] = useState(0);
   const checked = useRef(0);
   const [admitted, setAdmitted] = useState<Admitted[]>([]);
-  const [lastRun, setLastRun] = useState<{ admitted: Admitted[] } | null>(null);
+  const [lastRun, setLastRun] = useState<{ admitted: Admitted[]; raised: SeatsRaised[] } | null>(null);
   const [filter, setFilter] = useState<RowFilter>("all");
   // The rows that needed a fix when "Need a fix" was opened: they stay in it while they are fixed (a fixed row shows Ready there).
   const [fixing, setFixing] = useState<ReadonlySet<number>>(() => new Set());
@@ -159,7 +179,6 @@ export default function StudentImportPage() {
   const [offer, setOffer] = useState<Offer | null>(null);
   const [busy, setBusy] = useState<{ done: number; total: number } | null>(null);
   const [stopped, setStopped] = useState<string | null>(null);
-  const [allowOver, setAllowOver] = useState(false);
   // The table was typed here, not read from a file: it can grow by rows, and its empty rows are waiting for a student.
   const [typed, setTyped] = useState(false);
   const [ask, setAsk] = useState<"upload" | "leave" | null>(null);
@@ -196,32 +215,42 @@ export default function StudentImportPage() {
 
   // Each row is prepared once and again only when it changes (a changed row is a new object; the others are kept as they are).
   // The cache belongs to one mapping, one class layout and one set of own columns: a new column choice prepares every row again.
-  const rowCache = useMemo(() => ({ mapping, structure, ownList, rows: new WeakMap<SheetRow, PreparedRow>() }), [mapping, structure, ownList]);
+  // The target as the school still has it (a class made inactive since is no target any more).
+  const target = useMemo(() => usableTarget(chosen, structure?.classes ?? []), [chosen, structure]);
+  const rowCache = useMemo(() => ({ mapping, structure, ownList, target, rows: new WeakMap<SheetRow, PreparedRow>() }), [mapping, structure, ownList, target]);
   const prepared = useMemo(() => {
-    const { mapping: m, structure: s, ownList: own, rows: cache } = rowCache;
+    const { mapping: m, structure: s, ownList: own, target: t, rows: cache } = rowCache;
     if (!sheet || !m || !s) return [];
     return sheet.rows.map((r) => {
       let p = cache.get(r);
       if (!p) {
-        p = prepareRow(r, m, s, own);
+        p = prepareRow(r, m, s, own, t);
         cache.set(r, p);
       }
       return p;
     });
   }, [sheet, rowCache]);
-  // The rows already admitted from this file come first, so a row left that repeats one of them is still "the same student as row 4".
-  const crossed = useMemo(() => crossCheck([...admitted.map((a) => a.source), ...prepared]), [admitted, prepared]);
-  // Inside the file: the same name and birthday with another parent's mobile (a maybe), the admitted rows of this file counted too.
-  const alike = useMemo(() => lookAlikes([...admitted.map((a) => a.source), ...prepared]), [admitted, prepared]);
   // Each row's identity as it is now: an answer of the check is that of the row only while it is the same.
   const sigs = useMemo(() => new Map(matchInputOf(prepared).map((r) => [r.row, JSON.stringify(r)])), [prepared]);
+  // A row of a class that is split into sections, with no section of its own (none given, or one the class does not have), is placed
+  // in one of them: the sections are filled evenly, in the order of the file. A blank row of the typed table and a student the school
+  // already has are not placed and take no seat. A section is never a problem of a row.
+  const placed = useMemo(() => {
+    const empty = new Set((sheet?.rows ?? []).filter((r) => r.cells.every((c) => !c.trim())).map((r) => r.row));
+    const inSchool = (row: number) => met.get(row)?.sig === sigs.get(row) && met.get(row)?.match.kind === "same";
+    return placeInSections(prepared, structure?.classes ?? [], capacity?.sections ?? [], (row) => empty.has(row) || inSchool(row));
+  }, [prepared, sheet, structure, capacity, met, sigs]);
+  // The rows already admitted from this file come first, so a row left that repeats one of them is still "the same student as row 4".
+  const crossed = useMemo(() => crossCheck([...admitted.map((a) => a.source), ...placed]), [admitted, placed]);
+  // Inside the file: the same name and birthday with another parent's mobile (a maybe), the admitted rows of this file counted too.
+  const alike = useMemo(() => lookAlikes([...admitted.map((a) => a.source), ...placed]), [admitted, placed]);
   const wholeName = !!mapping && mapping.firstName === null && mapping.lastName === null && mapping.fullName !== null;
 
   /**
-   * Every problem of a row: the form's rules, the file as a whole, and what the server said at the last upload (a full section is no
-   * problem any more once the person said to go over the seats).
+   * Every problem of a row: the form's rules, the file as a whole, and what the server said at the last upload. A section's seats are
+   * never a problem: students past the last seat are admitted and the section's seats are raised to fit them.
    */
-  const rows = prepared.map((p, i) => {
+  const rows = placed.map((p, i) => {
     const cells = sheet!.rows[i].cells;
     // An empty row of the typed table (nothing in any cell) is waiting for a student: it is not a problem and is not uploaded.
     const blank = cells.every((c) => !c.trim());
@@ -235,7 +264,7 @@ export default function StudentImportPage() {
     // about the row needs a fix.
     const already = blank ? undefined : meets?.kind === "same" ? alreadyOf(meets) : answer?.already ? { label: "Already in your school", detail: answer.problems[0]?.message ?? "" } : undefined;
     const own = blank || already ? [] : [...p.problems, ...(crossed.get(p.row) ?? []), ...(meetsProblem ? [meetsProblem] : [])];
-    const server = !already && answer && !(answer.seats && allowOver) ? answer.problems : [];
+    const server = !already && answer ? answer.problems : [];
     // The school's own needs never stop a row (a student is admitted without them): the server's word about them is left out.
     const serverWarnings = (answer?.warnings ?? []).filter((w) => !w.startsWith(SCHOOL_NEEDS));
     const notes = [...p.warnings, ...(meetsNote ? [meetsNote] : []), ...(alike.has(p.row) ? [alike.get(p.row)!] : []), ...serverWarnings];
@@ -267,7 +296,16 @@ export default function StudentImportPage() {
   const current = Math.min(page, pages);
   const pageRows: GridRow[] = shown
     .slice((current - 1) * IMPORT_ROWS_PER_PAGE, current * IMPORT_ROWS_PER_PAGE)
-    .map((r) => ({ row: r.p.row, cells: r.cells, blank: r.blank, problems: r.problems, warnings: r.warnings, already: r.already }));
+    .map((r) => ({
+      row: r.p.row,
+      cells: r.cells,
+      blank: r.blank,
+      problems: r.problems,
+      warnings: r.warnings,
+      already: r.already,
+      // Where a student with no section of their own goes (the file names none): said under Ready.
+      placed: r.p.autoSection && !r.p.autoSection.word && r.p.sectionId ? r.p.classLabel : undefined,
+    }));
 
   // The sections the rows to upload would fill past their seats this year: the ready ones, and the ones refused only for the seats.
   const coming = new Map<string, number>();
@@ -280,7 +318,7 @@ export default function StudentImportPage() {
     if (!load || load.seatsLeft === null || count <= load.seatsLeft) return [];
     const klass = structure?.classes.find((c) => c.id === load.classId);
     const section = klass?.sections.find((s) => s.id === sectionId);
-    return [{ label: `${klass?.name ?? "Class"} - ${section?.name ?? ""}`, coming: count, seatsLeft: load.seatsLeft }];
+    return [{ label: `${klass?.name ?? "Class"} - ${section?.name ?? ""}`, className: klass?.name ?? "Class", coming: count, seatsLeft: load.seatsLeft }];
   });
 
   // Which students of a new file the school already has: ONE request for the whole file, once its rows are prepared. A failed check
@@ -331,7 +369,6 @@ export default function StudentImportPage() {
     setAddOpen(false);
     setOffer(null);
     setStopped(null);
-    setAllowOver(false);
     setStep(1);
   }
 
@@ -343,7 +380,7 @@ export default function StudentImportPage() {
     let next = autoMap(data.headers, settings?.exportColumns);
     const taken = new Set(Object.values(next).filter((c): c is number => c !== null));
     const own = ownColumnsOf(data.headers, custom.filter((f) => f.mode !== "hidden"), settings?.exportColumns ?? [], taken);
-    const add = structure ? columnsToAdd(next, data.rows, structure.classes) : [];
+    const add = structure ? columnsToAdd(next, data.rows, structure.classes, !!target) : [];
     const width = data.headers.length;
     add.forEach((field, i) => (next = assignColumn(next, width + i, field)));
     const table: ImportSheet =
@@ -379,7 +416,7 @@ export default function StudentImportPage() {
    * type the students into (no file needed).
    */
   function startTyping() {
-    const fields = typedTableFields(rules);
+    const fields = typedTableFields(rules, !!target);
     const own = custom.filter((f) => f.mode !== "hidden");
     let next = emptyMapping();
     fields.forEach((f, column) => (next = assignColumn(next, column, f.key)));
@@ -391,6 +428,13 @@ export default function StudentImportPage() {
       { name: "Typed in the table", size: 0 },
       true
     );
+  }
+
+  /** Who the file is for was changed with the table open: every row is read again for it, and what the server said about them is dropped. */
+  function changeTarget(next: ImportTarget | null) {
+    setChosen(next);
+    setAnswers(new Map());
+    setOffer(null);
   }
 
   function addBlankRows() {
@@ -544,10 +588,13 @@ export default function StudentImportPage() {
     setBusy({ done, total: sending.length });
     const made: Admitted[] = [];
     const refused = new Map<number, ServerAnswer>();
+    let raised: SeatsRaised[] = [];
     let failure: string | null = null;
     try {
       for (const part of inParts(sending)) {
-        const res = await importRows({ dryRun: false, allowOverCapacity: allowOver, rows: part.map((p) => p.input) }).unwrap();
+        // Nobody is turned away for a full section: the server admits them and raises the seats to fit.
+        const res = await importRows({ dryRun: false, allowOverCapacity: true, rows: part.map((p) => p.input) }).unwrap();
+        raised = mergeSeatsRaised(raised, res.data.seatsRaised ?? []);
         for (const result of res.data.results) {
           const p = part.find((x) => x.row === result.row);
           if (!p) continue;
@@ -587,11 +634,13 @@ export default function StudentImportPage() {
     setAnswers((a) => new Map([...[...a].filter(([row]) => !gone.has(row)), ...refused]));
     setAdmitted((list) => [...list, ...made]);
     if (made.length > 0) dispatch(refreshAfterImport());
+    // The seats of a section (and of its class) changed: the class pages and the structure are read again.
+    if (raised.length > 0) dispatch(refreshClass());
     if (failure) {
       setStopped(failure);
       return;
     }
-    setLastRun({ admitted: made });
+    setLastRun({ admitted: made, raised });
     setFilter("all");
     setPage(1);
     setStep(2);
@@ -607,7 +656,8 @@ export default function StudentImportPage() {
 
   // ---- The page -----------------------------------------------------------------------------------------------------------------
 
-  const leave = () => (sheet && filled.length > 0 && step === 1 && !busy ? setAsk("leave") : navigate("/school/students"));
+  const backTo = from?.href ?? "/school/students";
+  const leave = () => (sheet && filled.length > 0 && step === 1 && !busy ? setAsk("leave") : navigate(backTo));
 
   if (!structure || !capacity) {
     return (
@@ -620,7 +670,7 @@ export default function StudentImportPage() {
   }
 
   const year = capacity.academicYear?.name ?? "";
-  const header = <StudentFormHeader title="Bulk upload students" subtitle={year ? `Academic year ${year}` : undefined} crumbs={[{ label: "Students", onClick: leave }]} current="Bulk upload" onBack={leave} />;
+  const header = <StudentFormHeader title="Bulk upload students" subtitle={year ? `Academic year ${year}` : undefined} crumbs={[{ label: from?.label ?? "Students", onClick: leave }]} current="Bulk upload" onBack={leave} />;
 
   if (!capacity.academicYear || structure.classes.length === 0) {
     const noYear = !capacity.academicYear;
@@ -682,11 +732,27 @@ export default function StudentImportPage() {
           <ImportStepper current={step} />
         </div>
 
-        {step === 0 && <UploadStep onFile={(f) => void readFile(f)} onPaste={(text) => void readPasted(text)} onBlank={startTyping} reading={reading} error={readError} onTemplate={downloadTemplate} downloading={downloading} year={year} />}
+        {step === 0 && (
+          <UploadStep
+            onFile={(f) => void readFile(f)}
+            onPaste={(text) => void readPasted(text)}
+            onBlank={startTyping}
+            reading={reading}
+            error={readError}
+            onTemplate={downloadTemplate}
+            downloading={downloading}
+            year={year}
+            classes={structure.classes}
+            target={target}
+            onTarget={setChosen}
+          />
+        )}
 
         {step === 1 && sheet && mapping && file && (
           <>
-            <FileBar file={file} sheetName={sheet.sheetName} rows={filled.length} ready={ready.length} toFix={toFix} already={skipped.length} onChangeFile={startOver} disabled={!!busy} />
+            <FileBar file={file} sheetName={sheet.sheetName} rows={filled.length} ready={ready.length} toFix={toFix} already={skipped.length} onChangeFile={startOver} disabled={!!busy}>
+              <TargetPicker classes={structure.classes} target={target} onChange={changeTarget} disabled={!!busy} />
+            </FileBar>
             {checking && (
               <p role="status" className="flex items-center gap-2 rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-foreground-muted">
                 Checking the file against the students already in your school...
@@ -709,7 +775,7 @@ export default function StudentImportPage() {
                 need a fix.
               </p>
             )}
-            {over.length > 0 && <SeatWarning over={over} allow={allowOver} onAllow={setAllowOver} disabled={!!busy} />}
+            {over.length > 0 && <SeatWarning over={over} />}
             {busy && <ProgressCard label="Admitting the students..." done={busy.done} total={busy.total} note="Keep this page open until it finishes." />}
             {stopped && !busy && <StoppedNote message={stopped} />}
 
@@ -816,14 +882,21 @@ export default function StudentImportPage() {
               notAdmitted={filled.length - skipped.length}
               already={skipped.length}
               linked={linkedNow}
+              raised={lastRun?.raised}
               year={year}
+              studentsTo={backTo}
+              studentsLabel={from?.label}
               onFix={() => {
                 setFilter("all");
                 setPage(1);
                 setStep(1);
               }}
               onDownloadProblems={downloadProblems}
-              onAnother={startOver}
+              onAnother={() => {
+                // The next file is for what the page was opened for again (the whole school until a class is chosen for it).
+                setChosen(opened);
+                startOver();
+              }}
             />
             <ImportRowsTable rows={doneRows} goodLabel="Admitted" badLabel="Not admitted" />
           </>
@@ -835,18 +908,22 @@ export default function StudentImportPage() {
       )}
       {ask === "upload" && (
         <AskDialog title={`Upload ${ready.length} student${ready.length === 1 ? "" : "s"}?`} icon={UserPlus} confirmLabel="Upload and admit" onClose={() => setAsk(null)} onConfirm={() => void upload()}>
-          <p>Each is admitted into the class and section of their row, in {year}, with the parents of their row (a parent already in your school is linked).</p>
+          <p>
+            {target
+              ? `Everyone is admitted into ${targetLabel(target, structure.classes)}${target.sectionId ? "" : " (the sections share them evenly)"}`
+              : "Each is admitted into the class and section of their row"}
+            , in {year}, with the parents of their row (a parent already in your school is linked).
+          </p>
           {toFix > 0 && <p>The {toFix} row{toFix === 1 ? "" : "s"} that need a fix are not uploaded; they stay in the table.</p>}
           {skipped.length > 0 && (
             <p>
               The {skipped.length} row{skipped.length === 1 ? " already in your school is" : "s already in your school are"} not uploaded again.
             </p>
           )}
-          {over.length > 0 && !allowOver && <p className="font-semibold text-warning">Full sections take students only up to their seats; the others are not admitted.</p>}
         </AskDialog>
       )}
       {ask === "leave" && (
-        <AskDialog title="Leave the bulk upload?" icon={LogOut} confirmLabel="Leave" onClose={() => setAsk(null)} onConfirm={() => navigate("/school/students")}>
+        <AskDialog title="Leave the bulk upload?" icon={LogOut} confirmLabel="Leave" onClose={() => setAsk(null)} onConfirm={() => navigate(backTo)}>
           <p>
             {admitted.length > 0
               ? "The students admitted so far stay admitted. The rows still in the table, and your changes to them, are not kept."

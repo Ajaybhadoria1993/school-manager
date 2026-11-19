@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { useCan } from "../../hooks/useCan";
 import { BookX, FileUp, FilterX, ListPlus, Pencil, Plus, Search, SearchX, UserRoundCheck, UserRoundMinus, UsersRound } from "lucide-react";
 import { DESIGNATIONS } from "../../constants/teachers";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
@@ -19,21 +20,17 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
 import { FilterBar, FilterSearch, FilterSelect } from "../../components/ui/FilterBar";
-import { Select } from "../../components/ui/Select";
 import { Skeleton } from "../../components/ui/Skeleton";
-
-const STATUSES = [
-  { value: "active", label: "Teaching" },
-  { value: "inactive", label: "Have left" },
-  { value: "all", label: "All teachers" },
-] as const;
+import { cameFrom } from "../../components/layout/nav-config";
 
 /** The words of the address for each filter, in the order of the dropdowns (the user kept these three on 2026-11-03). */
 const FILTER_KEYS = ["subject", "class", "designation"] as const;
 
-const TH = "whitespace-nowrap px-4 py-3 text-left text-xs font-bold uppercase tracking-wider text-foreground-muted";
+const TH = "whitespace-nowrap px-4 py-3 text-left text-[13.5px] font-semibold text-foreground";
 const outlineLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:border-[#cbd5e1] hover:bg-background focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
+const iconLink =
+  "inline-flex size-9 items-center justify-center rounded-lg border border-border bg-surface text-foreground-muted shadow-sm transition-all duration-150 hover:border-primary/30 hover:bg-primary-soft hover:text-primary-deep focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 const primaryLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_4px_10px_-2px_rgb(37_99_235/0.4)] transition-all duration-150 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 
@@ -79,24 +76,42 @@ function Classes({ teacher: t }: { teacher: Teacher }) {
         </span>
       )}
       <span className={cn("block whitespace-nowrap", t.load.sections > 0 ? "text-foreground" : "text-foreground-muted")}>{given}</span>
+      {t.maxPeriodsPerWeek !== null && t.load.periodsAllotted > t.maxPeriodsPerWeek && <span className="block text-xs font-semibold text-warning">Over their {t.maxPeriodsPerWeek}</span>}
     </span>
   );
 }
 
 /**
- * One teacher. The columns give way as the screen narrows (Can teach below 1536px, Contact below 1280px: the mobile then goes under the
- * name, Classes below 1024px, Login below 768px; on a phone the status and the pencil too: a row still opens the teacher, and a teacher
- * who has left says so under the name).
+ * The one control on a row: a pencil that opens Change teacher. Week, Give classes, Has left and Bring back are on the teacher's own page
+ * (a row opens it), so the list stays quiet and never grows wider than the screen.
+ */
+function EditPencil({ teacher }: { teacher: Teacher }) {
+  const can = useCan();
+  const readOnly = useReadOnlyYear();
+  if (readOnly || !can("teachers.edit") || !teacher.isActive) return null;
+  return (
+    <Link to={`/teachers/${teacher.id}/edit`} aria-label={`Edit ${teacher.name}`} title="Change teacher" className={iconLink}>
+      <Pencil className="size-4" aria-hidden />
+    </Link>
+  );
+}
+
+/**
+ * One teacher: who they are, how to reach them, what they can teach and their classes, and one pencil. The columns give way as the screen
+ * narrows (Can teach below 1536px, Contact below 1280px: the mobile then goes under the name, Classes below 1024px; on a phone the pencil
+ * too: a row still opens the teacher, and a teacher who has left says so under the name). The login, the days off and whether they teach
+ * are on the teacher's own page, so the table keeps to what a school reads at a glance.
  */
 function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName: Map<string, string> }) {
   const navigate = useNavigate();
-  const readOnly = useReadOnlyYear();
   const about = [t.designation, t.employeeCode].filter(Boolean).join(" · ");
+  const listHref = t.isActive ? "/teachers" : "/teachers/inactive";
+  const listState = cameFrom(listHref, t.isActive ? "Active teachers" : "Inactive teachers");
   return (
     <tr
       onClick={(e) => {
         // The name and the pencil are links: let them do their own work instead of going twice.
-        if (!(e.target as HTMLElement).closest("a, button")) navigate(`/teachers/${t.id}`);
+        if (!(e.target as HTMLElement).closest("a, button")) navigate(`/teachers/${t.id}`, { state: listState });
       }}
       className="group cursor-pointer border-t border-surface-muted transition-colors first:border-t-0 hover:bg-background"
     >
@@ -106,6 +121,7 @@ function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName
           <div className="min-w-0 max-w-[13rem] sm:max-w-[18rem]">
             <Link
               to={`/teachers/${t.id}`}
+              state={listState}
               className="block truncate font-bold text-foreground hover:text-primary-deep focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20"
             >
               {t.name}
@@ -113,7 +129,7 @@ function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName
             {about && <span className="block truncate text-xs text-foreground-muted">{about}</span>}
             {t.mobile && <span className="block text-xs text-foreground-muted xl:hidden">{formatMobile(t.mobile)}</span>}
             {!t.isActive && (
-              <span className="mt-1 block sm:hidden">
+              <span className="mt-1 block">
                 <StatusPill active={false} />
               </span>
             )}
@@ -136,26 +152,8 @@ function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName
       <td className="hidden px-4 py-3 align-middle lg:table-cell">
         <Classes teacher={t} />
       </td>
-      <td className="hidden px-4 py-3 align-middle md:table-cell">
-        {t.login ? (
-          <span className={cn("font-mono text-xs", t.login.isActive ? "text-foreground" : "text-foreground-muted line-through")}>{t.login.username}</span>
-        ) : (
-          <span className="text-foreground-muted">No login</span>
-        )}
-      </td>
-      <td className="hidden px-4 py-3 align-middle sm:table-cell">
-        <StatusPill active={t.isActive} />
-      </td>
-      <td className="hidden py-3 pl-2 pr-4 text-right align-middle sm:table-cell">
-        {!readOnly && (
-        <Link
-          to={`/teachers/${t.id}/edit`}
-          aria-label={`Edit ${t.name}`}
-          className="inline-flex size-9 items-center justify-center rounded-lg border border-border bg-surface text-foreground-muted shadow-sm transition-colors hover:border-primary/40 hover:text-primary-deep focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20"
-        >
-          <Pencil className="size-4" aria-hidden />
-        </Link>
-        )}
+      <td className="hidden w-14 py-3 pl-2 pr-4 text-right align-middle sm:table-cell">
+        <EditPencil teacher={t} />
       </td>
     </tr>
   );
@@ -163,17 +161,21 @@ function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName
 
 /**
  * Teacher (the menu entry on top, `/teachers`), laid out like Infinity Medisetu's patient list: the title with Add teacher, four numbers
- * of the school (one request, not repeated by the filters), one line with the search and four dropdowns (Status, Subject, Class,
- * Designation; no labels: each shows its name until something is picked), and the table (a row opens the teacher, the pencil changes
+ * of the school (one request, not repeated by the filters), one line with the search and three dropdowns (Subject, Class,
+ * Designation; no labels: each shows its name until something is picked), and the table (a row opens the teacher, the actions manage
  * them; Clear filters sits under it, by the count). The search (name, mobile, code, email, username) and every filter are a question to
  * the server, kept in the address. (Employment, gender, login and class-teacher filters were taken off at the user's request; the API
  * still takes them.)
  */
 export default function TeacherDirectoryPage() {
+  const can = useCan();
   // A year that is over is only looked at: no adding, uploading or changing teachers (the server refuses them too).
   const readOnly = useReadOnlyYear();
   const [params, setParams] = useSearchParams();
-  const status = oneOf(params.get("status"), ["active", "inactive", "all"] as const) ?? "active";
+  const location = useLocation();
+  const routeStatus = location.pathname.replace(/\/+$/, "") === "/teachers/inactive" ? "inactive" : "active";
+  // Keep older filtered teacher links working while the sidebar now provides the normal active/inactive navigation.
+  const status = oneOf(params.get("status"), ["active", "inactive", "all"] as const) ?? routeStatus;
   const q = params.get("q") ?? "";
   const subject = params.get("subject") ?? "";
   const klass = params.get("class") ?? "";
@@ -219,7 +221,7 @@ export default function TeacherDirectoryPage() {
   const clearFilters = () => change(Object.fromEntries(FILTER_KEYS.map((k) => [k, ""])));
 
   const teachers = res.data?.data.items ?? [];
-  const searching = filtered || q.trim() !== "" || status !== "active";
+  const searching = filtered || q.trim() !== "" || status === "all";
   const designations = [...new Set([...(designation ? [designation] : []), ...DESIGNATIONS])];
 
   return (
@@ -231,20 +233,20 @@ export default function TeacherDirectoryPage() {
         actions={
           <>
             {/* Like the students' header: Export (the list as Excel), Bulk upload (the teachers a school already has, from Excel), Add teacher. */}
-            {!readOnly && (
+            {!readOnly && can("teachers.settings") && (
               <Link to="/teachers/fields" className={outlineLink}>
                 <ListPlus className="size-4" aria-hidden />
                 Fields
               </Link>
             )}
-            <ExportTeachersButton query={query} empty={teachers.length === 0} />
-            {!readOnly && (
+            {can("teachers.export") && <ExportTeachersButton query={query} base="/teachers" />}
+            {!readOnly && can("teachers.add") && (
               <Link to="/teachers/import" className={outlineLink}>
                 <FileUp className="size-4" aria-hidden />
                 Bulk upload
               </Link>
             )}
-            {!readOnly && (
+            {!readOnly && can("teachers.add") && (
               <Link to="/teachers/new" className={primaryLink}>
                 <Plus className="size-4" aria-hidden />
                 Add teacher
@@ -261,7 +263,7 @@ export default function TeacherDirectoryPage() {
         <StatTile label="Have left" value={summary?.left ?? null} icon={UserRoundMinus} tone="navy" />
       </section>
 
-      {/* The search and four dropdowns on one line from 1280px (a laptop too); narrower, the search on its own line above them. */}
+      {/* The search and three filters stay together on a wide screen and wrap cleanly on narrower screens. */}
       <FilterBar label="Find teachers">
         <FilterSearch>
           <Input
@@ -280,12 +282,6 @@ export default function TeacherDirectoryPage() {
             }}
           />
         </FilterSearch>
-        <div className="min-w-0">
-          <label id="teacher-filter-status-label" htmlFor="teacher-filter-status" className="sr-only">
-            Status
-          </label>
-          <Select id="teacher-filter-status" value={status} options={STATUSES} onChange={(v) => change({ status: v })} triggerClassName="font-semibold" />
-        </div>
         <FilterSelect id="teacher-filter-subject" name="Subject" all="All subjects" value={subject} options={subjects.map((s) => ({ value: s.id, label: s.name }))} onChange={(v) => change({ subject: v })} />
         <FilterSelect id="teacher-filter-class" name="Class" all="All classes" value={klass} options={classes.map((c) => ({ value: c.id, label: c.name }))} onChange={(v) => change({ class: v })} />
         <FilterSelect id="teacher-filter-designation" name="Designation" all="All designations" value={designation} options={designations.map((d) => ({ value: d, label: d }))} onChange={(v) => change({ designation: v })} />
@@ -315,7 +311,7 @@ export default function TeacherDirectoryPage() {
             }
           />
         ) : (
-          <StudentsNotice icon={UsersRound} tone="primary" title="No teachers yet" />
+          <StudentsNotice icon={UsersRound} tone="primary" title={status === "inactive" ? "No teachers have left" : "No teachers yet"} />
         )
       ) : (
         <div className={cn("overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-card transition-opacity", res.isFetching && "opacity-70")}>
@@ -335,14 +331,8 @@ export default function TeacherDirectoryPage() {
                   <th scope="col" className={cn(TH, "hidden lg:table-cell")}>
                     Classes
                   </th>
-                  <th scope="col" className={cn(TH, "hidden md:table-cell")}>
-                    Login
-                  </th>
-                  <th scope="col" className={cn(TH, "hidden sm:table-cell")}>
-                    Status
-                  </th>
-                  <th scope="col" className={cn(TH, "hidden pr-4 text-right sm:table-cell")}>
-                    Action
+                  <th scope="col" className={cn(TH, "hidden w-14 pr-4 text-right sm:table-cell")}>
+                    <span className="sr-only">Change</span>
                   </th>
                 </tr>
               </thead>

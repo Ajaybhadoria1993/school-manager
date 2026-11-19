@@ -83,7 +83,7 @@ describe("a class's Timetable & teachers page", () => {
     openPage("/school-class/c5/timetable?section=c5-A");
     const week = await screen.findByRole("region", { name: "Week" });
     const link = within(week).getByRole("link", { name: "Edit timetable" });
-    expect(link).toHaveAttribute("href", "/school/timetable?tab=classes&class=c5&section=c5-A");
+    expect(link).toHaveAttribute("href", "/school/timetable?class=c5&section=c5-A");
     // The same line as the heading and its Published badge, the link last (right edge).
     const line = within(week).getByRole("heading", { name: "Week" }).parentElement!.parentElement!;
     expect(line).toContainElement(link);
@@ -134,7 +134,7 @@ describe("a class's Timetable & teachers page", () => {
   it("a week with no timing yet says so, with the way to set it", async () => {
     openPage("/school-class/c1/timetable", { "GET /timetable/grid": () => ({ ...GRID, days: [], cells: [] }) });
     expect(await screen.findByText("No school timing yet")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Set the school timing" })).toHaveAttribute("href", "/school/timetable?tab=timings");
+    expect(screen.getByRole("link", { name: "Set the school timing" })).toHaveAttribute("href", "/school/timings");
   });
 
   it("a class that is not in the school says so", async () => {

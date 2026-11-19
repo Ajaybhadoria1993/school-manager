@@ -105,6 +105,14 @@ export const saveAttendanceSchema = z.object({
 });
 export type SaveAttendanceInput = z.infer<typeof saveAttendanceSchema>;
 
+/** The school marks one child on one day (a cell of the register): there or not there, nothing else. */
+export const markStudentSchema = z.object({
+  studentId: objectId,
+  date: dayText("day"),
+  status: z.enum(["present", "absent"], { errorMap: () => ({ message: "Present or absent" }) }),
+});
+export type MarkStudentInput = z.infer<typeof markStudentSchema>;
+
 export const childAttendanceQuerySchema = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Write the month as YYYY-MM").optional() });
 export type ChildAttendanceQuery = z.infer<typeof childAttendanceQuerySchema>;
 

@@ -114,6 +114,21 @@ describe("the empty grid", () => {
   });
 });
 
+describe("the grid names the class teacher (the mother teacher of a Pre-Primary class, 2026-11-10)", () => {
+  it("is nobody until one is set, then the teacher of that section only, and nobody again once taken away", async () => {
+    const r = await ready();
+    expect((await get(r.token, r.a.classId, r.a.sectionId)).body.data.classTeacher).toBeNull();
+    const set = await request(app).put("/api/v1/staff/class-teachers").set(auth(r.token)).send({ ...r.a, teacherId: r.meena });
+    expect(set.status).toBe(200);
+    expect((await get(r.token, r.a.classId, r.a.sectionId)).body.data.classTeacher).toEqual({ id: r.meena, name: "Meena Singh" });
+    expect((await get(r.token, r.b.classId, r.b.sectionId)).body.data.classTeacher).toBeNull();
+    // Saving the week answers with it too.
+    expect((await put(r.token, r.a, [cell(1, 1, lesson(r.maths))])).body.data.classTeacher).toEqual({ id: r.meena, name: "Meena Singh" });
+    await request(app).put("/api/v1/staff/class-teachers").set(auth(r.token)).send({ ...r.a, teacherId: null });
+    expect((await get(r.token, r.a.classId, r.a.sectionId)).body.data.classTeacher).toBeNull();
+  });
+});
+
 describe("saving a timetable", () => {
   it("keeps the lessons in order of day and period, and reads them back with the counts and the stamps", async () => {
     const r = await ready();

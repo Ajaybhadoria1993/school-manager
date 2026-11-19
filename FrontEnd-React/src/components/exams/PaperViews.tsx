@@ -144,7 +144,7 @@ export function DaySection({ date, papers, exam, onEdit, onRemove }: Actions & {
   return (
     <section role="region" aria-label={heading} className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-border bg-surface-muted/50 px-4 py-3">
-        <h3 className="text-base font-bold tracking-tight text-foreground">{heading}</h3>
+        <h3 className="text-section-heading">{heading}</h3>
         {hours && <p className="text-sm font-semibold text-foreground-muted">{hours}</p>}
       </div>
       <ul className="divide-y divide-border">

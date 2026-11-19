@@ -36,7 +36,7 @@ export function FormCard({
           <Icon className="size-5" />
         </span>
         <div className="min-w-0 flex-1 basis-48">
-          <h2 className="flex items-center gap-1 text-base font-bold tracking-tight text-foreground">
+          <h2 className="text-section-heading flex items-center gap-1">
             {title}
             {tip && <InfoTip label={`About ${title.toLowerCase()}`}>{tip}</InfoTip>}
           </h2>

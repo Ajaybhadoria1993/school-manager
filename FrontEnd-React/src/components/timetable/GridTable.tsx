@@ -1,6 +1,6 @@
 import { Plus } from "lucide-react";
 import { SUBJECT_COLORS } from "../../constants/timetable";
-import { cellAt, cellKey, teacherOf, type GridModel } from "../../utils/timetable";
+import { cellAt, cellKey, dayEnds, teacherOf, type GridModel } from "../../utils/timetable";
 import { cn } from "../../utils/helpers";
 import type { GridCell, GridView } from "../../types";
 
@@ -14,7 +14,8 @@ const shortName = (view: GridView, subjectId: string) => {
  * The week as a table: a column for each day the class has school, a row for each period (the lunch and the breaks as thin rows
  * between), the times at the left. A period is a button: clicking it opens the box to pick its subject beside it (the page's job; this
  * only says which period and which button), and the period being worked on has a blue ring. A period that has something wrong has a red
- * edge (and says what in its title), one that is only worth a look an amber one.
+ * edge (and says what in its title), one that is only worth a look an amber one. The last row says when the class's day ends: the end of
+ * its last period that has a lesson (nothing is set for it).
  */
 export function GridTable({
   view,
@@ -41,6 +42,7 @@ export function GridTable({
   // The rows follow the day with the most rows; a day that has fewer periods has nothing in the rest.
   const reference = view.days.reduce((best, d) => (d.slots.length > best.slots.length ? d : best), view.days[0]);
   if (!reference) return null;
+  const ends = dayEnds(view, cells);
 
   return (
     <div className="overflow-x-auto rounded-[var(--radius-card)] border border-border bg-surface shadow-card">
@@ -130,6 +132,18 @@ export function GridTable({
             )
           )}
         </tbody>
+        <tfoot>
+          <tr className="border-t border-border bg-surface-muted/70">
+            <th scope="row" className="px-3 py-2 text-left text-[13.5px] font-semibold text-foreground">
+              Class ends
+            </th>
+            {view.days.map((d) => (
+              <td key={d.day} className="px-2 py-2 text-sm font-semibold tabular-nums text-foreground">
+                {ends.get(d.day) ?? <span className="font-normal text-foreground-muted">–</span>}
+              </td>
+            ))}
+          </tr>
+        </tfoot>
       </table>
     </div>
   );

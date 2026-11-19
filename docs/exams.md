@@ -26,7 +26,7 @@ and results.** Described after round 1.
   `PAPER_ON_HOLIDAY`); **a class is never in two papers that overlap on one day**, in this exam or across the exams of the year
   (`PAPER_CLASH`: "Class 5 already has Mathematics from 9:00 AM to 12:00 PM on 15 Sep (Half-Yearly Exam)"); an exam cannot be shortened, or
   its school hours narrowed, past a paper already in it (`PAPERS_OUTSIDE`); the exam falls inside the academic year; no two exams of a
-  year share a name (`EXAM_EXISTS`); a class that is deleted leaves its papers (a paper left with no class goes: `ExamCleanup`).
+  year share a name (`EXAM_EXISTS`); a class is never deleted, so its papers and marks stay when it is made inactive (`ExamCleanup`, which took a deleted class off its papers, is gone).
   Subjects must be the school's active ones.
 * **API** `/api/v1/exams` (school admin / principal: `EXAM_WRITERS` / `EXAM_READERS` in `exams/constants.ts`): `GET /` (this year's
   exams: the one that is on first, then the next, then the ones over; `paperCount`, `classCount`), `POST /`, `GET /:id` (with `papers`,

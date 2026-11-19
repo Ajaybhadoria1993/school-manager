@@ -3,10 +3,11 @@ import { ApiError } from "../../../utils/ApiError";
 import { asyncHandler } from "../../../utils/asyncHandler";
 import { sendCreated, sendOk } from "../../../utils/response";
 import type { UnitQuery } from "../../subjects/schemas/subjects.schemas";
-import type { AutofillBody, ClassDayInput, CopyBody, CreateScheduleInput, OverviewQuery, ReplaceTeacherBody, SaveGridInput, SchoolDayInput, UnitBody, UpdateScheduleInput } from "../schemas/timetable.schemas";
+import type { AutofillBody, ClassDayInput, CopyBody, CreateScheduleInput, OverviewQuery, ReplaceTeacherBody, SaveGridInput, SchoolDayInput, TeacherPeriodsInput, UnitBody, UpdateScheduleInput } from "../schemas/timetable.schemas";
 import { GridService } from "../services/grid.service";
 import { OverviewService } from "../services/overview.service";
 import { ScheduleService } from "../services/schedule.service";
+import { TeacherPeriodsService } from "../services/teacherPeriods.service";
 import { TeacherTimetableService } from "../services/teacherView.service";
 import { ToolsService } from "../services/tools.service";
 
@@ -44,6 +45,11 @@ export const getGrid = asyncHandler(async (req: Request, res: Response) => {
 
 export const saveGrid = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, await GridService.save(tenantOf(req), req.user!.userId, body<SaveGridInput>(req)), "Timetable saved");
+});
+
+/** A teacher is given a subject of a class and its days and periods, in one request (a teacher's page, Assign class). */
+export const placeTeacherPeriods = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await TeacherPeriodsService.assign(tenantOf(req), req.user!.userId, body<TeacherPeriodsInput>(req)), "Teacher saved");
 });
 
 export const publishGrid = asyncHandler(async (req: Request, res: Response) => {

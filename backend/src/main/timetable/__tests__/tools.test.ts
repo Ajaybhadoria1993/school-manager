@@ -66,8 +66,10 @@ describe("fill the empty periods", () => {
     const res = await post(r.token, "/grid/autofill", { ...r.c, cells: [cell(1, 1, lesson(r.maths)), cell(1, 2, lesson(r.hindi))], seed: 1 });
     expect(res.status).toBe(200);
     expect(res.body.data.dropped).toBe(1);
-    const kept = res.body.data.cells.filter((c: { day: number; period: number }) => c.day === 1 && c.period <= 2);
-    expect(kept.map((c: { lessons: { subjectId: string }[] }) => c.lessons[0].subjectId)).toEqual([r.hindi]);
+    // The lesson that was allowed stays where it was; the one that was not is not put back (the fill may give that free period to another subject).
+    const at = (period: number) => res.body.data.cells.find((c: { day: number; period: number }) => c.day === 1 && c.period === period)?.lessons[0].subjectId;
+    expect(at(2)).toBe(r.hindi);
+    expect(at(1)).not.toBe(r.maths);
   });
 
   it("gives another arrangement for another seed, the same one for the same seed", async () => {
@@ -303,5 +305,39 @@ describe("the set-up at a glance", () => {
     expect(res.status).toBe(200);
     expect(res.body.data.academicYear).toBeNull();
     expect(res.body.data.units).toEqual([]);
+  });
+});
+
+describe("fill the empty periods: the class teacher takes the first period (2026-11-17)", () => {
+  const headOf = (token: string, unit: { classId: string; sectionId: string | null }, teacherId: string) => request(app).put("/api/v1/staff/class-teachers").set(auth(token)).send({ ...unit, teacherId });
+  const firstPeriods = (res: request.Response) => [1, 2, 3, 4, 5].map((day) => (res.body.data.cells as { day: number; period: number; lessons: { subjectId: string }[] }[]).find((c) => c.day === day && c.period === 1)?.lessons[0]?.subjectId);
+
+  it("a class with a class teacher gets their subject in the first period of every day, and everything else is still placed", async () => {
+    const r = await ready();
+    expect((await headOf(r.token, r.a, r.dev)).status).toBe(200);
+    const res = await post(r.token, "/grid/autofill", { ...r.a, cells: [], seed: 3 });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    // Dev teaches English (5 periods) in Class 5 A: the first period of Monday to Friday.
+    expect(firstPeriods(res)).toEqual([r.english, r.english, r.english, r.english, r.english]);
+    expect(res.body.data.unplaced).toEqual([]);
+    expect(res.body.data.issues.filter((i: { level: string }) => i.level === "error")).toEqual([]);
+    expect((await put(r.token, r.a, res.body.data.cells)).status).toBe(200);
+  });
+
+  it("is the class's own: another section with no class teacher is filled as it always was", async () => {
+    const r = await ready();
+    const before = await post(r.token, "/grid/autofill", { ...r.b, cells: [], seed: 3 });
+    expect((await headOf(r.token, r.a, r.dev)).status).toBe(200);
+    const after = await post(r.token, "/grid/autofill", { ...r.b, cells: [], seed: 3 });
+    expect(after.body.data.cells).toEqual(before.body.data.cells);
+  });
+
+  it("a class teacher who teaches nothing in the class changes nothing", async () => {
+    const r = await ready();
+    const before = await post(r.token, "/grid/autofill", { ...r.c, cells: [], seed: 3 });
+    // Asha teaches Hindi in A and B but nothing in C.
+    expect((await headOf(r.token, r.c, r.asha)).status).toBe(200);
+    const after = await post(r.token, "/grid/autofill", { ...r.c, cells: [], seed: 3 });
+    expect(after.body.data.cells).toEqual(before.body.data.cells);
   });
 });

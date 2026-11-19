@@ -298,7 +298,7 @@ function PromotionList({ promotion, role }: { promotion: Promotion; role: string
       {groups.map((group) => (
         <section key={group.classId} aria-label={group.className} className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface shadow-card">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-background px-4 py-3">
-            <h2 className="text-base font-bold text-foreground">{group.className}</h2>
+            <h2 className="text-section-heading">{group.className}</h2>
             <p className="text-xs font-semibold text-foreground-muted">{plural(group.entries.length, "student")}</p>
             {editable && (
               <div className="ml-auto flex flex-wrap items-center gap-2">

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { MAX_LABEL, MAX_LESSONS_PER_CELL, MAX_PERIODS, MAX_ROOM, MAX_SCHEDULE_NAME, SCHEDULE_SCOPES, SLOT_KINDS } from "../constants";
+import { DAY_NAMES, MAX_LABEL, MAX_LESSONS_PER_CELL, MAX_PERIODS, MAX_ROOM, MAX_SCHEDULE_NAME, SCHEDULE_SCOPES, SLOT_KINDS } from "../constants";
+import { MAX_PERIODS_PER_WEEK } from "../../subjects/constants";
 import { clockToMinutes } from "../time";
 import { idParamSchema, label, objectId } from "../../subjects/schemas/subjects.schemas";
 
@@ -78,20 +79,33 @@ export type UpdateScheduleInput = z.infer<typeof updateScheduleSchema>;
  * a holiday. The server makes one timing of the days whose rows are the same.
  */
 const DAY_MESSAGE = "Choose a day from Monday to Sunday";
-export const schoolDaySchema = z.object({
-  /** A department's own week; left out (or null) for the whole school. */
-  departmentId: objectId.nullable().optional(),
-  days: z
-    .array(
-      z.object({
-        day: z.number({ required_error: DAY_MESSAGE, invalid_type_error: DAY_MESSAGE }).int(DAY_MESSAGE).min(1, DAY_MESSAGE).max(7, DAY_MESSAGE),
-        slots: fields.slots,
-      })
-    )
-    .min(1, "Keep at least one day with school")
-    .max(7, "A week has seven days")
-    .refine((value) => new Set(value.map((d) => d.day)).size === value.length, "Choose each day once"),
-});
+export const MAX_SHIFT_MINUTES = 720;
+export const schoolDaySchema = z
+  .object({
+    /** A department's own week; left out (or null) for the whole school. */
+    departmentId: objectId.nullable().optional(),
+    days: z
+      .array(
+        z.object({
+          day: z.number({ required_error: DAY_MESSAGE, invalid_type_error: DAY_MESSAGE }).int(DAY_MESSAGE).min(1, DAY_MESSAGE).max(7, DAY_MESSAGE),
+          slots: fields.slots,
+        })
+      )
+      .min(1, "Keep at least one day with school")
+      .max(7, "A week has seven days")
+      .refine((value) => new Set(value.map((d) => d.day)).size === value.length, "Choose each day once"),
+    /**
+     * The winter shift (2026-11-17), whole school only: move every other timing of the school (each class's and department's own, and any made
+     * for some classes) by this many minutes in the same save, so that when school starts later they start later too. Whole minutes, up to twelve hours either way.
+     */
+    shiftOthers: z
+      .number({ invalid_type_error: "Enter the minutes to move the timings by" })
+      .int("Enter whole minutes")
+      .min(-MAX_SHIFT_MINUTES, "Move the timings by twelve hours at most")
+      .max(MAX_SHIFT_MINUTES, "Move the timings by twelve hours at most")
+      .optional(),
+  })
+  .refine((value) => !value.shiftOthers || !value.departmentId, { message: "Only the whole school's save can move the other timings", path: ["shiftOthers"] });
 export type SchoolDayInput = z.infer<typeof schoolDaySchema>;
 
 /**
@@ -141,6 +155,39 @@ const unit = { classId: objectId, sectionId: objectId.nullable().default(null) }
 
 export const saveGridSchema = z.object({ ...unit, cells: z.array(cellSchema).max(7 * MAX_PERIODS, "Too many periods") });
 export type SaveGridInput = z.infer<typeof saveGridSchema>;
+
+/**
+ * `PUT /timetable/teacher-periods`: a teacher is given a subject of a class and its periods, in one request. `slots` are the days (1 = Monday)
+ * and period numbers to put the subject in; `periodsPerWeek` is asked of a subject the class does not study yet (the days say it when it is left out).
+ */
+export const teacherPeriodsSchema = z.object({
+  ...unit,
+  subjectId: objectId,
+  teacherId: objectId,
+  periodsPerWeek: z
+    .number({ invalid_type_error: "Enter the periods a week as a number" })
+    .int("Enter whole periods")
+    .min(1, "At least 1 period a week")
+    .max(MAX_PERIODS_PER_WEEK, `Up to ${MAX_PERIODS_PER_WEEK} periods a week`)
+    .optional(),
+  slots: z
+    .array(
+      z.object({
+        day: z.number().int().min(1, "Choose a day from 1 to 7").max(7, "Choose a day from 1 to 7"),
+        period: z.number().int().min(1, "The first period is 1").max(MAX_PERIODS, `A day has up to ${MAX_PERIODS} periods`),
+      })
+    )
+    .max(7 * MAX_PERIODS, "Too many periods")
+    .superRefine((slots, ctx) => {
+      const seen = new Set<string>();
+      for (const s of slots) {
+        const at = `${s.day}:${s.period}`;
+        if (seen.has(at)) return void ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${DAY_NAMES[s.day]} period ${s.period} is in the list twice` });
+        seen.add(at);
+      }
+    }),
+});
+export type TeacherPeriodsInput = z.infer<typeof teacherPeriodsSchema>;
 
 export const unitBodySchema = z.object(unit);
 export type UnitBody = z.infer<typeof unitBodySchema>;

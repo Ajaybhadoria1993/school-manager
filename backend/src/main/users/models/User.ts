@@ -89,6 +89,11 @@ export interface PublicUser {
   roleLabel: string | null;
   tenantId: string | null;
   emailVerifiedAt: string | null;
+  /**
+   * What this person may do, by the school's Permissions (docs/permissions.md): every permission for the school admin and the principal, the
+   * list of their kind for anyone else. The menu and the pages follow it; the server checks each request again. Only in a session (sign-in, /me).
+   */
+  permissions?: string[];
 }
 
 export function toPublicUser(user: Pick<IUser, "_id" | "name" | "email" | "username" | "role" | "tenantId" | "emailVerifiedAt"> & { roleLabel?: string | null }): PublicUser {

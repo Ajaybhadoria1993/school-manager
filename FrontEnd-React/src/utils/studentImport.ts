@@ -1,7 +1,8 @@
 import { STATES } from "../constants/schoolOptions";
 import { BLOOD_GROUPS, CATEGORIES, GENDERS } from "../constants/students";
 import { DISABILITIES, LENIENT_FIELD_RULES, RELIGIONS, isCustomKey, listFieldNamed, type CustomFieldDef, type ExportColumnKey, type FieldRules, type FormFieldKey } from "../constants/studentFields";
-import type { AcademicStructure, ClassItem, ExportColumn, Gender, ImportMatch, ImportMatchRow, ImportRowInput, Relation } from "../types";
+import type { AcademicStructure, ClassItem, ExportColumn, Gender, ImportMatch, ImportMatchRow, ImportRowInput, ImportTarget, Relation, SectionItem, SeatsRaised } from "../types";
+import { classNumber, needsStream, streamOf } from "./classNumber";
 import { checkStudentForm, emptyGuardian, emptyStudentForm, placeLabel, todayInIndia, toAdmission, type GuardianDraft, type StudentFormValues } from "./students";
 
 // ---------------------------------------------------------------------------------------------------------------------------
@@ -17,6 +18,7 @@ export type ImportField =
   | "gender"
   | "dateOfBirth"
   | "className"
+  | "stream"
   | "sectionName"
   | "rollNumber"
   | "admissionDate"
@@ -59,7 +61,7 @@ export type ImportField =
   | "transportStop";
 
 /** How a cell of the field is typed in: free text, a day, or one of a list (offered as suggestions while typing). */
-export type CellInput = "text" | "date" | "gender" | "class" | "section" | "state" | "bloodGroup" | "category" | "relation" | "religion" | "disability" | "yesNo";
+export type CellInput = "text" | "date" | "gender" | "class" | "stream" | "section" | "state" | "bloodGroup" | "category" | "relation" | "religion" | "disability" | "yesNo";
 
 export interface FieldDef {
   key: ImportField;
@@ -81,7 +83,8 @@ export const IMPORT_FIELDS: readonly FieldDef[] = [
   { key: "gender", label: "Gender", kind: "required", input: "gender", hint: "Male, Female, Other (M, F, Boy, Girl work)", synonyms: ["gender", "sex"] },
   { key: "dateOfBirth", label: "Date of birth", kind: "required", input: "date", hint: "DD-MM-YYYY", synonyms: ["dateofbirth", "dob", "birthdate", "dateofbirthddmmyyyy", "dobddmmyyyy", "birthday"] },
   { key: "className", label: "Class", kind: "required", input: "class", hint: "V, 5th, Class 5 or 5-A", synonyms: ["class", "classname", "std", "standard", "grade", "classsection", "classandsection", "currentclass", "admittedclass"] },
-  { key: "sectionName", label: "Section", kind: "optional", input: "section", hint: "Needed when the class has sections", synonyms: ["section", "sec", "div", "division", "sectionname"] },
+  { key: "stream", label: "Stream", kind: "optional", input: "stream", hint: "Class 11 and 12: Science, Commerce...", synonyms: ["stream", "streamname", "group", "subjectgroup", "faculty"] },
+  { key: "sectionName", label: "Section", kind: "optional", input: "section", hint: "Chosen for you when empty", synonyms: ["section", "sec", "div", "division", "sectionname"] },
   { key: "rollNumber", label: "Roll no.", kind: "optional", input: "text", hint: "1 to 999, once in a section", synonyms: ["rollno", "rollnumber", "roll", "rollnum"] },
   { key: "admissionDate", label: "Admission date", kind: "optional", input: "date", hint: "DD-MM-YYYY; empty is today", synonyms: ["admissiondate", "dateofadmission", "doa", "joiningdate", "dateofjoining", "admissiondateddmmyyyy"] },
   { key: "fatherName", label: "Father's name", kind: "parent", input: "text", hint: "", synonyms: ["fathersname", "fathername", "father", "nameoffather", "fatherfullname"] },
@@ -158,10 +161,12 @@ const RULE_OF_FIELD: Partial<Record<ImportField, FormFieldKey>> = {
 };
 
 /** The columns the typed table starts with: the ones a sheet has always had, and every detail the school's form needs. */
-const TYPED_CORE = new Set<ImportField>(["admissionNumber", "firstName", "lastName", "gender", "dateOfBirth", "className", "sectionName", "rollNumber", "admissionDate", "fatherName", "fatherMobile", "motherName", "motherMobile", "guardianName", "guardianMobile", "guardianRelation", "parentEmail", "address", "city", "state", "pincode", "bloodGroup", "category", "previousSchool"]);
-export function typedTableFields(rules: FieldRules | undefined): FieldDef[] {
+const TYPED_CORE = new Set<ImportField>(["admissionNumber", "firstName", "lastName", "gender", "dateOfBirth", "className", "sectionName", "rollNumber", "admissionDate", "fatherName", "fatherMobile", "motherName", "motherMobile", "guardianName", "guardianMobile", "guardianRelation", "parentEmail", "address", "city", "state", "pincode", "bloodGroup", "category", "previousSchool", "aadhaarNumber"]);
+export function typedTableFields(rules: FieldRules | undefined, forOneClass = false): FieldDef[] {
   return IMPORT_FIELDS.filter((f) => {
     if (f.key === "fullName") return false;
+    // A table typed for one class (and section) is told which already: no column to type it in.
+    if (forOneClass && (f.key === "className" || f.key === "sectionName" || f.key === "stream")) return false;
     const rule = RULE_OF_FIELD[f.key];
     const mode = rule && rules ? rules[rule] : undefined;
     return mode === "required" || (TYPED_CORE.has(f.key) && mode !== "hidden");
@@ -241,13 +246,39 @@ export function assignColumn(mapping: ColumnMapping, column: number, field: Impo
   return next;
 }
 
+/** 11 or 12 when the cell names Class 11 or 12 (with a stream or section after it or not), else null. */
+const seniorOfCell = (value: string): 11 | 12 | null => {
+  const first = classTokens(value)[0];
+  return first === "11" || first === "12" ? (Number(first) as 11 | 12) : null;
+};
+/** The cell names Class 11 or 12 and no class of the school taught in a stream: a stream is needed, from the Stream column. */
+function needsStreamCell(value: string, classes: readonly ClassItem[]): boolean {
+  if (!value || seniorOfCell(value) === null) return false;
+  const matched = matchClass(value, classes);
+  const klass = matched ? classes.find((c) => c.id === matched.classId) : undefined;
+  return !klass || needsStream(klass.name);
+}
+/** A stream's name compared without case, spaces or marks. */
+const streamKey = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+/** The stream class a typed stream means: the same name, or the start of one name when that is clear (at least three letters). */
+function findStream(streams: readonly ClassItem[], typed: string): ClassItem | undefined {
+  const key = streamKey(typed);
+  if (!key) return undefined;
+  const exact = streams.find((c) => streamKey(streamOf(c.name) ?? "") === key);
+  if (exact) return exact;
+  const starts = key.length >= 3 ? streams.filter((c) => streamKey(streamOf(c.name) ?? "").startsWith(key)) : [];
+  return starts.length === 1 ? starts[0] : undefined;
+}
+
 /**
  * The columns the table gets, empty, when the file opens, because every student needs them and the file has none: the name (one
- * column for the whole name), gender, date of birth, class, a parent's name and mobile, and the section when a class of the file is
- * split into sections. Their empty boxes are red and say what to type, so everything is fixed in the table itself. Nothing else is
- * added: the address, the previous school, the IDs... are optional in a bulk upload.
+ * column for the whole name), gender, date of birth, class and a parent's name and mobile, and the stream when a row names Class 11 or
+ * 12 without one. Their empty boxes are red and say what to type, so everything is fixed in the table itself. Nothing else is added:
+ * the address, the previous school, the IDs... are optional in a bulk upload, and so is the section (a class split into sections gets
+ * its students placed in them: `placeInSections`). A file made for one class (`forOneClass`) is not given a Class or a Stream column: the
+ * class is chosen already, and a row that names no class is of it.
  */
-export function columnsToAdd(mapping: ColumnMapping, rows: readonly { cells: string[] }[], classes: readonly ClassItem[]): ImportField[] {
+export function columnsToAdd(mapping: ColumnMapping, rows: readonly { cells: string[] }[] = [], classes: readonly ClassItem[] = [], forOneClass = false): ImportField[] {
   const add: ImportField[] = [];
   if (mapping.fullName === null) {
     if (mapping.firstName === null && mapping.lastName === null) add.push("fullName");
@@ -256,19 +287,13 @@ export function columnsToAdd(mapping: ColumnMapping, rows: readonly { cells: str
       if (mapping.lastName === null) add.push("lastName");
     }
   }
-  for (const key of ["gender", "dateOfBirth", "className"] as const) if (mapping[key] === null) add.push(key);
+  for (const key of ["gender", "dateOfBirth", "className"] as const) if (mapping[key] === null && !(forOneClass && key === "className")) add.push(key);
   if (mapping.fatherName === null && mapping.motherName === null && mapping.guardianName === null) add.push("fatherName");
   if (mapping.fatherMobile === null && mapping.motherMobile === null && mapping.guardianMobile === null) add.push("fatherMobile");
+  // Class 11 and 12 are taught in streams: a file that names them without a stream gets a Stream column, empty, for its red boxes to fill.
   const classColumn = mapping.className;
-  if (mapping.sectionName === null && classColumn !== null) {
-    const needsOne = rows.some((r) => {
-      const matched = matchClass(tidy(r.cells[classColumn] ?? ""), classes);
-      // A section written in the class cell ("5-C") is fixed in that cell: no new column for it.
-      return !!matched && !matched.sectionId && !matched.unknownSection && !!classes.find((c) => c.id === matched.classId)?.sections.length;
-    });
-    if (needsOne) add.push("sectionName");
-  }
-  // Nothing else is asked of a file: the address, the previous school and the rest are optional, an old register seldom holds them.
+  if (!forOneClass && mapping.stream === null && classColumn !== null && rows.some((r) => needsStreamCell(tidy(r.cells[classColumn] ?? ""), classes))) add.push("stream");
+  // Nothing else is asked of a file: the address, the previous school, the section and the rest are optional, an old register seldom holds them.
   return add;
 }
 
@@ -281,12 +306,18 @@ export interface ColumnChoice {
   date?: boolean;
 }
 
+/** A stream's class of Class 11 or 12, with the number it is of. */
+const streamClassesOf = (classes: readonly ClassItem[], number: number) => classes.filter((c) => classNumber(c.name) === number && streamOf(c.name) !== null);
+/** The streams the school has (each once, as written), for the lists a stream is typed from. */
+export const streamNames = (classes: readonly ClassItem[]): string[] => [...new Set(classes.flatMap((c) => streamOf(c.name) ?? []))];
+
 /** What a detail's value for every row is chosen from (gender, class, state...), or nothing for free text. */
 function listOf(field: ImportField, structure: AcademicStructure): readonly string[] | undefined {
   const lists: Partial<Record<CellInput, readonly string[]>> = {
     state: STATES,
     gender: GENDERS,
     class: structure.classes.map((c) => c.name),
+    stream: streamNames(structure.classes),
     bloodGroup: BLOOD_GROUPS,
     category: CATEGORIES,
     relation: ["Guardian", "Other"],
@@ -561,6 +592,11 @@ export interface PreparedRow {
   parentLabel: string;
   classId: string;
   sectionId: string | null;
+  /**
+   * Set when the class is split into sections and the file gives none of them: `word` is what the file says ("" when nothing, "C"
+   * when the class has no such section). `placeInSections` then gives the row its section.
+   */
+  autoSection: { word: string } | null;
   /** What is sent to the server. */
   input: ImportRowInput;
   problems: RowProblem[];
@@ -658,12 +694,16 @@ export interface OwnColumn {
  * what is wrong, and in which cell, before anything is sent. The server checks every row again.
  * The school's own needs (Aadhaar, the address...) do not stop a row, as on the server. The school's own fields that have a column
  * (`own`) are read by their kind (a day, a number, Yes / No, one of the list) and sent with the row.
+ * A file made for one class (`target`): a row that names no class is of it, and when the target has a section, so is its section. A row
+ * that names another class (or section) is a problem in its own box, which says what the file is for: a Class 5 file is never
+ * admitted into Class 6 by a slip. A target the school no longer has is ignored.
  */
 export function prepareRow(
   sheetRow: { row: number; cells: string[] },
   mapping: ColumnMapping,
   structure: AcademicStructure,
-  own: readonly OwnColumn[] = []
+  own: readonly OwnColumn[] = [],
+  target: ImportTarget | null = null
 ): PreparedRow {
   const get = (field: ImportField) => {
     const column = mapping[field];
@@ -685,25 +725,74 @@ export function prepareRow(
   // The class, and the section from its column or from the class value ("5-A"). A section written in the class cell that is not the
   // class's ("5-C") is said in that cell, where it is fixed.
   const classValue = get("className");
-  const matched = classValue ? matchClass(classValue, structure.classes) : null;
-  const klass = matched ? structure.classes.find((c) => c.id === matched.classId) : undefined;
+  let matched = classValue ? matchClass(classValue, structure.classes) : null;
+  let klass = matched ? structure.classes.find((c) => c.id === matched!.classId) : undefined;
+  // Class 11 and 12 are taught in streams, each its own class ("Class 11 Science"): a cell that names Class 11 or 12 without a stream
+  // the school has (11, XII, or the school's own Class 11 as a whole) takes its stream from the Stream column, or from the words after the
+  // number. A student is never put in Class 11 as a whole: no stream, or one the school has not, is a problem in the Stream box.
+  let streamProblem = false;
+  const senior = classValue ? seniorOfCell(classValue) : null;
+  const targetClass = target ? structure.classes.find((c) => c.id === target.classId) : undefined;
+  const targetSection = targetClass && target?.sectionId ? targetClass.sections.find((s) => s.id === target.sectionId) : undefined;
+  // A row of a file made for one class: it names no class, or only the number of a stream's class (11, XI) with no stream said.
+  const streamSaid = !!get("stream") || (!!classValue && streamOf(classValue) !== null);
+  const ofTarget =
+    !!targetClass && (!classValue || (senior !== null && !streamSaid && streamOf(targetClass.name) !== null && classNumber(targetClass.name) === senior));
+  if (targetClass && ofTarget) {
+    klass = targetClass;
+    matched = { classId: targetClass.id, sectionId: null };
+  } else if (senior !== null && (!klass || needsStream(klass.name))) {
+    const streams = streamClassesOf(structure.classes, senior);
+    const typed = get("stream");
+    const asked = typed || streamOf(classValue) || "";
+    const found = asked ? findStream(streams, asked) : undefined;
+    const names = streams.map((c) => streamOf(c.name)).join(", ");
+    if (found) {
+      klass = found;
+      matched = { classId: found.id, sectionId: null };
+    } else {
+      klass = undefined;
+      matched = null;
+      streamProblem = true;
+      problems.push(
+        streams.length === 0
+          ? { label: "Stream", message: `Class ${senior} is taught in streams, and your school has none yet: add them in Classes & Sections`, fields: [] }
+          : asked
+            ? { label: "Stream", message: `Class ${senior} has no stream "${asked}": ${names}`, fields: [typed ? "stream" : "className"] }
+            : { label: "Stream", message: `Class ${senior} is taught in streams: type one of ${names}`, fields: ["stream"] }
+      );
+    }
+  }
   let sectionId: string | null = null;
+  // A class that is split into sections, and a row that names none of them (no section, or one the class does not have): never a
+  // problem. The row is placed in one of the class's sections once the whole file is known (`placeInSections`).
+  let autoSection: PreparedRow["autoSection"] = null;
   const sectionValue = get("sectionName") || matched?.unknownSection || "";
-  const sectionCell: ImportField = get("sectionName") || !matched?.unknownSection ? "sectionName" : "className";
+  if (targetClass && klass && klass.id !== targetClass.id) {
+    problems.push({ label: "Class", message: `This file is for ${targetClass.name}, but this row says "${classValue}"`, fields: ["className"] });
+  }
   if (klass) {
-    const names = klass.sections.map((s) => s.name).join(", ");
-    if (sectionValue && klass.sections.length > 0) {
+    if (targetSection && klass.id === targetClass?.id) {
+      // A file made for one section: a row that names none is in it, a row that names another is not this file's.
+      const named = sectionValue || klass.sections.find((s) => s.id === matched?.sectionId)?.name || "";
+      if (named && sectionKey(named) !== sectionKey(targetSection.name)) {
+        problems.push({
+          label: "Section",
+          message: `This file is for ${klass.name} - ${targetSection.name}, but this row says section ${named}`,
+          fields: [get("sectionName") ? "sectionName" : "className"],
+        });
+      } else sectionId = targetSection.id;
+    } else if (sectionValue && klass.sections.length > 0) {
       const section = klass.sections.find((s) => sectionKey(s.name) === sectionKey(sectionValue));
       if (section) sectionId = section.id;
-      else problems.push({ label: "Section", message: `${klass.name} has sections ${names}, not "${sectionValue}"`, fields: [sectionCell] });
+      else autoSection = { word: sectionValue };
     } else if (sectionValue && klass.sections.length === 0) {
       warnings.push(`${klass.name} has no sections: the section in the file (${sectionValue}) is not used.`);
     } else {
       sectionId = matched?.sectionId ?? null;
-      // The class is right; it is split into sections, so the row needs one (typed in the Section column).
-      if (!sectionId && klass.sections.length > 0) problems.push({ label: "Section", message: `${klass.name} has sections ${names}: type one`, fields: ["sectionName"] });
+      if (!sectionId && klass.sections.length > 0) autoSection = { word: "" };
     }
-  } else if (classValue) {
+  } else if (classValue && !streamProblem) {
     problems.push({ label: "Class", message: `Your school has no "${classValue}": type one of your classes`, fields: ["className"] });
   }
   const section = klass?.sections.find((s) => s.id === sectionId);
@@ -722,7 +811,7 @@ export function prepareRow(
   const primary = Math.max(0, guardians.findIndex((g) => g.mobile.length === 10));
   if (guardians[primary]) {
     guardians[primary].isPrimary = true;
-    guardians[primary].email = get("parentEmail");
+    guardians[primary].email = get("parentEmail").toLowerCase();
   }
 
   const values: StudentFormValues = {
@@ -789,7 +878,7 @@ export function prepareRow(
   // The admission form's own rules, with its words. Every detail the school decides about is optional here (the bulk upload is never
   // refused for them: a school brings in the students it already has, and an old register seldom holds the address, the previous school
   // or the IDs); a detail that is given is still checked. The class and section problems above already say what is wrong with them.
-  const check = { classHasSections: !!klass?.sections.length, admissionDateRequired: false, today: todayInIndia() };
+  const check = { classHasSections: !!klass?.sections.length && !autoSection, admissionDateRequired: false, today: todayInIndia() };
   const errors = checkStudentForm(values, { ...check, rules: LENIENT_FIELD_RULES, custom: ownFields });
   if (guardians.length === 0) errors.guardians = "Add at least one parent with a mobile number";
   for (const [path, message] of Object.entries(errors)) {
@@ -807,6 +896,7 @@ export function prepareRow(
     parentLabel: primaryGuardian ? `${primaryGuardian.name || "(no name)"}${primaryGuardian.mobile ? ` · ${primaryGuardian.mobile}` : ""}` : "(no parent)",
     classId: klass?.id ?? "",
     sectionId,
+    autoSection,
     input: {
       row: sheetRow.row,
       ...(admissionNumber ? { admissionNumber } : {}),
@@ -816,6 +906,101 @@ export function prepareRow(
     warnings,
     guardianSources: sources,
   };
+}
+
+/**
+ * The target as the school still has it: null when the class is gone (made inactive since), and no section when the section is gone.
+ * `prepareRow` and the pages read the target through this, so a stale choice never reaches a row.
+ */
+export function usableTarget(target: ImportTarget | null, classes: readonly ClassItem[]): ImportTarget | null {
+  const klass = target ? classes.find((c) => c.id === target.classId) : undefined;
+  if (!target || !klass) return null;
+  return { classId: klass.id, sectionId: klass.sections.some((s) => s.id === target.sectionId) ? target.sectionId : null };
+}
+
+/** Where a file made for one class goes, in words: "Class 5" or "Class 5 - B"; null for a whole-school file. */
+export function targetLabel(target: ImportTarget | null, classes: readonly ClassItem[]): string | null {
+  const live = usableTarget(target, classes);
+  const klass = live ? classes.find((c) => c.id === live.classId) : undefined;
+  if (!live || !klass) return null;
+  const section = klass.sections.find((s) => s.id === live.sectionId);
+  return section ? `${klass.name} - ${section.name}` : klass.name;
+}
+
+/**
+ * Joins what each request of one upload raised: a section is listed once, from the seats it had before the first request to the seats it
+ * has after the last (the class's seats the same way). Pure: the lists given are not changed.
+ */
+export function mergeSeatsRaised(into: readonly SeatsRaised[], more: readonly SeatsRaised[]): SeatsRaised[] {
+  const merged = into.map((r) => ({ ...r }));
+  for (const next of more) {
+    const have = merged.find((r) => r.classId === next.classId && r.sectionId === next.sectionId);
+    if (!have) {
+      merged.push({ ...next });
+      continue;
+    }
+    have.to = next.to;
+    if (next.classTo !== null) {
+      have.classFrom = have.classFrom ?? next.classFrom;
+      have.classTo = next.classTo;
+    }
+  }
+  return merged;
+}
+
+/** Names in a sentence, each once: "Class 6", "Class 6 and Class 7", "Class 6, Class 7 and UKG". */
+export function joinNames(names: readonly string[]): string {
+  const each = [...new Set(names)];
+  return each.length <= 1 ? (each[0] ?? "") : `${each.slice(0, -1).join(", ")} and ${each[each.length - 1]}`;
+}
+
+/**
+ * Gives each row that has no section (`autoSection`) one of its class's sections, so a section is never a reason to stop a row: a
+ * file without a Section column, an empty box, or a section the school does not have ("5-C" when Class 5 is A and B). The students are
+ * shared between the sections in the order of the file: each goes to the section that has the fewest students (the ones the school
+ * already has this year, `loads`, and the rows of the file that name their section, count), a full section only when every one is
+ * full (the page then asks about the seats), and the roll number is kept free: a student with roll 1 does not go where roll 1 is taken.
+ * Rows that `skip` (a blank row of the typed table, a student the school already has) are left as they are and take no seat.
+ * A row that names a section the class does not have says so, and where the student goes. Pure: the rows given are not changed.
+ */
+export function placeInSections(
+  rows: readonly PreparedRow[],
+  classes: readonly ClassItem[],
+  loads: readonly { sectionId: string; enrolled: number }[],
+  skip: (row: number) => boolean = () => false
+): PreparedRow[] {
+  const rollOf = (r: PreparedRow) => (r.input.student.rollNumber ? String(r.input.student.rollNumber) : undefined);
+  const used = new Map<string, number>(loads.map((l) => [l.sectionId, l.enrolled]));
+  const rolls = new Map<string, Set<string>>();
+  const take = (sectionId: string, roll: string | undefined) => {
+    used.set(sectionId, (used.get(sectionId) ?? 0) + 1);
+    if (roll) rolls.set(sectionId, (rolls.get(sectionId) ?? new Set<string>()).add(roll));
+  };
+  // The rows that name their section come first: they are there whatever the order of the file.
+  for (const r of rows) if (r.sectionId && !skip(r.row)) take(r.sectionId, rollOf(r));
+
+  return rows.map((r) => {
+    if (!r.autoSection || skip(r.row)) return r;
+    const klass = classes.find((c) => c.id === r.classId);
+    if (!klass || klass.sections.length === 0) return r;
+    const roll = rollOf(r);
+    const free = (s: SectionItem) => s.capacity === null || (used.get(s.id) ?? 0) < s.capacity;
+    let pool = klass.sections.filter(free);
+    if (pool.length === 0) pool = [...klass.sections];
+    const rollFree = roll ? pool.filter((s) => !rolls.get(s.id)?.has(roll)) : pool;
+    if (rollFree.length > 0) pool = rollFree;
+    // The fewest students; the first of the class on a tie (they are in the school's order).
+    const section = pool.reduce((best, s) => ((used.get(s.id) ?? 0) < (used.get(best.id) ?? 0) ? s : best));
+    take(section.id, roll);
+    const word = r.autoSection.word;
+    return {
+      ...r,
+      sectionId: section.id,
+      classLabel: `${klass.name} - ${section.name}`,
+      warnings: word ? [...r.warnings, `${klass.name} has no section "${word}": the student goes to section ${section.name}.`] : r.warnings,
+      input: { ...r.input, student: { ...r.input.student, sectionId: section.id } },
+    };
+  });
 }
 
 /**

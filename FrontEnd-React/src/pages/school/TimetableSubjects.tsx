@@ -105,7 +105,7 @@ function UsualSubjects({ have }: { have: Set<string> }) {
   return (
     <Card className="space-y-3 p-5">
       <div>
-        <h2 className="text-base font-bold text-foreground">Add the usual subjects</h2>
+        <h2 className="text-section-heading">Add the usual subjects</h2>
         <p className="text-sm text-foreground-muted">Tick the subjects your school teaches, then add them all at once.</p>
       </div>
       <div role="group" aria-label="The usual subjects" className="flex flex-wrap gap-2">
@@ -167,7 +167,7 @@ function OwnSubject() {
   return (
     <Card className="p-5">
       <form onSubmit={submit} noValidate className="space-y-3" aria-label="Add your own subject">
-        <h2 className="text-base font-bold text-foreground">Add a subject of your own</h2>
+        <h2 className="text-section-heading">Add a subject of your own</h2>
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem_minmax(0,1fr)_auto] sm:items-start">
           <Field id="own-subject-name" label="Subject name" error={tried && name.trim() === "" ? "Enter the subject name" : boxes.name}>
             <Input id="own-subject-name" value={name} maxLength={40} onChange={(e) => { setName(e.target.value); clearError(); }} />
@@ -215,7 +215,7 @@ export default function TimetableSubjectsPage() {
       <StudentFormHeader
         title="Subjects"
         subtitle="What your school teaches."
-        crumbs={[{ label: "Dashboard", to: "/dashboard" }, { label: "Timetable", to: "/school/timetable" }]}
+        crumbs={[{ label: "Dashboard", to: "/dashboard" }, { label: "Class timetables", to: "/school/timetable" }]}
       />
 
       {!readOnly && <UsualSubjects have={have} />}
@@ -223,7 +223,7 @@ export default function TimetableSubjectsPage() {
 
       <section aria-label="Your subjects" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-lg font-bold tracking-tight text-foreground">Your subjects</h2>
+          <h2 className="text-section-heading">Your subjects</h2>
           <div role="tablist" aria-label="Which subjects to show" className="flex gap-1 rounded-xl border border-border bg-surface p-1 shadow-sm">
             {(["active", "archived"] as const).map((v) => (
               <button

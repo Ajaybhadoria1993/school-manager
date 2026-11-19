@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { AcademicYear, type IAcademicYear } from "../../academics/models/AcademicYear";
 import { SchoolClass } from "../../academics/models/SchoolClass";
+import { NOT_INACTIVE } from "../../academics/models/status";
 import { Section } from "../../academics/models/Section";
 import { isDuplicateKey } from "../../academics/services/shared";
 import { MAX_PROMOTION_ENTRIES, type PromotionOutcome, type PromotionStatus } from "../constants";
@@ -9,6 +10,7 @@ import { Enrolment } from "../models/Enrolment";
 import { PromotionBatch, type IPromotionBatch, type IPromotionEntry } from "../models/PromotionBatch";
 import { Student } from "../models/Student";
 import type { UpdatePromotionInput } from "../schemas/students.schemas";
+import { classAfter } from "../classNumber";
 import { actorRecord, type Actor } from "./actor";
 import { fullName } from "./shared";
 
@@ -75,7 +77,8 @@ export class PromotionService {
   /** The classes of the school in teaching order, each with the sections it has in the year that waits. */
   private static async targets(school: Types.ObjectId, toYearId: Types.ObjectId): Promise<Targets> {
     const [classes, sections] = await Promise.all([
-      SchoolClass.find({ tenantId: school }).sort({ order: 1, _id: 1 }).select("name order").lean(),
+      // A class a school made inactive is not a place to promote anyone into.
+      SchoolClass.find({ tenantId: school, ...NOT_INACTIVE }).sort({ order: 1, _id: 1 }).select("name order").lean(),
       Section.find({ tenantId: school, academicYearId: toYearId }).select("classId name nameKey capacity").lean(),
     ]);
     return classes.map((c) => {
@@ -169,7 +172,7 @@ export class PromotionService {
       const fromSection = e.sectionId ? (sectionName.get(e.sectionId.toString()) ?? null) : null;
       // The next class in teaching order, in the same section name when there is one; from the last class the student leaves.
       const at = targets.findIndex((t) => t.classId === e.classId.toString());
-      const next = at >= 0 ? targets[at + 1] : undefined;
+      const next = classAfter(targets, at);
       const place = next ? PromotionService.place(targets, next.classId, fromSection) : null;
       entries.push({
         studentId: s._id,
@@ -252,7 +255,7 @@ export class PromotionService {
       const classId =
         change.outcome === "retain"
           ? entry.fromClassId.toString()
-          : (change.classId ?? entry.toClassId?.toString() ?? (fromAt >= 0 ? targets[fromAt + 1]?.classId : undefined));
+          : (change.classId ?? entry.toClassId?.toString() ?? classAfter(targets, fromAt)?.classId);
       if (!classId || !targets.some((t) => t.classId === classId)) {
         throw ApiError.badRequest("Choose a class of your school.", "CLASS_NOT_FOUND", [{ path: at("classId"), message: "Choose a class of your school" }]);
       }

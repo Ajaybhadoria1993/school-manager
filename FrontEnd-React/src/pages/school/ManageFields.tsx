@@ -19,7 +19,7 @@ import { useToast } from "../../components/ui/toast-context";
 export type FieldsFrom = "admit" | "students";
 
 /**
- * Manage school > Students > Manage fields (`/school/students/fields`): the school's fields on a page of their own, for a school that
+ * Students > Manage fields (`/school/students/fields`): the school's fields on a page of their own, for a school that
  * has no student yet (so no Export button) and for anyone in the middle of Add student. Two cards, each the school's to arrange on its
  * own: **Add student form** (the four steps with the boxes the form has; Asked, Mandatory, the step of each detail, the school's own
  * fields, a preview) and **Excel columns** (the Export page's list: in the file or not, heading, place). Mandatory is one setting

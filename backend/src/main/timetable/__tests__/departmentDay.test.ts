@@ -129,14 +129,14 @@ describe("a department's own timing", () => {
     expect((await put(r.token, preWeek("64b7f0c2a1b2c3d4e5f60718"))).status).toBe(404);
   });
 
-  it("is kept when a class is deleted, and goes with its department", async () => {
+  it("is kept when a class, or its whole department, is made inactive (nothing is deleted)", async () => {
     const r = await ready();
     await put(r.token, preWeek(r.pre));
     const lkg = await addClass(r.token, "LKG");
-    await request(app).delete(`/api/v1/academics/classes/${lkg.id}`).set(auth(r.token));
+    expect((await request(app).post(`/api/v1/academics/classes/${lkg.id}/deactivate`).set(auth(r.token))).status).toBe(200);
     expect(await BellSchedule.countDocuments({ tenantId: r.tenantId, departmentId: r.pre })).toBe(2);
-    await request(app).delete(`/api/v1/academics/departments/${r.pre}`).set(auth(r.token));
-    expect(await BellSchedule.countDocuments({ tenantId: r.tenantId, departmentId: r.pre })).toBe(0);
+    expect((await request(app).delete(`/api/v1/academics/departments/${r.pre}`).set(auth(r.token))).status).toBe(404);
+    expect(await BellSchedule.countDocuments({ tenantId: r.tenantId, departmentId: r.pre })).toBe(2);
   });
 
   it("is not changed or deleted one timing at a time (only as the department's week)", async () => {

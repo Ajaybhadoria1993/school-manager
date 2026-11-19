@@ -76,6 +76,15 @@ export const DESIGNATIONS =["Owner", "Chairman", "Director", "Principal", "Trust
 /** Each board can be taught in more than one medium, so this is a multiple choice (English and Hindi = both ticked). */
 export const MEDIUMS = ["English", "Hindi", "Regional"] as const;
 
+/**
+ * The streams the form offers for Class 11 and 12. A medium that runs streams gets one class per stream ("Class 11 Science"). A school may
+ * name its own as well (any name up to MAX_STREAM_NAME), so this is only the list of usual ones.
+ */
+export const SENIOR_STREAMS = ["Science", "Commerce", "Arts", "Maths"] as const;
+/** The most streams one medium can run, and the longest a stream's name can be ("Class 12 " and the name must fit a class's 40 letters). */
+export const MAX_SENIOR_STREAMS = 8;
+export const MAX_STREAM_NAME = 30;
+
 /** In teaching order: the form asks for the lowest and highest class a school runs. */
 export const CLASS_LEVELS = [
   "Pre-Nursery",

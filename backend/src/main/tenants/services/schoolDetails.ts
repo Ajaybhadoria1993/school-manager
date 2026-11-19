@@ -1,6 +1,36 @@
 import type { IAcademicYear } from "../../academics/models/AcademicYear";
+import { minutesToClock } from "../../timetable/time";
 import type { IUser } from "../../users/models/User";
-import type { ITenant } from "../models/Tenant";
+import type { IMediumPlan, IPlanSlot, ITenant } from "../models/Tenant";
+
+/** A row of a day as the form shows it: times as "08:30". */
+export interface PlanSlotDto {
+  kind: IPlanSlot["kind"];
+  label: string;
+  start: string;
+  end: string;
+}
+
+/** One medium's classes and timing, as the form fills from it. */
+export interface MediumPlanDto {
+  medium: string;
+  lowestClass: string;
+  highestClass: string;
+  seniorStreams: string[];
+  classes: { name: string; sections: number; seats: number }[];
+  week: { days: number[]; usual: PlanSlotDto[]; saturday: PlanSlotDto[] | null };
+}
+
+const toSlotDtos = (slots: readonly IPlanSlot[]): PlanSlotDto[] => slots.map((s) => ({ kind: s.kind, label: s.label ?? "", start: minutesToClock(s.start), end: minutesToClock(s.end) }));
+
+const toPlanDto = (plan: IMediumPlan): MediumPlanDto => ({
+  medium: plan.medium,
+  lowestClass: plan.lowestClass,
+  highestClass: plan.highestClass,
+  seniorStreams: [...(plan.seniorStreams ?? [])],
+  classes: (plan.classes ?? []).map((c) => ({ name: c.name, sections: c.sections, seats: c.seats })),
+  week: { days: [...(plan.week?.days ?? [])], usual: toSlotDtos(plan.week?.usual ?? []), saturday: plan.week?.saturday?.length ? toSlotDtos(plan.week.saturday) : null },
+});
 
 /**
  * The onboarding answers as the API shows them, read back from where they are really stored
@@ -21,8 +51,10 @@ export interface SchoolSteps {
       /** This board's own affiliation / recognition number; "" when not given. */
       affiliationNumber: string;
       mediums: string[];
+      /** Each medium's classes and timing; empty until the school has filled them in. */
+      plans: MediumPlanDto[];
     }[];
-    /** The first and the last class the school runs. */
+    /** The first and the last class the school runs (across all its mediums). */
     lowestClass: string | null;
     highestClass: string | null;
     approxStudents: number | null;
@@ -35,6 +67,8 @@ export interface SchoolSteps {
     academicYear: { name: string; startDate: string; endDate: string; status: string | null };
     udiseCode: string;
     establishedYear: number | null;
+    /** Where the school's logo is, under the API's address; "" when it has none. */
+    logoUrl: string;
   };
   2: {
     addressLine1: string;
@@ -81,6 +115,7 @@ export function buildSchoolSteps(tenant: ITenant, admin: AdminLike | null, year:
         otherBoard: entry.otherBoard ?? "",
         affiliationNumber: entry.affiliationNumber ?? "",
         mediums: [...entry.mediums],
+        plans: (entry.plans ?? []).map(toPlanDto),
       })),
       lowestClass: profile.lowestClass ?? null,
       highestClass: profile.highestClass ?? null,
@@ -91,6 +126,7 @@ export function buildSchoolSteps(tenant: ITenant, admin: AdminLike | null, year:
         : { name: "", startDate: "", endDate: "", status: null },
       udiseCode: profile.udiseCode ?? "",
       establishedYear: profile.establishedYear ?? null,
+      logoUrl: profile.logoUpdatedAt ? `/public/schools/${tenant._id.toString()}/logo?v=${new Date(profile.logoUpdatedAt).getTime()}` : "",
     },
     2: {
       addressLine1: address.line1 ?? "",

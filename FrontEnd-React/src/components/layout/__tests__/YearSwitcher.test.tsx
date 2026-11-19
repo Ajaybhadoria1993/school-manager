@@ -9,6 +9,7 @@ import store from "../../../redux/store";
 import { sessionStarted } from "../../../redux/slices/authSlice";
 import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
 import { fakeApi } from "../../../test/fakeApi";
+import { AppThemeProvider } from "../../../theme/AppThemeProvider";
 import { clearTokens, setTokens } from "../../../utils/auth";
 import type { AcademicYear } from "../../../types";
 import { Topbar } from "../Topbar";
@@ -40,12 +41,14 @@ function openApp(years: AcademicYear[]) {
   });
   render(
     <Provider store={store}>
-      <ToastProvider>
-        <MemoryRouter>
-          <Topbar title="Students" onMenuClick={() => {}} />
-          <YearViewBanner />
-        </MemoryRouter>
-      </ToastProvider>
+      <AppThemeProvider>
+        <ToastProvider>
+          <MemoryRouter>
+            <Topbar title="Students" onMenuClick={() => {}} />
+            <YearViewBanner />
+          </MemoryRouter>
+        </ToastProvider>
+      </AppThemeProvider>
     </Provider>
   );
   return { calls, user: userEvent.setup() };

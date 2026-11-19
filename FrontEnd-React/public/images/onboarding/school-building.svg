@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 260" width="400" height="260">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#60a5fa"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="grass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4ade80"/>
+      <stop offset="1" stop-color="#16a34a"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="260" fill="url(#sky)"/>
+  <!-- clouds -->
+  <g fill="#fff" opacity=".9">
+    <ellipse cx="70" cy="50" rx="30" ry="11"/><ellipse cx="90" cy="42" rx="22" ry="12"/><ellipse cx="52" cy="44" rx="18" ry="9"/>
+    <ellipse cx="320" cy="35" rx="28" ry="10"/><ellipse cx="338" cy="28" rx="20" ry="11"/>
+  </g>
+  <!-- hills / grass -->
+  <path d="M0 170 Q100 140 200 165 T400 155 V260 H0Z" fill="url(#grass)"/>
+  <!-- trees left -->
+  <g>
+    <rect x="38" y="150" width="8" height="40" fill="#92400e"/>
+    <circle cx="42" cy="140" r="26" fill="#22c55e"/><circle cx="30" cy="150" r="18" fill="#16a34a"/>
+    <rect x="86" y="165" width="6" height="30" fill="#92400e"/>
+    <circle cx="89" cy="157" r="19" fill="#4ade80"/>
+  </g>
+  <!-- trees right -->
+  <g>
+    <rect x="352" y="150" width="8" height="40" fill="#92400e"/>
+    <circle cx="356" cy="140" r="26" fill="#22c55e"/><circle cx="368" cy="150" r="18" fill="#16a34a"/>
+    <rect x="308" y="165" width="6" height="30" fill="#92400e"/>
+    <circle cx="311" cy="157" r="19" fill="#4ade80"/>
+  </g>
+  <!-- school building -->
+  <g>
+    <!-- main body -->
+    <rect x="120" y="125" width="160" height="70" fill="#fde68a"/>
+    <rect x="120" y="125" width="160" height="6" fill="#f59e0b"/>
+    <!-- center tower -->
+    <rect x="170" y="90" width="60" height="105" fill="#fcd34d"/>
+    <path d="M162 92 L200 62 L238 92Z" fill="#ef4444"/>
+    <path d="M162 92 L238 92 L238 97 L162 97Z" fill="#b91c1c"/>
+    <!-- flag -->
+    <rect x="199" y="40" width="2" height="24" fill="#475569"/>
+    <path d="M201 41 L217 46 L201 51Z" fill="#ef4444"/>
+    <!-- clock -->
+    <circle cx="200" cy="108" r="9" fill="#fff" stroke="#b45309" stroke-width="2"/>
+    <path d="M200 102v6l4 2" stroke="#1e293b" stroke-width="1.500" fill="none" stroke-linecap="round"/>
+    <!-- side roofs -->
+    <path d="M112 128 L200 118 L288 128 L280 133 L120 133Z" fill="#ef4444" opacity="0"/>
+    <rect x="112" y="120" width="176" height="7" rx="2" fill="#ef4444"/>
+    <!-- windows left -->
+    <g fill="#93c5fd" stroke="#1d4ed8" stroke-width="1.500">
+      <rect x="130" y="140" width="14" height="18" rx="2"/><rect x="150" y="140" width="14" height="18" rx="2"/>
+      <rect x="130" y="166" width="14" height="18" rx="2"/><rect x="150" y="166" width="14" height="18" rx="2"/>
+      <!-- right -->
+      <rect x="236" y="140" width="14" height="18" rx="2"/><rect x="256" y="140" width="14" height="18" rx="2"/>
+      <rect x="236" y="166" width="14" height="18" rx="2"/><rect x="256" y="166" width="14" height="18" rx="2"/>
+      <!-- tower windows -->
+      <rect x="180" y="128" width="12" height="16" rx="2"/><rect x="208" y="128" width="12" height="16" rx="2"/>
+    </g>
+    <!-- door -->
+    <rect x="186" y="158" width="28" height="37" rx="14" ry="14" fill="#1d4ed8"/>
+    <rect x="199" y="158" width="2" height="37" fill="#93c5fd"/>
+    <!-- steps -->
+    <rect x="176" y="195" width="48" height="5" fill="#cbd5e1"/>
+    <rect x="170" y="200" width="60" height="5" fill="#94a3b8"/>
+  </g>
+  <!-- road -->
+  <path d="M170 205 L230 205 L290 260 L110 260Z" fill="#64748b"/>
+  <path d="M200 210 V260" stroke="#fff" stroke-width="3" stroke-dasharray="8 8"/>
+  <!-- bushes -->
+  <g fill="#15803d">
+    <ellipse cx="135" cy="198" rx="18" ry="9"/><ellipse cx="265" cy="198" rx="18" ry="9"/>
+  </g>
+</svg>

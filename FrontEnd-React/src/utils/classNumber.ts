@@ -21,3 +21,26 @@ export function classNumber(name: string): number | null {
   const number = digits ? Number(digits[1]) : ROMAN[first];
   return number >= 1 && number <= 12 ? number : null;
 }
+
+/**
+ * The stream a class is taught in, as the school wrote it: "Science" for "Class 11 Science". Only Class 11 and 12 have streams; null
+ * for any other class and for Class 11 or 12 as a whole. A single letter after the number is a section, not a stream. The server reads
+ * a class's name the same way (backend/src/main/students/classNumber.ts).
+ */
+export function streamOf(name: string): string | null {
+  const number = classNumber(name);
+  if (number !== 11 && number !== 12) return null;
+  const words = name.trim().split(/\s+/);
+  const at = words.findIndex((w) => !CLASS_WORDS.has(w.toLowerCase().replace(/[^a-z0-9]+/g, "")) && w.replace(/[^a-z0-9]+/gi, "") !== "");
+  const rest = words
+    .slice(at + 1)
+    .join(" ")
+    .replace(/^[\s\-–—:,./]+|[\s\-–—:,./]+$/g, "");
+  return rest.length >= 2 ? rest : null;
+}
+
+/** Class 11 or 12 as a whole: a student must be put in one of its streams ("Class 11 Science"), never in this class. */
+export function needsStream(name: string): boolean {
+  const number = classNumber(name);
+  return (number === 11 || number === 12) && streamOf(name) === null;
+}

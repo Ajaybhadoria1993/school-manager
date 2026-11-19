@@ -1,4 +1,4 @@
-import { DEFAULT_SETUP, generateDay, setupFromSlots, setupProblems, slotProblems, type DaySetup } from "./timings";
+import { DEFAULT_SETUP, clockToMinutes, generateDay, setupFromSlots, setupProblems, shiftBreaks, shiftSetup, slotProblems, type DaySetup } from "./timings";
 import type { Schedule, SchoolDayInput, Slot } from "../types";
 
 /**
@@ -60,6 +60,30 @@ export function readWeek(schedules: readonly Schedule[], departmentId: string | 
   return { plan: { usual, days }, isNew: false, handMade };
 }
 
+/** How many minutes later (negative: earlier) one start time is than another; null when either is not a whole time (a box half typed). */
+export function shiftMinutes(from: string, to: string): number | null {
+  const a = clockToMinutes(from);
+  const b = clockToMinutes(to);
+  return a === null || b === null ? null : b - a;
+}
+
+/**
+ * The usual day was changed to `next` (2026-11-17, the winter shift). When the START moved, the lunch and the short break move with it, and
+ * so does every day of the week that has hours of its own (a short Saturday), by the same minutes: school starts an hour later, so does
+ * everything. A lunch or a day that would leave the day stays as it is. `lastStart` is the last whole start the page saw: a box cleared and
+ * typed again is measured from it. Anything else that changed (a period's length, how many periods) changes only that.
+ */
+export function moveStart(plan: WeekPlan, next: DaySetup, lastStart: string): WeekPlan {
+  const was = clockToMinutes(plan.usual.start) !== null ? plan.usual.start : lastStart;
+  const delta = next.start === plan.usual.start ? null : shiftMinutes(was, next.start);
+  if (!delta) return { ...plan, usual: next };
+  const days = Object.fromEntries(WEEK_DAYS.map((d) => [d, plan.days[d].mode === "own" ? { mode: "own" as const, setup: shiftSetup(plan.days[d].setup, delta) ?? plan.days[d].setup } : plan.days[d]]));
+  return { usual: shiftBreaks(next, delta), days };
+}
+
+/** The days of the week that follow the school's usual day. */
+export const usualDays = (plan: WeekPlan): number[] => WEEK_DAYS.filter((d) => plan.days[d]?.mode === "usual");
+
 /** The numbers a day of the week follows, or null for a holiday. */
 export function setupOf(plan: WeekPlan, day: number): DaySetup | null {
   const d = plan.days[day];
@@ -80,6 +104,27 @@ export function weekBody(plan: WeekPlan, departmentId: string | null = null): Sc
   return departmentId ? { departmentId, days } : { days };
 }
 
+/**
+ * A department's own day (2026-11-10, any department since 2026-11-13): the given rows, sent for the school's usual days only, so a day
+ * the school keeps different (a short Saturday) and a holiday follow the school's timing for its classes too. A day not sent is not covered
+ * by the department's timing (the server's rule).
+ */
+export function departmentRowsBody(school: WeekPlan, slots: Slot[], departmentId: string): SchoolDayInput {
+  return { departmentId, days: usualDays(school).map((day) => ({ day, slots })) };
+}
+
+/** A department's own day made from the numbers of a day (see `departmentRowsBody`). */
+export function departmentDayBody(school: WeekPlan, setup: DaySetup, departmentId: string): SchoolDayInput {
+  return departmentRowsBody(school, generateDay(setup).slots, departmentId);
+}
+
+/** The rows of a department's usual day: the one of its own timings that covers most days. Empty when it has none (a holiday has no periods). */
+export function departmentRows(schedules: readonly Schedule[], departmentId: string): Slot[] {
+  const working = schedules.filter((s) => s.departmentId === departmentId && s.slots.some((slot) => slot.kind === "period"));
+  if (working.length === 0) return [];
+  return working.reduce((best, s) => (s.days.length > best.days.length ? s : best), working[0]).slots;
+}
+
 export interface WeekProblem {
   /** "usual" for the usual day, a day number for a day of its own, "week" for the week as a whole. */
   where: "usual" | "week" | number;
@@ -87,7 +132,7 @@ export interface WeekProblem {
 }
 
 /** The first thing wrong with a day's numbers: the lunch and the short break first, then what the rows made from them would be refused for. */
-const firstProblem = (setup: DaySetup): string | undefined => setupProblems(setup)[0] ?? slotProblems(generateDay(setup).slots)[0]?.message;
+export const dayProblem = (setup: DaySetup): string | undefined => setupProblems(setup)[0] ?? slotProblems(generateDay(setup).slots)[0]?.message;
 
 /** What the server would refuse, said before anything is sent: no day with school, or a day whose numbers do not make a day. */
 export function weekProblems(plan: WeekPlan): WeekProblem[] {
@@ -95,15 +140,31 @@ export function weekProblems(plan: WeekPlan): WeekProblem[] {
   const modes = WEEK_DAYS.map((d) => plan.days[d]?.mode ?? "off");
   if (modes.every((m) => m === "off")) return [{ where: "week", message: "Keep at least one day with school" }];
   if (modes.includes("usual")) {
-    const first = firstProblem(plan.usual);
+    const first = dayProblem(plan.usual);
     if (first) found.push({ where: "usual", message: first });
   }
   for (const d of WEEK_DAYS) {
     if (plan.days[d]?.mode !== "own") continue;
-    const first = firstProblem(plan.days[d].setup);
+    const first = dayProblem(plan.days[d].setup);
     if (first) found.push({ where: d, message: first });
   }
   return found;
+}
+
+/** A day's rows in a few words ("08:30 to 14:20 · 8 periods · lunch 10:30 to 11:00"); rows made by hand read as they are. */
+export function rowsSummary(rows: readonly Slot[]): string {
+  const periods = rows.filter((s) => s.kind === "period").length;
+  if (periods === 0) return "No periods";
+  const lunch = rows.find((s) => s.kind === "lunch");
+  const rest = rows.find((s) => s.kind === "break" && s.label === "Short break");
+  return [
+    `${rows[0].start} to ${rows[rows.length - 1].end}`,
+    `${periods} period${periods === 1 ? "" : "s"}`,
+    lunch ? `lunch ${lunch.start} to ${lunch.end}` : "no lunch",
+    rest ? `short break ${rest.start} to ${rest.end}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** "08:30 to 14:20 · 8 periods · lunch 10:30 to 11:00": a day in a few words. */

@@ -1,3 +1,4 @@
+import { DEFAULT_TEACHER_RULES, type TeacherDetailKey, type TeacherFieldRules } from "../constants/teacherFields";
 import { TEACHER_LIMITS } from "../constants/teachers";
 import type { EmploymentType, Teacher, TeacherGender, TeacherInput } from "../types";
 import { ageOn, todayInIndia } from "./students";
@@ -134,6 +135,42 @@ export const MESSAGES = {
 } as const;
 
 
+/** The box each usual detail the school decides about is, and what is said when a needed one is empty (the server's words). */
+export const FORM_KEY_OF_DETAIL: Record<TeacherDetailKey, TeacherFormKey> = {
+  dateOfBirth: "dateOfBirth",
+  email: "email",
+  address: "addressLine1",
+  city: "city",
+  state: "state",
+  pincode: "pincode",
+  employeeCode: "employeeCode",
+  designation: "designation",
+  qualification: "qualification",
+  experienceYears: "experienceYears",
+  joiningDate: "joiningDate",
+  employmentType: "employmentType",
+  subjects: "subjectIds",
+};
+export const NEEDED_MESSAGES: Record<TeacherDetailKey, string> = {
+  dateOfBirth: "Enter the date of birth",
+  email: "Enter the email",
+  address: "Enter the house and street",
+  city: "Enter the city or village",
+  state: "Choose the state",
+  pincode: "Enter the PIN code",
+  employeeCode: "Enter the employee code",
+  designation: "Enter the designation",
+  qualification: "Enter the qualification",
+  experienceYears: "Enter the years of experience",
+  joiningDate: "Enter the joining date",
+  employmentType: "Choose the employment type",
+  subjects: "Choose at least one subject",
+};
+
+/** Whether the school asks any of the Job details (a card with no box is not shown, and its step is left out of Add teacher). */
+export const jobAsked = (rules: TeacherFieldRules) =>
+  (["employeeCode", "designation", "qualification", "employmentType", "joiningDate", "experienceYears"] as const).some((k) => rules[k] !== "hidden");
+
 /** The 10 digits of a number typed with a +91, a 0 or spaces. */
 export function nationalNumber(value: string): string {
   let digits = value.replace(/[\s\-().]/g, "");
@@ -155,9 +192,13 @@ const daysFromNow = (days: number) => new Date(new Date(`${todayInIndia()}T00:00
  * What is wrong with the form. `login`: the teacher gets a login now, so the mobile number, the gender and the username and password
  * are needed; for a teacher who is only changed, the name is all that is needed (the older teachers were added with nothing else).
  * `requireGender: false` (the change form) leaves the gender optional: an older teacher who was given a login later has none.
+ * `rules`: what the school needs of the usual details (Teacher > Manage fields): a needed one must be answered, and a detail the school does
+ * not ask is not looked at (its box is not on the form, so a wrong old value in it must not stop a save).
  */
-export function teacherProblems(v: TeacherFormValues, options: { login: boolean; requireGender?: boolean }): TeacherProblems {
+export function teacherProblems(v: TeacherFormValues, options: { login: boolean; requireGender?: boolean; rules?: TeacherFieldRules }): TeacherProblems {
   const problems: TeacherProblems = {};
+  const rules = options.rules ?? DEFAULT_TEACHER_RULES;
+  const shown = (detail: TeacherDetailKey) => rules[detail] !== "hidden";
   if (v.name.trim() === "") problems.name = MESSAGES.name;
   if (options.login) {
     if (v.gender === "" && options.requireGender !== false) problems.gender = MESSAGES.gender;
@@ -165,20 +206,20 @@ export function teacherProblems(v: TeacherFormValues, options: { login: boolean;
   } else if (v.mobile.trim() !== "" && !isIndianMobile(nationalNumber(v.mobile))) {
     problems.mobile = MESSAGES.mobile;
   }
-  if (v.email.trim() !== "" && (!isEmail(v.email) || v.email.trim().length > 254)) problems.email = MESSAGES.email;
-  if (v.dateOfBirth !== "") {
+  if (shown("email") && v.email.trim() !== "" && (!isEmail(v.email) || v.email.trim().length > 254)) problems.email = MESSAGES.email;
+  if (shown("dateOfBirth") && v.dateOfBirth !== "") {
     if (!isRealDay(v.dateOfBirth)) problems.dateOfBirth = MESSAGES.dateInvalid("date of birth");
     else {
       const age = ageOn(v.dateOfBirth, todayInIndia());
       if (age < TEACHER_LIMITS.minAge || age > TEACHER_LIMITS.maxAge) problems.dateOfBirth = MESSAGES.dateOfBirth;
     }
   }
-  if (v.joiningDate !== "") {
+  if (shown("joiningDate") && v.joiningDate !== "") {
     if (!isRealDay(v.joiningDate)) problems.joiningDate = MESSAGES.dateInvalid("joining date");
     else if (v.joiningDate > daysFromNow(TEACHER_LIMITS.daysBeforeJoining)) problems.joiningDate = MESSAGES.joiningDate;
   }
-  if (v.pincode.trim() !== "" && !/^\d{6}$/.test(v.pincode.trim())) problems.pincode = MESSAGES.pincode;
-  if (v.experienceYears.trim() !== "") {
+  if (shown("pincode") && v.pincode.trim() !== "" && !/^\d{6}$/.test(v.pincode.trim())) problems.pincode = MESSAGES.pincode;
+  if (shown("experienceYears") && v.experienceYears.trim() !== "") {
     const years = Number(v.experienceYears);
     if (!Number.isInteger(years) || years < 0 || years > TEACHER_LIMITS.maxExperience) problems.experienceYears = MESSAGES.experienceYears;
   }
@@ -186,6 +227,13 @@ export function teacherProblems(v: TeacherFormValues, options: { login: boolean;
     if (v[key].trim() === "") continue;
     const count = Number(v[key]);
     if (!Number.isInteger(count) || count < 1 || count > max) problems[key] = MESSAGES[key];
+  }
+  // What the school needs: a needed detail must be answered (a wrong answer already said what is wrong).
+  for (const [detail, mode] of Object.entries(rules) as [TeacherDetailKey, TeacherFieldRules[TeacherDetailKey]][]) {
+    if (mode !== "required") continue;
+    const key = FORM_KEY_OF_DETAIL[detail];
+    const given = key === "subjectIds" ? v.subjectIds.length > 0 : String(v[key]).trim() !== "";
+    if (!given && problems[key] === undefined) problems[key] = NEEDED_MESSAGES[detail];
   }
   if (options.login) {
     if (!isUsername(v.username)) problems.username = MESSAGES.username;

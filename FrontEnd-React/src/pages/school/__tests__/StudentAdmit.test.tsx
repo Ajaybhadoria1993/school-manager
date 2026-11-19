@@ -9,6 +9,7 @@ import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import type { StudentSettings } from "../../../types";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
+import { signInAs, signOut } from "../../../test/session";
 import { CAPACITY, SETTINGS, STRUCTURE } from "../../../test/fixtures";
 import { placeIn } from "../../../utils/placement";
 import ManageFieldsPage from "../ManageFields";
@@ -67,7 +68,9 @@ const ADMITTED = {
 };
 const withRules = (fields: FieldRules): StudentSettings => ({ ...SETTINGS, fields });
 
-function openPage(entry = "/school/students/new") {
+function openPage(entry = "/school/students/new", state?: unknown) {
+  // The school admin: the page asks who is looking (what the school allowed them).
+  signInAs("school_admin");
   const router = createMemoryRouter(
     [
       { path: "/school/students/new", element: <StudentAdmitPage /> },
@@ -75,7 +78,7 @@ function openPage(entry = "/school/students/new") {
       { path: "/school/students/:id", element: <p>The student's page</p> },
       { path: "/school/students", element: <p>The students</p> },
     ],
-    { initialEntries: [entry] }
+    { initialEntries: [state === undefined ? entry : { pathname: entry, state }] }
   );
   render(
     <Provider store={store}>
@@ -135,6 +138,7 @@ async function parents(user: User) {
 }
 
 afterEach(() => {
+  signOut();
   cleanup();
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
   vi.unstubAllGlobals();
@@ -148,7 +152,8 @@ describe("Add student is filled in steps, like the school's onboarding", () => {
     await boxWhenShown("firstName");
     expect(within(steps()).getAllByRole("listitem").map((li) => li.textContent?.replace(/\d/g, "").trim())).toEqual(["Personal info", "Academic", "Parents", "More details"]);
     expect(current()).toContain("Personal info");
-    expect(screen.getByText(/Step 1 of 4/)).toBeInTheDocument();
+    // Said twice: by the stepper (narrow screens) and by the bar at the bottom, which keeps the place in view when the stepper has scrolled away.
+    expect(screen.getAllByText(/Step 1 of 4/)).toHaveLength(2);
     // This step's boxes, and nobody else's.
     expect(box("lastName")).not.toBeNull();
     expect(box("address.line1")).not.toBeNull();
@@ -202,7 +207,7 @@ describe("Add student is filled in steps, like the school's onboarding", () => {
     await waitFor(() => expect(current()).toContain("Academic"));
     expect(box("previousSchool.name")).not.toBeNull();
     expect(box("firstName")).toBeNull();
-    expect(screen.getByText(/Step 2 of 4/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Step 2 of 4/)).toHaveLength(2);
     // Personal info has its tick now.
     expect(within(steps()).getByRole("button", { name: /Personal info/ })).toHaveTextContent("done");
 
@@ -278,6 +283,38 @@ describe("Add student is filled in steps, like the school's onboarding", () => {
     expect(current()).toContain("Parents");
     expect(screen.queryByRole("button", { name: "Next step" })).not.toBeInTheDocument();
     expect(admitButton()).toBeInTheDocument();
+  });
+
+  it("an own field for Class 6 only is no step and no box for a child of Class 1, and the form's second step is the one to look at for Class 6", async () => {
+    const GROUP = { key: "c_group1", label: "Subject group", type: "text" as const, options: [], mode: "required" as const, classNumbers: [6] };
+    const calls = school({ "POST /students": () => ADMITTED }, { ...withRules(PLAIN_RULES), customFields: [GROUP], placements: effectivePlacements(null, [GROUP]) });
+    const { user } = openPage();
+    await addStudent();
+    await boxWhenShown("firstName");
+    // No class is chosen yet: nothing asks it.
+    expect(within(steps()).getAllByRole("listitem")).toHaveLength(3);
+    await personal(user);
+    await academic(user);
+    await waitFor(() => expect(box("guardians.0.mobile")).not.toBeNull());
+    // Class 1: Admit is on Parents, there is no More details step and no Subject group box to fill.
+    expect(within(steps()).getAllByRole("listitem")).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: "Next step" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Subject group/)).not.toBeInTheDocument();
+    expect(admitButton()).toBeInTheDocument();
+    // Back to Academic and Class 6 (it has a section): More details appears, asking the field, and Admit moves to it.
+    await user.click(screen.getByRole("button", { name: "Previous step" }));
+    await user.click(await screen.findByRole("radio", { name: /Class 6/ }));
+    await user.click(await screen.findByRole("radio", { name: /^A/ }));
+    await waitFor(() => expect(within(steps()).getAllByRole("listitem")).toHaveLength(4));
+    await next(user);
+    await parents(user);
+    expect(current()).toContain("More details");
+    await user.click(admitButton());
+    expect(await screen.findByText("Enter the Subject group")).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/^Subject group/), "Science");
+    await user.click(admitButton());
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect((posts(calls)[0].body as { custom?: Record<string, string> }).custom).toEqual({ c_group1: "Science" });
   });
 
   it("a refusal of the server about a box of an earlier step opens that step, with the message under the box", async () => {
@@ -730,5 +767,56 @@ describe("Add student: the parent's login (2026-11-04)", () => {
     const card = await screen.findByRole("region", { name: "Parent login" });
     await waitFor(() => expect(card).toHaveTextContent("Ravi Verma already signs in as ravi.verma_12"));
     expect(within(card).queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+});
+
+describe("Add student: the look of the page", () => {
+  const open = async () => {
+    school({}, withRules(LENIENT_RULES));
+    openPage();
+    await addStudent();
+    await boxWhenShown("firstName");
+  };
+
+  it("has no column beside the form: the fields use the whole width", async () => {
+    await open();
+    expect(screen.queryByLabelText("About this admission")).not.toBeInTheDocument();
+    expect(screen.queryByText("Quick tips")).not.toBeInTheDocument();
+    expect(screen.queryByText("Form completion")).not.toBeInTheDocument();
+  });
+
+  it("a section is a heading with its fields, and no line of explanation under it", async () => {
+    await open();
+    expect(screen.getByRole("heading", { name: /^Student/ })).toBeInTheDocument();
+    expect(screen.queryByText(/name as it should appear/)).not.toBeInTheDocument();
+  });
+
+  it("every box of the form has the taller look", async () => {
+    await open();
+    expect(box("firstName")?.className).toMatch(/(^|\s)h-12(\s|$)/);
+  });
+});
+
+describe("the way back from the admission form", () => {
+  const trail = () => within(screen.getByRole("navigation", { name: "Breadcrumb" }));
+  const open = async (state?: unknown) => {
+    school();
+    openPage("/school/students/new", state);
+    await addStudent();
+  };
+
+  it("is the page the person opened it from (Students), not Manage Students", async () => {
+    await open({ cameFrom: { href: "/school-class/students?class=c5", label: "Students" } });
+    expect(trail().getByRole("link", { name: "Students" })).toHaveAttribute("href", "/school-class/students?class=c5");
+  });
+
+  it("is named after the class page it came from", async () => {
+    await open({ cameFrom: { href: "/school-class/c5", label: "Class 5" } });
+    expect(trail().getByRole("link", { name: "Class 5" })).toHaveAttribute("href", "/school-class/c5");
+  });
+
+  it("is Manage Students' list when it was opened from there (or by an address typed in)", async () => {
+    await open();
+    expect(trail().getByRole("link", { name: "Students" })).toHaveAttribute("href", "/school/students");
   });
 });
