@@ -323,7 +323,7 @@ export default function SchoolProfilePage() {
         >
           <form id="school-profile-form" onSubmit={saveProfile} className="space-y-5">
             <ModalError message={formError} />
-            <LogoField logoUrl={s[1].logoUrl} />
+            <LogoField logoUrl={s?.[1].logoUrl ?? ""} />
             <section className="space-y-3">
               <h3 className="text-sm font-bold text-foreground">School information</h3>
               <div className="grid gap-4 sm:grid-cols-2">
