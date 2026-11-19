@@ -1,0 +1,67 @@
+/* The live map's bus pins. A vehicle's pin glides to each new position instead of jumping (the marker's own transform is what Leaflet moves). */
+.leaflet-container .bus-marker {
+  background: transparent;
+  border: 0;
+  transition: transform 1s linear;
+}
+/* While the map zooms, follow Leaflet's own zoom animation so the pins do not lag behind the tiles. */
+.leaflet-zoom-anim .bus-marker {
+  transition: transform 0.25s cubic-bezier(0, 0, 0.25, 1);
+}
+.leaflet-dragging .bus-marker {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .leaflet-container .bus-marker {
+    transition: none;
+  }
+}
+
+.bus-pin {
+  position: relative;
+  display: flex;
+  width: 30px;
+  height: 30px;
+  margin: 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid var(--color-surface);
+  border-radius: 9999px;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.35);
+}
+.bus-marker-selected .bus-pin {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 45%, transparent), 0 1px 6px rgb(0 0 0 / 0.35);
+}
+.bus-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--color-surface);
+}
+/* The arrow sits on the rim of the pin and turns around its centre to the compass heading (0 = north). */
+.bus-arrow {
+  position: absolute;
+  inset: -9px;
+  pointer-events: none;
+}
+.bus-arrow::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  margin-left: -5px;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 9px solid var(--color-foreground);
+}
+.bus-label {
+  display: block;
+  margin-top: 2px;
+  text-align: center;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-foreground);
+  text-shadow: 0 0 3px var(--color-surface), 0 0 3px var(--color-surface), 0 0 3px var(--color-surface);
+}

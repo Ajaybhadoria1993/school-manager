@@ -8,7 +8,10 @@ import { getApiError } from "../../utils/apiErrors";
 import { ageText, formatAadhaar, formatMobile } from "../../utils/students";
 import type { ChildTimetable, GridView } from "../../types";
 import { ChildAttendance } from "../../components/parent/ChildAttendance";
+import { ChildDocuments } from "../../components/parent/ChildDocuments";
+import { ChildBus } from "../../components/parent/ChildBus";
 import { ChildExamsSection } from "../../components/parent/ChildExams";
+import { ChildFeesSection } from "../../components/parent/ChildFees";
 import { ChildLeaves } from "../../components/parent/ChildLeaves";
 import { ChildDiary, ChildTests } from "../../components/parent/ChildWork";
 import { ClassWeekView } from "../../components/schoolClass/ClassWeekView";
@@ -109,6 +112,12 @@ export default function ChildPage() {
       {can("child.attendance") && <ChildAttendance childId={child.id} />}
 
       {can("child.leave") && <ChildLeaves childId={child.id} childName={child.name} />}
+
+      {can("child.transport") && <ChildBus childId={child.id} />}
+
+      {can("child.fees") && <ChildFeesSection childId={child.id} />}
+
+      {can("child.documents") && <ChildDocuments childId={child.id} />}
 
       {can("child.timetable") && <section aria-label="Timetable" className="space-y-3">
         <h2 className="text-section-heading flex items-center gap-2">

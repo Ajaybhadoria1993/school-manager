@@ -9,7 +9,7 @@ export const FULL_ACCESS_ROLES: readonly UserRole[] = ["school_admin", "principa
  */
 const USUAL: Partial<Record<UserRole, readonly string[]>> = {
   teacher: ["calendar.view", "attendance.view", "attendance.mark", "leaves.view", "leaves.decide", "classwork.view", "classwork.manage", "exams.view", "exams.marks", "timetable.view"],
-  parent: ["calendar.view", "child.attendance", "child.timetable", "child.exams", "child.diary", "child.leave"],
+  parent: ["calendar.view", "child.attendance", "child.timetable", "child.exams", "child.diary", "child.leave", "child.transport", "child.fees", "child.documents"],
   accountant: ["dashboard.view", "students.view", "students.export", "calendar.view"],
   receptionist: ["calendar.view"],
   management: ["calendar.view"],

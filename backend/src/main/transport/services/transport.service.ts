@@ -6,6 +6,7 @@ import { CrewMember, type ICrewMember } from "../models/CrewMember";
 import { TransportRoute, type ITransportRoute } from "../models/TransportRoute";
 import { Vehicle, type IVehicle } from "../models/Vehicle";
 import type { CrewInput, CrewUpdate, RouteInput, RouteUpdate, VehicleInput, VehicleUpdate } from "../schemas/transport.schemas";
+import { RiderService } from "./rider.service";
 
 type PaperStatus = "ok" | "soon" | "expired" | "missing";
 export interface PaperDto {
@@ -54,6 +55,8 @@ export class TransportService {
       permitExpiry: v.permitExpiry,
       notes: v.notes,
       isActive: v.isActive,
+      /** True while the vehicle has a driver link in force (the link itself is shown only once, when it is made). */
+      trackingOn: v.trackingKeyAt != null,
       papers,
       routes: routes.map((r) => r.name),
     };
@@ -208,6 +211,7 @@ export class TransportService {
     ]);
     const vehicle = new Map(vehicles.map((v) => [v._id.toString(), v]));
     const person = new Map(people.map((p) => [p._id.toString(), p]));
+    const riders = await RiderService.countByRoute(school, routes.map((r) => r._id));
     return routes.map((r) => {
       const v = r.vehicleId ? vehicle.get(r.vehicleId.toString()) : undefined;
       const d = r.driverId ? person.get(r.driverId.toString()) : undefined;
@@ -226,6 +230,8 @@ export class TransportService {
         stops: r.stops.map((s) => ({ name: s.name, pickupTime: s.pickupTime, dropTime: s.dropTime, fee: s.fee })),
         notes: r.notes,
         isActive: r.isActive,
+        /** How many students ride it (Students on a route: docs/transport.md). */
+        riders: riders.get(r._id.toString()) ?? 0,
       };
     });
   }
@@ -271,6 +277,8 @@ export class TransportService {
     const school = asId(tenantId);
     const gone = await TransportRoute.deleteOne({ _id: id, tenantId: school });
     if (gone.deletedCount === 0) throw ApiError.notFound("Route not found", "ROUTE_NOT_FOUND");
+    // The students who rode it are off a bus that no longer exists (no transactions here: the route goes first, so a stray row is only ever harmless).
+    await RiderService.clearRoute(school, asId(id));
   }
 
   // ---- the numbers on top, and what needs attention ----------------------------------------------------------------------------------

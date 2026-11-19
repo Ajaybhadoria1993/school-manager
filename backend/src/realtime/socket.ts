@@ -2,6 +2,8 @@ import type { Server as HttpServer } from "http";
 import { Server } from "socket.io";
 import { env } from "../config/env";
 import { userFromToken } from "../middleware/auth";
+import { FULL_ACCESS_ROLES } from "../main/permissions/constants";
+import { PermissionService } from "../main/permissions/services/permission.service";
 import { ApiError } from "../utils/ApiError";
 import { logger } from "../utils/logger";
 
@@ -22,6 +24,17 @@ import { logger } from "../utils/logger";
 let io: Server | null = null;
 
 const roomOf = (userId: string) => `user:${userId}`;
+const trackingRoomOf = (tenantId: string) => `tenant:${tenantId}:tracking`;
+
+/** A teacher, a parent or a student never watches the vehicles of the whole school (the same rule as requireSchoolPermission). */
+const OWN_ONLY_ROLES: readonly string[] = ["teacher", "parent", "student"];
+
+/** Who may watch the school's vehicles live: whoever may see Transport (transport.view), the school admin and the principal always. */
+async function mayWatchVehicles(user: { userId: string; role: string; tenantId: string | null }): Promise<boolean> {
+  if (!user.tenantId || OWN_ONLY_ROLES.includes(user.role)) return false;
+  if (FULL_ACCESS_ROLES.includes(user.role)) return true;
+  return (await PermissionService.grantedTo(user)).includes("transport.view");
+}
 
 export function startRealtime(httpServer: HttpServer): Server {
   io = new Server(httpServer, {
@@ -44,7 +57,13 @@ export function startRealtime(httpServer: HttpServer): Server {
   });
 
   io.on("connection", (socket) => {
-    void socket.join(roomOf((socket.data.user as { userId: string }).userId));
+    const user = socket.data.user as { userId: string; role: string; tenantId: string | null };
+    void socket.join(roomOf(user.userId));
+    // The live map: the vehicles' positions go to the people of the SAME school who may see Transport, and to nobody else. The right is
+    // read when the socket connects, so a change in Permissions reaches a tab that is already open when it next reconnects.
+    mayWatchVehicles(user)
+      .then((may) => may && void socket.join(trackingRoomOf(user.tenantId!)))
+      .catch((err) => logger.warn("Socket tracking right not read", { error: err instanceof Error ? err.message : String(err) }));
   });
 
   return io;
@@ -60,4 +79,9 @@ export async function stopRealtime(): Promise<void> {
 /** Sends an event to every open socket of this person. Does nothing when no socket server runs (the tests, a script). */
 export function pushTo(userId: string, event: string, payload: unknown): void {
   io?.to(roomOf(userId)).emit(event, payload);
+}
+
+/** Sends an event to every open socket of the school's people who may watch the vehicles. Does nothing when no socket server runs. */
+export function pushToTracking(tenantId: string, event: string, payload: unknown): void {
+  io?.to(trackingRoomOf(tenantId)).emit(event, payload);
 }

@@ -2,8 +2,7 @@
 
 A sidebar row **Fees** that opens four pages: **Fee structure**, **Fee heads**, **Concessions** and **Fee rules** (`/fees/structure|heads|concessions|rules`;
 `/fees` leads to the first). The user asked for "a separate Fees tab with modals, covering how fees are kept in a real school: every class's fees,
-registration, admission, exam, dress, everything, researched and written down". This is the **set-up** of what a school charges. **Nothing is
-collected or billed yet** (see "Not built"). It is a new, self-contained module: nothing that existed was changed except the menu, the route
+registration, admission, exam, dress, everything, researched and written down". This is the **set-up** of what a school charges; **collecting** it (a student's fee account, payments, receipts, dues) is the second part below (2026-11-19). It is a new, self-contained module: nothing that existed was changed except the menu, the route
 table, the permissions catalogue (one more group) and the model registry test (three year-free models).
 
 ## The four pages
@@ -120,17 +119,88 @@ Several of these are secondary summaries: **check the current state notification
 Backend `fees/__tests__/fees.test.ts` (heads, the chart, months, totals, the 15% warning, copying, the upcoming session, a closed session, concessions, rules, who may use it) and `fees.isolation.test.ts`; `permissions.test.ts` (the accountant starts with fees).
 Frontend `utils/__tests__/fees.test.ts` and `pages/fees/__tests__/Fees.test.tsx` (the four pages and their dialogs, with a pretend API), `navConfig.test.ts`.
 
-## Not built (the next phases, in the order a school needs them)
+## Collecting fees (2026-11-19)
 
-1. **A student's fee account**: when a student is admitted (or the year starts) the class's chart becomes what *that* child owes, instalment by instalment, with the due dates from the rules; the optional fees the family chose; the transport fee from the stop the child boards at
-   (students are not linked to Transport routes yet). Needs a `StudentFee` / ledger that points to the **enrolment** (so it has the year, class and section) and carries `academicYearId`.
-2. **Concessions given to a student**, with a reason, approval and a proof (the RTE tick, BPL tick and category on a student already exist); a sibling concession found by the guardian.
-3. **Collecting**: cash, cheque (with bounce), DD, UPI / online (a gateway), part payment, a **receipt** numbered in order per school per financial year, the late fine from the rules, advance payment, a day's collection report.
-4. **Dues and reminders**: who owes what, by class; reminders before and after the due day; holding the report card / TC when the rules say so.
-5. **Refunds** (caution money on leaving, a withdrawal), cancelling a receipt, a **fee certificate** (80C) for a year.
-6. **Reports**: collected / due / overdue by class, head-wise, the development-fund account, the fee structure to publish.
-7. **Smaller things**: due dates that differ by fee (today every fee falls due on the rules' due day, in the months of the line); rounding a raise to ₹10; a fee chart that is a band of classes ("Class 6 to 8") instead of copies; copying a chart between the school's mediums;
-   a class that is deleted leaves its lines behind (they are not shown); a parent seeing their child's fees.
+The user asked for "the complete structure and record of fees". Three pages under the same Fees row, for the people allowed **`fees.collect`** (the accountant starts with it): **Collect fees**
+(`/fees/collect?student=<id>`), **Dues** (`/fees/dues`) and **Receipts** (`/fees/receipts`).
+
+### What is kept (backend/src/main/fees; all `tenantScope`d, all carry `academicYearId`)
+
+| Model | What it is |
+| :--- | :--- |
+| **`FeeCharge`** | One instalment a student owes ("Tuition fee · Apr", "Admission fee"): `key` (chart line + month, `bus\|2026-04`), `source` (`chart` / `transport` / `optional`), the head's name as it was, `dueDate`, `amount`, `concession`, `paid`. Owed = `amount - concession - paid`. Unique `{student, year, key}`: making fees twice never doubles anything. |
+| **`StudentConcession`** | A school concession **given to one student for one session**, kept as it was when given (mode, value, which heads), `pending` until approved or `approved`, why, who gave it. Unique per student, session and concession. |
+| **`FeeReceipt`** | Money taken for one student on one day: numbered **`2026-2027/0001`** in order per school and session (`seq` = highest + 1, a unique index makes two at once retry), mode, reference, `paidOn`, the charges it settled (`items`), `lateFine`, `total`, note, who took it. **Never edited or deleted**: a mistake is cancelled (reason, who, when) and the number stays. The student's name and class are kept as they were. |
+
+### How the account is made
+
+`FeeAccountService.generate` (run whenever an account is opened or a payment is taken; safe to repeat): reads the child's class this session and whether they are **new** (no enrolment in an earlier session) or **existing**, takes
+the class's chart lines for that kind (everyone's + new's or existing's, **not** the optional ones), and makes a charge for each due month; a **one-time** fee is one charge, due in the session's first month. The due day is the
+Fee rules' due day (`dueDay` of the month; months before the session's first month fall in the next calendar year). The child's **bus stop fee** (docs/transport.md) is a charge for each of the 12 months, `source: transport`.
+**Optional** fees are not made: the family takes one with *Add* (`POST /students/:id/optional`, `source: optional`) and it can be taken off only while nothing is paid on it.
+
+- A charge **follows the chart only while nothing is paid on it**: a raised chart reaches the unpaid instalments, what was paid stays as billed. A fee no longer on the chart (class changed, stop taken off, line removed) goes, unless money was paid on it.
+- **Concessions** (`reprice`): each approved concession takes a percentage, or a flat amount, off each instalment of the heads it names; "every fee" means the **class's fees** (not the bus, not the optional ones, unless the concession names them); it never takes more
+  than what is still unpaid on an instalment. Giving one needs `fees.manage`; the school admin and the principal give at once, for anyone else a concession that *needs approval* waits (`pending`, takes nothing off) until the admin or the principal approves it (`POST /student-concessions/:id/approve`).
+  A school concession that has been given to a student cannot be deleted (409 `CONCESSION_IN_USE`: switch it off).
+- A **chart line with payments** cannot be deleted (409 `FEE_LINE_HAS_PAYMENTS`); one without payments goes with its unpaid charges.
+
+### Taking a payment (`POST /fees/collect`)
+
+`{ studentId, mode (cash, cheque, dd, upi, card, online), reference, paidOn, items: [{chargeId, amount}], lateFine?, note }`. Checked first, in words (400 with `details` by path): a charge of this student, no more than is owed on it, **the whole instalment when the rules do not allow part payment**,
+a cheque or draft number, a day that is not in the future and not before the session. **The late fine** is by the rules (`FeeSettings`): none, a flat amount for each late instalment, an amount for each day late, or a percentage of what is paid for each month (30 days) late; an instalment is late once the
+days of grace after its due day have passed; capped by the most a family pays. The cashier may take **less** (waive it), never more (400 on `lateFine`). Then each charge is added to with a **guard** (`paid + amount <= net`), so two cashiers cannot both take the same instalment (409 `ACCOUNT_CHANGED`, nothing is
+kept); a failure later undoes what was added (no transactions here). The money is not "held": the receipt is the record.
+
+### The rest of the API (`/api/v1/fees`)
+
+`GET /students/search?q=` · `GET /students/:id/account[?yearId=]` (the account: charges, totals `amount / concession / net / paid / outstanding / dueNow / overdue`, `lateFineToday`, concessions, receipts, optional fees on offer; a past session is only read) · `POST /students/:id/generate` ·
+`POST /students/:id/optional`, `DELETE /students/:id/optional/:lineId` · `POST /students/:id/concessions`, `POST /student-concessions/:id/approve`, `DELETE /student-concessions/:id` · `POST /generate` (every student of the running session, or one class: `fees.manage`) ·
+`POST /collect` · `GET /receipts?from&to&studentId&mode&status` (a window of days; today when none), `GET /receipts/:id` (with the school and the session, to print), `POST /receipts/:id/cancel { reason }` (`fees.manage`; claimed first so two cancellations cannot both give the money back) ·
+`GET /dues?classId&search` (instalments that have come due and are not paid, by student, the late ones apart, with the late fine, worst first) · `GET /collection?from&to` (what was taken: total, by mode, by day, late fine, cancelled).
+
+### Who may (docs/permissions.md)
+
+`fees.collect`: the accounts, taking payments, the dues, receipts. `fees.manage` (as before, now also): give or take back a student's concession, cancel a receipt, make every student's fees. The school admin and the principal always; approving a waiting concession is theirs only.
+A teacher or a parent never reaches these.
+
+### What a parent sees
+
+`GET /parent/children/:id/fees` now carries the child's **account** (charges with their standing, the four totals, the concessions in force, the receipts that stand; a cancelled receipt and a concession still waiting are not shown), then the chart, the bus fee and the due rules as before. A parent
+**cannot pay here** (no payment gateway): the money is taken at the office. Opening the page makes the child's charges (the same safe `generate`).
+
+### Screens
+
+`pages/fees/{CollectFees,Dues,Receipts}.tsx`; `components/fees/{StudentAccount,CollectDialog,ReceiptDialog,AccountDialogs}.tsx` (`GiveConcessionDialog`, `CancelReceiptDialog`); the printable receipt (`receipt.css` hides the rest of the page while printing);
+`feesApi` tag `Collect`; `utils/fees.ts` repeats the late-fine rule so the window offers what the server will accept.
+
+### Tests
+
+Backend `fees/__tests__/collection.test.ts` (26: the status and late-fine rules as numbers, generating and re-generating, the bus, optional fees, concessions and their approval, a payment in full / in part / with the fine / waived, a cheque's number, two payments at once,
+receipt numbers, cancelling, the dues, the day's collection, the parent's view, the deletes that are refused, who may, one school never reaching another's); frontend `pages/fees/__tests__/Collect.test.tsx` (20), `utils/__tests__/fees.test.ts`, `pages/parent/__tests__/ChildBusFees.test.tsx`.
+Checked in a real browser on the throwaway stack: Collect fees (account, tick, Collect window with the fine, receipt) and the parent's Fees section.
+
+## Not built (the next phases)
+
+1. **Online payment** by a gateway (UPI / card from the parent's phone) and its reconciliation; today a UPI or online payment is one the office has checked and writes down.
+2. **Refunds** (caution money on leaving, a withdrawal), a **fee certificate** (80C) for a year; a receipt **cancelled and re-made** in one step.
+3. **Dues reminders** before and after the due day (SMS / notification / WhatsApp), and **holding the report card or the transfer certificate** while fees are due (the rules keep the switches; nothing reads them yet).
+4. **Concession proof** (an uploaded certificate), the **sibling concession found by itself** from the guardian, the RTE and BPL ticks on a student giving the concession by themselves.
+5. **Reports** beyond the day's collection and the dues: collected / due by class and by head, the development-fund account, the fee structure to publish.
+6. A student **promoted to the next session** gets the new session's account when it is opened (the charges are per session); carrying an old **balance forward** is not built.
+7. **Due dates that differ by fee** (today every fee falls due on the rules' due day), a late fine **posted as a charge** of its own, **advance payment** that waits for a later instalment.
+
+## What a parent sees: the chart (2026-11-19, earlier)
+
+`GET /parent/children/:id/fees` (permission `child.fees`, parents only, the child must be the parent's own), the child's page > **Fees** (`components/parent/ChildFees.tsx`). It is **the school's fee chart for the child's
+class this session, not a bill**: nothing is collected or kept per student yet (the phases above), so **what was paid and what is due is not shown**, and the page says so and sends the parent to the office. It gives:
+
+- the fees of the child's class for a student like theirs: everyone's, plus **new** students' for a child with no enrolment in an earlier session, or **existing** students' for one who has (`audience`); each with its amount, how
+  often and what it comes to for the year; marked *Optional* or *Given back*; the compulsory total, the optional total and the refundable part (`FeeStructureService.chartFor`);
+- the **bus fee** of the stop the child boards at (a month's fee, kept out of the totals: the family chooses the bus; docs/transport.md), when the child rides a route;
+- the school's **due day, days of grace, late fine and part payment** (the Fee rules).
+
+A **concession** given to a child is not applied (there are no concessions given to students yet), so the chart is the full amount.
 
 ## Open questions for the school
 

@@ -7,6 +7,7 @@ import { NOT_INACTIVE } from "../../academics/models/status";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { viewedYear } from "../../academics/services/viewedYear";
 import { DEVELOPMENT_FEE_CAP_PERCENT, defaultMonths, yearlyCost, type AppliesTo, type FeeFrequency } from "../constants";
+import { FeeCharge } from "../models/FeeCharge";
 import { FeeHead, type IFeeHead } from "../models/FeeHead";
 import { FeeLine, type IFeeLine } from "../models/FeeLine";
 import { appliesProblem, monthsProblem, type CopyClassInput, type CopyYearInput, type CreateLinesInput, type UpdateLineInput } from "../schemas/fees.schemas";
@@ -44,6 +45,9 @@ export interface LineDto {
 }
 
 const lineKey = (classId: unknown, headId: unknown, appliesTo: string) => `${String(classId)}|${String(headId)}|${appliesTo}`;
+
+/** The order a fee chart reads in: what is paid on joining first, then tuition, then the rest. */
+const kindOrder = (l: LineDto) => ["admission", "deposit", "tuition", "development", "annual", "exam", "facility", "supplies", "hostel", "transport", "other"].indexOf(l.kind);
 
 /** What a class's fee chart comes to for each kind of student, in rupees. Only compulsory fees are in the first three; the optional ones are said apart. */
 function totalsOf(lines: LineDto[]) {
@@ -139,7 +143,7 @@ export class FeeStructureService {
       list.push(FeeStructureService.lineDto(l, headById.get(l.headId.toString())));
       byClass.set(l.classId.toString(), list);
     }
-    const order = (l: LineDto) => ["admission", "deposit", "tuition", "development", "annual", "exam", "facility", "supplies", "hostel", "transport", "other"].indexOf(l.kind);
+    const order = kindOrder;
     return {
       // `startMonth` (1 = January) is where the usual months of a repeating fee start from: the session's own first month, not always April.
       year: year ? { id: year.id.toString(), name: year.name, status: year.status, startMonth: year.startDate.getUTCMonth() + 1 } : null,
@@ -157,6 +161,23 @@ export class FeeStructureService {
       }),
       heads: heads.filter((h) => h.isActive).map((h) => headDto(h)),
     };
+  }
+
+  /**
+   * What ONE student of a class pays in a session, as a parent reads it: the fees for their kind of student (everyone's, plus the new
+   * student's or the existing student's), in reading order, and what the compulsory and the optional ones come to over the session.
+   * It is the school's fee chart for that class, not a bill: nothing is collected in the software yet (docs/fees.md).
+   */
+  static async chartFor(school: Types.ObjectId, yearId: Types.ObjectId, classId: Types.ObjectId, audience: "new" | "existing") {
+    const [lines, heads] = await Promise.all([
+      FeeLine.find({ tenantId: school, academicYearId: yearId, classId, appliesTo: { $in: ["all", audience] } }).lean(),
+      FeeHead.find({ tenantId: school }).lean(),
+    ]);
+    const headById = new Map(heads.map((h) => [h._id.toString(), h]));
+    const dtos = lines.map((l) => FeeStructureService.lineDto(l, headById.get(l.headId.toString()))).sort((a, b) => kindOrder(a) - kindOrder(b) || a.headName.localeCompare(b.headName));
+    const sum = (rows: LineDto[]) => round2(rows.reduce((total, l) => total + l.yearly, 0));
+    const compulsory = dtos.filter((l) => !l.optional);
+    return { lines: dtos, compulsory: sum(compulsory), optional: sum(dtos.filter((l) => l.optional)), refundable: sum(compulsory.filter((l) => l.refundable)) };
   }
 
   /** Looks at the classes and the head a change names: all must be the school's, and the head must be on, and not transport. */
@@ -249,6 +270,11 @@ export class FeeStructureService {
     if (!line) throw LINE_NOT_FOUND();
     const year = await AcademicYear.findOne({ _id: line.academicYearId, tenantId: school }).select("name status").lean();
     if (viewedYear() || year?.status === "closed") throw ApiError.conflict(`${year?.name ?? "That year"} is over, so its fees can only be looked at.`, "YEAR_READ_ONLY");
+    // Money taken on it is on receipts: the fee stays on the chart (change its amount for the students who have not paid, or leave it).
+    if (await FeeCharge.exists({ tenantId: school, lineId: line._id, paid: { $gt: 0 } })) {
+      throw ApiError.conflict("Families have already paid this fee, so it cannot be removed from the chart.", "FEE_LINE_HAS_PAYMENTS");
+    }
+    await FeeCharge.deleteMany({ tenantId: school, lineId: line._id, paid: 0 });
     await FeeLine.deleteOne({ _id: id, tenantId: school });
   }
 

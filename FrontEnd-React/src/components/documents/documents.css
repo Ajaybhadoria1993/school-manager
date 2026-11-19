@@ -1,0 +1,276 @@
+/*
+ * Documents: an ID card is credit-card sized (85.6 x 54 mm) and a report card is one A4 page, in real millimetres so they print at their size.
+ * Printing happens from a copy of the documents placed straight under <body> (PrintPortal): everything else on the page is hidden while printing.
+ */
+.print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+  body > *:not(.print-root) {
+    display: none !important;
+  }
+  .print-root {
+    display: block;
+    background: white;
+    color: black;
+  }
+  .print-page {
+    break-after: page;
+    page-break-after: always;
+  }
+  .print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+  .id-pair {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+/* ---- the ID card ---- */
+.id-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4mm;
+  margin-bottom: 4mm;
+}
+.id-card {
+  position: relative;
+  box-sizing: border-box;
+  width: 85.6mm;
+  height: 54mm;
+  overflow: hidden;
+  border: 0.3mm solid var(--color-border);
+  border-radius: 3mm;
+  background: white;
+  color: #0f172a;
+  font-size: 2.6mm;
+  line-height: 1.3;
+}
+.id-band {
+  display: flex;
+  align-items: center;
+  gap: 2mm;
+  height: 11mm;
+  padding: 0 3mm;
+  background: var(--color-primary);
+  color: white;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.id-band img {
+  width: 8mm;
+  height: 8mm;
+  object-fit: contain;
+  border-radius: 1mm;
+  background: white;
+}
+.id-band b {
+  font-size: 3.1mm;
+  line-height: 1.15;
+}
+.id-body {
+  display: flex;
+  gap: 3mm;
+  padding: 2.5mm 3mm 0;
+}
+.id-photo {
+  flex: none;
+  width: 21mm;
+  height: 27mm;
+  border: 0.3mm solid var(--color-border);
+  border-radius: 1mm;
+  object-fit: cover;
+  background: #f1f5f9;
+}
+.id-photo-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 2.2mm;
+  text-align: center;
+}
+.id-name {
+  font-size: 3.4mm;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.id-facts {
+  margin: 1mm 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 2mm;
+  row-gap: 0.4mm;
+}
+.id-facts dt {
+  color: #64748b;
+}
+.id-facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+.id-foot {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 1.2mm 3mm;
+  background: #f1f5f9;
+  font-size: 2.3mm;
+  display: flex;
+  justify-content: space-between;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.id-back-body {
+  padding: 3mm;
+}
+.id-back-body h4 {
+  margin: 0 0 0.6mm;
+  font-size: 2.6mm;
+  color: #64748b;
+  font-weight: 600;
+}
+.id-back-body p {
+  margin: 0 0 2mm;
+  font-weight: 600;
+}
+
+/* ---- the report card ---- */
+.report-card {
+  box-sizing: border-box;
+  width: 190mm;
+  min-height: 270mm;
+  margin: 0 auto;
+  padding: 8mm 10mm;
+  border: 0.3mm solid var(--color-border);
+  background: white;
+  color: #0f172a;
+  font-size: 3.6mm;
+  line-height: 1.4;
+}
+.report-card header {
+  display: flex;
+  align-items: center;
+  gap: 5mm;
+  padding-bottom: 4mm;
+  border-bottom: 0.6mm solid var(--color-primary);
+}
+.report-card header img {
+  width: 20mm;
+  height: 20mm;
+  object-fit: contain;
+}
+.report-card h1 {
+  margin: 0;
+  font-size: 6mm;
+  line-height: 1.15;
+}
+.report-card h2 {
+  margin: 4mm 0 2mm;
+  text-align: center;
+  font-size: 4.6mm;
+  letter-spacing: 0.3mm;
+}
+.report-card table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.report-card th,
+.report-card td {
+  border: 0.25mm solid #94a3b8;
+  padding: 1.6mm 2.4mm;
+  text-align: left;
+}
+.report-card th {
+  background: #f1f5f9;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.report-card .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.report-card .student {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1mm 6mm;
+  margin: 3mm 0;
+}
+.report-card .student div {
+  display: flex;
+  gap: 2mm;
+}
+.report-card .student dt {
+  min-width: 26mm;
+  color: #475569;
+}
+.report-card .student dd {
+  margin: 0;
+  font-weight: 600;
+}
+.report-card .photo {
+  float: right;
+  width: 24mm;
+  height: 30mm;
+  margin: 0 0 2mm 4mm;
+  border: 0.3mm solid #94a3b8;
+  object-fit: cover;
+}
+.report-card .signs {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 22mm;
+}
+.report-card .signs div {
+  width: 50mm;
+  padding-top: 1.5mm;
+  border-top: 0.3mm solid #0f172a;
+  text-align: center;
+  font-size: 3.2mm;
+}
+.report-card .fail {
+  color: #b91c1c;
+}
+.report-card .small {
+  font-size: 3mm;
+  color: #475569;
+}
+
+.id-qr {
+  position: absolute;
+  right: 3mm;
+  bottom: 3mm;
+  width: 14mm;
+  height: 14mm;
+}
+.id-qr svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* ---- the admit card and the certificates share the report card's page ---- */
+.report-card.compact {
+  min-height: 0;
+}
+.report-card .body-text {
+  margin: 4mm 0;
+  font-size: 4mm;
+  line-height: 1.9;
+  text-align: justify;
+}
+.report-card .meta {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3mm;
+}
+.report-card ol {
+  margin: 1mm 0 0;
+  padding-left: 5mm;
+  font-size: 3.2mm;
+}

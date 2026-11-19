@@ -1,5 +1,5 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type { ApiResponse, ChildAttendance, ChildDetail, ChildDiary, ChildExams, ChildTests, ChildTimetable, Leave, LeaveInput, MyChildren } from "../../types";
+import type { AdmitCard, ApiResponse, ChildAttendance, ChildBus, IdCard, ReportCard, ChildDetail, ChildDiary, ChildExams, ChildFees, ChildTests, ChildTimetable, Leave, LeaveInput, MyChildren } from "../../types";
 import { baseQueryWithReauth } from "./baseQueryWithReauth";
 
 /**
@@ -9,7 +9,7 @@ import { baseQueryWithReauth } from "./baseQueryWithReauth";
 export const parentApi = createApi({
   reducerPath: "parentApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Children", "Child", "ChildLeaves", "ChildAttendance", "ChildDiary", "ChildTests", "ChildExams"],
+  tagTypes: ["Children", "Child", "ChildLeaves", "ChildAttendance", "ChildDiary", "ChildTests", "ChildExams", "ChildBus", "ChildFees"],
   refetchOnMountOrArgChange: 60,
   refetchOnReconnect: true,
   endpoints: (build) => ({
@@ -42,6 +42,25 @@ export const parentApi = createApi({
       query: (id) => `/parent/children/${id}/exams`,
       providesTags: (_result, _error, id) => [{ type: "ChildExams", id }],
     }),
+    // Where the bus is changes every few seconds, so the screen asks again on its own (`pollingInterval` where it is used); the fee chart changes rarely.
+    getChildBus: build.query<ApiResponse<ChildBus>, string>({
+      query: (id) => `/parent/children/${id}/bus`,
+      providesTags: (_result, _error, id) => [{ type: "ChildBus", id }],
+    }),
+    getChildFees: build.query<ApiResponse<ChildFees>, string>({
+      query: (id) => `/parent/children/${id}/fees`,
+      providesTags: (_result, _error, id) => [{ type: "ChildFees", id }],
+    }),
+    // The child's own ID card and exam report card, to read and print (2026-11-19).
+    getChildIdCard: build.query<ApiResponse<IdCard>, string>({ query: (id) => `/parent/children/${id}/id-card`, providesTags: (_r, _e, id) => [{ type: "Child", id }] }),
+    getChildReportCard: build.query<ApiResponse<ReportCard>, { id: string; examId: string }>({
+      query: ({ id, examId }) => ({ url: `/parent/children/${id}/report-card`, params: { examId } }),
+      providesTags: (_r, _e, { id }) => [{ type: "ChildExams", id }],
+    }),
+    getChildAdmitCard: build.query<ApiResponse<AdmitCard>, { id: string; examId: string }>({
+      query: ({ id, examId }) => ({ url: `/parent/children/${id}/admit-card`, params: { examId } }),
+      providesTags: (_r, _e, { id }) => [{ type: "ChildExams", id }],
+    }),
     getChildLeaves: build.query<ApiResponse<{ items: Leave[] }>, string>({
       query: (id) => `/parent/children/${id}/leaves`,
       providesTags: (_result, _error, id) => [{ type: "ChildLeaves", id }],
@@ -65,6 +84,11 @@ export const {
   useGetChildDiaryQuery,
   useGetChildTestsQuery,
   useGetChildExamsQuery,
+  useGetChildBusQuery,
+  useGetChildFeesQuery,
+  useGetChildIdCardQuery,
+  useGetChildReportCardQuery,
+  useGetChildAdmitCardQuery,
   useGetChildLeavesQuery,
   useApplyLeaveMutation,
   useCancelLeaveMutation,

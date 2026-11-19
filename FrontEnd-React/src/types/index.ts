@@ -6,6 +6,7 @@ export * from "./academics";
 export * from "./students";
 export * from "./staff";
 export * from "./timetable";
+export * from "./documents";
 export * from "./parent";
 export * from "./classroom";
 export * from "./exams";

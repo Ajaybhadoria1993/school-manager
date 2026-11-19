@@ -11,7 +11,9 @@ import {
   MAX_HEADS_AT_ONCE,
   MAX_NAME,
   MAX_NOTE,
+  MAX_RECEIPT_ITEMS,
   MONTHS_OF,
+  PAYMENT_MODES,
   type AppliesTo,
   type FeeFrequency,
 } from "../constants";
@@ -250,3 +252,59 @@ export const feeRulesSchema = z
   })
   .transform((rules) => ({ ...rules, lateFine: rules.lateFine.mode === "none" ? { mode: "none" as const, amount: 0, maxAmount: null } : rules.lateFine }));
 export type FeeRulesInput = z.output<typeof feeRulesSchema>;
+
+// ---- collecting (2026-11-19) -----------------------------------------------------------------------------------------------------------
+const dayText = (what: string) =>
+  z
+    .string({ invalid_type_error: `Write the ${what} as a day` })
+    .trim()
+    .refine((v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T00:00:00.000Z`).toISOString().slice(0, 10) === v, `Write the ${what} as a real day, YYYY-MM-DD`);
+
+/** An amount of money that may be 0 (a waived fine): up to two decimals. */
+const money = (what: string) =>
+  z
+    .number({ invalid_type_error: `Enter the ${what}` })
+    .min(0, `The ${what} cannot be below 0`)
+    .max(MAX_AMOUNT, `The ${what} is too large`)
+    .refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, "Use at most two decimals (paise)");
+
+export const studentSearchQuerySchema = z.object({ q: z.string().trim().max(60).default("") });
+export const accountQuerySchema = z.object({ yearId: objectId.optional() });
+export const studentParamsSchema = z.object({ id: objectId });
+export const optionalParamsSchema = z.object({ id: objectId, lineId: objectId });
+
+export const collectSchema = z.object({
+  studentId: objectId,
+  mode: z.enum(PAYMENT_MODES, { errorMap: () => ({ message: "Choose how it was paid" }) }),
+  reference: z
+    .string({ invalid_type_error: "The reference must be text" })
+    .trim()
+    .max(60, "Keep the reference under 60 characters")
+    .regex(/^[^<>]*$/, "The reference cannot contain < or >")
+    .nullish()
+    .transform((v) => v || null),
+  paidOn: dayText("day paid").optional(),
+  items: z
+    .array(z.object({ chargeId: objectId, amount: rupees }), { required_error: "Choose what is being paid", invalid_type_error: "Choose what is being paid" })
+    .min(1, "Choose what is being paid")
+    .max(MAX_RECEIPT_ITEMS, `One receipt takes up to ${MAX_RECEIPT_ITEMS} fees`),
+  /** The late fine taken; left out = what the rules say; less = the part the school waives; more is refused. */
+  lateFine: money("late fine").optional(),
+  note,
+});
+export type CollectInput = z.output<typeof collectSchema>;
+
+export const cancelReceiptSchema = z.object({ reason: label("reason", MAX_NOTE) });
+export const receiptsQuerySchema = z.object({
+  from: dayText("first day").optional(),
+  to: dayText("last day").optional(),
+  studentId: objectId.optional(),
+  mode: z.enum(PAYMENT_MODES).optional(),
+  status: z.enum(["valid", "cancelled", "all"]).default("all"),
+});
+export const duesQuerySchema = z.object({ classId: objectId.optional(), search: z.string().trim().max(60).optional() });
+export const summaryQuerySchema = z.object({ from: dayText("first day").optional(), to: dayText("last day").optional() });
+export const generateAllSchema = z.object({ classId: objectId.optional() });
+export const giveConcessionSchema = z.object({ concessionId: objectId, note });
+export const addOptionalSchema = z.object({ lineId: objectId });
+export const studentConcessionParamsSchema = z.object({ id: objectId });

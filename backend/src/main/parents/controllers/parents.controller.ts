@@ -8,6 +8,9 @@ import { LeaveService } from "../../classroom/services/leave.service";
 import { WorkService } from "../../classroom/services/work.service";
 import type { ChildExamsQuery } from "../../exams/schemas/exams.schemas";
 import { ChildExamsService } from "../../exams/services/view.service";
+import { RiderService } from "../../transport/services/rider.service";
+import { DocumentsService } from "../../documents/services/documents.service";
+import { ChildFeesService } from "../services/childFees.service";
 import { ParentService } from "../services/parent.service";
 
 function who(req: Request): { tenantId: string; userId: string } {
@@ -63,6 +66,38 @@ export const getChildDiary = asyncHandler(async (req: Request, res: Response) =>
 export const getChildTests = asyncHandler(async (req: Request, res: Response) => {
   const { tenantId, userId } = who(req);
   return sendOk(res, await WorkService.childTests(tenantId, userId, idOf(req)));
+});
+
+// ---- Bus and fees (2026-11-19) --------------------------------------------------------------------------------------------------------
+export const getChildBus = asyncHandler(async (req: Request, res: Response) => {
+  const { tenantId, userId } = who(req);
+  // The child must be this parent's own before anything of their bus is read.
+  await ParentService.childOf(tenantId, userId, idOf(req));
+  return sendOk(res, await RiderService.forChild(tenantId, idOf(req)));
+});
+
+export const getChildFees = asyncHandler(async (req: Request, res: Response) => {
+  const { tenantId, userId } = who(req);
+  return sendOk(res, await ChildFeesService.get(tenantId, userId, idOf(req)));
+});
+
+// ---- Documents (2026-11-19): the child's own ID card and exam report card ---------------------------------------------------------------------
+export const getChildIdCard = asyncHandler(async (req: Request, res: Response) => {
+  const { tenantId, userId } = who(req);
+  await ParentService.childOf(tenantId, userId, idOf(req));
+  return sendOk(res, await DocumentsService.idCard(tenantId, idOf(req)));
+});
+
+export const getChildReportCard = asyncHandler(async (req: Request, res: Response) => {
+  const { tenantId, userId } = who(req);
+  await ParentService.childOf(tenantId, userId, idOf(req));
+  return sendOk(res, await DocumentsService.reportCard(tenantId, idOf(req), (req.validatedQuery as { examId: string }).examId));
+});
+
+export const getChildAdmitCard = asyncHandler(async (req: Request, res: Response) => {
+  const { tenantId, userId } = who(req);
+  await ParentService.childOf(tenantId, userId, idOf(req));
+  return sendOk(res, await DocumentsService.admitCard(tenantId, idOf(req), (req.validatedQuery as { examId: string }).examId));
 });
 
 // ---- Exams (2026-11-06) ---------------------------------------------------------------------------------------------------------------

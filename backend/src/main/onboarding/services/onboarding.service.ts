@@ -32,7 +32,7 @@ interface Caller {
 }
 
 /** What a picture really is, from its first bytes (its name and its stated type can say anything). SVG is not offered: it can carry a script. */
-function pictureType(file: Buffer): string | null {
+export function pictureType(file: Buffer): string | null {
   if (file.length >= 8 && file.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
   if (file.length >= 3 && file[0] === 0xff && file[1] === 0xd8 && file[2] === 0xff) return "image/jpeg";
   if (file.length >= 12 && file.toString("latin1", 0, 4) === "RIFF" && file.toString("latin1", 8, 12) === "WEBP") return "image/webp";

@@ -11,6 +11,7 @@ import { formatMoment, placeLabel } from "../../utils/students";
 import type { CustomFieldDef } from "../../constants/studentFields";
 import type { StudentDetail } from "../../types";
 import { EditStudentForm } from "../../components/students/detail/EditStudentForm";
+import { StudentDocumentsCard } from "../../components/students/detail/StudentDocumentsCard";
 import { StudentOverview } from "../../components/students/detail/StudentOverview";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
@@ -270,6 +271,8 @@ function StudentView({
           The parent&apos;s login was not made: {arrived.parentLoginError} Make it from the parent&apos;s card below.
         </Card>
       )}
+
+      <StudentDocumentsCard student={student} readOnlyYear={readOnly} />
 
       <StudentOverview student={student} custom={custom} />
 

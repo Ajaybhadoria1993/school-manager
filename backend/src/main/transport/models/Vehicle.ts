@@ -26,6 +26,10 @@ export interface IVehicle {
   permitExpiry: string | null;
   notes: string | null;
   isActive: boolean;
+  /** SHA-256 of the secret in the driver's tracking link (never the secret itself); null when no link is issued. Not read unless asked for. */
+  trackingKeyHash: string | null;
+  /** When the current driver link was made; null when none is in force. */
+  trackingKeyAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,6 +49,8 @@ const vehicleSchema = new Schema<IVehicle>(
     permitExpiry: { type: String, default: null },
     notes: { type: String, default: null, trim: true, maxlength: MAX_NOTES },
     isActive: { type: Boolean, default: true },
+    trackingKeyHash: { type: String, default: null, select: false },
+    trackingKeyAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

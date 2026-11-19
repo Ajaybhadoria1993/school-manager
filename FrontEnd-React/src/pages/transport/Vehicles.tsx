@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Armchair, Bus, CircleAlert, Pencil, Plus, UserRoundCog } from "lucide-react";
+import { Armchair, Bus, CircleAlert, Pencil, Plus, Smartphone, UserRoundCog } from "lucide-react";
 import { AttentionCard, ListBar, PaperPill } from "../../components/transport/TransportBits";
+import { DriverLinkDialog } from "../../components/transport/DriverLinkDialog";
 import { VehicleDialog } from "../../components/transport/VehicleDialog";
 import { StatTile } from "../../components/dashboard/school/StatTile";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
@@ -27,6 +28,7 @@ export default function VehiclesPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<TransportStatus>("active");
   const [dialog, setDialog] = useState<{ vehicle?: Vehicle } | null>(null);
+  const [linkFor, setLinkFor] = useState<Vehicle | null>(null);
   const res = useGetVehiclesQuery({ search: search.trim(), status });
   const summary = useGetTransportSummaryQuery().data?.data;
   const vehicles = res.data?.data.items;
@@ -77,7 +79,7 @@ export default function VehiclesPage() {
                 <th scope="col" className={TH}>Papers</th>
                 <th scope="col" className={TH}>Routes</th>
                 <th scope="col" className={TH}>Status</th>
-                {mayChange && <th scope="col" className="w-14 px-2"><span className="sr-only">Change</span></th>}
+                {mayChange && <th scope="col" className="w-36 px-2"><span className="sr-only">Change</span></th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -105,9 +107,15 @@ export default function VehiclesPage() {
                   </td>
                   {mayChange && (
                     <td className="px-2 py-3 text-right align-top">
-                      <Button variant="outline" size="sm" aria-label={`Change ${v.number}`} onClick={() => setDialog({ vehicle: v })}>
-                        <Pencil className="size-4" aria-hidden />
-                      </Button>
+                      <div className="flex justify-end gap-1.5">
+                        <Button variant="outline" size="sm" aria-label={`Driver link for ${v.number}`} onClick={() => setLinkFor(v)}>
+                          <Smartphone className="size-4" aria-hidden />
+                          {v.trackingOn ? "Tracked" : "Track"}
+                        </Button>
+                        <Button variant="outline" size="sm" aria-label={`Change ${v.number}`} onClick={() => setDialog({ vehicle: v })}>
+                          <Pencil className="size-4" aria-hidden />
+                        </Button>
+                      </div>
                     </td>
                   )}
                 </tr>
@@ -118,6 +126,7 @@ export default function VehiclesPage() {
       )}
 
       {dialog && <VehicleDialog vehicle={dialog.vehicle} onClose={() => setDialog(null)} />}
+      {linkFor && <DriverLinkDialog vehicle={linkFor} onClose={() => setLinkFor(null)} />}
     </div>
   );
 }

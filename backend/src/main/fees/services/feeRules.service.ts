@@ -3,6 +3,7 @@ import { ApiError } from "../../../utils/ApiError";
 import { MAX_CONCESSIONS } from "../constants";
 import { Concession, type IConcession } from "../models/Concession";
 import { FeeHead } from "../models/FeeHead";
+import { StudentConcession } from "../models/StudentConcession";
 import { DEFAULT_FEE_RULES, FeeSettings, type IFeeRules } from "../models/FeeSettings";
 import type { ConcessionInput, ConcessionUpdate, FeeRulesInput } from "../schemas/fees.schemas";
 import { asId, isDuplicateKey, keyOf } from "./feeHead.service";
@@ -98,6 +99,10 @@ export class FeeRulesService {
 
   static async removeConcession(tenantId: string, id: string) {
     const school = asId(tenantId);
+    // A concession given to a student is a promise to a family: it is switched off, not deleted, so what they were told still reads true.
+    if (await StudentConcession.exists({ tenantId: school, concessionId: id })) {
+      throw ApiError.conflict("This concession has been given to students. Switch it off instead of deleting it.", "CONCESSION_IN_USE");
+    }
     const result = await Concession.deleteOne({ _id: id, tenantId: school });
     if (result.deletedCount === 0) throw ApiError.notFound("Concession not found", "CONCESSION_NOT_FOUND");
   }

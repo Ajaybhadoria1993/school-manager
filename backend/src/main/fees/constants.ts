@@ -83,3 +83,17 @@ export function defaultMonths(frequency: FeeFrequency, startMonth: number): numb
 /** What a line costs one student over the session, in rupees: a one-time fee once, a repeating one for each due month. */
 export const yearlyCost = (amount: number, frequency: FeeFrequency, dueMonths: readonly number[]): number =>
   Math.round(amount * (frequency === "one_time" ? 1 : dueMonths.length) * 100) / 100;
+
+// ---- collecting (2026-11-19) -----------------------------------------------------------------------------------------------------------
+
+/** How a family paid. Online (a payment gateway) is not built: `upi` and `online` here are a payment the office checked and is writing down. */
+export const PAYMENT_MODES = ["cash", "cheque", "dd", "upi", "card", "online"] as const;
+export type PaymentMode = (typeof PAYMENT_MODES)[number];
+export const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = { cash: "Cash", cheque: "Cheque", dd: "Demand draft", upi: "UPI", card: "Card", online: "Online transfer" };
+/** A cheque or a draft is told apart by its number: it is asked for. */
+export const MODES_WITH_REFERENCE: readonly PaymentMode[] = ["cheque", "dd"];
+
+/** The most charges one receipt may settle (a whole year's tuition and more). */
+export const MAX_RECEIPT_ITEMS = 60;
+/** The receipts one list answers with. */
+export const RECEIPT_PAGE = 100;

@@ -94,3 +94,15 @@ export const inviteLinkLimiter = limiter({
   limit: 30,
   message: tooMany("Too many requests. Please wait a few minutes and try again."),
 });
+
+// A driver's phone sends its position every few seconds (about 12 a minute): roomy for that, tight for anything guessing a tracking link.
+// Keyed by the vehicle named in the link, so one busy vehicle never uses up another's allowance.
+export const trackingPingLimiter = limiter({
+  windowMs: MINUTE,
+  limit: 60,
+  keyGenerator: (req) => {
+    const link = req.header("x-tracking-link") ?? "";
+    return `tracking:${link.split(".")[0] || "none"}:${ipOf(req)}`;
+  },
+  message: tooMany("Too many position updates. Please wait a moment."),
+});

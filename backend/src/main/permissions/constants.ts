@@ -77,7 +77,16 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
     label: "Fees",
     items: [
       { key: "fees.view", label: "See the fee heads, each class's fee chart, the concessions and the fee rules", for: ["staff"] },
-      { key: "fees.manage", label: "Set up the fees: the fee heads, each class's fee chart, the concessions and the fee rules", for: ["staff"] },
+      { key: "fees.manage", label: "Set up the fees: the fee heads, each class's fee chart, the concessions and the fee rules; give and take back a student's concession; cancel a receipt", for: ["staff"] },
+      { key: "fees.collect", label: "Collect fees: see a student's fee account, take a payment and give the receipt, see the dues and the day's collection", for: ["staff"] },
+    ],
+  },
+  {
+    key: "documents",
+    label: "Documents",
+    items: [
+      { key: "documents.view", label: "See and print students' ID cards, exam report cards and admit cards, and the certificates issued (a student's photo is changed with Edit students)", for: ["staff"] },
+      { key: "documents.manage", label: "Write the remark on a report card, issue and cancel certificates, and set how the school grades", for: ["staff"] },
     ],
   },
   {
@@ -140,6 +149,9 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
       { key: "child.exams", label: "See their child's exams and results", for: ["parent"] },
       { key: "child.diary", label: "See their child's diary, homework and tests", for: ["parent"] },
       { key: "child.leave", label: "Send leave requests and see them", for: ["parent"] },
+      { key: "child.transport", label: "See their child's school bus: route, stop, driver and where it is now", for: ["parent"] },
+      { key: "child.fees", label: "See their child's fee account and fee chart", for: ["parent"] },
+      { key: "child.documents", label: "See and print their child's ID card and exam report card", for: ["parent"] },
     ],
   },
 ];
@@ -171,6 +183,7 @@ export const IMPLIES: Readonly<Record<string, string>> = {
   "years.manage": "classes.view",
   "transport.manage": "transport.view",
   "fees.manage": "fees.view",
+  "documents.manage": "documents.view",
 };
 
 /** The people who can do everything: no checkbox for them. */
@@ -213,9 +226,10 @@ export const DEFAULT_PERMISSIONS: Readonly<Record<string, readonly string[]>> = 
     "exams.marks",
     "timetable.view",
   ],
-  parent: ["calendar.view", "child.attendance", "child.timetable", "child.exams", "child.diary", "child.leave"],
-  // Fees are new: the accountant starts with them (the fee chart is their work), so nobody loses anything.
-  accountant: ["dashboard.view", "students.view", "students.export", "calendar.view", "fees.view", "fees.manage"],
+  // The bus and the fee chart are new and are only the parent's own child's: they start on, and the school unticks them in Permissions.
+  parent: ["calendar.view", "child.attendance", "child.timetable", "child.exams", "child.diary", "child.leave", "child.transport", "child.fees", "child.documents"],
+  // Fees are new: the accountant starts with them (the fee chart and taking fees are their work), so nobody loses anything.
+  accountant: ["dashboard.view", "students.view", "students.export", "calendar.view", "fees.view", "fees.manage", "fees.collect"],
   // Transport is new: the transport in-charge starts with it (nobody had it before, so nothing is taken away from anyone).
   transport: ["calendar.view", "transport.view", "transport.manage"],
   ...Object.fromEntries(PROFILES.filter((p) => p.kind === "staff" && p.key !== "accountant" && p.key !== "transport").map((p) => [p.key, SCHOOL_DEFAULT])),

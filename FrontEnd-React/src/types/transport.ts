@@ -31,6 +31,8 @@ export interface Vehicle {
   permitExpiry: string | null;
   notes: string | null;
   isActive: boolean;
+  /** True while the vehicle has a driver link in force (the live map listens for it). */
+  trackingOn: boolean;
   papers: Paper[];
   /** The names of the routes it runs. */
   routes: string[];
@@ -76,6 +78,36 @@ export interface TransportRoute {
   stops: RouteStop[];
   notes: string | null;
   isActive: boolean;
+  /** How many students ride it. */
+  riders: number;
+}
+
+/** A student on a route and the stop they board at. */
+export interface Rider {
+  studentId: string;
+  name: string;
+  admissionNumber: string;
+  /** "Class 5 - A"; null when they have no class this year. */
+  classLabel: string | null;
+  stopName: string;
+  /** False when the stop was renamed or taken off the route since. */
+  stopKnown: boolean;
+}
+
+export interface RouteRiders {
+  route: { id: string; name: string; isActive: boolean; stops: string[] };
+  /** The seats of the route's vehicle; null when it has none yet. */
+  seats: number | null;
+  items: Rider[];
+}
+
+/** A student the school may put on a route, with the bus they already ride. */
+export interface StudentChoice {
+  id: string;
+  name: string;
+  admissionNumber: string;
+  classLabel: string | null;
+  route: string | null;
 }
 
 /** A paper that has ended or ends within a month. */
@@ -137,4 +169,53 @@ export interface RouteBody {
   stops: { name: string; pickupTime: string; dropTime: string; fee: string }[];
   notes: string;
   isActive?: boolean;
+}
+
+// ---- live tracking (backend/src/main/transport/services/tracking.service.ts) ---------------------------------------------------------
+
+/** "live": reported recently on a trip that has not ended. "offline": the trip ended, or the phone has gone quiet. */
+export type PositionStatus = "live" | "offline";
+
+export interface VehiclePosition {
+  lat: number;
+  lng: number;
+  /** Kilometres per hour; null when the phone could not tell. */
+  speedKmph: number | null;
+  /** Degrees clockwise from north; null when unknown. */
+  heading: number | null;
+  /** Metres: how far off the phone thinks the point may be. */
+  accuracy: number | null;
+  recordedAt: string;
+  /** How old it was when the server answered. */
+  ageSeconds: number;
+  status: PositionStatus;
+}
+
+/** A vehicle with a driver link, with who runs it and where it was last seen (null while it has never reported). */
+export interface LiveVehicle {
+  vehicleId: string;
+  number: string;
+  registrationNumber: string;
+  type: VehicleType;
+  routes: string[];
+  driver: { name: string; mobile: string } | null;
+  position: VehiclePosition | null;
+}
+
+export interface LiveTracking {
+  /** A vehicle quiet for longer than this many seconds is shown as offline. */
+  liveWithinSeconds: number;
+  items: LiveVehicle[];
+}
+
+/** What the socket pushes for each new position. */
+export interface PositionPush {
+  vehicleId: string;
+  position: VehiclePosition;
+}
+
+/** What the driver's page learns once its link is accepted. */
+export interface DriverSession {
+  vehicle: { id: string; number: string; registrationNumber: string };
+  routes: string[];
 }

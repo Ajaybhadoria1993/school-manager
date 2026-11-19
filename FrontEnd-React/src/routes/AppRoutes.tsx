@@ -24,6 +24,8 @@ const routes: RouteObject[] = [
       { path: "forgot-password", ...lazyRoute(() => import("../pages/auth/ForgotPassword")) },
       { path: "reset-password", ...lazyRoute(() => import("../pages/auth/ResetPassword")) },
       { path: "accept-invite", ...lazyRoute(() => import("../pages/auth/AcceptInvite")) },
+      // A driver's phone: no sign-in, the private link of the vehicle (after the #) is the proof. Shares the phone's GPS with the live map.
+      { path: "driver-track", ...lazyRoute(() => import("../pages/driver/DriverTrack")) },
 
       // A school admin whose school is not approved yet: the setup form and the waiting screen
       {
@@ -222,9 +224,24 @@ const routes: RouteObject[] = [
               { path: "transport/vehicles", ...lazyRoute(() => import("../pages/transport/Vehicles")) },
               { path: "transport/drivers", ...lazyRoute(() => import("../pages/transport/Drivers")) },
               { path: "transport/routes", ...lazyRoute(() => import("../pages/transport/Routes")) },
+              { path: "transport/tracking", ...lazyRoute(() => import("../pages/transport/Tracking")) },
             ],
           },
-          // Fees (set-up only): the fee chart of each class, the list of fees, the concessions, the fee rules (one row of the menu; /fees leads to the first).
+          // Documents: the ID cards and the exam report cards of a class, to print (documents.view).
+          {
+            element: <PermissionRoute keys={["documents.view"]} />,
+            children: [{ path: "documents", ...lazyRoute(() => import("../pages/documents/Documents")) }],
+          },
+          // Collecting fees: a student's fee account and taking a payment, the dues, the receipts (fees.collect).
+          {
+            element: <PermissionRoute keys={["fees.collect"]} />,
+            children: [
+              { path: "fees/collect", ...lazyRoute(() => import("../pages/fees/CollectFees")) },
+              { path: "fees/dues", ...lazyRoute(() => import("../pages/fees/Dues")) },
+              { path: "fees/receipts", ...lazyRoute(() => import("../pages/fees/Receipts")) },
+            ],
+          },
+          // Fees set-up: the fee chart of each class, the list of fees, the concessions, the fee rules (one row of the menu; /fees leads to the first).
           {
             element: <PermissionRoute keys={["fees.view"]} />,
             children: [

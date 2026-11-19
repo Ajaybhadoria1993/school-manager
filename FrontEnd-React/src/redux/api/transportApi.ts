@@ -1,5 +1,5 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type { ApiResponse, CrewBody, CrewMember, CrewRole, RouteBody, TransportRoute, TransportStatus, TransportSummary, Vehicle, VehicleBody } from "../../types";
+import type { ApiResponse, CrewBody, CrewMember, CrewRole, DriverSession, LiveTracking, RouteBody, RouteRiders, StudentChoice, TransportRoute, TransportStatus, TransportSummary, Vehicle, VehicleBody } from "../../types";
 import { baseQueryWithReauth } from "./baseQueryWithReauth";
 
 /**
@@ -25,6 +25,27 @@ export const transportApi = createApi({
     }),
     deleteVehicle: build.mutation<ApiResponse<null>, string>({ query: (id) => ({ url: `/transport/vehicles/${id}`, method: "DELETE" }), invalidatesTags: ["Transport"] }),
 
+    /** The driver's private link for a vehicle. The link comes back once; making a new one replaces the old. */
+    issueTrackingKey: build.mutation<ApiResponse<{ key: string }>, string>({ query: (id) => ({ url: `/transport/vehicles/${id}/tracking-key`, method: "POST" }), invalidatesTags: ["Transport"] }),
+    revokeTrackingKey: build.mutation<ApiResponse<null>, string>({ query: (id) => ({ url: `/transport/vehicles/${id}/tracking-key`, method: "DELETE" }), invalidatesTags: ["Transport"] }),
+    /** Every vehicle with a driver link and its last position; the socket brings each new one after this. */
+    getLiveTracking: build.query<ApiResponse<LiveTracking>, void>({ query: () => "/transport/tracking/live", providesTags: ["Transport"] }),
+
+    // The driver's phone has no sign-in: the private link goes in X-Tracking-Link (the Authorization header is a signed-in person's own), and a 401
+    // is an answer ("this link is no longer valid"), not an expired session.
+    driverSession: build.mutation<ApiResponse<DriverSession>, string>({
+      query: (link) => ({ url: "/transport/tracking/session", method: "POST", headers: { "X-Tracking-Link": link } }),
+      extraOptions: { skipAuthRefresh: true },
+    }),
+    driverPing: build.mutation<ApiResponse<null>, { link: string; position: { lat: number; lng: number; speedKmph: number | null; heading: number | null; accuracy: number | null } }>({
+      query: ({ link, position }) => ({ url: "/transport/tracking/ping", method: "POST", headers: { "X-Tracking-Link": link }, body: position }),
+      extraOptions: { skipAuthRefresh: true },
+    }),
+    driverStop: build.mutation<ApiResponse<null>, string>({
+      query: (link) => ({ url: "/transport/tracking/stop", method: "POST", headers: { "X-Tracking-Link": link } }),
+      extraOptions: { skipAuthRefresh: true },
+    }),
+
     getCrew: build.query<ApiResponse<{ items: CrewMember[] }>, { search?: string; status: TransportStatus; role: CrewRole | "all" }>({
       query: (params) => ({ url: "/transport/drivers", params: { ...params, search: params.search || undefined } }),
       providesTags: ["Transport"],
@@ -46,6 +67,19 @@ export const transportApi = createApi({
       invalidatesTags: ["Transport"],
     }),
     deleteRoute: build.mutation<ApiResponse<null>, string>({ query: (id) => ({ url: `/transport/routes/${id}`, method: "DELETE" }), invalidatesTags: ["Transport"] }),
+
+    /** The students of a route (who, which class, which stop). Adding or taking off one makes the routes' counts stale too. */
+    getRouteRiders: build.query<ApiResponse<RouteRiders>, string>({ query: (id) => `/transport/routes/${id}/riders`, providesTags: ["Transport"] }),
+    addRider: build.mutation<ApiResponse<RouteRiders>, { routeId: string; studentId: string; stopName: string }>({
+      query: ({ routeId, ...body }) => ({ url: `/transport/routes/${routeId}/riders`, method: "POST", body }),
+      invalidatesTags: ["Transport"],
+    }),
+    removeRider: build.mutation<ApiResponse<RouteRiders>, { routeId: string; studentId: string }>({
+      query: ({ routeId, studentId }) => ({ url: `/transport/routes/${routeId}/riders/${studentId}`, method: "DELETE" }),
+      invalidatesTags: ["Transport"],
+    }),
+    /** Students to choose from, by what is typed (a name or an admission number). */
+    searchRiderStudents: build.query<ApiResponse<{ items: StudentChoice[] }>, string>({ query: (q) => ({ url: "/transport/students/search", params: { q } }) }),
   }),
 });
 
@@ -55,6 +89,12 @@ export const {
   useCreateVehicleMutation,
   useUpdateVehicleMutation,
   useDeleteVehicleMutation,
+  useIssueTrackingKeyMutation,
+  useRevokeTrackingKeyMutation,
+  useGetLiveTrackingQuery,
+  useDriverSessionMutation,
+  useDriverPingMutation,
+  useDriverStopMutation,
   useGetCrewQuery,
   useCreateCrewMutation,
   useUpdateCrewMutation,
@@ -63,4 +103,8 @@ export const {
   useCreateRouteMutation,
   useUpdateRouteMutation,
   useDeleteRouteMutation,
+  useGetRouteRidersQuery,
+  useAddRiderMutation,
+  useRemoveRiderMutation,
+  useSearchRiderStudentsQuery,
 } = transportApi;

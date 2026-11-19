@@ -1,0 +1,20 @@
+/* A receipt prints on its own: everything else on the page is hidden, and the receipt takes the whole sheet. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .receipt-sheet,
+  .receipt-sheet * {
+    visibility: visible;
+  }
+  .receipt-sheet {
+    position: fixed;
+    inset: 0;
+    padding: 24px;
+    background: white;
+    color: black;
+  }
+  .receipt-noprint {
+    display: none !important;
+  }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultMonths, howOften, monthNames, monthsFrom, monthsProblem, offWords, raiseNote, rupees, sumWords, yearlyCost } from "../fees";
+import { daysBetween, defaultMonths, dueRulesWords, howOften, lateFineFor, monthNames, monthsFrom, monthsProblem, offWords, ordinal, raiseNote, rupees, sumWords, yearlyCost } from "../fees";
 
 describe("money", () => {
   it("is written in rupees the Indian way, with paise only when there are some", () => {
@@ -69,5 +69,45 @@ describe("how a fee is said", () => {
     expect(raiseNote(10, 10)).toBeUndefined();
     expect(raiseNote(0, 10)).toBeUndefined();
     expect(raiseNote(12, 10)).toBe("More than 10% over last year needs the fee committee's approval in some states (Madhya Pradesh: 10%). Check your state's rule.");
+  });
+});
+
+describe("the due rules, as a parent reads them", () => {
+  it("says a day of the month with its ending: 1st, 2nd, 3rd, 5th, 11th, 12th, 13th, 21st, 22nd, 28th", () => {
+    expect([1, 2, 3, 5, 10, 11, 12, 13, 21, 22, 23, 28].map(ordinal)).toEqual(["1st", "2nd", "3rd", "5th", "10th", "11th", "12th", "13th", "21st", "22nd", "23rd", "28th"]);
+  });
+
+  it("gives the due day, the days to pay without a fine, and what a late payment costs", () => {
+    const none = { dueDay: 10, graceDays: 0, lateFine: { mode: "none" as const, amount: 0, maxAmount: null } };
+    expect(dueRulesWords(none)).toEqual(["Due on the 10th of the month."]);
+    expect(dueRulesWords({ ...none, graceDays: 1 })).toEqual(["Due on the 10th of the month.", "1 day to pay without a fine."]);
+    expect(dueRulesWords({ dueDay: 5, graceDays: 3, lateFine: { mode: "flat", amount: 100, maxAmount: null } })).toEqual(["Due on the 5th of the month.", "3 days to pay without a fine.", "Late fine: ₹100."]);
+    expect(dueRulesWords({ ...none, lateFine: { mode: "per_day", amount: 10, maxAmount: 500 } }).at(-1)).toBe("Late fine: ₹10 for each day late (up to ₹500).");
+    expect(dueRulesWords({ ...none, lateFine: { mode: "percent_per_month", amount: 2, maxAmount: null } }).at(-1)).toBe("Late fine: 2% of what is due for each month late.");
+  });
+});
+
+describe("the late fine, as the Collect window offers it (the server's rule, repeated)", () => {
+  const rules = (mode: "none" | "flat" | "per_day" | "percent_per_month", amount: number, maxAmount: number | null = null, graceDays = 0) => ({ graceDays, lateFine: { mode, amount, maxAmount } });
+  // 9 days late, 40 days late, and one that is not due yet.
+  const rows = [
+    { base: 1000, dueDate: "2026-11-10" },
+    { base: 2000, dueDate: "2026-10-10" },
+    { base: 500, dueDate: "2026-12-10" },
+  ];
+  const on = "2026-11-19";
+
+  it("counts days between two days", () => {
+    expect(daysBetween("2026-11-19", "2026-11-10")).toBe(9);
+    expect(daysBetween("2026-11-10", "2026-11-19")).toBe(-9);
+  });
+
+  it("is the same as the server for each mode, with a cap and with grace", () => {
+    expect(lateFineFor(rules("none", 100), rows, on)).toBe(0);
+    expect(lateFineFor(rules("flat", 100), rows, on)).toBe(200);
+    expect(lateFineFor(rules("per_day", 10), rows, on)).toBe(490);
+    expect(lateFineFor(rules("percent_per_month", 2), rows, on)).toBe(100);
+    expect(lateFineFor(rules("per_day", 10, 300), rows, on)).toBe(300);
+    expect(lateFineFor(rules("flat", 100, null, 10), rows, on)).toBe(100);
   });
 });

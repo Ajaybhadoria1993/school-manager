@@ -128,3 +128,31 @@ export const updateRouteSchema = routeBody.partial().extend({ isActive: z.boolea
 export const listRoutesQuerySchema = z.object({ search: z.string().trim().max(60).optional(), status });
 export type RouteInput = z.infer<typeof createRouteSchema>;
 export type RouteUpdate = z.infer<typeof updateRouteSchema>;
+
+// ---- the students of a route ----------------------------------------------------------------------------------------------------------
+export const riderParamsSchema = z.object({ id: objectId, studentId: objectId });
+export const addRiderSchema = z.object({
+  studentId: objectId,
+  stopName: label("stop"),
+});
+export const searchStudentsQuerySchema = z.object({ q: z.string().trim().max(60).default("") });
+export type AddRiderInput = z.output<typeof addRiderSchema>;
+
+// ---- live tracking -------------------------------------------------------------------------------------------------------------------
+const optionalNumber = (what: string, min: number, max: number) =>
+  z
+    .number({ invalid_type_error: `The ${what} must be a number` })
+    .min(min, `The ${what} is out of range`)
+    .max(max, `The ${what} is out of range`)
+    .nullish()
+    .transform((v) => v ?? null);
+
+/** One position sent by the driver's phone (a browser's Geolocation reading, with the speed already in km/h). */
+export const pingSchema = z.object({
+  lat: z.number({ required_error: "Send the latitude", invalid_type_error: "The latitude must be a number" }).min(-90, "The latitude is out of range").max(90, "The latitude is out of range"),
+  lng: z.number({ required_error: "Send the longitude", invalid_type_error: "The longitude must be a number" }).min(-180, "The longitude is out of range").max(180, "The longitude is out of range"),
+  speedKmph: optionalNumber("speed", 0, 300),
+  heading: optionalNumber("heading", 0, 360),
+  accuracy: optionalNumber("accuracy", 0, 100_000),
+});
+export type PingInput = z.output<typeof pingSchema>;

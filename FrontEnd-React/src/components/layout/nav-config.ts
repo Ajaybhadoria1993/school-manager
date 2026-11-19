@@ -1,6 +1,10 @@
 import {
   Backpack,
   BadgePercent,
+  FileText,
+  CircleAlert,
+  HandCoins,
+  ReceiptText,
   Building2,
   CalendarCheck2,
   CalendarClock,
@@ -24,6 +28,7 @@ import {
   UserX,
   ShieldCheck,
   Route,
+  MapPinned,
   UserRoundCog,
   UsersRound,
   IndianRupee,
@@ -235,8 +240,50 @@ export const NAV_ITEMS: NavItem[] = [
     submenu: "Transport",
   },
   {
+    // Live tracking (2026-11-19): where each vehicle is now, from the driver's phone, on a map.
+    label: "Live tracking",
+    href: "/transport/tracking",
+    icon: MapPinned,
+    roles: ["school_admin", "principal"],
+    permission: ["transport.view"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Transport",
+  },
+  {
     // Fees (2026-11-12): the set-up of what the school charges: the fee chart of each class, the list of fees, the concessions and the fee rules.
-    // One row of the menu that opens these four pages; for the people the school allowed (fees.view / fees.manage). Collecting fees comes later.
+    // One row of the menu; for the people the school allowed (fees.view / fees.manage). Collecting (2026-11-19): taking a payment from a student's fee
+    // account, the dues and the receipts, for the people allowed fees.collect (they come first: a cashier opens the row on Collect fees).
+    label: "Collect fees",
+    href: "/fees/collect",
+    icon: HandCoins,
+    roles: ["school_admin", "principal"],
+    permission: ["fees.collect"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Fees",
+  },
+  {
+    label: "Dues",
+    href: "/fees/dues",
+    icon: CircleAlert,
+    roles: ["school_admin", "principal"],
+    permission: ["fees.collect"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Fees",
+  },
+  {
+    label: "Receipts",
+    href: "/fees/receipts",
+    icon: ReceiptText,
+    roles: ["school_admin", "principal"],
+    permission: ["fees.collect"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Fees",
+  },
+  {
     label: "Fee structure",
     href: "/fees/structure",
     icon: IndianRupee,
@@ -275,6 +322,16 @@ export const NAV_ITEMS: NavItem[] = [
     schoolWide: true,
     group: "Overview",
     submenu: "Fees",
+  },
+  {
+    // Documents (2026-11-19): the ID cards and the exam report cards of a class, to print; for the people the school allowed (documents.view).
+    label: "Documents",
+    href: "/documents",
+    icon: FileText,
+    roles: ["school_admin", "principal"],
+    permission: ["documents.view"],
+    schoolWide: true,
+    group: "Manage school",
   },
   {
     // What each kind of person of the school (Receptionist, Teacher, Parent...) may do, with checkboxes (2026-11-10). Only the school admin changes it.

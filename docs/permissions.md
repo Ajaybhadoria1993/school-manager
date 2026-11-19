@@ -21,6 +21,8 @@ a Parent, a Librarian... When that person signs in, the menu shows what the scho
 |---|---|---|
 | Dashboard | `dashboard.view` | staff |
 | Transport | `transport.view`, `transport.manage` (vehicles, drivers and attendants, routes; docs/transport.md) | staff |
+| Documents | `documents.view` (ID cards, report cards, admit cards and the certificate register, to print), `documents.manage` (a report card's remark, issuing and cancelling certificates, the grading; docs/documents.md) | staff |
+| Fees | `fees.view`, `fees.manage` (the set-up; also giving a student a concession and cancelling a receipt), `fees.collect` (a student's fee account, taking a payment, receipts, dues; docs/fees.md) | staff |
 | Students | `students.view`, `.add` (Add student + Bulk upload + a parent's first login), `.edit` (also a parent's new password/username), `.status` (inactive/active, transfer out), `.export`, `.settings` (what Add student asks, the Excel layout: Manage fields + the Export page) | staff |
 | Teachers | `teachers.view`, `.add` (Add teacher + Bulk upload; makes subjects), `.edit` (details, classes, class teacher, login, make inactive), `.export`, `.settings` (the extra fields) | staff |
 | Staff | `staff.view`, `.add`, `.edit` (details, login, make inactive, remove) | staff |
@@ -35,7 +37,7 @@ a Parent, a Librarian... When that person signs in, the menu shows what the scho
 | | `timetable.edit` (School timings, Class timetables, subjects and who teaches them) | staff |
 | Calendar | `calendar.view` | staff, teacher, parent |
 | | `calendar.manage` | staff |
-| Their child | `child.attendance`, `.timetable`, `.exams`, `.diary`, `.leave` | parent |
+| Their child | `child.attendance`, `.timetable`, `.exams`, `.diary`, `.leave`, `.transport` (the child's bus and where it is while live), `.fees` (the child's fee chart) | parent |
 
 Only what has a page for that person is offered; more are added with their pages. **A permission that needs another brings it** (`IMPLIES`):
 adding students needs seeing them, taking attendance needs seeing it, deciding leave needs seeing it, `calendar.manage` needs `calendar.view`...

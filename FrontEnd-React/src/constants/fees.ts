@@ -1,4 +1,4 @@
-import type { AppliesTo, ConcessionBasis, FeeFrequency, FeeKind, LateFineMode } from "../types";
+import type { AppliesTo, ChargeStatus, ConcessionBasis, FeeFrequency, FeeKind, LateFineMode, PaymentMode } from "../types";
 
 /** The words for what a fee is about, in the order a fee chart is read (the server sorts a class's lines the same way). */
 export const FEE_KINDS: { value: FeeKind; label: string }[] = [
@@ -147,3 +147,23 @@ export const USUAL_CONCESSIONS: UsualConcession[] = [
 
 /** Above this, a raise on last year's fees needs the fee committee's approval in some states (Madhya Pradesh: 10%, by the 2017 Act). */
 export const RAISE_NEEDS_APPROVAL_ABOVE = 10;
+
+/** How a family may pay. A cheque or a draft is told apart by its number, which is asked for. */
+export const PAYMENT_MODES: { value: PaymentMode; label: string; needsReference: boolean }[] = [
+  { value: "cash", label: "Cash", needsReference: false },
+  { value: "upi", label: "UPI", needsReference: false },
+  { value: "cheque", label: "Cheque", needsReference: true },
+  { value: "dd", label: "Demand draft", needsReference: true },
+  { value: "card", label: "Card", needsReference: false },
+  { value: "online", label: "Online transfer", needsReference: false },
+];
+export const PAYMENT_LABEL = Object.fromEntries(PAYMENT_MODES.map((m) => [m.value, m.label])) as Record<PaymentMode, string>;
+
+/** What a charge says about itself, and the badge colour for it. */
+export const CHARGE_LOOK: Record<ChargeStatus, { label: string; tone: "success" | "neutral" | "danger" | "warning" | "info" }> = {
+  paid: { label: "Paid", tone: "success" },
+  upcoming: { label: "Not due yet", tone: "neutral" },
+  overdue: { label: "Late", tone: "danger" },
+  partial: { label: "Part paid", tone: "warning" },
+  due: { label: "Due", tone: "info" },
+};

@@ -7,6 +7,7 @@ import studentsRoutes from "../main/students/routes/v1/students.routes";
 import subjectsRoutes from "../main/subjects/routes/v1/subjects.routes";
 import staffRoutes from "../main/staff/routes/v1/staff.routes";
 import timetableRoutes from "../main/timetable/routes/v1/timetable.routes";
+import documentsRoutes from "../main/documents/routes/v1/documents.routes";
 import parentRoutes from "../main/parents/routes/v1/parents.routes";
 import classroomRoutes from "../main/classroom/routes/v1/classroom.routes";
 import notificationRoutes from "../main/notifications/routes/v1/notifications.routes";
@@ -43,6 +44,8 @@ router.use("/attendance", attendanceRoutes);
 router.use("/dashboard", dashboardRoutes);
 // Transport: the school's vehicles, drivers and attendants, and routes with their stops.
 router.use("/transport", transportRoutes);
+// The ID card and the exam report card of a student, and the student's photo (2026-11-19).
+router.use("/documents", documentsRoutes);
 // Fees (set-up only): the fee heads, each class's fee chart for a session, the concessions and the fee rules.
 router.use("/fees", feesRoutes);
 // What each kind of person of the school (Receptionist, Teacher, Parent...) may do: the Permissions page.

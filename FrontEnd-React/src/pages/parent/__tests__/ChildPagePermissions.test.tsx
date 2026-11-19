@@ -79,7 +79,7 @@ describe("the child's page follows what the school allowed the parents", () => {
     // The child's own record (class, about, parents) stays: it is who the child is.
     expect(sections()).toContain("Class");
     await vi.waitFor(() => expect(calls.some((c) => c.path === "/parent/children/s1/attendance")).toBe(true));
-    for (const gone of ["timetable", "exams", "leaves", "diary", "tests"]) {
+    for (const gone of ["timetable", "exams", "leaves", "diary", "tests", "bus", "fees"]) {
       expect(calls.some((c) => c.path === `/parent/children/s1/${gone}`), gone).toBe(false);
     }
   });

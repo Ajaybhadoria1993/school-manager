@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { RouterProvider, createMemoryRouter } from "react-router";
@@ -9,7 +9,7 @@ import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
 import { signInAs, signOut } from "../../../test/session";
-import type { CrewMember, TransportRoute, TransportSummary, UserRole, Vehicle } from "../../../types";
+import type { CrewMember, RouteRiders, StudentChoice, TransportRoute, TransportSummary, UserRole, Vehicle } from "../../../types";
 import DriversPage from "../Drivers";
 import RoutesPage from "../Routes";
 import VehiclesPage from "../Vehicles";
@@ -29,6 +29,7 @@ const BUS: Vehicle = {
   permitExpiry: null,
   notes: null,
   isActive: true,
+  trackingOn: false,
   papers: [
     paper("insuranceExpiry", "Insurance", "ok", "2027-06-30", 232),
     paper("fitnessExpiry", "Fitness certificate", "soon", "2026-11-20", 10),
@@ -70,6 +71,7 @@ const ROUTE: TransportRoute = {
   ],
   notes: null,
   isActive: true,
+  riders: 1,
 };
 const SUMMARY: TransportSummary = {
   vehicles: { total: 1, seats: 40, inactive: 0 },
@@ -200,6 +202,37 @@ describe("Transport > Vehicles", () => {
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
     await screen.findByText("Vehicle saved");
     expect(posted(calls, "PATCH", "/transport/vehicles/v1")[0].body).toMatchObject({ isActive: false, number: "Bus 1", seats: 40 });
+  });
+
+  it("the driver link: made once and shown as a page address with the link after the #; a new one replaces it; switching it off asks the server and closes", async () => {
+    const KEY = `${"b".repeat(24)}.${"y".repeat(32)}`;
+    const { calls, user } = open("vehicles", { "POST /transport/vehicles/v1/tracking-key": () => ({ key: KEY }), "DELETE /transport/vehicles/v1/tracking-key": () => null });
+    await screen.findByRole("table", { name: "Vehicles" });
+    await user.click(screen.getByRole("button", { name: "Driver link for Bus 1" }));
+    const dialog = await screen.findByRole("dialog", { name: "Driver link for Bus 1" });
+    expect(within(dialog).getByText("This vehicle has no link yet.")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Switch off" })).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Make the link" }));
+    expect(posted(calls, "POST", "/transport/vehicles/v1/tracking-key")).toHaveLength(1);
+    expect(await within(dialog).findByLabelText("Driver link")).toHaveValue(`${window.location.origin}/driver-track#${KEY}`);
+  });
+
+  it("a vehicle that already has a link says it cannot be shown again, and can be switched off", async () => {
+    const { calls, user } = open("vehicles", { "GET /transport/vehicles": () => ({ items: [{ ...BUS, trackingOn: true }] }), "DELETE /transport/vehicles/v1/tracking-key": () => null });
+    await screen.findByRole("table", { name: "Vehicles" });
+    await user.click(screen.getByRole("button", { name: "Driver link for Bus 1" }));
+    const dialog = await screen.findByRole("dialog", { name: "Driver link for Bus 1" });
+    expect(within(dialog).getByText(/cannot be shown again/i)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Switch off" }));
+    await screen.findByText("Driver link switched off");
+    expect(posted(calls, "DELETE", "/transport/vehicles/v1/tracking-key")).toHaveLength(1);
+  });
+
+  it("a person who may only see transport has no driver link button", async () => {
+    open("vehicles", {}, { role: "receptionist", permissions: ["transport.view"] });
+    await screen.findByRole("table", { name: "Vehicles" });
+    expect(screen.queryByRole("button", { name: /^Driver link for/ })).not.toBeInTheDocument();
   });
 
   it("a person who may only see transport reads the list: no Add vehicle and no Change buttons", async () => {
@@ -347,5 +380,88 @@ describe("Transport > Routes", () => {
     await screen.findByRole("group", { name: "Route 1 - Arera Colony" });
     expect(screen.queryByRole("button", { name: "Add route" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Change / })).not.toBeInTheDocument();
+  });
+});
+
+
+describe("Transport > Routes > students on a route", () => {
+  const ASHA = { studentId: "s1", name: "Asha Verma", admissionNumber: "ADM-1", classLabel: "Class 5 - A", stopName: "Arera Colony", stopKnown: true };
+  const riders = (items: RouteRiders["items"]): RouteRiders => ({ route: { id: "r1", name: ROUTE.name, isActive: true, stops: ["Arera Colony", "Shahpura"] }, seats: 2, items });
+  const KABIR: StudentChoice = { id: "s2", name: "Kabir Rao", admissionNumber: "ADM-2", classLabel: "Class 5 - A", route: null };
+  const MIRA: StudentChoice = { id: "s3", name: "Mira Shah", admissionNumber: "ADM-3", classLabel: "Class 1", route: "Route 2" };
+
+  const openRiders = async (extra: Record<string, Handler> = {}) => {
+    const view = open("routes", { "GET /transport/routes/r1/riders": () => riders([ASHA]), ...extra });
+    await screen.findByRole("group", { name: "Route 1 - Arera Colony" });
+    await view.user.click(screen.getByRole("button", { name: "Students on Route 1 - Arera Colony" }));
+    return { ...view, dialog: await screen.findByRole("dialog", { name: "Students on Route 1 - Arera Colony" }) };
+  };
+
+  it("the route card says how many ride it, and the dialog lists them with their class, stop and the seats used", async () => {
+    const { dialog } = await openRiders();
+    // The page behind an open dialog is hidden from the accessibility tree.
+    expect(screen.getByRole("button", { name: "Students on Route 1 - Arera Colony", hidden: true })).toHaveTextContent("1");
+    const list = await within(dialog).findByRole("region", { name: "Students on this route" });
+    expect(within(list).getByText("Asha Verma")).toBeInTheDocument();
+    expect(within(list).getByText("Class 5 - A · ADM-1")).toBeInTheDocument();
+    expect(within(list).getByText("Arera Colony")).toBeInTheDocument();
+    expect(within(list).getByText("1 of 2 seats")).toBeInTheDocument();
+  });
+
+  it("finds a student by what is typed, says the bus a student already rides, and adds them at the stop chosen", async () => {
+    const { calls, user, dialog } = await openRiders({
+      "GET /transport/students/search": (_b, q) => ({ items: q.get("q") === "mir" ? [MIRA] : [KABIR] }),
+      "POST /transport/routes/r1/riders": () => riders([ASHA]),
+    });
+    const add = within(dialog).getByRole("button", { name: "Add to route" });
+    expect(add).toBeDisabled();
+    await user.type(within(dialog).getByPlaceholderText("Search a student"), "mir");
+    await user.click(await within(dialog).findByRole("button", { name: /Mira Shah/ }));
+    expect(within(dialog).getByText(/Rides Route 2 now: adding moves them here/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Change student" }));
+    await user.clear(within(dialog).getByPlaceholderText("Search a student"));
+    await user.type(within(dialog).getByPlaceholderText("Search a student"), "kabir");
+    await user.click(await within(dialog).findByRole("button", { name: /Kabir Rao/ }));
+    // The stop is still to choose, so it cannot be added yet.
+    expect(add).toBeDisabled();
+    await user.click(within(dialog).getByRole("button", { name: /Boards at/ }));
+    await user.click(await screen.findByRole("option", { name: "Shahpura" }));
+    await user.click(add);
+    await screen.findByText("Kabir Rao added to Route 1 - Arera Colony");
+    expect(posted(calls, "POST", "/transport/routes/r1/riders")[0].body).toEqual({ studentId: "s2", stopName: "Shahpura" });
+  });
+
+  it("says when no student matches", async () => {
+    const { user, dialog } = await openRiders({ "GET /transport/students/search": () => ({ items: [] }) });
+    await user.type(within(dialog).getByPlaceholderText("Search a student"), "zzz");
+    expect(await within(dialog).findByText(/No student matches/)).toBeInTheDocument();
+  });
+
+  it("takes a student off the route, and says so in words when the server refuses", async () => {
+    const { calls, user, dialog } = await openRiders({ "DELETE /transport/routes/r1/riders/s1": () => riders([]) });
+    await user.click(await within(dialog).findByRole("button", { name: "Take Asha Verma off the route" }));
+    await screen.findByText("Asha Verma taken off Route 1 - Arera Colony");
+    expect(posted(calls, "DELETE", "/transport/routes/r1/riders/s1")).toHaveLength(1);
+  });
+
+  it("a rider whose stop was renamed is said not to be on the route now", async () => {
+    await openRiders({ "GET /transport/routes/r1/riders": () => riders([{ ...ASHA, stopName: "Arera Chowk", stopKnown: false }]) });
+    expect(await screen.findByText("Arera Chowk (not on the route now)")).toBeInTheDocument();
+  });
+
+  it("a route with no stops asks for stops first", async () => {
+    open("routes", { "GET /transport/routes": () => ({ items: [{ ...ROUTE, stops: [] }] }), "GET /transport/routes/r1/riders": () => riders([]) });
+    const user = userEvent.setup();
+    await screen.findByRole("group", { name: "Route 1 - Arera Colony" });
+    await user.click(screen.getByRole("button", { name: "Students on Route 1 - Arera Colony" }));
+    const dialog = await screen.findByRole("dialog", { name: "Students on Route 1 - Arera Colony" });
+    expect(within(dialog).getByText(/has no stops yet/)).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).queryByRole("button", { name: "Add to route" })).not.toBeInTheDocument());
+  });
+
+  it("only a person who may change transport gets the button", async () => {
+    open("routes", {}, { role: "receptionist", permissions: ["transport.view"] });
+    await screen.findByRole("group", { name: "Route 1 - Arera Colony" });
+    expect(screen.queryByRole("button", { name: /^Students on / })).not.toBeInTheDocument();
   });
 });

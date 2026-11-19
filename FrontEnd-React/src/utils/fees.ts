@@ -1,4 +1,4 @@
-import type { AppliesTo, Concession, FeeFrequency, FeeLine } from "../types";
+import type { AppliesTo, Concession, FeeFrequency, FeeLine, LateFineMode } from "../types";
 import { MONTH_COUNT, MONTH_NAMES } from "../constants/fees";
 
 /** 1200 -> "₹1,200"; 1200.5 -> "₹1,200.50" (paise only when there are some). */
@@ -84,3 +84,58 @@ export function fieldErrorsOf(err: unknown, get: (e: unknown) => { details?: unk
   if (Array.isArray(details)) for (const d of details as { path?: string; message?: string }[]) if (d.path && d.message && !out[d.path]) out[d.path] = d.message;
   return out;
 }
+
+/** 1 -> "1st", 2 -> "2nd", 5 -> "5th", 11 -> "11th", 22 -> "22nd". */
+export function ordinal(n: number): string {
+  const last = n % 10;
+  const teen = n % 100 >= 11 && n % 100 <= 13;
+  return `${n}${teen || last === 0 || last > 3 ? "th" : ["th", "st", "nd", "rd"][last]}`;
+}
+
+/** The school's rules for when a fee is due and what being late costs, as a parent reads them: "Due on the 5th of the month. 3 days to pay without a fine. Late fine: ₹100." */
+export function dueRulesWords(rules: { dueDay: number; graceDays: number; lateFine: { mode: "none" | "flat" | "per_day" | "percent_per_month"; amount: number; maxAmount: number | null } }): string[] {
+  const out = [`Due on the ${ordinal(rules.dueDay)} of the month.`];
+  if (rules.graceDays > 0) out.push(`${rules.graceDays} day${rules.graceDays === 1 ? "" : "s"} to pay without a fine.`);
+  const { mode, amount, maxAmount } = rules.lateFine;
+  const most = maxAmount != null ? ` (up to ${rupees(maxAmount)})` : "";
+  if (mode === "flat") out.push(`Late fine: ${rupees(amount)}.`);
+  else if (mode === "per_day") out.push(`Late fine: ${rupees(amount)} for each day late${most}.`);
+  else if (mode === "percent_per_month") out.push(`Late fine: ${amount}% of what is due for each month late${most}.`);
+  return out;
+}
+
+// ---- collecting ---------------------------------------------------------------------------------------------------------------------------
+
+/** Today in India as "2026-11-19" (the server reckons its days the same way). */
+export const todayInIndia = (now = new Date()): string => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+
+const dayNumber = (day: string) => Math.floor(new Date(`${day}T00:00:00.000Z`).getTime() / 86_400_000);
+/** Whole days from one "2026-11-10" to another. */
+export const daysBetween = (later: string, earlier: string) => dayNumber(later) - dayNumber(earlier);
+
+/**
+ * The late fine on these amounts, by the school's rules (the server's `lateFineFor`): nothing, a flat amount for each late instalment, an amount for
+ * each day late, or a percentage for each month (30 days) late; no more than the most a family pays. An instalment is late once the days of grace
+ * after its due day have passed. The server decides in the end: this is what the window offers to take.
+ */
+export function lateFineFor(
+  rules: { graceDays: number; lateFine: { mode: LateFineMode; amount: number; maxAmount: number | null } },
+  rows: { base: number; dueDate: string }[],
+  on: string,
+): number {
+  const { mode, amount, maxAmount } = rules.lateFine;
+  if (mode === "none" || amount <= 0) return 0;
+  let total = 0;
+  for (const row of rows) {
+    const late = daysBetween(on, row.dueDate);
+    if (late <= rules.graceDays) continue;
+    if (mode === "flat") total += amount;
+    else if (mode === "per_day") total += amount * late;
+    else total += (row.base * amount * Math.ceil(late / 30)) / 100;
+  }
+  if (maxAmount != null) total = Math.min(total, maxAmount);
+  return Math.round(total * 100) / 100;
+}
+
+/** "Tuition fee, 12 instalments" style words for what a receipt or a window says about its items: "3 fees". */
+export const countWords = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

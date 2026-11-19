@@ -27,6 +27,10 @@ describe("the menu of the people who run a school", () => {
       ["Vehicles", "/transport/vehicles"],
       ["Drivers", "/transport/drivers"],
       ["Routes", "/transport/routes"],
+      ["Live tracking", "/transport/tracking"],
+      ["Collect fees", "/fees/collect"],
+      ["Dues", "/fees/dues"],
+      ["Receipts", "/fees/receipts"],
       ["Fee structure", "/fees/structure"],
       ["Fee heads", "/fees/heads"],
       ["Concessions", "/fees/concessions"],
@@ -101,25 +105,29 @@ describe("the menu of the people who run a school", () => {
     expect(labelsOf(person("parent", keys))).toEqual(["Dashboard", "Settings"]);
   });
 
-  it("Transport is one row that opens Vehicles, Drivers and Routes (2026-11-10), for the people allowed transport.view; not for teachers or parents", () => {
+  it("Transport is one row that opens Vehicles, Drivers, Routes and Live tracking (2026-11-10), for the people allowed transport.view; not for teachers or parents", () => {
     const pages = NAV_ITEMS.filter((i) => i.submenu === "Transport");
     expect(pages.map((i) => [i.label, i.href])).toEqual([
       ["Vehicles", "/transport/vehicles"],
       ["Drivers", "/transport/drivers"],
       ["Routes", "/transport/routes"],
+      ["Live tracking", "/transport/tracking"],
     ]);
     expect(SUBMENUS.Transport).toBeDefined();
     expect(NAV_ITEMS.some((i) => i.label === "Transport")).toBe(false);
-    expect(labelsOf(person("receptionist", ["transport.view"]))).toEqual(["Dashboard", "Vehicles", "Drivers", "Routes", "Settings"]);
+    expect(labelsOf(person("receptionist", ["transport.view"]))).toEqual(["Dashboard", "Vehicles", "Drivers", "Routes", "Live tracking", "Settings"]);
     expect(labelsOf(person("receptionist", ["calendar.view"]))).not.toContain("Vehicles");
     expect(labelsOf(person("teacher", ["transport.view", "calendar.view"]))).toEqual(["Dashboard", "Calendar", "Settings"]);
     expect(labelsOf(person("parent", ["transport.view"]))).toEqual(["Dashboard", "Settings"]);
     expect(activeNavItem("/transport/routes", menuOf(person("school_admin")))?.label).toBe("Routes");
   });
 
-  it("Fees is one row that opens Fee structure, Fee heads, Concessions and Fee rules (2026-11-12), for the people allowed fees.view; not for teachers or parents", () => {
+  it("Fees is one row (2026-11-12, collecting 2026-11-19): Collect fees, Dues and Receipts for the people allowed fees.collect, then Fee structure, Fee heads, Concessions and Fee rules for those allowed fees.view; not for teachers or parents", () => {
     const pages = NAV_ITEMS.filter((i) => i.submenu === "Fees");
     expect(pages.map((i) => [i.label, i.href])).toEqual([
+      ["Collect fees", "/fees/collect"],
+      ["Dues", "/fees/dues"],
+      ["Receipts", "/fees/receipts"],
       ["Fee structure", "/fees/structure"],
       ["Fee heads", "/fees/heads"],
       ["Concessions", "/fees/concessions"],
@@ -127,11 +135,24 @@ describe("the menu of the people who run a school", () => {
     ]);
     expect(SUBMENUS.Fees).toBeDefined();
     expect(NAV_ITEMS.some((i) => i.label === "Fees")).toBe(false);
+    expect(labelsOf(person("accountant", ["fees.view", "fees.collect"]))).toEqual(["Dashboard", "Collect fees", "Dues", "Receipts", "Fee structure", "Fee heads", "Concessions", "Fee rules", "Settings"]);
+    // A cashier who only collects sees the collecting pages and not the set-up.
+    expect(labelsOf(person("receptionist", ["fees.collect"]))).toEqual(["Dashboard", "Collect fees", "Dues", "Receipts", "Settings"]);
     expect(labelsOf(person("accountant", ["fees.view"]))).toEqual(["Dashboard", "Fee structure", "Fee heads", "Concessions", "Fee rules", "Settings"]);
     expect(labelsOf(person("receptionist", ["calendar.view"]))).not.toContain("Fee structure");
-    expect(labelsOf(person("teacher", ["fees.view", "calendar.view"]))).toEqual(["Dashboard", "Calendar", "Settings"]);
-    expect(labelsOf(person("parent", ["fees.view"]))).toEqual(["Dashboard", "Settings"]);
+    expect(labelsOf(person("teacher", ["fees.view", "fees.collect", "calendar.view"]))).toEqual(["Dashboard", "Calendar", "Settings"]);
+    expect(labelsOf(person("parent", ["fees.view", "fees.collect"]))).toEqual(["Dashboard", "Settings"]);
     expect(activeNavItem("/fees/heads", menuOf(person("school_admin")))?.label).toBe("Fee heads");
+    expect(activeNavItem("/fees/collect", menuOf(person("school_admin")))?.label).toBe("Collect fees");
+  });
+
+  it("Documents (2026-11-19) is in Manage school, for the people allowed documents.view; not for teachers or parents", () => {
+    expect(forAdmin.find((i) => i.label === "Documents")).toMatchObject({ href: "/documents", group: "Manage school" });
+    expect(labelsOf(person("receptionist", ["documents.view"]))).toEqual(["Dashboard", "Documents", "Settings"]);
+    expect(labelsOf(person("receptionist", ["calendar.view"]))).not.toContain("Documents");
+    expect(labelsOf(person("teacher", ["documents.view", "calendar.view"]))).not.toContain("Documents");
+    expect(labelsOf(person("parent", ["documents.view"]))).toEqual(["Dashboard", "Settings"]);
+    expect(activeNavItem("/documents", forAdmin)?.label).toBe("Documents");
   });
 
   it("a parent's Calendar and a teacher's pages go when the school takes the boxes away", () => {

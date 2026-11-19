@@ -30,3 +30,12 @@ export const MAX_STOPS = 60;
 export const MAX_NAME = 60;
 export const MAX_NOTES = 300;
 export const MAX_SEATS = 120;
+
+/**
+ * Live tracking (2026-11-19): the driver's phone sends its position while a trip runs; the school's office watches the vehicles on a map.
+ * The driver does not sign in: the school gives each vehicle a private link whose secret is checked on every ping.
+ */
+/** A vehicle that has not reported for this long is shown as "offline" (the phone was locked, lost signal, or the trip ended). */
+export const LIVE_WITHIN_SECONDS = 120;
+/** A position older than this is thrown away on its own (the collection keeps one row per vehicle, so this only clears vehicles gone quiet). */
+export const POSITION_KEEP_DAYS = 30;

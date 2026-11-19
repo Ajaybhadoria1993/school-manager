@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Bus, Clock3, MapPin, Pencil, Plus, Route as RouteIcon, UserRoundCog } from "lucide-react";
+import { Bus, Clock3, MapPin, Pencil, Plus, Route as RouteIcon, UserRoundCog, UsersRound } from "lucide-react";
 import { ListBar } from "../../components/transport/TransportBits";
 import { clock } from "../../utils/transport";
+import { RidersDialog } from "../../components/transport/RidersDialog";
 import { RouteDialog } from "../../components/transport/RouteDialog";
 import { StatTile } from "../../components/dashboard/school/StatTile";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
@@ -26,6 +27,7 @@ export default function RoutesPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<TransportStatus>("active");
   const [dialog, setDialog] = useState<{ route?: TransportRoute } | null>(null);
+  const [ridersOf, setRidersOf] = useState<TransportRoute | null>(null);
   const res = useGetRoutesQuery({ search: search.trim(), status });
   const summary = useGetTransportSummaryQuery().data?.data;
   const routes = res.data?.data.items;
@@ -84,6 +86,12 @@ export default function RoutesPage() {
                   <div className="flex shrink-0 items-center gap-2">
                     {!r.isActive && <Badge tone="neutral">Closed</Badge>}
                     {mayChange && (
+                      <Button variant="outline" size="sm" aria-label={`Students on ${r.name}`} onClick={() => setRidersOf(r)}>
+                        <UsersRound className="size-4" aria-hidden />
+                        {r.riders}
+                      </Button>
+                    )}
+                    {mayChange && (
                       <Button variant="outline" size="sm" aria-label={`Change ${r.name}`} onClick={() => setDialog({ route: r })}>
                         <Pencil className="size-4" aria-hidden />
                       </Button>
@@ -126,6 +134,7 @@ export default function RoutesPage() {
       )}
 
       {dialog && <RouteDialog route={dialog.route} onClose={() => setDialog(null)} />}
+      {ridersOf && <RidersDialog route={ridersOf} onClose={() => setRidersOf(null)} />}
     </div>
   );
 }
