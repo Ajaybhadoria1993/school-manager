@@ -74,6 +74,23 @@ export function FileBar({
 }
 
 /**
+ * The file in one line: its name, size and sheet. For a page whose table's tabs already count the rows and whose header already has
+ * "Choose another file" (the teachers' bulk upload), so the file takes a line, not a card.
+ */
+export function FileChip({ file, sheetName }: { file: { name: string; size: number }; sheetName: string }) {
+  return (
+    <p className="flex min-w-0 items-center gap-2 text-sm text-foreground-muted">
+      <FileSpreadsheet className="size-4 shrink-0 text-success" aria-hidden />
+      <span className="truncate font-semibold text-foreground" title={file.name}>
+        {file.name}
+      </span>
+      {file.size > 0 && <span className="shrink-0">({sizeText(file.size)})</span>}
+      {sheetName && <span className="shrink-0">· {sheetName}</span>}
+    </p>
+  );
+}
+
+/**
  * The sections the ready rows would fill past their seats. Nobody is turned away: everyone is admitted and the seats are raised to fit
  * them, so this only tells the person (no question), and recommends dividing the class into more sections.
  */
