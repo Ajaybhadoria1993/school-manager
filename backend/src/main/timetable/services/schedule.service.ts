@@ -314,9 +314,14 @@ export class ScheduleService {
       throw ApiError.conflict(`A school can have up to ${MAX_SCHEDULES} timings.`, "LIMIT_REACHED");
     }
 
-    // The winter shift: every other timing moves by the same minutes. All of them are checked first (none may go past midnight), written after.
+    // The winter shift: the other timings move by the same minutes (only those `shiftOnly` names, when it is sent). All of them are checked first
+    // (none may go past midnight), written after.
     const shift = departmentId ? 0 : (input.shiftOthers ?? 0);
-    const moved = shift === 0 ? [] : kept.filter((r) => r.slots.length > 0).map((r) => ({ ...r, slots: r.slots.map((s) => ({ ...s, start: s.start + shift, end: s.end + shift })) }));
+    const only = input.shiftOnly ? new Set(input.shiftOnly) : null;
+    const moved =
+      shift === 0
+        ? []
+        : kept.filter((r) => r.slots.length > 0 && (!only || only.has(r.id))).map((r) => ({ ...r, slots: r.slots.map((s) => ({ ...s, start: s.start + shift, end: s.end + shift })) }));
     const outside = moved.find((r) => r.slots.some((s) => s.start < 0 || s.end > 1439));
     if (outside) {
       throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [

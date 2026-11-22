@@ -5,7 +5,7 @@ import { PASSWORD_RULES } from "../../utils/validators";
 /** Live list of the password rules; each turns green as the typed password satisfies it. */
 export function PasswordChecklist({ password }: { password: string }) {
   return (
-    <ul className="mt-2 space-y-1" aria-label="Password requirements">
+    <ul className="password-rules mt-2 space-y-1" aria-label="Password requirements">
       {PASSWORD_RULES.map((rule) => {
         const ok = rule.test(password);
         return (

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { useCan } from "../../hooks/useCan";
 import { BookX, FileUp, FilterX, ListPlus, Pencil, Plus, Search, SearchX, UserRoundCheck, UserRoundMinus, UsersRound } from "lucide-react";
 import { DESIGNATIONS } from "../../constants/teachers";
@@ -20,6 +20,7 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
 import { FilterBar, FilterSearch, FilterSelect } from "../../components/ui/FilterBar";
+import { PageTabs, type PageTab } from "../../components/ui/PageTabs";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { cameFrom } from "../../components/layout/nav-config";
 
@@ -105,7 +106,8 @@ function EditPencil({ teacher }: { teacher: Teacher }) {
 function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName: Map<string, string> }) {
   const navigate = useNavigate();
   const about = [t.designation, t.employeeCode].filter(Boolean).join(" · ");
-  const listHref = t.isActive ? "/teachers" : "/teachers/inactive";
+  // The list a teacher was opened from: its tab (the teachers who left are the Inactive tab of the same page).
+  const listHref = t.isActive ? "/teachers" : "/teachers?status=inactive";
   const listState = cameFrom(listHref, t.isActive ? "Active teachers" : "Inactive teachers");
   return (
     <tr
@@ -172,10 +174,8 @@ export default function TeacherDirectoryPage() {
   // A year that is over is only looked at: no adding, uploading or changing teachers (the server refuses them too).
   const readOnly = useReadOnlyYear();
   const [params, setParams] = useSearchParams();
-  const location = useLocation();
-  const routeStatus = location.pathname.replace(/\/+$/, "") === "/teachers/inactive" ? "inactive" : "active";
-  // Keep older filtered teacher links working while the sidebar now provides the normal active/inactive navigation.
-  const status = oneOf(params.get("status"), ["active", "inactive", "all"] as const) ?? routeStatus;
+  // The tab that is open is the address's `?status=` (none = Active teachers); `all` is only for older links. `/teachers/inactive` leads here (InactiveTeachersRedirect).
+  const status = oneOf(params.get("status"), ["active", "inactive", "all"] as const) ?? "active";
   const q = params.get("q") ?? "";
   const subject = params.get("subject") ?? "";
   const klass = params.get("class") ?? "";
@@ -223,6 +223,12 @@ export default function TeacherDirectoryPage() {
   const teachers = res.data?.data.items ?? [];
   const searching = filtered || q.trim() !== "" || status === "all";
   const designations = [...new Set([...(designation ? [designation] : []), ...DESIGNATIONS])];
+  // The tabs, with the numbers the four counts already carry (no request of their own). A school with nobody on the rolls and nobody who left has none to choose from.
+  const tabItems: PageTab<"active" | "inactive">[] = [
+    { id: "active", label: "Active teachers", count: summary?.teaching },
+    { id: "inactive", label: "Inactive", count: summary?.left },
+  ];
+  const showTabs = !summary || summary.teaching + summary.left > 0 || status === "inactive";
 
   return (
     <div className="space-y-6">
@@ -262,6 +268,9 @@ export default function TeacherDirectoryPage() {
         <StatTile label="Without classes" value={summary?.withoutClasses ?? null} icon={BookX} tone="warning" />
         <StatTile label="Have left" value={summary?.left ?? null} icon={UserRoundMinus} tone="navy" />
       </section>
+
+      {/* Under the counts, above the filters (2026-11-22): the teachers who are here, and the ones who left. */}
+      {showTabs && <PageTabs label="Which teachers to show" tabs={tabItems} value={status === "inactive" ? "inactive" : "active"} onChange={(next) => change({ status: next })} />}
 
       {/* The search and three filters stay together on a wide screen and wrap cleanly on narrower screens. */}
       <FilterBar label="Find teachers">

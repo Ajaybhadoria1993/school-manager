@@ -61,6 +61,8 @@ export interface SchoolDayInput {
    * own) moves by in the same save, so that when school starts later they start later too.
    */
   shiftOthers?: number;
+  /** Which of the other timings move, by id (2026-11-22: only the ticked ones); all of them when missing. */
+  shiftOnly?: string[];
 }
 
 /**

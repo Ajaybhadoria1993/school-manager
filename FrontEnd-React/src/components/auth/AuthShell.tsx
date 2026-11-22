@@ -1,199 +1,81 @@
-import { Link } from "react-router";
-import {
-  BadgeIndianRupee,
-  CalendarCheck,
-  ClipboardCheck,
-  ListChecks,
-  MailCheck,
-  Sparkles,
-  type LucideIcon,
-} from "lucide-react";
-import { BrandMark } from "../brand/BrandMark";
-import { FilledControls } from "../ui/Input";
-
-type Point = { icon: LucideIcon; title: string; text: string };
-
-// Plain words, no jargon. Sign-in shows what is coming to the school (none of it is built yet, so it is labelled
-// as coming); registration shows what happens next, which is all real.
-const PANELS: Record<
-  "signin" | "register",
-  { label: string; points: Point[] }
-> = {
-  signin: {
-    label: "Coming to your school",
-    points: [
-      {
-        icon: ClipboardCheck,
-        title: "Attendance in one tap",
-        text: "Teachers mark it, and parents are told the same minute.",
-      },
-      {
-        icon: BadgeIndianRupee,
-        title: "Fees without the chasing",
-        text: "Reminders and receipts go out on their own.",
-      },
-      {
-        icon: Sparkles,
-        title: "Smart help with AI",
-        text: "Report-card remarks and parent notes written in seconds.",
-      },
-    ],
-  },
-  register: {
-    label: "What happens next",
-    points: [
-      {
-        icon: MailCheck,
-        title: "Confirm your email",
-        text: "Nothing is created until you open the link we send.",
-      },
-      {
-        icon: ListChecks,
-        title: "Four short steps",
-        text: "School, address, classes and you. Saved as you go.",
-      },
-      {
-        icon: CalendarCheck,
-        title: "Approved by a person",
-        text: "Your dashboard opens once our team approves.",
-      },
-    ],
-  },
-};
-
-const HEADLINE = "One place for your whole school.";
+import type { ReactNode } from "react";
+import { cn } from "../../utils/helpers";
+import { SoftControls } from "../ui/Input";
 
 /**
- * Full-screen split used by sign-in, registration, invitation and password screens.
- * On the left, the same campus photo and navy wash as the landing page hero; on the right, the form.
- * On a phone the photo becomes a slim banner above the form. The logo links back to the landing page.
+ * The frame of every screen of the sign-in family (2026-11-21, from the school's own picture): sign in, register your school, forgot
+ * password, choose a new password and set up the school's account. The picture (`School Login.webp`, 3952 x 1882) fills the window as it
+ * is, with the logo and the children at the left and a big circle at the right; **the form is a round white card ON that circle** (the user:
+ * "wahi login form rakho circle mein hi", then "forget aur registration par bhi same ui rkho, puran hta do": the old split screen with a
+ * campus photo and three points is gone). The circle's place and size are worked out from the picture's own numbers (`.login-page` in
+ * index.css), so the form stays in the circle however the window is shaped.
+ *
+ *  - A short form (a couple of boxes and a button) is the circle itself. A form too tall for a circle (a password, the rules of a password,
+ *    its confirmation: `tall`) is a round-cornered card on the same spot, as wide as the circle.
+ *  - A phone or a window with no room for a circle gets a card in the middle of the picture, with the logo in it.
+ *  - The picture fills the window by `.login-picture` (index.css): a squeeze or a stretch of 5% at most (too little to see), then a thin trim;
+ *    a window narrower than the picture loses a strip at its right (the circle's form then slides left to stay whole). The user turned down
+ *    blur, fading edges, margins at the sides, a plain 15% stretch (faces pulled wide) and a cut at the bottom.
+ *  - The form's sizes follow the height of the screen (`.login-card` in index.css), and in the circle follow the circle's own size.
  */
 export function AuthShell({
   title,
   subtitle,
   children,
   footer,
-  variant = "signin",
+  tall = false,
 }: {
   title: string;
   subtitle?: string;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
-  /** Which short list of points the left panel shows. */
-  variant?: "signin" | "register";
+  children: ReactNode;
+  /** What stands under the form: the way to another screen of the family (the sign-in page has "or" and a way to register). */
+  footer?: ReactNode;
+  /** The form is too tall for a circle: it is a card on the circle's spot. */
+  tall?: boolean;
 }) {
   return (
-    <div
-      className="min-h-screen bg-surface lg:grid lg:grid-cols-12"
-    >
-      {/* The product, on a campus photo */}
-      <section className="relative hidden flex-col justify-between gap-10 overflow-hidden bg-navy p-10 text-white lg:col-span-5 lg:flex lg:min-h-screen xl:px-14">
-        <img
-          src="/images/hero-campus.jpg"
-          alt=""
-          className="absolute inset-0 size-full object-cover object-center"
-          fetchPriority="high"
-          decoding="async"
-        />
-        <div
-          aria-hidden
-          className="absolute inset-0 bg-gradient-to-b from-navy/75 via-navy/70 to-navy/95"
-        />
+    <div className="login-card login-page relative isolate min-h-dvh overflow-hidden bg-[#d6ebfb]">
+      {/* The picture: decoration, so no text of its own. */}
+      <img
+        src="/images/School%20Login.webp"
+        alt=""
+        aria-hidden
+        width={3952}
+        height={1882}
+        className="login-picture absolute -z-10"
+        fetchPriority="high"
+        decoding="async"
+      />
 
-        <p className="relative inline-flex w-fit items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-xs font-semibold tracking-wide backdrop-blur">
-          <span className="relative flex size-2">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-70" />
-            <span className="relative inline-flex size-2 rounded-full bg-emerald-400" />
-          </span>
-          EduShiksha Portal
-        </p>
-
-        <div className="relative">
-          <h2 className="font-serif text-4xl font-bold leading-tight [text-shadow:0_2px_14px_rgb(0_0_0/0.45)]">
-            One place for your whole <span className="text-sky">school.</span>
-          </h2>
-          <p className="mt-4 max-w-md text-base leading-relaxed text-slate-200">
-            Register your school, share a few details, and start once our team
-            has approved it.
-          </p>
-        </div>
-
-        <div className="relative">
-          <p className="mb-3 text-xs font-bold uppercase tracking-wider text-sky">
-            {PANELS[variant].label}
-          </p>
-          <ul className="space-y-3">
-            {PANELS[variant].points.map((p) => (
-              <li
-                key={p.title}
-                className="flex items-center gap-4 rounded-xl border border-white/15 bg-white/10 px-4 py-3.5 backdrop-blur"
-              >
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-white shadow-[0_6px_14px_-4px_rgb(37_99_235/0.7)]">
-                  <p.icon className="size-5" aria-hidden />
-                </span>
-                <span className="leading-tight">
-                  <span className="block text-[15px] font-bold">{p.title}</span>
-                  <span className="mt-1 block text-[13px] text-slate-200">
-                    {p.text}
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      {/* The form */}
-      <section className="flex min-h-screen min-w-0 flex-col lg:col-span-7">
-        <div
-          className="relative h-32 overflow-hidden bg-navy lg:hidden"
-          aria-hidden
-        >
-          <img
-            src="/images/hero-campus.jpg"
-            alt=""
-            className="absolute inset-0 size-full object-cover object-center"
-            loading="lazy"
-            decoding="async"
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-navy/70 to-navy/90" />
-          <p className="relative flex h-full items-end px-6 pb-4 font-serif text-xl font-bold leading-snug text-white">
-            {HEADLINE}
-          </p>
-        </div>
-
-        <header className="px-6 pt-6 sm:px-12 sm:pt-8 lg:px-16">
-          <BrandMark />
-        </header>
-
-        <div className="flex flex-1 flex-col justify-center px-6 py-10 sm:px-12 lg:px-16">
-          <div className="rise-in mx-auto w-full max-w-xl">
-            <h1 className="font-serif text-[1.75rem] font-bold leading-tight text-foreground sm:text-3xl">
-              {title}
-            </h1>
-            {subtitle && (
-              <p className="mt-2.5 max-w-md text-sm leading-relaxed text-foreground-muted">
-                {subtitle}
-              </p>
-            )}
-
-            <div className="mt-8">
-              <FilledControls>{children}</FilledControls>
-            </div>
-          </div>
-        </div>
-
-        <footer className="border-t border-border bg-primary-soft/60 px-6 py-5 text-center text-sm text-foreground-muted sm:px-12 lg:px-16">
-          {footer ?? (
-            <Link
-              to="/login"
-              className="font-semibold text-primary hover:underline"
-            >
-              Back to sign in
-            </Link>
+      <div className="login-slot mx-auto flex min-h-dvh w-full items-center justify-center px-4 py-4 sm:px-8 lg:justify-end lg:py-6 lg:pr-[6vw]">
+        <main
+          className={cn(
+            "login-main rise-in w-full max-w-[34rem] rounded-[1.75rem] border border-white/70 bg-white/95 px-6 pb-[var(--lp-pb)] pt-[var(--lp-pt)] shadow-float backdrop-blur-sm sm:px-10",
+            tall && "login-main--tall"
           )}
-        </footer>
-      </section>
+        >
+          <div className="login-content">
+            {/* The logo is in the picture when the form is in its circle; a card on a small screen has it here. */}
+            <img src="/images/EduShiksha_logo.png" alt="EduShiksha" width={1520} height={1049} className="login-logo mx-auto h-auto w-[var(--lp-logo)]" decoding="async" />
+
+            <p className="login-portal mt-[calc(var(--lp-gap)*0.75)] flex items-center gap-4 text-sm font-semibold text-primary-deep">
+              <span aria-hidden className="h-px flex-1 bg-primary-deep/25" />
+              Student &amp; School Portal
+              <span aria-hidden className="h-px flex-1 bg-primary-deep/25" />
+            </p>
+
+            <h1 className="mt-[var(--lp-block)] text-center text-[length:var(--lp-title)] font-bold leading-tight text-primary-deep">{title}</h1>
+            {subtitle && <p className="login-subtitle mt-[calc(var(--lp-gap)*0.5)] text-center text-[15px] text-foreground-muted">{subtitle}</p>}
+
+            <div className="mt-[var(--lp-block)]">
+              {/* The tall white boxes with a blue icon inside, like the sign-up form's. */}
+              <SoftControls>{children}</SoftControls>
+            </div>
+
+            {footer && <div className="login-footer mt-[var(--lp-block)] text-center">{footer}</div>}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

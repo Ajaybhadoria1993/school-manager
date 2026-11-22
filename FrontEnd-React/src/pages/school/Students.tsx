@@ -16,10 +16,11 @@ import {
   X,
 } from "lucide-react";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
-import { useStudentFilters } from "../../hooks/useStudentFilters";
+import { useStudentFilters, type StudentTab } from "../../hooks/useStudentFilters";
 import { useToast } from "../../components/ui/toast-context";
 import { useCan } from "../../hooks/useCan";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
+import { useGetDuesQuery } from "../../redux/api/feesApi";
 import { useDownloadSheetMutation, useGetCapacityQuery, useGetStudentsQuery } from "../../redux/api/studentsApi";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
@@ -30,9 +31,12 @@ import { StudentTable, StudentTableSkeleton } from "../../components/students/St
 import { StudentToolbar } from "../../components/students/StudentToolbar";
 import { StudentsGuide } from "../../components/students/StudentsGuide";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
+import { FeeOverdueList } from "../../components/students/FeeOverdueList";
+import { InactiveStudentsList } from "../../components/students/status/InactiveStudentsList";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { InfoTip, WithTip } from "../../components/ui/Hint";
+import { PageTabs, type PageTab } from "../../components/ui/PageTabs";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { admitLink, importLink } from "../../utils/students";
 import { DeactivateDialog } from "../../components/students/status/DeactivateDialog";
@@ -58,6 +62,9 @@ function rememberGuideClosed(closed: boolean) {
 /** The main button of the page: a link that looks like the app's primary button. */
 const plainLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_4px_10px_-2px_rgb(37_99_235/0.4)] transition-all duration-150 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
+/** The one main button of the page (Add student): orange, as in the reference pictures. */
+const orangeLink =
+  "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-orange px-4 text-sm font-semibold text-white shadow-[0_4px_10px_-2px_rgb(245_158_11/0.45)] transition-all duration-150 hover:bg-orange-hover focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/25";
 /** A second button of the page as a link, in the outline look of `Button variant="outline"`. */
 const outlineLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:border-[#cbd5e1] hover:bg-background focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
@@ -65,16 +72,28 @@ const outlineLink =
 /**
  * Students (`/school/students`): this academic year's students, as a table or as colourful cards (the List / Grid
  * switch), searched, filtered by class and section, sorted and paged by the server. A plain header (the title and the page's two
- * buttons), the tiles, one row of filters, the students, and the pages. Three reads, each once: the page of students, how full each
+ * buttons), the tiles, the tabs (Active students, New admissions, Fee overdue, Inactive: under the tiles, above the filters), one row of
+ * filters, the students, and the pages. Three reads, each once: the page of students, how full each
  * section is (the tiles and the counts in the dropdowns), and the class layout (the dropdowns' names, shared with Classes & Sections).
  * The search, the class, the section, the sort, the page and the view are kept in the address.
  */
 export default function StudentsPage() {
   const { filters, query, active, change, clear } = useStudentFilters();
+  const can = useCan();
+  // A year that is over is only looked at (the server refuses a change in it too).
+  const readOnly = useReadOnlyYear();
+  // The Inactive tab is for the people the school allowed to make students inactive, the Fee overdue tab for those who may collect fees (and only in
+  // the running year: the dues are its); the address of a tab one may not see shows the active list.
+  const canSeeInactive = can("students.status");
+  const canSeeFees = can("fees.collect") && !readOnly;
+  const tab: StudentTab = (filters.tab === "inactive" && !canSeeInactive) || (filters.tab === "fees" && !canSeeFees) ? "active" : filters.tab;
   const structureRes = useGetStructureQuery();
   const capacityRes = useGetCapacityQuery();
-  const listRes = useGetStudentsQuery(query);
-  const can = useCan();
+  // The tab's number is the same read as the Dues page's (and as the tab's own list, until a search or a class is chosen there).
+  const duesRes = useGetDuesQuery({}, { skip: !canSeeFees });
+  const owing = duesRes.data?.data.totals.students;
+  // The Inactive and the Fee overdue tabs have lists of their own: this one is not read while either is open.
+  const listRes = useGetStudentsQuery(query, { skip: tab === "inactive" || tab === "fees" });
   // The page where the school chooses its fields and the Excel's columns is for the people allowed students.settings.
   const choosesFields = can("students.settings");
   // A person who may export but does not run the school gets the file at once (the Export page is where the school chooses its fields).
@@ -88,12 +107,20 @@ export default function StudentsPage() {
   const structure = structureRes.data?.data;
   const capacity = capacityRes.data?.data;
   const page = listRes.data?.data;
-  const firstLoad = !structure || !capacity || !page;
+  const firstLoad = !structure || !capacity || (tab !== "inactive" && tab !== "fees" && !page);
   const failed = structureRes.error ?? capacityRes.error ?? listRes.error;
 
   const noYear = (capacity && !capacity.academicYear) || (page && !page.academicYear);
   const total = capacity?.totals.students ?? 0;
   const guideOpen = guideChoice ?? (!readGuideClosed() && total === 0);
+  // The tabs, with the counts the read of the seats already carries. A school with nobody on the rolls and nobody inactive has none to choose from.
+  const tabItems: PageTab<StudentTab>[] = [
+    { id: "active", label: "Active students", count: total },
+    { id: "new", label: "New admissions", count: capacity?.totals.newAdmissions ?? 0 },
+    ...(canSeeFees && (owing !== undefined || tab === "fees") ? [{ id: "fees" as const, label: "Fee overdue", count: owing }] : []),
+    ...(canSeeInactive ? [{ id: "inactive" as const, label: "Inactive", count: capacity?.totals.inactive ?? 0 }] : []),
+  ];
+  const showTabs = total > 0 || (canSeeInactive && (capacity?.totals.inactive ?? 0) > 0) || tab !== "active";
   const toggleGuide = () => {
     rememberGuideClosed(guideOpen);
     setGuideChoice(!guideOpen);
@@ -126,8 +153,6 @@ export default function StudentsPage() {
     onToggleAll: (on: boolean) => setTicked(on ? new Set((page?.items ?? []).map((s) => s.id)) : new Set()),
   };
 
-  // A year that is over is only looked at: no admitting, uploading or making inactive (the server refuses them too).
-  const readOnly = useReadOnlyYear();
   const classesWithStudents = capacity?.classes.filter((c) => c.enrolled > 0).length ?? 0;
   const year = capacity?.academicYear?.name ?? page?.academicYear?.name ?? null;
   const selectedClass = structure?.classes.find((klass) => klass.id === filters.classId);
@@ -253,7 +278,7 @@ export default function StudentsPage() {
           )}
           {!noYear && !readOnly && can("students.add") && (
             <WithTip tip="Opens the admission form: the student, the class and section (the one chosen in the list, if any), a parent and the address.">
-              <Link to={admitLink({ classId: filters.classId, sectionId: filters.sectionId })} className={plainLink}>
+              <Link to={admitLink({ classId: filters.classId, sectionId: filters.sectionId })} className={orangeLink}>
                 <UserPlus className="size-4" aria-hidden />
                 Add student
               </Link>
@@ -304,27 +329,38 @@ export default function StudentsPage() {
         </StudentsNotice>
       ) : (
         <>
-          <section aria-label="Students at a glance" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <KpiCard index={0} label="Students" value={selectedStudentCount} hint={studentHint} icon={GraduationCap} tone="primary" />
-            <KpiCard
-              index={1}
-              label="Classes with students"
-              value={selectedClassesWithStudents}
-              hint={classesHint}
-              icon={FolderTree}
-              tone="success"
-            />
-            <KpiCard
-              index={2}
-              label="Seats left"
-              value={seatsLeft}
-              hint={seatsHint}
-              icon={Armchair}
-              tone="warning"
-            />
-            <KpiCard index={3} label="Full sections" value={fullSections} hint={hasClassScope ? "In " + (studentScopeName ?? selectedClass?.name ?? "selected class") : "One more asks first"} icon={ShieldAlert} tone="danger" />
-          </section>
+          {/* Order of the page: the tiles (Active students only), the tabs, then the filter row and the list of the open tab. */}
+          {tab === "active" && (
+            <section aria-label="Students at a glance" className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+              <KpiCard index={0} label="Students" value={selectedStudentCount} hint={studentHint} icon={GraduationCap} tone="primary" />
+              <KpiCard
+                index={1}
+                label="Classes with students"
+                value={selectedClassesWithStudents}
+                hint={classesHint}
+                icon={FolderTree}
+                tone="success"
+              />
+              <KpiCard
+                index={2}
+                label="Seats left"
+                value={seatsLeft}
+                hint={seatsHint}
+                icon={Armchair}
+                tone="warning"
+              />
+              <KpiCard index={3} label="Full sections" value={fullSections} hint={hasClassScope ? "In " + (studentScopeName ?? selectedClass?.name ?? "selected class") : "One more asks first"} icon={ShieldAlert} tone="danger" />
+            </section>
+          )}
 
+          {showTabs && <PageTabs label="Which students to show" tabs={tabItems} value={tab} onChange={(next) => change({ tab: next })} />}
+
+          {tab === "inactive" ? (
+            <InactiveStudentsList />
+          ) : tab === "fees" ? (
+            <FeeOverdueList structure={structure} />
+          ) : (
+            <>
           {structure.classes.length === 0 ? (
             <StudentsNotice
               icon={FolderTree}
@@ -347,7 +383,7 @@ export default function StudentsPage() {
               actions={
                 <>
                   {!readOnly && can("students.add") && (
-                    <Link to="/school/students/new" className={plainLink}>
+                    <Link to="/school/students/new" className={orangeLink}>
                       <UserPlus className="size-4" aria-hidden />
                       Add your first student
                     </Link>
@@ -365,7 +401,9 @@ export default function StudentsPage() {
             <section aria-label="Find and read the students" className="space-y-4">
               <StudentToolbar filters={filters} active={active} structure={structure} onChange={change} onClear={clear} />
 
-              {page.items.length === 0 ? (
+              {page && page.items.length === 0 && tab === "new" && !active ? (
+                <StudentsNotice icon={UserPlus} tone="primary" title="No new admissions this year" />
+              ) : page && page.items.length === 0 ? (
                 <StudentsNotice
                   icon={SearchX}
                   tone="navy"
@@ -378,7 +416,7 @@ export default function StudentsPage() {
                 >
                   <p>No student of this year matches {filters.q ? `"${filters.q}"` : "these filters"}.</p>
                 </StudentsNotice>
-              ) : filters.view === "table" ? (
+              ) : !page ? null : filters.view === "table" ? (
                 <>
                   {chosen.length > 0 && (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary-soft/60 px-4 py-2.5">
@@ -409,8 +447,10 @@ export default function StudentsPage() {
                 </ul>
               )}
 
-              <StudentPager page={page} limit={filters.limit} onPage={(p) => change({ page: p })} onLimit={(limit) => change({ limit })} />
+              {page && <StudentPager page={page} limit={filters.limit} onPage={(p) => change({ page: p })} onLimit={(limit) => change({ limit })} />}
             </section>
+          )}
+            </>
           )}
         </>
       )}

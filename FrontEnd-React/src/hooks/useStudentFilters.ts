@@ -5,6 +5,10 @@ import type { StudentListQuery } from "../types";
 
 export type StudentView = "table" | "grid";
 
+/** The tabs of the Students page: the students on the rolls, those admitted this year, those who owe fees, and those who are inactive. */
+export type StudentTab = "active" | "new" | "fees" | "inactive";
+const TABS: readonly StudentTab[] = ["active", "new", "fees", "inactive"];
+
 /** What the person has asked of the student list, as it is in the address (a reload, a link and the back button keep it). */
 export interface StudentFilters {
   /** Part of a name or of an admission number. */
@@ -17,6 +21,8 @@ export interface StudentFilters {
   limit: number;
   /** How the same page of students is drawn: a table or cards. It is only a look: it is not part of the server's query. */
   view: StudentView;
+  /** Which tab of the page is open (`?tab=new`); the first, Active students, when the address says none. */
+  tab: StudentTab;
 }
 
 const VIEW_KEY = "edushiksha.students.view";
@@ -31,7 +37,7 @@ function rememberedView(): StudentView {
 }
 
 /**
- * The search, class and section, page and view of the student list, kept in the address (`?q=&class=&section=&page=&limit=&view=`) and
+ * The search, class and section, page, view and tab of the student list, kept in the address (`?q=&class=&section=&page=&limit=&view=&tab=`) and
  * turned into the query the server answers. Nothing is filtered in the browser: a change here is a new request, except the view, which
  * only changes how the answer is drawn. The order is the server's default (by class and section, then by name): the screen offers no
  * sort, so an old `sort=` / `dir=` in a saved link is simply ignored.
@@ -43,6 +49,7 @@ export function useStudentFilters() {
   const filters = useMemo<StudentFilters>(() => {
     const limit = Number(params.get("limit"));
     const view = params.get("view");
+    const tab = params.get("tab") as StudentTab;
     return {
       q: params.get("q") ?? "",
       classId: params.get("class") ?? "",
@@ -50,6 +57,7 @@ export function useStudentFilters() {
       page: Math.max(1, Number(params.get("page")) || 1),
       limit: (STUDENT_PAGE_SIZES as readonly number[]).includes(limit) ? limit : STUDENT_PAGE_SIZES[0],
       view: view === "grid" || view === "table" ? view : rememberedView(),
+      tab: TABS.includes(tab) ? tab : "active",
     };
   }, [params]);
 
@@ -58,10 +66,11 @@ export function useStudentFilters() {
       ...(filters.q.trim() ? { q: filters.q.trim() } : {}),
       ...(filters.classId ? { classId: filters.classId } : {}),
       ...(filters.classId && filters.sectionId ? { sectionId: filters.sectionId } : {}),
+      ...(filters.tab === "new" ? { admitted: "year" as const } : {}),
       page: filters.page,
       limit: filters.limit,
     }),
-    [filters.q, filters.classId, filters.sectionId, filters.page, filters.limit]
+    [filters.q, filters.classId, filters.sectionId, filters.tab, filters.page, filters.limit]
   );
 
   /** How many filters are set (the page and the view are not filters). */
@@ -95,6 +104,7 @@ export function useStudentFilters() {
           next.delete("section");
         }
         if ("sectionId" in patch) set("section", patch.sectionId ?? "", "");
+        if ("tab" in patch) set("tab", patch.tab ?? "active", "active");
         if ("limit" in patch) set("limit", patch.limit ?? STUDENT_PAGE_SIZES[0], STUDENT_PAGE_SIZES[0]);
         if ("view" in patch && patch.view) {
           // Written either way (the address wins over what was remembered), and remembered for the next visit.

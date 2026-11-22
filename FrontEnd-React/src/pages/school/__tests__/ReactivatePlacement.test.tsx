@@ -10,7 +10,7 @@ import type { InactivePage, InactiveStudent, StudentDetail } from "../../../type
 import { fakeApi } from "../../../test/fakeApi";
 import { signInAs, signOut } from "../../../test/session";
 import { STRUCTURE } from "../../../test/fixtures";
-import InactiveStudentsPage from "../InactiveStudents";
+import { InactiveStudentsList } from "../../../components/students/status/InactiveStudentsList";
 import StudentDetailPage from "../StudentDetail";
 
 /** Chitra finished Class 6 last year: inactive, and with no class in the running year. Dev left this year from Class 1. */
@@ -55,7 +55,7 @@ describe("Make active for a student who has no class this year", () => {
       "GET /academics/structure": () => STRUCTURE,
       "POST /students/reactivate": () => ({ reactivated: 1, skipped: 0, rollNumbersLost: 0 }),
     });
-    const router = createMemoryRouter([{ path: "/school/students/inactive", element: <InactiveStudentsPage /> }], { initialEntries: ["/school/students/inactive"] });
+    const router = createMemoryRouter([{ path: "/school/students/inactive", element: <InactiveStudentsList /> }], { initialEntries: ["/school/students/inactive"] });
     render(
       <Provider store={store}>
         <ToastProvider>

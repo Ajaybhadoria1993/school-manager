@@ -53,6 +53,8 @@ export type SetStandardShownInput = z.infer<typeof setStandardShownSchema>;
 
 // ---- Leave -------------------------------------------------------------------------------------------------------------------------
 const MAX_LEAVE_DAYS = 31;
+/** The most letters a search box on a sheet takes (the frontend's boxes stop at 60 too). */
+const MAX_SEARCH = 60;
 export const applyLeaveSchema = z
   .object({
     fromDate: dayText("first day"),
@@ -79,7 +81,13 @@ export const childLeaveParamsSchema = z.object({ id: objectId, leaveId: objectId
 
 // ---- Attendance ----------------------------------------------------------------------------------------------------------------------
 const sectionOrNone = z.union([objectId, z.literal("none")]);
-export const attendanceQuerySchema = z.object({ classId: objectId, sectionId: sectionOrNone.optional().default("none"), date: dayText("day") });
+export const attendanceQuerySchema = z.object({
+  classId: objectId,
+  sectionId: sectionOrNone.optional().default("none"),
+  date: dayText("day"),
+  // The words typed in the school's search box (2026-11-22): the sheet then lists only the children whose name, admission number or roll number holds them.
+  search: z.string().trim().max(MAX_SEARCH, `The search is up to ${MAX_SEARCH} letters`).optional(),
+});
 export type AttendanceQuery = z.infer<typeof attendanceQuerySchema>;
 
 export const saveAttendanceSchema = z.object({

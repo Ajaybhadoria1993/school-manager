@@ -5,6 +5,8 @@ import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { clock } from "../../../utils/clock";
 import { classroomSchool } from "../../../test/classroom";
 import { addColleague } from "../../../test/schools";
+import { addedToTheApp } from "../../../test/teachers";
+import { Teacher } from "../../staff/models/Teacher";
 import { addTeacher, addTiming, auth } from "../../../test/timetable";
 
 /**
@@ -27,6 +29,8 @@ async function setUp(withTiming = true) {
   if (withTiming) await addTiming(s.token);
   // Every teacher joined at the start of the year, so the days asked about count (a teacher is not absent before they joined).
   for (const id of [s.meena, s.dev, s.kiran]) await request(app).patch(`/api/v1/staff/teachers/${id}`).set(auth(s.token)).send({ joiningDate: "2026-04-01" });
+  // ... and were added to the app then too (the days count from the later of the two).
+  await addedToTheApp(s.tenantId, [s.meena, s.dev, s.kiran]);
   const present = (token: string) => request(app).post(`${api}/teachers/me/present`).set(auth(token));
   const mine = (token: string, date?: string) => request(app).get(`${api}/teachers/me${date ? `?date=${date}` : ""}`).set(auth(token));
   const sheet = (token: string, from: string, to: string) => request(app).get(`${api}/teachers?from=${from}&to=${to}`).set(auth(token));
@@ -232,6 +236,58 @@ describe("the school's sheet of the teachers", () => {
     expect(res.body.data.teachers.map((t: { name: string }) => t.name)).toEqual(["Dev Patel", "Meena Singh"]);
   });
 
+  it("a teacher who joined years ago but was added to the app later is Not joined for the days before they were added, not Absent (2026-11-22)", async () => {
+    const { s, sheet, row } = await setUp();
+    // Joined in 2016, but added to the app on Wednesday 4 Nov: nobody could take their attendance before that.
+    await request(app).patch(`/api/v1/staff/teachers/${s.dev}`).set(auth(s.token)).send({ joiningDate: "2016-06-01" });
+    await addedToTheApp(s.tenantId, [s.dev], "2026-11-04");
+    at(FRI, "16:00");
+    const res = await sheet(s.token, "2026-11-02", FRI);
+    // Mon 2, Tue 3: before they were added. Wed 4 (the day they were added), Thu 5, Fri 6: they count.
+    expect(row(res, s.dev).records.map((r) => [r.date, r.status])).toEqual([
+      ["2026-11-02", "before"],
+      ["2026-11-03", "before"],
+      ["2026-11-04", "absent"],
+      ["2026-11-05", "absent"],
+      ["2026-11-06", "absent"],
+    ]);
+    expect(row(res, s.dev).tally).toMatchObject({ absent: 3, days: 3 });
+    // The others, added at the start of the year, count from the first day.
+    expect(row(res, s.meena).records.map((r) => r.status)).toEqual(["absent", "absent", "absent", "absent", "absent"]);
+  });
+
+  it("a teacher added today is Not joined for every day before today, whatever joining date was written (the school's list shows their name with that, not Absent)", async () => {
+    const { s, sheet, row } = await setUp();
+    const mira = await addTeacher(s.token, "Mira Nair", { mobile: "9876500077", joiningDate: "2019-06-10", login: { username: "sun.mira", password: "Sch00l@Login1" } });
+    // Added "today" for the clock: the day of the clock (the real created-at is moved to it).
+    await addedToTheApp(s.tenantId, [mira], FRI);
+    at(FRI, "16:00");
+    const res = await sheet(s.token, "2026-11-03", FRI);
+    expect(row(res, mira).records.map((r) => r.status)).toEqual(["before", "before", "before", "absent"]);
+    expect(row(res, mira).tally).toMatchObject({ absent: 1, days: 1 });
+    expect(await Teacher.countDocuments({ tenantId: s.tenantId, name: "Mira Nair" })).toBe(1);
+  });
+
+  it("the day they were added counts only if school was still on: added after school ended (4 PM, school ends 2:20 PM), that day is Not joined too (2026-11-22)", async () => {
+    const { s, sheet, row } = await setUp();
+    await addedToTheApp(s.tenantId, [s.dev], "2026-11-04", "16:00");
+    await addedToTheApp(s.tenantId, [s.kiran], "2026-11-04", "10:00");
+    at(FRI, "16:00");
+    const res = await sheet(s.token, "2026-11-04", FRI);
+    // Dev was added at 4 PM on Wed 4: nobody could take that day. Kiran was added at 10 AM, school on: the day counts.
+    expect(row(res, s.dev).records.map((r) => r.status)).toEqual(["before", "absent", "absent"]);
+    expect(row(res, s.kiran).records.map((r) => r.status)).toEqual(["absent", "absent", "absent"]);
+  });
+
+  it("a joining date after the day they were added still counts: Not joined until the day they join", async () => {
+    const { s, sheet, row } = await setUp();
+    await request(app).patch(`/api/v1/staff/teachers/${s.dev}`).set(auth(s.token)).send({ joiningDate: THU });
+    await addedToTheApp(s.tenantId, [s.dev], "2026-11-03");
+    at(FRI, "16:00");
+    const res = await sheet(s.token, "2026-11-03", FRI);
+    expect(row(res, s.dev).records.map((r) => r.status)).toEqual(["before", "before", "absent", "absent"]);
+  });
+
   it("a day marked is kept even when the day later becomes a holiday or the teacher's off day", async () => {
     const { s, present, sheet, row } = await setUp();
     at(THU, "08:10");
@@ -273,6 +329,7 @@ describe("real school days (2026-11-06)", () => {
     const { s, present, sheet, row } = await setUp();
     const sunil = await addTeacher(s.token, "Sunil Das", { mobile: "9000000099" });
     await request(app).patch(`/api/v1/staff/teachers/${sunil}`).set(auth(s.token)).send({ joiningDate: "2026-04-01" });
+    await addedToTheApp(s.tenantId, [sunil]);
     at(FRI, "16:00");
     const res = await sheet(s.token, "2026-11-04", FRI);
     expect(row(res, sunil).records.map((r) => r.status)).toEqual(["no_login", "no_login", "no_login"]);

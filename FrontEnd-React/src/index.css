@@ -61,6 +61,16 @@
 
   --radius-card: 1rem;
 
+  /* The orange of the reference pictures: the main action of a page, the lit tab, the menu's count (themes.ts sets it in every look). */
+  --orange: #f59e0b;
+  --orange-hover: #ea8a00;
+  --orange-soft: #fff4de;
+
+  /* The dashboard's chart colours: Classic's bronze, gold and slate (themes.ts gives the other looks blue, orange and slate). */
+  --chart-1: #9a7152;
+  --chart-2: #c28b4c;
+  --chart-3: #808892;
+
   /* The font family named in the @font-face rules imported at the top. */
   --font-outfit: "Outfit";
 
@@ -96,6 +106,9 @@
   --color-primary-soft: var(--primary-soft);
   --color-primary-deep: var(--primary-deep);
   --color-brand: var(--brand);
+  --color-orange: var(--orange);
+  --color-orange-hover: var(--orange-hover);
+  --color-orange-soft: var(--orange-soft);
 
   --color-navy: var(--navy);
   --color-panel: var(--panel);
@@ -155,13 +168,6 @@ body {
   input[type="checkbox"]:not(:disabled),
   input[type="radio"]:not(:disabled) {
     cursor: pointer;
-  }
-}
-
-/* The landing page's in-page links glide instead of jumping (the data attribute on <html> keeps route changes instant). */
-@media (prefers-reduced-motion: no-preference) {
-  html {
-    scroll-behavior: smooth;
   }
 }
 
@@ -489,4 +495,177 @@ body {
   --primary-foreground: #ffffff;
   background-image: linear-gradient(180deg, var(--menu-from), var(--menu-to));
   color: #ffffff;
+}
+
+/*
+ * The sign-in card's sizes (LoginShell). They follow the height of the screen, not its width: a browser window on a laptop is short
+ * (about 740 px tall at 125% zoom on a full HD screen), and a card of the full size would fill it. Tall screens keep the full size.
+ */
+.login-card {
+  --lp-pt: 2.5rem;
+  --lp-pb: 2.25rem;
+  --lp-logo: 11rem;
+  --lp-gap: 1rem;
+  --lp-block: 1.5rem;
+  --lp-field: 3rem;
+  --lp-btn: 3.5rem;
+  --lp-title: 1.875rem;
+}
+@media (max-height: 800px) {
+  .login-card {
+    --lp-pt: 1.5rem;
+    --lp-pb: 1.25rem;
+    --lp-logo: 8rem;
+    --lp-gap: 0.75rem;
+    --lp-block: 1rem;
+    --lp-field: 2.75rem;
+    --lp-btn: 3rem;
+    --lp-title: 1.5rem;
+  }
+}
+@media (max-height: 680px) {
+  .login-card {
+    --lp-pt: 1rem;
+    --lp-pb: 1rem;
+    --lp-logo: 6.5rem;
+    --lp-gap: 0.625rem;
+    --lp-block: 0.75rem;
+    --lp-field: 2.5rem;
+    --lp-btn: 2.75rem;
+    --lp-title: 1.25rem;
+  }
+}
+
+/*
+ * The sign-in page (LoginShell, 2026-11-21). The picture is 3952 x 1882 (about 2.1:1): the logo and the children at the left, a big
+ * circle at the right. The form is a round white card ON that circle, found from the picture's own numbers so it stays on it however the
+ * window is shaped.
+ *
+ * Small screen (a phone, a window too short or too narrow for a circle): the picture covers the screen from its left (the logo and the
+ * children) and the form is a card in the middle (at the right on a wide window). A circle is only for a window at least 1024 x 560 and at
+ * least 3:2 wide (a 4:3 window would put the circle over the children).
+ *
+ * A window with room: the picture keeps its shape within 5% (a squeeze or a stretch too small to see; the user turned
+ * down margins, blur and a 15% stretch). `--Hd` x `--Wd` is the picture as shown: as tall as the window, or as wide as it, whichever the
+ * 5% allows; what is left over is trimmed, a third of it at the top, the rest at the bottom (a window narrower than the picture loses a
+ * strip at its right instead). The circle is at 76.75% across the picture and half way down; its ring is 72% of the picture's height, and the
+ * form is 92% of that (66.2%), at most 36rem. `--cx` keeps the form whole: in a window so narrow that the picture's circle is cut at the
+ * right, the form slides left until it is whole. In the circle the form's sizes follow the circle (`--Df`), not the window.
+ */
+.login-picture {
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: left center;
+}
+@media (min-width: 1024px) and (min-height: 560px) and (min-aspect-ratio: 3/2) {
+  .login-page {
+    --R: calc(3952 / 1882);
+    --Hd: max(100dvh, calc(100vw / (1.05 * var(--R))));
+    --Wd: max(100vw, calc(var(--Hd) * var(--R) / 1.05));
+    --oy: calc((100dvh - var(--Hd)) * 0.35);
+    --Df: min(calc(var(--Hd) * 0.662), 36rem);
+    --cx: min(calc(var(--Wd) * 0.7675), calc(100vw - var(--Df) / 2 - 1.5rem));
+    --cy: calc(var(--oy) + var(--Hd) * 0.5);
+  }
+  .login-picture {
+    top: var(--oy);
+    width: var(--Wd);
+    height: var(--Hd);
+    object-fit: fill;
+  }
+  /* The ring's own square: the form is centred in it (a card taller than the circle spreads evenly above and below). */
+  .login-slot {
+    position: absolute;
+    left: calc(var(--cx) - var(--Df) / 2);
+    top: calc(var(--cy) - var(--Df) / 2);
+    width: var(--Df);
+    height: var(--Df);
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .login-main {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    padding: 0;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    --lp-field: calc(var(--Df) * 0.086);
+    --lp-btn: calc(var(--Df) * 0.094);
+    --lp-title: calc(var(--Df) * 0.049);
+    --lp-gap: calc(var(--Df) * 0.021);
+    --lp-block: calc(var(--Df) * 0.028);
+  }
+  /* The form's own block is a little narrower than the circle, so its corners stay inside it; the 0.375rem is room for a focus ring. */
+  .login-content {
+    width: calc(var(--Df) * 0.66 + 0.75rem);
+    max-height: 90%;
+    overflow-y: auto;
+    padding: 0.375rem;
+    scrollbar-width: thin;
+  }
+  .login-logo,
+  .login-portal {
+    display: none;
+  }
+  .login-footer {
+    font-size: calc(var(--Df) * 0.027);
+  }
+  /* A form too tall for a circle (a password and its rules): a round-cornered card on the circle's spot, as wide as the circle. */
+  .login-main--tall {
+    height: auto;
+    max-height: calc(100dvh - 2rem);
+    display: block;
+    overflow-y: auto;
+    border-radius: 1.75rem;
+    padding: 1rem 2rem;
+    --lp-field: 2.5rem;
+    --lp-btn: 3rem;
+    --lp-title: 1.5rem;
+    --lp-gap: 0.75rem;
+    --lp-block: 0.75rem;
+  }
+  /* The rules of a password in a wrapping row, and a tighter rhythm, so the longest card (the account's set-up) fits a laptop window. */
+  .login-main--tall form > * + * {
+    margin-top: 0.625rem;
+  }
+  .login-main--tall .password-rules {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+  }
+  .login-main--tall .login-content {
+    width: 100%;
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+  }
+  .login-main--tall .login-subtitle {
+    font-size: 0.875rem;
+  }
+  .login-main--tall .login-footer {
+    font-size: 0.875rem;
+  }
+  .login-main .login-subtitle {
+    font-size: calc(var(--Df) * 0.028);
+  }
+  /* The link to a new school is a little pill in the middle of the circle, not a bar as wide as the boxes. */
+  .login-main .login-register {
+    display: flex;
+    width: fit-content;
+    margin-inline: auto;
+    padding-inline: 1.75rem;
+  }
 }

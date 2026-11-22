@@ -2,7 +2,7 @@ import { ButtonHTMLAttributes, forwardRef } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "../../utils/helpers";
 
-type Variant = "primary" | "secondary" | "outline" | "ghost" | "danger";
+type Variant = "primary" | "secondary" | "outline" | "ghost" | "danger" | "accent";
 type Size = "sm" | "md" | "lg";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -18,6 +18,8 @@ const variantClasses: Record<Variant, string> = {
   outline: "border border-border bg-surface text-foreground shadow-sm hover:bg-background hover:border-primary/30",
   ghost: "text-foreground-muted hover:bg-surface-muted hover:text-foreground",
   danger: "bg-[#dc2626] text-white shadow-sm hover:bg-danger",
+  // The one main action of a page, in the orange of the reference pictures (2026-11-22): Save attendance, Collect fee.
+  accent: "bg-orange text-white shadow-[0_4px_10px_-2px_rgb(245_158_11/0.45)] hover:bg-orange-hover",
 };
 
 // 40px is the desktop height, 44px (lg) is for touch-first screens such as sign-in.

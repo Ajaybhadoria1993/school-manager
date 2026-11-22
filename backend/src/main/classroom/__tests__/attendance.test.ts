@@ -45,6 +45,74 @@ describe("taking attendance", () => {
     ]);
   });
 
+  it("the sheet names the class teacher of the class, so the school's page can say whose class it is (2026-11-23); a class with none says null", async () => {
+    const s = await classroomSchool();
+    const res = await sheet(s.token, s.a, today);
+    expect(res.body.data.classTeacher).toEqual({ id: s.meena, name: "Meena Singh" });
+    // Class 1 has no class teacher in this school.
+    const other = await sheet(s.token, s.one, today);
+    expect(other.body.data.classTeacher).toBeNull();
+  });
+
+  describe("a search on the day's sheet (2026-11-22): the server narrows the children, the class's own numbers stay whole", () => {
+    const find = (token: string, unit: { classId: string; sectionId: string | null }, search: string) =>
+      request(app).get(`/api/v1/classroom/attendance`).query({ classId: unit.classId, sectionId: unit.sectionId ?? "none", date: today, search }).set(auth(token));
+
+    it("keeps the children whose name or admission number holds the words typed (any case), with the place each has in the whole class", async () => {
+      const s = await classroomSchool();
+      const byName = await find(s.token, s.a, "  KAB ");
+      expect(byName.status).toBe(200);
+      expect(byName.body.data.students.map((st: { name: string }) => st.name)).toEqual(["Kabir Rao"]);
+      // Kabir is the second child of the class, so a short list still says "02", not "01".
+      expect(byName.body.data.students[0].position).toBe(2);
+
+      const byNumber = await find(s.token, s.a, s.asha.admissionNumber.toLowerCase());
+      expect(byNumber.body.data.students.map((st: { name: string }) => st.name)).toEqual(["Asha Verma"]);
+      expect(byNumber.body.data.students[0].position).toBe(1);
+    });
+
+    it("the totals are the class's, not the search's: the ring and the counts do not shrink to the children shown", async () => {
+      const s = await classroomSchool();
+      await save(s.tokens.meena, s.a, today, [
+        { studentId: s.asha.id, status: "present" },
+        { studentId: s.kabir.id, status: "absent" },
+      ]);
+      const res = await find(s.token, s.a, "kabir");
+      expect(res.body.data.students).toHaveLength(1);
+      expect(res.body.data.total).toBe(2);
+      expect(res.body.data.counts).toEqual({ present: 1, absent: 1, late: 0, leave: 0 });
+    });
+
+    it("says nobody when nobody matches (and takes odd characters as plain text, not as a pattern); no search, or a blank one, is the whole class", async () => {
+      const s = await classroomSchool();
+      const none = await find(s.token, s.a, "zzz");
+      expect(none.status).toBe(200);
+      expect(none.body.data.students).toEqual([]);
+      expect(none.body.data.total).toBe(2);
+      expect((await find(s.token, s.a, "a(.*[")).body.data.students).toEqual([]);
+      expect((await find(s.token, s.a, "   ")).body.data.students).toHaveLength(2);
+      const plain = await sheet(s.token, s.a, today);
+      expect(plain.body.data.students).toHaveLength(2);
+      expect(plain.body.data.total).toBe(2);
+      expect(plain.body.data.students.map((st: { position: number }) => st.position)).toEqual([1, 2]);
+    });
+
+    it("a very long search is refused", async () => {
+      const s = await classroomSchool();
+      expect((await find(s.token, s.a, "a".repeat(61))).status).toBe(400);
+    });
+
+    it("saving the day never depends on a search: the saved sheet that comes back is the whole class", async () => {
+      const s = await classroomSchool();
+      const saved = await save(s.tokens.meena, s.a, today, [
+        { studentId: s.asha.id, status: "present" },
+        { studentId: s.kabir.id, status: "late" },
+      ]);
+      expect(saved.body.data.students).toHaveLength(2);
+      expect(saved.body.data.total).toBe(2);
+    });
+  });
+
   it("one Save keeps the day; opening it again shows what was saved, with who took it; saving again changes it", async () => {
     const s = await classroomSchool();
     const saved = await save(s.tokens.meena, s.a, today, [

@@ -93,8 +93,8 @@ Next.js app). The rules live in one place, `src/redux/api/baseQueryWithReauth.ts
 main.tsx, index.css          entry, Tailwind + HeroUI + design tokens (the one block of colours)
 routes/                      AppRoutes (the route table), RootLayout, SuperAdminRoute (guard)
 Layouts/                     MainLayout (signed-in shell), OnboardingLayout (setup frame)
-pages/                       auth/, landing/, onboarding/, dashboard/, school/, modules/, superAdmin/, NotFound
-components/                  ui/ (Button, Input, Select, Modal...), auth/, brand/, landing/, layout/, dashboard/,
+pages/                       auth/, onboarding/, dashboard/, school/, modules/, superAdmin/, NotFound
+components/                  ui/ (Button, Input, Select, Modal...), auth/, brand/, layout/, dashboard/,
                              onboarding/, review/, tenants/, classes/, shared/
 redux/
   store.ts, hooks.ts
@@ -133,7 +133,7 @@ Only the typography and the plainness changed: the colours (blue brand, navy sid
 
 Nothing you can see. Under the hood:
 
-- No server: the landing page's "already signed in" redirect and the `Referrer-Policy: no-referrer` header on
+- No server: the home address (it leads to /login; there is no landing page) and the `Referrer-Policy: no-referrer` header on
   `/reset-password` and `/accept-invite` are done in the browser (`getToken()` check, `hooks/useNoReferrer.ts`).
 - `next/image` became `<img>` (the photos are served as they are, not resized per screen).
 - `next/font` became `@fontsource` packages.
@@ -1168,15 +1168,25 @@ Make active returns it to a class that can be changed. (The Inactive list at the
 
 ## Themes (Settings > Appearance > Theme, `src/theme/`)
 
-The signed-in app has a **Theme** choice at the top of Settings > Appearance, kept on this device (`edushiksha.appearance.v1`, with the accent and the
-mode). It is only a look: no page, rule or request changes.
+The signed-in app has a **Theme** choice at the top of Settings > Appearance, kept on this device (`edushiksha.appearance.v2`, with the accent and the
+mode). It is only a look: no page, rule or request changes. A device that chose nothing starts on **Onboarding** (`INITIAL_THEME`, the royal blue
+menu and orange actions of the reference pictures, 2026-11-22). The key was raised from v1 because every device had saved Classic there without
+choosing it, so the new look would never have shown.
 
-- **Classic** (the default, and what an appearance saved before themes existed is): the app as it was, with its own **Accent color** and **Display mode**
+- **Classic** (a choice now; also what a saved appearance with no theme in it is): the app as it was, with its own **Accent color** and **Display mode**
   (`appearanceStyle` in `AppThemeProvider.tsx`, untouched).
-- **Onboarding** (deep blue menu, tinted page, white cards, soft rounded boxes) and **Evergreen** (the same in deep green): the look of the sign-up form.
+- **Onboarding** (royal blue menu, `--orange` for the main actions, tinted page, white cards, soft rounded boxes; the menu's lit row is a lighter band with
+  an orange bar, its headings are Main / Finance & transport / Admin by `sectionOf`, the top bar's small label is `kickerOf`) and **Evergreen** (the same in
+  deep green): the look of the reference pictures and of the sign-up form.
   They are light only and have colours of their own (`themes.ts`: one `Palette` each, `themeStyle`), so the accent and the mode belong to Classic: the
   Settings page and the account menu show them only in Classic, and going back to Classic finds them as they were. A new look is one more entry in
   `THEMES` and `PALETTES`.
+- **The reference look's parts (2026-11-22).** `bg-orange` / `text-orange` / `bg-orange-soft` (tokens `--orange*`) are for the one main action of a page: `<Button variant="accent">`
+  (Save attendance, Add fee), the orange links of Add student and Collect (`components/fees/collectLink.ts`), the bar under an open tab and the menu's counts. **`components/ui/PageTabs.tsx`**
+  is the tab row of a page (underline tabs with an optional count and icon, arrow keys; the caller keeps the open tab in the address): the Students page (Active students | New
+  admissions | Fee overdue | Inactive, `?tab=`) and a class's work page use it. The dashboard's charts read `--chart-1..3` (`charts/palette.ts` `SERIES`): bronze, gold, slate in Classic
+  (`index.css`), blue, orange, slate in the other looks (`themes.ts`). The menu's headings (Main, Finance & transport, Admin) are `sectionOf` in `nav-config.ts`: keep the items of one
+  heading together there (a test fails if a heading would be drawn twice).
 - **How a look reaches the screen.** The shell (`Layouts/MainLayout.tsx`) puts the look's tokens on itself with `data-theme`, and `useRootTheme` puts
   them on the page's root too, because a dialog or a dropdown list is drawn outside the shell (Classic puts nothing there). `ThemeScope`
   (`themeScope.tsx`) tells the boxes and the menu which look they are in; outside the shell (public pages, the sign-up form) it is Classic.

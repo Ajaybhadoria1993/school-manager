@@ -2,14 +2,15 @@ import { useMemo, useState } from "react";
 import { Clock3, Undo2 } from "lucide-react";
 import { Button } from "@heroui/react";
 import { useRemoveDepartmentDayMutation, useSaveSchoolDayMutation } from "../../redux/api/timetableApi";
-import { deptProblem, deptRows, storedSetup, type DeptSetup } from "../../utils/departmentDay";
+import { deptProblem, deptRows, hoursClash, storedSetup, type DeptSetup } from "../../utils/departmentDay";
 import { departmentRowsBody, usualDays, type WeekPlan } from "../../utils/schoolWeek";
-import { generateDay } from "../../utils/timings";
+import { generateDay, visibleClash } from "../../utils/timings";
 import type { DepartmentItem, Schedule } from "../../types";
 import { useSave } from "../classes/useSave";
 import { AppModal, ModalError } from "../ui/AppModal";
 import { useToast } from "../ui/toast-context";
 import { DayFields, HoursFields } from "./DayFields";
+import { DayFigures } from "./TimingParts";
 
 /**
  * One department's own timing (2026-11-13: *Change timing* opens this window instead of boxes in the card): the same boxes as the school's
@@ -32,7 +33,11 @@ export function DepartmentTimingDialog({ department, schedules, plan, onClose }:
   const setup = typed ?? have.setup;
   const changed = typed !== null && JSON.stringify(typed) !== JSON.stringify(have.setup);
   const problem = deptProblem(setup, periodMinutes) ?? (usualDays(plan).length === 0 ? "Set the school's week first: it has no usual day yet" : undefined);
-  const notes = setup.kind === "periods" ? generateDay(setup.setup).notes : [];
+  // A break inside a period is said by the boxes themselves (with the way to move it), so it is not said again here (2026-11-22); nor is a period
+  // "cut" any more: every period is the same length.
+  const hours = setup.kind === "hours" ? hoursClash(setup.hours, periodMinutes) : null;
+  const clash = setup.kind === "periods" ? visibleClash(setup.setup) : hours && (hours.lunch ?? hours.end);
+  const notes = setup.kind === "periods" ? generateDay(setup.setup).notes.filter((n) => !/ is cut to /.test(n)) : [];
   const edit = (next: DeptSetup) => {
     clearError();
     setTyped(next);
@@ -88,8 +93,10 @@ export function DepartmentTimingDialog({ department, schedules, plan, onClose }:
         </div>
       ) : (
       <>
+      {/* The day's figures, as on the School timings page (2026-11-22): school time, class time, periods, lunch. */}
+      <DayFigures slots={deptRows(setup, periodMinutes)} />
       {setup.kind === "hours" ? (
-        <HoursFields idPrefix="dept-window" name={department.name} value={setup.hours} onChange={(hours) => edit({ kind: "hours", hours })} />
+        <HoursFields idPrefix="dept-window" name={department.name} value={setup.hours} schoolPeriod={periodMinutes} onChange={(next) => edit({ kind: "hours", hours: next })} />
       ) : (
         <DayFields adaptive idPrefix="dept-window" name={department.name} value={setup.setup} onChange={(next) => edit({ kind: "periods", setup: next })} />
       )}
@@ -98,7 +105,7 @@ export function DepartmentTimingDialog({ department, schedules, plan, onClose }:
           {note}
         </p>
       ))}
-      {changed && problem && (
+      {changed && problem && !clash && (
         <p role="alert" className="text-sm font-medium text-danger">
           {problem}
         </p>

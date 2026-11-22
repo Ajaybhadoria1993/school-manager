@@ -73,12 +73,27 @@ afterEach(() => {
 });
 
 const sent = (calls: Call[]) => calls.filter((c) => c.method === "PUT" && c.path === "/timetable/school-day").map((c) => c.body as SchoolDayInput);
-const mode = (day: string, label: "Usual" | "Different" | "Holiday") => within(screen.getByRole("radiogroup", { name: day })).getByRole("radio", { name: label });
+/** A day's pill (2026-11-22, the reference pictures): pressed when the school runs that day; a click turns it into a holiday and back. */
+const pill = (day: string) => within(screen.getByRole("group", { name: "School days" })).getByRole("button", { name: day });
+/** The boxes of a day that has a timing of its own (under the pills), or null. */
+const ownDay = (day: string) => screen.queryByRole("region", { name: `${day} timing` });
+/** Gives a day that runs on the usual timing a timing of its own ("Another day", then the day; Saturday has its own link). */
+async function makeOwn(user: ReturnType<typeof userEvent.setup>, day: string) {
+  if (day === "Saturday") return user.click(screen.getByRole("button", { name: "Set different Saturday timing" }));
+  await user.click(screen.getByRole("button", { name: /Another day|Set a different timing for a day/ }));
+  await user.click(within(screen.getByRole("group", { name: "Day with a different timing" })).getByRole("button", { name: day }));
+}
 const box = (label: string) => screen.getByLabelText(label);
 const saveButton = () => screen.getByRole("button", { name: "Save changes" });
 const server = (status: number, message: string, code?: string, details?: object[]) => () =>
   new Response(JSON.stringify({ success: false, message, code, details }), { status, headers: { "Content-Type": "application/json" } });
 const times = (slots: Slot[]) => slots.map((s) => `${s.kind} ${s.start}-${s.end}`);
+/** A time of day moved by some minutes ("08:30", -10 is "08:20"). */
+const shift = (clock: string, by: number) => {
+  const [h, m] = clock.split(":").map(Number);
+  const t = h * 60 + m + by;
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+};
 
 describe("School timings: a school that has none yet", () => {
   it("opens with the usual numbers, Monday to Saturday as usual days and Sunday a holiday, and the day drawn period by period", async () => {
@@ -89,13 +104,17 @@ describe("School timings: a school that has none yet", () => {
     expect(box("Usual day: minutes in a period")).toHaveValue(40);
     expect(box("Usual day: number of periods")).toHaveValue(8);
     expect(box("Usual day: lunch from")).toHaveValue("10:30");
-    expect(mode("Monday", "Usual")).toHaveAttribute("aria-checked", "true");
-    expect(mode("Saturday", "Usual")).toHaveAttribute("aria-checked", "true");
-    expect(mode("Sunday", "Holiday")).toHaveAttribute("aria-checked", "true");
+    expect(pill("Monday")).toHaveAttribute("aria-pressed", "true");
+    expect(pill("Saturday")).toHaveAttribute("aria-pressed", "true");
+    expect(pill("Sunday")).toHaveAttribute("aria-pressed", "false");
+    expect(ownDay("Saturday")).not.toBeInTheDocument();
     const preview = screen.getByRole("list", { name: "Usual day, period by period" });
     expect(within(preview).getAllByRole("listitem")).toHaveLength(9);
     expect(within(preview).getByText("Lunch")).toBeInTheDocument();
-    expect(screen.getAllByText("08:30 to 14:20 · 8 periods · lunch 10:30 to 11:00").length).toBeGreaterThan(0);
+    // The day's figures (2026-11-22): the school's hours and the classes' hours, worked out from the numbers.
+    expect(screen.getByText("School time").parentElement).toHaveTextContent("08:30–14:205 hr 50 min");
+    expect(screen.getByText("Class time").parentElement).toHaveTextContent("08:30–14:20From when school starts");
+    expect(screen.getByText("6-day week · all days use the usual timing")).toBeInTheDocument();
   });
 
   it("sends the whole week in one request: the rows of each day with school, Sunday left out", async () => {
@@ -105,7 +124,8 @@ describe("School timings: a school that has none yet", () => {
     const body = sent(calls)[0];
     expect(body.days.map((d) => d.day)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(times(body.days[0].slots)).toEqual(times(REGULAR_ROWS));
-    expect(await screen.findByText("Saved.")).toBeInTheDocument();
+    // The top says when it was saved ("Saved · 2:51 PM").
+    expect(await screen.findByText(/^Saved · \d{1,2}:\d{2} (AM|PM)$/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Now make each class's timetable" })).toBeInTheDocument();
   });
 });
@@ -114,19 +134,24 @@ describe("School timings: the days of the week", () => {
   it("reads the school's timings: the usual days, a different Saturday, and a holiday on the day nothing covers", async () => {
     openPage([REGULAR, SATURDAY]);
     await screen.findByLabelText("Usual day: school starts");
-    expect(mode("Friday", "Usual")).toHaveAttribute("aria-checked", "true");
-    expect(mode("Saturday", "Different")).toHaveAttribute("aria-checked", "true");
-    expect(mode("Sunday", "Holiday")).toHaveAttribute("aria-checked", "true");
+    expect(pill("Friday")).toHaveAttribute("aria-pressed", "true");
+    expect(pill("Saturday")).toHaveAttribute("aria-pressed", "true");
+    expect(ownDay("Saturday")).toBeInTheDocument();
+    expect(ownDay("Friday")).not.toBeInTheDocument();
+    expect(pill("Sunday")).toHaveAttribute("aria-pressed", "false");
     expect(box("Saturday: number of periods")).toHaveValue(4);
-    expect(screen.getByText("08:30 to 11:10 · 4 periods · no lunch")).toBeInTheDocument();
+    expect(ownDay("Saturday")).toHaveTextContent("08:30 to 11:10 · 4 periods · no lunch");
+    expect(screen.getByText("6-day week · Saturday has its own timing")).toBeInTheDocument();
     expect(saveButton()).toBeDisabled();
   });
 
   it("makes Saturday a short day of its own, starting from the usual day, and sends its own rows", async () => {
     const { calls, user } = openPage([REGULAR]);
     await screen.findByLabelText("Usual day: school starts");
-    expect(mode("Saturday", "Holiday")).toHaveAttribute("aria-checked", "true");
-    await user.click(mode("Saturday", "Different"));
+    expect(pill("Saturday")).toHaveAttribute("aria-pressed", "false");
+    // The school opens on Saturday (usual timing), then Saturday gets its own.
+    await user.click(pill("Saturday"));
+    await makeOwn(user, "Saturday");
     expect(box("Saturday: number of periods")).toHaveValue(8);
     await user.clear(box("Saturday: number of periods"));
     await user.type(box("Saturday: number of periods"), "4");
@@ -142,13 +167,74 @@ describe("School timings: the days of the week", () => {
   it("changes every usual day at once, and can throw the change away", async () => {
     const { user } = openPage([REGULAR]);
     await screen.findByLabelText("Usual day: school starts");
+    // 30-minute periods (four of them end as lunch starts: nothing runs into it).
     await user.clear(box("Usual day: minutes in a period"));
-    await user.type(box("Usual day: minutes in a period"), "45");
+    await user.type(box("Usual day: minutes in a period"), "30");
     expect(saveButton()).toBeEnabled();
-    expect(within(screen.getByRole("list", { name: "Days of the week" })).getAllByText(/^08:30 to .* · 8 periods/)[0]).not.toHaveTextContent("14:20");
-    await user.click(screen.getByRole("button", { name: "Throw away changes" }));
+    // Every usual day ends at another time now (the week is one usual day), and the bar says what waits to be saved.
+    expect(screen.getByText("School time").parentElement).not.toHaveTextContent("14:20");
+    expect(screen.getByText("You have unsaved changes")).toBeInTheDocument();
+    expect(screen.getByText(/^Period length was updated · applies to 1 class$/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Discard" }));
     expect(box("Usual day: minutes in a period")).toHaveValue(40);
     expect(saveButton()).toBeDisabled();
+    expect(screen.queryByText("You have unsaved changes")).not.toBeInTheDocument();
+  });
+
+  it("the − and + beside the number of periods step it by one; beside the minutes of a period by five (2026-11-22)", async () => {
+    const { user } = openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    await user.click(screen.getByRole("button", { name: "Usual day: number of periods: more" }));
+    expect(box("Usual day: number of periods")).toHaveValue(9);
+    await user.click(screen.getByRole("button", { name: "Usual day: minutes in a period: less" }));
+    expect(box("Usual day: minutes in a period")).toHaveValue(35);
+    await user.click(screen.getByRole("button", { name: "Usual day: minutes in a period: more" }));
+    await user.click(screen.getByRole("button", { name: "Usual day: minutes in a period: more" }));
+    expect(box("Usual day: minutes in a period")).toHaveValue(45);
+    // A number typed between two fives goes to the next five up (or down).
+    await user.clear(box("Usual day: minutes in a period"));
+    await user.type(box("Usual day: minutes in a period"), "42");
+    await user.click(screen.getByRole("button", { name: "Usual day: minutes in a period: more" }));
+    expect(box("Usual day: minutes in a period")).toHaveValue(45);
+    await user.click(screen.getByRole("button", { name: "Usual day: minutes in a period: less" }));
+    expect(box("Usual day: minutes in a period")).toHaveValue(40);
+  });
+
+  it("the assembly's − and + step by five too", async () => {
+    const { user } = openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    await user.click(box("Usual day: assembly"));
+    await user.click(screen.getByRole("button", { name: "Usual day: assembly minutes: more" }));
+    expect(box("Usual day: assembly minutes")).toHaveValue(20);
+  });
+
+  it("Preview week shows each day of the week: the days with school as their bar, the others as a holiday", async () => {
+    const { user } = openPage([REGULAR, SATURDAY]);
+    await screen.findByLabelText("Usual day: school starts");
+    await user.click(screen.getByRole("button", { name: "Preview week" }));
+    const week = within(await screen.findByRole("dialog", { name: "This week" }));
+    expect(week.getByRole("list", { name: "Monday preview, period by period" })).toBeInTheDocument();
+    expect(week.getByRole("list", { name: "Saturday preview, period by period" })).toBeInTheDocument();
+    expect(week.getByText("08:30 to 11:10 · 4 periods · no lunch")).toBeInTheDocument();
+    expect(week.queryByRole("list", { name: "Sunday preview, period by period" })).not.toBeInTheDocument();
+    expect(week.getByText("Holiday")).toBeInTheDocument();
+  });
+
+  it("a day of its own goes back to the usual timing with Use the usual timing", async () => {
+    const { user } = openPage([REGULAR, SATURDAY]);
+    await screen.findByLabelText("Usual day: school starts");
+    await user.click(within(ownDay("Saturday")!).getByRole("button", { name: "Use the usual timing" }));
+    expect(ownDay("Saturday")).not.toBeInTheDocument();
+    expect(pill("Saturday")).toHaveAttribute("aria-pressed", "true");
+    expect(saveButton()).toBeEnabled();
+  });
+
+  it("any other day can have its own timing too (Another day)", async () => {
+    const { user } = openPage([{ ...REGULAR, days: [1, 2, 3, 4, 5, 6] }]);
+    await screen.findByLabelText("Usual day: school starts");
+    await makeOwn(user, "Wednesday");
+    expect(ownDay("Wednesday")).toBeInTheDocument();
+    expect(box("Wednesday: number of periods")).toHaveValue(8);
   });
 });
 
@@ -166,7 +252,7 @@ describe("School timings: what is said before and after sending", () => {
   it("needs at least one day with school", async () => {
     const { user } = openPage([REGULAR]);
     await screen.findByLabelText("Usual day: school starts");
-    for (const d of ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]) await user.click(mode(d, "Holiday"));
+    for (const d of ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]) await user.click(pill(d));
     expect(await screen.findByRole("alert")).toHaveTextContent("Keep at least one day with school");
     expect(saveButton()).toBeDisabled();
   });
@@ -184,7 +270,7 @@ describe("School timings: what is said before and after sending", () => {
   it("names the day of a box the server refused", async () => {
     const { user } = openPage([REGULAR], { "PUT /timetable/school-day": server(400, "Invalid request data", "VALIDATION_ERROR", [{ path: "days.4.slots.0.end", message: "A period lasts 10 to 120 minutes" }]) });
     await screen.findByLabelText("Usual day: school starts");
-    await user.click(mode("Saturday", "Usual"));
+    await user.click(pill("Saturday"));
     await user.click(saveButton());
     expect(await screen.findByRole("alert")).toHaveTextContent("Friday: A period lasts 10 to 120 minutes");
   });
@@ -211,7 +297,7 @@ describe("School timings: the school's week is saved on its own", () => {
   it("a timing made for one class is not part of the school's week (Saturday stays a holiday)", async () => {
     openPage([REGULAR, LITTLE]);
     await screen.findByLabelText("Usual day: school starts");
-    expect(mode("Saturday", "Holiday")).toHaveAttribute("aria-checked", "true");
+    expect(pill("Saturday")).toHaveAttribute("aria-pressed", "false");
   });
 
   it("has no line of help under Days of the week", async () => {
@@ -241,11 +327,17 @@ describe("School timings: the usual day's numbers, in minutes, with the breaks a
     await user.clear(box("Usual day: minutes in a period"));
     await user.type(box("Usual day: minutes in a period"), "60");
     expect(screen.getByText("= 1 hr")).toBeInTheDocument();
+    // The assembly is a row a switch turns on (before the first period, 15 minutes to start with).
+    expect(screen.queryByLabelText("Usual day: assembly minutes")).not.toBeInTheDocument();
+    expect(screen.getByText("No assembly")).toBeInTheDocument();
+    await user.click(box("Usual day: assembly"));
+    expect(box("Usual day: assembly minutes")).toHaveValue(15);
     await user.clear(box("Usual day: assembly minutes"));
     await user.type(box("Usual day: assembly minutes"), "90");
     expect(screen.getByText("= 1 hr 30 min")).toBeInTheDocument();
-    // The lunch says how long it is, from its two times.
-    expect(screen.getByText("30 min")).toBeInTheDocument();
+    // The lunch says how long it is, from its two times (and the figures on top say it too), and after which period it falls.
+    expect(screen.getAllByText("30 min").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/^After Period \d$/)).toBeInTheDocument();
   });
 
   it("has a lunch and one short break, each with a from time and a to time; the short break is off until it is asked for", async () => {
@@ -258,25 +350,27 @@ describe("School timings: the usual day's numbers, in minutes, with the breaks a
     expect(screen.queryByRole("button", { name: "Add a short break" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/short break 1 after period/)).not.toBeInTheDocument();
     await user.click(box("Usual day: short break"));
-    expect(box("Usual day: short break from")).toHaveValue("09:50");
-    expect(box("Usual day: short break to")).toHaveValue("10:00");
+    // Ten minutes at the end of a period where it cuts no later period short and does not meet the lunch: after Period 4 (2026-11-22).
+    expect(box("Usual day: short break from")).toHaveValue("11:40");
+    expect(box("Usual day: short break to")).toHaveValue("11:50");
     expect(screen.getAllByText("10 min").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("draws the short break in the day and sends it as a row at its time", async () => {
     const { calls, user } = openPage([REGULAR]);
     await screen.findByLabelText("Usual day: school starts");
     await user.click(box("Usual day: short break"));
-    fireEvent.change(box("Usual day: short break from"), { target: { value: "09:50" } });
-    fireEvent.change(box("Usual day: short break to"), { target: { value: "10:05" } });
+    // After lunch, at the end of Period 5: nothing is cut short.
+    fireEvent.change(box("Usual day: short break from"), { target: { value: "12:20" } });
+    fireEvent.change(box("Usual day: short break to"), { target: { value: "12:35" } });
     const preview = screen.getByRole("list", { name: "Usual day, period by period" });
     expect(within(preview).getByText("Short break")).toBeInTheDocument();
-    expect(within(preview).getByText("09:50–10:05")).toBeInTheDocument();
-    expect(screen.getAllByText(/short break 09:50 to 10:05/).length).toBeGreaterThan(0);
+    expect(within(preview).getByText("12:20–12:35")).toBeInTheDocument();
     await user.click(saveButton());
     await waitFor(() => expect(sent(calls)).toHaveLength(1));
     const rows = sent(calls)[0].days[0].slots;
-    expect(rows.find((r) => r.kind === "break")).toMatchObject({ label: "Short break", start: "09:50", end: "10:05" });
+    expect(rows.find((r) => r.kind === "break")).toMatchObject({ label: "Short break", start: "12:20", end: "12:35" });
     expect(rows.filter((r) => r.kind === "break")).toHaveLength(1);
   });
 
@@ -313,13 +407,187 @@ describe("School timings: the usual day's numbers, in minutes, with the breaks a
   it("a day of its own has the same boxes (Saturday with a short break)", async () => {
     const { calls, user } = openPage([REGULAR]);
     await screen.findByLabelText("Usual day: school starts");
-    await user.click(mode("Saturday", "Different"));
+    await user.click(pill("Saturday"));
+    await makeOwn(user, "Saturday");
     await user.click(box("Saturday: short break"));
     expect(box("Saturday: short break from")).toBeInTheDocument();
     await user.click(saveButton());
     await waitFor(() => expect(sent(calls)).toHaveLength(1));
     expect(sent(calls)[0].days[5].slots.some((r) => r.kind === "break")).toBe(true);
     expect(sent(calls)[0].days[0].slots.some((r) => r.kind === "break")).toBe(false);
+  });
+});
+
+/**
+ * A time is picked in two clicks (2026-11-22, user: "time select karne ka UI accha karo, jaldi select kar paun"): the clock beside a time box opens
+ * the hours of a school day and the minutes by fives; an hour, then a minute, and the box has it (typing in the box still works).
+ */
+describe("School timings: picking a time", () => {
+  it("the clock beside a box opens the hours and the minutes; an hour then a minute sets the time and closes it", async () => {
+    const { user } = openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    await user.click(screen.getByRole("button", { name: "Pick Usual day: lunch to" }));
+    const picker = within(await screen.findByRole("dialog", { name: "Usual day: lunch to: pick a time" }));
+    // The hours of a school day first (more on request), the minutes by fives; the time now is the one picked.
+    expect(picker.getByRole("button", { name: "11 hours" })).toHaveAttribute("aria-pressed", "true");
+    expect(picker.getByRole("button", { name: "00 minutes" })).toHaveAttribute("aria-pressed", "true");
+    expect(picker.getAllByRole("button", { name: /minutes$/ }).map((b) => b.textContent)).toEqual(["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"]);
+    expect(picker.queryByRole("button", { name: "02 hours" })).not.toBeInTheDocument();
+    // An hour keeps the minutes; a minute sets them and closes it.
+    await user.click(picker.getByRole("button", { name: "12 hours" }));
+    expect(box("Usual day: lunch to")).toHaveValue("12:00");
+    await user.click(picker.getByRole("button", { name: "15 minutes" }));
+    expect(box("Usual day: lunch to")).toHaveValue("12:15");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Usual day: lunch to: pick a time" })).not.toBeInTheDocument());
+    expect(saveButton()).toBeEnabled();
+  });
+
+  it("Show all hours offers the night and early morning too", async () => {
+    const { user } = openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    await user.click(screen.getByRole("button", { name: "Pick Usual day: school starts" }));
+    const picker = within(await screen.findByRole("dialog", { name: "Usual day: school starts: pick a time" }));
+    await user.click(picker.getByRole("button", { name: "Show all hours" }));
+    await user.click(picker.getByRole("button", { name: "05 hours" }));
+    expect(box("Usual day: school starts")).toHaveValue("05:30");
+  });
+
+  it("the lunch's figure on top says from when to when, and how long", async () => {
+    openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    // (The bar's lunch block says the same times to a screen reader.)
+    expect(screen.getByText("10:30–11:00", { selector: "p" }).parentElement).toHaveTextContent("Lunch10:30–11:0030 min");
+  });
+});
+
+/**
+ * School and classes start apart (2026-11-22, user: "school 8 baje start, 8:20 se class; school aane ka time jaldi rakho jisse sab aa jayein, fir
+ * assembly, fir class"): the time between is an "Arrival" row, the assembly comes after it, and the figures on top say both hours.
+ */
+describe("School timings: school time and class time", () => {
+  it("Classes start later than school: the time between is sent as an Arrival row, the lunch moves with the periods, and both hours are said on top", async () => {
+    const { calls, user } = openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    expect(box("Usual day: classes start")).toHaveValue("08:30");
+    fireEvent.change(box("Usual day: classes start"), { target: { value: "08:50" } });
+    expect(box("Usual day: school starts")).toHaveValue("08:30");
+    // The lunch stays after Period 3 (it moves the same 20 min), so no period is cut.
+    expect(box("Usual day: lunch from")).toHaveValue("10:50");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("School time").parentElement).toHaveTextContent("08:30–14:40");
+    expect(screen.getByText("Class time").parentElement).toHaveTextContent("08:50–14:40Arrival 08:30–08:50");
+    // The time to come in is not a box of the day at a glance (2026-11-22, user: "arrival wala section hatao"): the figures say it.
+    expect(within(screen.getByRole("list", { name: "Usual day, period by period" })).queryByText("Arrival")).not.toBeInTheDocument();
+    expect(screen.getByText(/^Classes start and Lunch time were updated · /)).toBeInTheDocument();
+    await user.click(saveButton());
+    await waitFor(() => expect(sent(calls)).toHaveLength(1));
+    const rows = sent(calls)[0].days[0].slots;
+    expect(rows[0]).toMatchObject({ kind: "break", label: "Arrival", start: "08:30", end: "08:50" });
+    expect(rows[1]).toMatchObject({ kind: "period", start: "08:50", end: "09:30" });
+  });
+
+  it("an assembly comes out of the time to come in, so classes keep their start; its times are said", async () => {
+    const { user } = openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    fireEvent.change(box("Usual day: classes start"), { target: { value: "08:50" } });
+    await user.click(box("Usual day: assembly"));
+    expect(box("Usual day: classes start")).toHaveValue("08:50");
+    expect(screen.getByText("08:35–08:50", { selector: "p" })).toBeInTheDocument();
+    expect(screen.getByText("Class time").parentElement).toHaveTextContent("08:50–14:40Arrival 08:30–08:35 · Assembly 08:35–08:50");
+  });
+
+  it("a saved Arrival row is read back: the school's start and the classes' start each in its box", async () => {
+    const rows: Slot[] = [{ kind: "break", label: "Arrival", start: "08:00", end: "08:20" }, ...REGULAR_ROWS.map((s) => ({ ...s, start: shift(s.start, -10), end: shift(s.end, -10) }))];
+    openPage([{ ...REGULAR, slots: rows }]);
+    expect(await screen.findByLabelText("Usual day: school starts")).toHaveValue("08:00");
+    expect(box("Usual day: classes start")).toHaveValue("08:20");
+    expect(screen.getByText("School time").parentElement).toHaveTextContent("08:00–14:10");
+  });
+
+  it("classes typed before school starts: said, and Save waits", async () => {
+    const { calls, user } = openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    fireEvent.change(box("Usual day: classes start"), { target: { value: "08:10" } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("Classes can start at 08:30 at the earliest, when school starts");
+    expect(saveButton()).toBeDisabled();
+    await user.click(saveButton());
+    expect(sent(calls)).toHaveLength(0);
+  });
+});
+
+/**
+ * Every period is the same length (2026-11-22, user: "sab period ek hi time par rahega; lunch beech me aaye to warning, aur lunch time aage badha
+ * do"): a lunch (or short break) that would start inside a period does not cut that period short. It is said, Save waits, and one click moves the
+ * lunch to the end of that period (it keeps its length); "Change lunch time" puts the cursor in the lunch box.
+ */
+describe("School timings: no period is cut short by the lunch", () => {
+  it("an assembly that pushes Period 3 into the lunch: a warning says where, and Save waits", async () => {
+    const { calls, user } = openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    await user.click(box("Usual day: assembly"));
+    const warning = await screen.findByRole("alert");
+    expect(warning).toHaveTextContent("Lunch starts at 10:30, in the middle of Period 3 (10:05 to 10:45). Move it 25 min earlier (to 10:05) or 15 min later (to 10:45) so that every period is 40 min.");
+    expect(saveButton()).toBeDisabled();
+    await user.click(saveButton());
+    expect(sent(calls)).toHaveLength(0);
+  });
+
+  it("Move lunch to 10:45 moves it to the end of that period, keeping its 30 min; the warning goes and the periods are all 40 min", async () => {
+    const { calls, user } = openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    await user.click(box("Usual day: assembly"));
+    await user.click(await screen.findByRole("button", { name: "Move lunch to 10:45" }));
+    expect(box("Usual day: lunch from")).toHaveValue("10:45");
+    expect(box("Usual day: lunch to")).toHaveValue("11:15");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(saveButton());
+    await waitFor(() => expect(sent(calls)).toHaveLength(1));
+    const periods = sent(calls)[0].days[0].slots.filter((s) => s.kind === "period");
+    expect(new Set(periods.map((p) => (Number(p.end.slice(0, 2)) * 60 + Number(p.end.slice(3))) - (Number(p.start.slice(0, 2)) * 60 + Number(p.start.slice(3)))))).toEqual(new Set([40]));
+  });
+
+  it("Move lunch to 10:05 moves it earlier, to where that period would start (it keeps its 30 min)", async () => {
+    const { user } = openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    await user.click(box("Usual day: assembly"));
+    await user.click(await screen.findByRole("button", { name: "Move lunch to 10:05" }));
+    expect(box("Usual day: lunch from")).toHaveValue("10:05");
+    expect(box("Usual day: lunch to")).toHaveValue("10:35");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("a break inside the first period goes only later (not before the first period)", async () => {
+    const { user } = openPage([{ ...REGULAR, slots: REGULAR.slots }]);
+    await screen.findByLabelText("Usual day: school starts");
+    await user.click(box("Usual day: short break"));
+    fireEvent.change(box("Usual day: short break from"), { target: { value: "08:50" } });
+    fireEvent.change(box("Usual day: short break to"), { target: { value: "09:00" } });
+    expect(await screen.findByRole("button", { name: "Move the short break to 09:10" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Move the short break to 08:30" })).not.toBeInTheDocument();
+  });
+
+  it("Change lunch time puts the cursor in the lunch box to type another time", async () => {
+    const { user } = openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    await user.click(box("Usual day: assembly"));
+    await user.click(await screen.findByRole("button", { name: "Change lunch time" }));
+    expect(box("Usual day: lunch from")).toHaveFocus();
+  });
+
+  it("a longer period that runs into the lunch says so too; a short break inside a period the same way", async () => {
+    const { user } = openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    await user.clear(box("Usual day: minutes in a period"));
+    await user.type(box("Usual day: minutes in a period"), "45");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Lunch starts at 10:30, in the middle of Period 3 (10:00 to 10:45). Move it 30 min earlier (to 10:00) or 15 min later (to 10:45) so that every period is 45 min.");
+    await user.click(screen.getByRole("button", { name: "Move lunch to 10:45" }));
+    await user.click(box("Usual day: short break"));
+    fireEvent.change(box("Usual day: short break from"), { target: { value: "09:00" } });
+    fireEvent.change(box("Usual day: short break to"), { target: { value: "09:10" } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("The short break starts at 09:00, in the middle of Period 1 (08:30 to 09:15). Move it 15 min later (to 09:15) so that every period is 45 min.");
+    await user.click(screen.getByRole("button", { name: "Move the short break to 09:15" }));
+    expect(box("Usual day: short break from")).toHaveValue("09:15");
+    expect(box("Usual day: short break to")).toHaveValue("09:25");
   });
 });
 
@@ -334,7 +602,7 @@ describe("School timings: changes that are not saved are asked about before leav
     const periods = await screen.findByLabelText("Usual day: number of periods");
     await user.clear(periods);
     await user.type(periods, "6");
-    await user.click(screen.getByRole("button", { name: "Throw away changes" }));
+    await user.click(screen.getByRole("button", { name: "Discard" }));
     await leave(router);
     await waitFor(() => expect(router.state.location.pathname).toBe("/school/timetable"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

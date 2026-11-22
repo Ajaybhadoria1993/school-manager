@@ -4,6 +4,7 @@ import { AcademicYearService } from "../../academics/services/academicYear.servi
 import { seatedIn } from "../../academics/services/viewedYear";
 import { MAX_ROLL_NUMBER } from "../constants";
 import { Enrolment } from "../models/Enrolment";
+import { Student } from "../models/Student";
 
 /** How full one section of the current year is. `seatsLeft` is null for a section with no seat limit. */
 export interface SectionLoadDto {
@@ -32,6 +33,10 @@ export interface CapacityDto {
     /** Free seats in those sections (a section over its limit counts as 0, not as minus). */
     seatsLeft: number;
     fullSections: number;
+    /** Of the students on the list, those admitted on a day of this year (the "New admissions" tab). */
+    newAdmissions: number;
+    /** Every student of the school who is inactive (left, or taken out): the "Inactive" tab. Not about the year. */
+    inactive: number;
   };
 }
 
@@ -45,15 +50,33 @@ export class CapacityService {
   static async summary(tenantId: string): Promise<CapacityDto> {
     const school = new Types.ObjectId(tenantId);
     const year = await AcademicYearService.shownYear(school);
-    if (!year) return { academicYear: null, sections: [], classes: [], totals: { students: 0, seats: 0, seatsLeft: 0, fullSections: 0 } };
+    if (!year) return { academicYear: null, sections: [], classes: [], totals: { students: 0, seats: 0, seatsLeft: 0, fullSections: 0, newAdmissions: 0, inactive: 0 } };
 
-    const [sections, counts] = await Promise.all([
+    const [sections, counts, fresh, inactive] = await Promise.all([
       Section.find({ tenantId: school, academicYearId: year._id }).select("classId capacity").lean(),
       // One pass: how many sit in each section (or class as a whole) and the highest roll number given there ($max skips "none").
       Enrolment.aggregate<{ _id: { classId: Types.ObjectId; sectionId: Types.ObjectId | null }; n: number; maxRoll: number | null }>([
         { $match: { tenantId: school, academicYearId: year._id, ...seatedIn(year._id) } },
         { $group: { _id: { classId: "$classId", sectionId: "$sectionId" }, n: { $sum: 1 }, maxRoll: { $max: "$rollNumber" } } },
       ]),
+      // How many of them were admitted on a day of this year.
+      Enrolment.aggregate<{ n: number }>([
+        { $match: { tenantId: school, academicYearId: year._id, ...seatedIn(year._id) } },
+        {
+          $lookup: {
+            from: Student.collection.name,
+            let: { id: "$studentId" },
+            pipeline: [
+              { $match: { tenantId: school, admissionDate: { $gte: year.startDate, $lte: year.endDate }, $expr: { $eq: ["$_id", "$$id"] } } },
+              { $project: { _id: 1 } },
+            ],
+            as: "admitted",
+          },
+        },
+        { $match: { "admitted.0": { $exists: true } } },
+        { $count: "n" },
+      ]),
+      Student.countDocuments({ tenantId: school, status: "inactive" }),
     ]);
 
     const bySection = new Map<string, { n: number; maxRoll: number | null }>();
@@ -89,6 +112,8 @@ export class CapacityService {
         seats: limited.reduce((sum, l) => sum + (l.capacity ?? 0), 0),
         seatsLeft: limited.reduce((sum, l) => sum + (l.seatsLeft ?? 0), 0),
         fullSections: limited.filter((l) => l.seatsLeft === 0).length,
+        newAdmissions: fresh[0]?.n ?? 0,
+        inactive,
       },
     };
   }

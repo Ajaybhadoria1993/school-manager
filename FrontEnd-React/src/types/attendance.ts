@@ -109,6 +109,14 @@ export interface TeacherSheetRow {
   designation: string | null;
   records: TeacherRecord[];
   tally: TeacherTally;
+  /** A staff member's department (their role: "Receptionist", "Peon / attendant"); a teacher's row has none. */
+  department?: { key: string; label: string };
+}
+
+/** What the teachers' sheet is asked (2026-11-22): the days; a class (its teachers only); the words of the search. */
+export interface TeacherSheetQuery extends DateRange {
+  classId?: string;
+  search?: string;
 }
 
 export interface SheetDay {
@@ -147,6 +155,24 @@ export interface TeacherMonth {
   row: TeacherSheetRow;
 }
 
+// ---- Staff (2026-11-22): kept like the teachers' ------------------------------------------------------------------------------------------
+
+/** What the staff's sheet is asked: the days; a department (a role key, "receptionist"); the words of the search. */
+export interface StaffSheetQuery extends DateRange {
+  role?: string;
+  search?: string;
+}
+
+/** Every staff member who does not teach (or one department's), each day of the range; `departments` is the filter's list, the counts are of the department asked for. */
+export interface StaffSheet {
+  from: string;
+  to: string;
+  days: SheetDay[];
+  departments: { key: string; label: string; count: number }[];
+  staff: TeacherSheetRow[];
+  summary: { staff: number; present: number; late: number; absent: number; leave: number };
+}
+
 /** What the school sets for a teacher's day. */
 export interface TeacherDayInput {
   teacherId: string;
@@ -163,4 +189,48 @@ export interface StudentsToday {
   working: boolean;
   holiday: string | null;
   pending: { classId: string; sectionId: string | null; label: string }[];
+}
+
+// ---- The day of every class (2026-11-22, Attendance > Student) --------------------------------------------------------------------------
+
+/** What `GET /attendance/students/day` is asked: the day; a class (and a section of it, or "none") to see only it; the words of the search. */
+export interface StudentsDayQuery {
+  date: string;
+  classId?: string;
+  sectionId?: string;
+  search?: string;
+}
+
+export interface StudentsDayLine {
+  id: string;
+  name: string;
+  admissionNumber: string;
+  rollNumber: number | null;
+  /** The child's place in the whole class (1 is the first): the number shown for a child with no roll number. */
+  position: number;
+  status: AttendanceStatus;
+  reason: string | null;
+}
+
+/** One class (or section) of the day: its children (only the ones a search found), and its own numbers (always the whole class). */
+export interface StudentsDayGroup {
+  classId: string;
+  sectionId: string | null;
+  /** "Class 5", "Class 5A" (two or more sections). */
+  label: string;
+  classTeacher: { id: string; name: string } | null;
+  /** The class teacher saved the day: otherwise nothing is a mark yet (the page says Not taken). */
+  saved: boolean;
+  total: number;
+  counts: Record<AttendanceStatus, number>;
+  students: StudentsDayLine[];
+}
+
+export interface StudentsDay {
+  date: string;
+  holiday: { title: string } | null;
+  /** In teaching order; a class with nobody a search found is left out. */
+  groups: StudentsDayGroup[];
+  /** Of every class asked for (a search never narrows it); the counts are of the classes that were taken. */
+  summary: { students: number; classes: number; taken: number; counts: Record<AttendanceStatus, number> };
 }

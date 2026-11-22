@@ -97,7 +97,7 @@ export default function FeeStructurePage() {
         </Button>
       )}
       {data.heads.length > 0 && data.classes.length > 0 && (
-        <Button onClick={() => setDialog({ kind: "line", classId: selected?.id })}>
+        <Button variant="accent" onClick={() => setDialog({ kind: "line", classId: selected?.id })}>
           <Plus className="size-4" aria-hidden />
           Add fee
         </Button>

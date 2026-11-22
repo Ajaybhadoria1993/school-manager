@@ -12,6 +12,7 @@ import { STRUCTURE } from "../../../test/schoolClass";
 import { DEV, ENGLISH, MATHS, MEENA } from "../../../test/timetableFixtures";
 import type { Teacher, UserRole } from "../../../types";
 import TeacherDirectoryPage from "../TeacherDirectory";
+import InactiveTeachersRedirect from "../InactiveTeachersRedirect";
 
 const ASHA: Teacher = {
   ...MEENA,
@@ -37,7 +38,7 @@ function openPage(path = "/teachers", extra: Record<string, Handler> = {}, who: 
   });
   const router = createMemoryRouter(
     [
-      { path: "/teachers/inactive", element: <TeacherDirectoryPage /> },
+      { path: "/teachers/inactive", element: <InactiveTeachersRedirect /> },
       { path: "/teachers", element: <TeacherDirectoryPage /> },
       { path: "/teachers/new", element: <p>Add teacher</p> },
       { path: "/teachers/import", element: <p>Bulk upload teachers</p> },
@@ -267,6 +268,76 @@ describe("Teacher (the menu entry on top)", () => {
     await waitFor(() => expect(within(rowsOf(screen.getByRole("table", { name: "Teachers" }))[0]).getAllByText("Left").length).toBeGreaterThan(0));
     await router.navigate("/teachers?status=all");
     await waitFor(() => expect(lastQuery(calls).get("status")).toBe("all"));
+  });
+
+  describe("Active teachers and Inactive are TABS of this page (2026-11-22), not two pages of the menu", () => {
+    const tabs = () => screen.getByRole("tablist", { name: "Which teachers to show" });
+    const tab = (name: RegExp) => within(tabs()).getByRole("tab", { name });
+    const here = (router: ReturnType<typeof openPage>["router"]) => router.state.location.pathname + router.state.location.search;
+    const GONE: Teacher = { ...DEV, id: "gone", name: "Gone Teacher", isActive: false };
+    const byStatus = { "GET /staff/teachers": (_body: unknown, query: URLSearchParams) => ({ items: query.get("status") === "inactive" ? [GONE] : [ASHA] }) };
+
+    it("has the two tabs with their counts (the numbers the page already reads), Active teachers open", async () => {
+      const { calls } = openPage();
+      await screen.findByRole("table", { name: "Teachers" });
+      await waitFor(() => expect(within(tabs()).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Active teachers3", "Inactive2"]));
+      expect(tab(/Active teachers/)).toHaveAttribute("aria-selected", "true");
+      expect(tab(/Inactive/)).toHaveAttribute("aria-selected", "false");
+      // The counts cost no request of their own.
+      expect(calls.filter((c) => c.path === "/staff/teachers/summary")).toHaveLength(1);
+    });
+
+    it("sits BETWEEN the four counts and the filter row: counts, then tabs, then the search box", async () => {
+      openPage();
+      await screen.findByRole("table", { name: "Teachers" });
+      const counts = screen.getByRole("region", { name: "Teacher counts" });
+      const search = screen.getByRole("search", { name: "Find teachers" });
+      const follows = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(follows(counts, tabs())).toBe(true);
+      expect(follows(tabs(), search)).toBe(true);
+    });
+
+    it("Inactive asks the server for the teachers who left and shows them; Active teachers brings the others back; the search is kept", async () => {
+      const { calls, user, router } = openPage("/teachers?q=a", byStatus);
+      await screen.findByText("Asha Rao");
+      await user.click(tab(/Inactive/));
+      expect(await screen.findByText("Gone Teacher")).toBeInTheDocument();
+      expect(here(router)).toBe("/teachers?q=a&status=inactive");
+      expect(tab(/Inactive/)).toHaveAttribute("aria-selected", "true");
+      expect(lastQuery(calls).get("status")).toBe("inactive");
+      expect(lastQuery(calls).get("search")).toBe("a");
+      await user.click(tab(/Active teachers/));
+      expect(await screen.findByText("Asha Rao")).toBeInTheDocument();
+      expect(here(router)).toBe("/teachers?q=a");
+      expect(tab(/Active teachers/)).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("opens straight on Inactive from the address (a link, a reload)", async () => {
+      openPage("/teachers?status=inactive", byStatus);
+      expect(await screen.findByText("Gone Teacher")).toBeInTheDocument();
+      expect(tab(/Inactive/)).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("the old address /teachers/inactive leads to the Inactive tab, keeping the search", async () => {
+      const { router } = openPage("/teachers/inactive?q=asha", byStatus);
+      expect(await screen.findByText("Gone Teacher")).toBeInTheDocument();
+      expect(router.state.location.pathname).toBe("/teachers");
+      expect(Object.fromEntries(new URLSearchParams(router.state.location.search))).toEqual({ status: "inactive", q: "asha" });
+      expect(tab(/Inactive/)).toHaveAttribute("aria-selected", "true");
+    });
+
+    it("a teacher opened from the Inactive tab brings the person back to the Inactive tab", async () => {
+      const { user, router } = openPage("/teachers?status=inactive", byStatus);
+      await user.click(await screen.findByRole("link", { name: "Gone Teacher" }));
+      expect(router.state.location.pathname).toBe("/teachers/gone");
+      expect(router.state.location.state).toMatchObject({ cameFrom: { href: "/teachers?status=inactive", label: "Inactive teachers" } });
+    });
+
+    it("a school with no teachers at all (nobody active, nobody who left) has no tabs, only the card that says so", async () => {
+      openPage("/teachers", { "GET /staff/teachers": () => ({ items: [] }), "GET /staff/teachers/summary": () => ({ teaching: 0, classTeachers: 0, withoutClasses: 0, left: 0 }) });
+      expect(await screen.findByText("No teachers yet")).toBeInTheDocument();
+      expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    });
   });
 
   it("says so when nobody matches, with a way back", async () => {

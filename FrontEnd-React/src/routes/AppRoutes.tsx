@@ -1,12 +1,12 @@
 import type { ComponentType } from "react";
-import { Navigate, createBrowserRouter, type RouteObject } from "react-router";
+import { Navigate, createBrowserRouter, redirect, type RouteObject } from "react-router";
 import { PageSpinner } from "../components/shared/PageSpinner";
 import { RootLayout } from "./RootLayout";
 import PermissionRoute from "./PermissionRoute";
 
 /**
  * A route whose page is loaded when it is first visited (its own chunk), so the sign-in page does not
- * download the dashboard, and the landing page does not download the review screens.
+ * download the dashboard, and the dashboard does not download the review screens.
  */
 const lazyRoute = (load: () => Promise<{ default: ComponentType }>): Pick<RouteObject, "lazy"> => ({
   lazy: async () => ({ Component: (await load()).default }),
@@ -17,8 +17,9 @@ const routes: RouteObject[] = [
     element: <RootLayout />,
     hydrateFallbackElement: <PageSpinner />,
     children: [
-      // Public pages
-      { path: "/", ...lazyRoute(() => import("../pages/landing/LandingPage")) },
+      // Public pages. The home address is the sign-in page (there is no landing page): the redirect is answered before anything is drawn,
+      // and what comes after the "/" (?reason=expired) goes with it.
+      { path: "/", loader: ({ request }) => redirect(`/login${new URL(request.url).search}`) },
       { path: "login", ...lazyRoute(() => import("../pages/auth/Login")) },
       { path: "signup", ...lazyRoute(() => import("../pages/auth/Signup")) },
       { path: "forgot-password", ...lazyRoute(() => import("../pages/auth/ForgotPassword")) },
@@ -133,7 +134,8 @@ const routes: RouteObject[] = [
           {
             element: <PermissionRoute keys={["teachers.view"]} />,
             children: [
-              { path: "teachers/inactive", ...lazyRoute(() => import("../pages/teachers/TeacherDirectory")) },
+              // The teachers who left are the Inactive tab of the Teachers page; the old address leads there.
+              { path: "teachers/inactive", ...lazyRoute(() => import("../pages/teachers/InactiveTeachersRedirect")) },
               { path: "teachers", ...lazyRoute(() => import("../pages/teachers/TeacherDirectory")) },
               { path: "teachers/:id", ...lazyRoute(() => import("../pages/school/TeacherDetail")) },
             ],
@@ -213,7 +215,8 @@ const routes: RouteObject[] = [
             ],
           },
           {
-            element: <PermissionRoute keys={["students.status"]} />,
+            // The inactive students are the Inactive tab of the Students page (2026-11-22); the old address lands there.
+            element: <PermissionRoute keys={["students.view"]} />,
             children: [{ path: "school/students/inactive", ...lazyRoute(() => import("../pages/school/InactiveStudents")) }],
           },
           // Transport: vehicles, drivers and attendants, routes (one row of the menu; /transport leads to the first).
@@ -254,7 +257,11 @@ const routes: RouteObject[] = [
           },
           {
             element: <PermissionRoute keys={["attendance.view"]} />,
-            children: [{ path: "attendance/students", ...lazyRoute(() => import("../pages/attendance/StudentAttendance")) }],
+            children: [
+              { path: "attendance/students", ...lazyRoute(() => import("../pages/attendance/StudentAttendance")) },
+              // The old register (a week, a month, a range), one click from the day of one class (2026-11-23).
+              { path: "attendance/students/register", ...lazyRoute(() => import("../pages/attendance/StudentRegister")) },
+            ],
           },
           {
             element: <PermissionRoute keys={["attendance.teachers"]} />,

@@ -2,15 +2,18 @@ import { Types } from "mongoose";
 import { pushTo } from "../../../realtime/socket";
 import { ApiError } from "../../../utils/ApiError";
 import { indiaNow, instantAt } from "../../../utils/clock";
+import { SchoolClass } from "../../academics/models/SchoolClass";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { RUNNER_ROLES } from "../../classroom/services/access";
 import { Notify } from "../../notifications/services/events";
+import { ClassTeacher } from "../../staff/models/ClassTeacher";
 import { Teacher } from "../../staff/models/Teacher";
+import { Allotment } from "../../subjects/models/Allotment";
 import { clockToMinutes, minutesToClock } from "../../timetable/time";
 import { User } from "../../users/models/User";
 import type { TeacherDayStatus } from "../constants";
 import { TeacherAttendance, type ITeacherAttendance } from "../models/TeacherAttendance";
-import type { MonthQuery, MyDayQuery, RangeQuery, SetTeacherDayInput } from "../schemas/attendance.schemas";
+import type { MonthQuery, MyDayQuery, RangeQuery, SetTeacherDayInput, TeacherSheetQuery } from "../schemas/attendance.schemas";
 import { schoolDays, type SchoolDay } from "./schoolDays";
 
 const asId = (id: string | Types.ObjectId) => new Types.ObjectId(String(id));
@@ -22,7 +25,15 @@ const indiaMinutes = (at: Date) => {
   const local = new Date(at.getTime() + (5 * 60 + 30) * 60_000);
   return local.getUTCHours() * 60 + local.getUTCMinutes();
 };
-const clockOf = (minutes: number | null) => (minutes === null ? null : minutesToClock(minutes));
+export const clockOf = (minutes: number | null) => (minutes === null ? null : minutesToClock(minutes));
+
+/**
+ * The words of a sheet's search box, made plain (2026-11-22): lower case, single spaces; "" for none. A person is found when their name, code
+ * or post holds them, as plain text (never a pattern).
+ */
+export const searchWords = (search: string | undefined) => (search ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+export const finds = (word: string, person: { name: string; employeeCode?: string | null; designation?: string | null }) =>
+  !word || [person.name, person.employeeCode ?? "", person.designation ?? ""].some((text) => text.toLowerCase().includes(word));
 
 /** One line of a day's history: when, what, who. */
 export interface LogLineDto {
@@ -65,23 +76,38 @@ export interface TeacherTally {
   percent: number | null;
 }
 
-type TeacherLike = { _id: Types.ObjectId; offDays?: number[]; joiningDate?: Date | null; createdAt: Date; userId?: Types.ObjectId | null };
+/** A person whose days are worked out the same way: a teacher, or a staff member (2026-11-22, who has no days off of their own). */
+export type TeacherLike = { _id: Types.ObjectId; offDays?: number[]; joiningDate?: Date | null; createdAt: Date; userId?: Types.ObjectId | null };
 
-/** The first day that counts for a teacher: the day they joined, or when they were added when the school did not say. */
-const startOf = (t: TeacherLike) => (t.joiningDate ? dayOf(t.joiningDate) : indianDay(t.createdAt));
+/**
+ * The first day that counts for a teacher: the LATER of the day they joined and the day they were added to the app (the day of adding alone
+ * when the school gave no joining date). A teacher who joined years ago but was added to the app last week has no attendance before last
+ * week: nobody could take it, so those days are "Not joined", not absences (2026-11-22). A joining date still to come holds the start back
+ * until then.
+ */
+const startOf = (t: TeacherLike) => {
+  const added = indianDay(t.createdAt);
+  const joined = t.joiningDate ? dayOf(t.joiningDate) : added;
+  return joined > added ? joined : added;
+};
 
-const logOf = (record: ITeacherAttendance): LogLineDto[] =>
+/** A day's mark as the sheets need it: a teacher's or a staff member's record (the same fields). */
+export type DayRecord = Pick<ITeacherAttendance, "checkedInAt" | "lateByMinutes" | "mark" | "note" | "source" | "log">;
+
+const logOf = (record: DayRecord): LogLineDto[] =>
   record.log.map((l) => ({ time: minutesToClock(indiaMinutes(l.at)), at: l.at.toISOString(), action: l.action, status: l.status ?? "present", by: { name: l.by.name, role: l.by.role }, note: l.note ?? null }));
 
 /**
  * What a teacher's day is: a mark wins (Present, Late when it was after school started, Absent or Leave as the school put it); otherwise a
- * day before they joined does not count, a holiday and a day off are not absences, nor is a working day of a teacher with no login (they
+ * day before they joined (or were added to the app, or the day they were added once school was over) does not count, a holiday and a day off are not absences, nor is a working day of a teacher with no login (they
  * cannot mark), a day that has passed is Absent, and today is Absent once school has ended (Not yet until then).
  */
 export function dayStatus(args: { date: string; today: string; nowMinutes: number; school: SchoolDay; teacher: TeacherLike; record?: Pick<ITeacherAttendance, "lateByMinutes" | "mark"> | null }): TeacherDayStatus {
   const { date, today, nowMinutes, school, teacher, record } = args;
   if (record) return record.mark === "absent" ? "absent" : record.mark === "leave" ? "leave" : (record.lateByMinutes ?? 0) > 0 ? "late" : "present";
   if (date < startOf(teacher)) return "before";
+  // The day they were added to the app, but after school was over: nobody could take it either.
+  if (date === indianDay(teacher.createdAt) && date === startOf(teacher) && school.end !== null && indiaMinutes(teacher.createdAt) >= school.end) return "before";
   if (school.holiday) return "holiday";
   if (!school.working || (teacher.offDays ?? []).includes(school.weekday)) return "off";
   if (!teacher.userId) return "no_login";
@@ -90,7 +116,7 @@ export function dayStatus(args: { date: string; today: string; nowMinutes: numbe
   return "upcoming";
 }
 
-const tallyOf = (statuses: TeacherDayStatus[]): TeacherTally => {
+export const tallyOf = (statuses: TeacherDayStatus[]): TeacherTally => {
   const count = (s: TeacherDayStatus) => statuses.filter((x) => x === s).length;
   const present = count("present");
   const late = count("late");
@@ -99,7 +125,7 @@ const tallyOf = (statuses: TeacherDayStatus[]): TeacherTally => {
   return { present, late, absent, leave: count("leave"), days, percent: days === 0 ? null : Math.round(((present + late) / days) * 100) };
 };
 
-function dayDto(date: string, status: TeacherDayStatus, record: ITeacherAttendance | null): TeacherRecordDto {
+export function dayDto(date: string, status: TeacherDayStatus, record: DayRecord | null): TeacherRecordDto {
   return {
     date,
     status,
@@ -111,8 +137,8 @@ function dayDto(date: string, status: TeacherDayStatus, record: ITeacherAttendan
   };
 }
 
-/** One teacher's row of a sheet: every day of the range, and the counts. */
-function rowFor(teacher: TeacherLike & { _id: Types.ObjectId; name: string; employeeCode?: string | null; designation?: string | null }, days: SchoolDay[], byKey: Map<string, ITeacherAttendance>, now: { date: string; minutes: number }) {
+/** One teacher's (or staff member's) row of a sheet: every day of the range, and the counts. `byKey` is keyed "<person id>:<day>". */
+export function rowFor(teacher: TeacherLike & { _id: Types.ObjectId; name: string; employeeCode?: string | null; designation?: string | null }, days: SchoolDay[], byKey: Map<string, DayRecord>, now: { date: string; minutes: number }) {
   const records = days.map((school) => {
     const record = byKey.get(`${teacher._id.toString()}:${school.date}`) ?? null;
     return dayDto(school.date, dayStatus({ date: school.date, today: now.date, nowMinutes: now.minutes, school, teacher, record }), record);
@@ -246,19 +272,40 @@ export class TeacherAttendanceService {
     return new Map(records.map((r) => [`${r.teacherId.toString()}:${dayOf(r.date)}`, r as ITeacherAttendance]));
   }
 
-  /** Every active teacher, every day of the range (to today at most), with who came and when. */
-  static async sheet(tenantId: string, query: RangeQuery) {
+  /**
+   * The teachers of a class this year (2026-11-22): its class teachers and the teachers of its subjects, any section. A class that is not the
+   * school's is not found.
+   */
+  private static async teachersOfClass(tenantId: string, classId: string): Promise<Set<string>> {
+    const school = asId(tenantId);
+    if (!(await SchoolClass.exists({ _id: asId(classId), tenantId: school }))) throw ApiError.notFound("Class not found", "CLASS_NOT_FOUND");
+    const yearId = await AcademicYearService.shownYearId(tenantId);
+    if (!yearId) return new Set();
+    const [allotted, heads] = await Promise.all([
+      Allotment.find({ tenantId: school, academicYearId: yearId, classId: asId(classId) }).select("teacherId").lean(),
+      ClassTeacher.find({ tenantId: school, academicYearId: yearId, classId: asId(classId) }).select("teacherId").lean(),
+    ]);
+    return new Set([...allotted, ...heads].flatMap((r) => (r.teacherId ? [r.teacherId.toString()] : [])));
+  }
+
+  /**
+   * Every active teacher (or, with a class, the teachers of that class), every day of the range (to today at most), with who came and when. A
+   * search keeps the rows it finds; the counts are of the teachers asked for, never of the search.
+   */
+  static async sheet(tenantId: string, query: RangeQuery & Partial<Pick<TeacherSheetQuery, "classId" | "search">>) {
     const now = indiaNow();
     const to = query.to > now.date ? now.date : query.to;
+    const ofClass = query.classId ? await TeacherAttendanceService.teachersOfClass(tenantId, query.classId) : null;
     const days = query.from > to ? [] : await schoolDays(tenantId, query.from, to);
-    const teachers = await Teacher.find({ tenantId: asId(tenantId), isActive: true }).lean();
+    const teachers = (await Teacher.find({ tenantId: asId(tenantId), isActive: true }).lean()).filter((t) => !ofClass || ofClass.has(t._id.toString()));
     const byKey = days.length === 0 ? new Map<string, ITeacherAttendance>() : await TeacherAttendanceService.recordsBetween(tenantId, query.from, to);
     const rows = teachers.sort((a, b) => a.name.localeCompare(b.name)).map((t) => rowFor(t, days, byKey, now));
+    const word = searchWords(query.search);
     return {
       from: query.from,
       to,
       days: days.map((d) => ({ date: d.date, weekday: d.weekday, working: d.working, holiday: d.holiday, start: clockOf(d.start), end: clockOf(d.end) })),
-      teachers: rows,
+      teachers: word ? rows.filter((r) => finds(word, r)) : rows,
       summary: {
         teachers: rows.length,
         present: rows.reduce((n, r) => n + r.tally.present, 0),

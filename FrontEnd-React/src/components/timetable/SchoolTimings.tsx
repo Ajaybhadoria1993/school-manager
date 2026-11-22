@@ -1,34 +1,227 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker } from "react-router";
-import { ArrowRight, CalendarDays, Clock3, Info, Save, TriangleAlert } from "lucide-react";
+import { ArrowRight, CalendarDays, Check, Clock3, Info, Save, Send, TriangleAlert } from "lucide-react";
 import { Button as HeroButton } from "@heroui/react";
 import { DAY_NAMES } from "../../constants/timetable";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetSchedulesQuery, useSaveSchoolDayMutation } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
-import { periodCount } from "../../utils/classWeek";
+import { classOwnTimings, periodCount } from "../../utils/classWeek";
+import { clock12 } from "../../utils/exams";
 import { cn } from "../../utils/helpers";
-import { deptSummary, storedSetup } from "../../utils/departmentDay";
+import { deptRows, deptSummary, storedSetup } from "../../utils/departmentDay";
 import { WEEK_DAYS, daySummary, departmentRows, departmentRowsBody, moveStart, readWeek, setupOf, shiftMinutes, usualDays, weekBody, weekProblems, type DayMode, type WeekPlan } from "../../utils/schoolWeek";
-import { clockToMinutes, formatMinutes, shiftSlots, type DaySetup } from "../../utils/timings";
+import { visibleClash, clockToMinutes, formatMinutes, generateDay, shiftSlots, type DaySetup } from "../../utils/timings";
 import type { ClassItem, DepartmentItem, Schedule, SchoolDayInput } from "../../types";
+import { StudentFormHeader } from "../students/StudentFormHeader";
 import { AppModal, ModalError } from "../ui/AppModal";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Skeleton } from "../ui/Skeleton";
 import { useToast } from "../ui/toast-context";
-import { ClassTimings } from "./ClassTimings";
 import { DayFields, DayPreview } from "./DayFields";
 import { DepartmentTimingDialog } from "./DepartmentTimingDialog";
-import { DepartmentTimings, type DepartmentRow } from "./DepartmentTimings";
+import { GroupTimings, type DepartmentRow } from "./GroupTimings";
 import { useFooterSlot } from "../layout/FooterSlot";
 import { FixedSaveBar } from "./FixedSaveBar";
+import { DayBar, DayFigures } from "./TimingParts";
 
-const MODES: { value: DayMode; label: string }[] = [
-  { value: "usual", label: "Usual" },
-  { value: "own", label: "Different" },
-  { value: "off", label: "Holiday" },
-];
+const SHORT_DAY = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/** The page's title, its one line under it, and the trail; `status` at the right (Saved / Unsaved changes). */
+function Header({ status }: { status?: React.ReactNode }) {
+  return (
+    <StudentFormHeader
+      title="School timings"
+      subtitle="Set when your school starts, ends and takes breaks. Every class follows this, unless you give a class or department its own timing."
+      crumbs={[{ label: "Dashboard", to: "/dashboard" }]}
+      actions={status}
+    />
+  );
+}
+
+/** "Saved · 2:51 PM" (green) when nothing waits to be saved; "Unsaved changes" (amber) when something does. */
+function SavedPill({ dirty, savedAt }: { dirty: boolean; savedAt: string | null }) {
+  const saved = savedAt ? `Saved · ${savedAt}` : "Saved";
+  return dirty ? (
+    <span role="status" aria-label="Unsaved changes" className="inline-flex items-center gap-1.5 rounded-full bg-warning-soft px-3 py-1 text-xs font-bold text-warning ring-1 ring-inset ring-warning/30">
+      <span aria-hidden className="size-1.5 rounded-full bg-warning" />
+      Unsaved changes
+    </span>
+  ) : (
+    <span role="status" aria-label={saved} className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-3 py-1 text-xs font-bold text-success ring-1 ring-inset ring-success/30">
+      <span aria-hidden className="size-1.5 rounded-full bg-success" />
+      {saved}
+    </span>
+  );
+}
+
+/** The time now in India, as the page says it ("2:51 PM"). */
+const nowIn12 = () => clock12(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }).format(new Date()));
+
+/** What was changed in the school's week, in a few words ("Lunch time was updated", "Periods and Lunch time were updated"). */
+function whatChanged(before: WeekPlan, after: WeekPlan, isNew: boolean): string {
+  if (isNew) return "The school's first timing";
+  const a = before.usual;
+  const b = after.usual;
+  const parts = [
+    a.start !== b.start && "School start",
+    (a.arrivalMinutes ?? 0) !== (b.arrivalMinutes ?? 0) && "Classes start",
+    a.periodMinutes !== b.periodMinutes && "Period length",
+    a.periods !== b.periods && "Periods",
+    a.assemblyMinutes !== b.assemblyMinutes && "Assembly",
+    (a.lunchStart !== b.lunchStart || a.lunchEnd !== b.lunchEnd) && "Lunch time",
+    (a.breakStart !== b.breakStart || a.breakEnd !== b.breakEnd) && "Short break",
+    JSON.stringify(before.days) !== JSON.stringify(after.days) && "Days of the week",
+  ].filter((p): p is string => typeof p === "string");
+  if (parts.length === 0) return "The school's timing was updated";
+  if (parts.length === 1) return `${parts[0]} was updated`;
+  return `${parts.slice(0, 2).join(" and ")}${parts.length > 2 ? ` and ${parts.length - 2} more` : ""} were updated`;
+}
+
+/** The week in a window ("Preview week"): each day with school as its bar, the others as a holiday. */
+function PreviewWeekModal({ plan, onClose }: { plan: WeekPlan; onClose: () => void }) {
+  return (
+    <AppModal
+      title="This week"
+      icon={CalendarDays}
+      size="lg"
+      onClose={onClose}
+      footer={
+        <HeroButton variant="primary" onPress={onClose}>
+          Close
+        </HeroButton>
+      }
+    >
+      <ul aria-label="The week, day by day" className="space-y-3">
+        {WEEK_DAYS.map((d) => {
+          const setup = setupOf(plan, d);
+          return (
+            <li key={d} className="space-y-1.5 rounded-xl border border-border p-3">
+              <p className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-sm font-bold text-foreground">{DAY_NAMES[d]}</span>
+                <span className="text-xs text-foreground-muted">{setup ? daySummary(setup) : "Holiday"}</span>
+              </p>
+              {setup && <DayBar name={`${DAY_NAMES[d]} preview`} slots={generateDay(setup).slots} />}
+            </li>
+          );
+        })}
+      </ul>
+    </AppModal>
+  );
+}
+
+/**
+ * Days of the week (2026-11-22, the reference pictures): a pill for each day, dark when the school runs that day (a click turns it into a
+ * holiday, and back). A day can have a timing of its own: **Set different Saturday timing** (the usual short day) or **Another day**; such a day
+ * has a small dot in its pill and its own boxes under the pills, with **Use the usual timing** to follow the usual day again.
+ */
+function WeekDays({ plan, problemOf, setMode, setOwn }: { plan: WeekPlan; problemOf: (day: number) => string | undefined; setMode: (day: number, mode: DayMode) => void; setOwn: (day: number, setup: DaySetup) => void }) {
+  const [choosing, setChoosing] = useState(false);
+  const open = WEEK_DAYS.filter((d) => plan.days[d].mode !== "off");
+  const own = WEEK_DAYS.filter((d) => plan.days[d].mode === "own");
+  const usualOnes = WEEK_DAYS.filter((d) => plan.days[d].mode === "usual");
+  const saturdayFree = plan.days[6].mode === "usual";
+  const line = `${open.length}-day week · ${own.length === 0 ? "all days use the usual timing" : `${own.map((d) => DAY_NAMES[d]).join(", ")} ${own.length === 1 ? "has its" : "have their"} own timing`}`;
+  const link = "cursor-pointer text-sm font-semibold text-primary-deep hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30";
+
+  return (
+    <Card className="space-y-4 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+            <CalendarDays className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-section-heading">Days of the week</h2>
+            <p className="text-sm text-foreground-muted">{line}</p>
+          </div>
+        </div>
+        {usualOnes.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            {saturdayFree && (
+              <button type="button" className={link} onClick={() => setMode(6, "own")}>
+                Set different Saturday timing
+              </button>
+            )}
+            <button type="button" className={link} aria-expanded={choosing} onClick={() => setChoosing((c) => !c)}>
+              {saturdayFree ? "Another day" : "Set a different timing for a day"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div role="group" aria-label="School days" className="flex flex-wrap gap-2">
+        {WEEK_DAYS.map((d) => {
+          const mode = plan.days[d].mode;
+          const on = mode !== "off";
+          return (
+            <button
+              key={d}
+              type="button"
+              aria-pressed={on}
+              aria-label={DAY_NAMES[d]}
+              title={on ? (mode === "own" ? `${DAY_NAMES[d]}: its own timing` : `${DAY_NAMES[d]}: usual timing`) : `${DAY_NAMES[d]}: holiday`}
+              onClick={() => setMode(d, on ? "off" : "usual")}
+              className={cn(
+                "relative h-11 min-w-16 flex-1 cursor-pointer rounded-xl border px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25 sm:flex-none",
+                on ? "border-primary-deep bg-primary-deep text-white shadow-sm hover:bg-primary-deep/90" : "border-border bg-surface text-foreground-muted hover:border-primary/40 hover:text-foreground"
+              )}
+            >
+              {SHORT_DAY[d]}
+              {mode === "own" && <span aria-hidden className="absolute right-1.5 top-1.5 size-2 rounded-full bg-orange ring-2 ring-primary-deep" />}
+            </button>
+          );
+        })}
+      </div>
+
+      {choosing && usualOnes.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-background/60 px-3 py-2.5">
+          <span className="text-sm text-foreground-muted">Which day has a different timing?</span>
+          <div role="group" aria-label="Day with a different timing" className="flex flex-wrap gap-1.5">
+            {usualOnes.map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => {
+                  setMode(d, "own");
+                  setChoosing(false);
+                }}
+                className="h-8 cursor-pointer rounded-lg border border-border bg-surface px-3 text-sm font-semibold text-foreground hover:border-primary/50 hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+              >
+                {DAY_NAMES[d]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {own.map((d) => {
+        const name = DAY_NAMES[d];
+        const day = plan.days[d];
+        return (
+          <section key={d} aria-label={`${name} timing`} className="space-y-3 rounded-xl border border-orange/30 bg-orange-soft/30 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-bold text-foreground">
+                {name} has its own timing <span className="font-normal text-foreground-muted">· {daySummary(day.setup)}</span>
+              </h3>
+              <Button variant="ghost" size="sm" onClick={() => setMode(d, "usual")}>
+                Use the usual timing
+              </Button>
+            </div>
+            <DayFields adaptive idPrefix={`day-school-${d}`} name={name} value={day.setup} onChange={(next) => setOwn(d, next)} />
+            <DayPreview name={name} value={day.setup} />
+            {problemOf(d) && !visibleClash(day.setup) && (
+              <p role="alert" className="text-sm font-medium text-danger">
+                {problemOf(d)}
+              </p>
+            )}
+          </section>
+        );
+      })}
+    </Card>
+  );
+}
 
 /** What the server refused, and the days it named ("days.5.slots.0.end" is the sixth day sent). */
 interface Failure {
@@ -122,10 +315,14 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
   const schoolSig = useMemo(() => JSON.stringify(schedules.filter((s) => s.scope === "all")), [schedules]);
   const [schoolEdit, setSchoolEdit] = useState<{ sig: string; plan: WeekPlan } | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
-  const [justSaved, setJustSaved] = useState(false);
+  // When this visit last saved the week ("2:51 PM"), for the Saved line at the top; null until then.
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   // The department whose window is open (Change timing).
   const [windowOf, setWindowOf] = useState<string | null>(null);
+  // The classes and departments ticked to move with the school's start (2026-11-22: none until ticked), kept against the timings they were ticked on.
+  const [ticks, setTicks] = useState<{ sig: string; keys: string[] } | null>(null);
   // With the layout's footer strip the buttons have a place of their own; without it they are fixed over the page, which then leaves room for them.
   const hasFooter = useFooterSlot() !== null;
 
@@ -140,10 +337,15 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
   // ---- The winter shift (2026-11-17) -------------------------------------------------------------------------------------------------------
   // School starts later (or earlier) than it was saved: the lunch and the days of its own moved in the boxes at once; the timings of the
   // classes and departments that keep hours of their own move with it when this is saved (the server does it in the same save).
+  // Each class or department with hours of its own has a tick (2026-11-22, user: "check na kare to time nahi badhega, check kare to badh jayega"):
+  // only the ticked ones move, none until ticked; the server moves them in the same save (`shiftOnly`).
   const shift = read.isNew || !dirty ? 0 : (shiftMinutes(read.plan.usual.start, plan.usual.start) ?? 0);
-  const moving = schedules.filter((s) => s.scope !== "all" && periodCount(s.slots) > 0);
+  const others = schedules.filter((s) => s.scope !== "all" && periodCount(s.slots) > 0);
   const classNameOf = (id: string) => classes.find((c) => c.id === id)?.name;
-  const movingNames = shift === 0 ? [] : [...new Set(moving.map((s) => (s.departmentId ? departments.find((d) => d.id === s.departmentId)?.name : s.classIds.length === 1 ? classNameOf(s.classIds[0]) : undefined) ?? s.name))];
+  const movable = movableGroups(others, (s) => (s.departmentId ? departments.find((d) => d.id === s.departmentId)?.name : s.classIds.length === 1 ? classNameOf(s.classIds[0]) : undefined) ?? s.name);
+  const ticked = new Set(ticks && ticks.sig === schoolSig ? ticks.keys : []);
+  const toggleTick = (key: string) => setTicks({ sig: schoolSig, keys: ticked.has(key) ? [...ticked].filter((k) => k !== key) : [...ticked, key] });
+  const moving = shift === 0 ? [] : movable.filter((g) => ticked.has(g.key)).flatMap((g) => g.timings);
   const shiftProblem = shift === 0 ? null : (() => {
     const stuck = moving.find((s) => shiftSlots(s.slots, shift) === null);
     return stuck ? `${stuck.name} would go past midnight if everything starts ${formatMinutes(Math.abs(shift))} ${shift > 0 ? "later" : "earlier"}` : null;
@@ -155,8 +357,12 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
   const periodMinutes = plan.usual.periodMinutes;
   const rows: DepartmentRow[] = departments.map((department) => {
     const have = storedSetup(department, schedules, plan.usual);
-    return { department, own: have.stored, summary: deptSummary(have.setup, periodMinutes) };
+    return { department, own: have.stored, summary: deptSummary(have.setup, periodMinutes), slots: deptRows(have.setup, periodMinutes) };
   });
+  // The classes the school's own timing is for: not a class with a timing of its own, nor one of a department that has one.
+  const ownClasses = new Set(classOwnTimings(schedules).map((o) => o.classId));
+  const ownDepartments = new Set(rows.filter((r) => r.own).map((r) => r.department.id));
+  const followers = classes.filter((c) => !ownClasses.has(c.id) && !(c.departmentId && ownDepartments.has(c.departmentId))).length;
   // A department's timing covers the school's usual days: when the school's week is saved with other usual days, a department that has a
   // timing of its own is sent again with it, with the rows it had.
   const usual = usualDays(plan);
@@ -171,7 +377,6 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
   // ---- Changing --------------------------------------------------------------------------------------------------------------------------
   const editPlan = (next: WeekPlan) => {
     setSchoolEdit({ sig: schoolSig, plan: next });
-    setJustSaved(false);
     setFailure(null);
   };
   // The usual day was edited: when its start moved, the lunch and the days of its own move with it (`moveStart`). A start box that was cleared
@@ -189,8 +394,8 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
   };
   const throwAway = () => {
     setSchoolEdit(null);
+    setTicks(null);
     setFailure(null);
-    setJustSaved(false);
   };
 
   /** Sends the school's week, and then the departments whose days moved with it. Answers why it could not be saved (in words), or null when it was. */
@@ -202,13 +407,14 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
       sent: SchoolDayInput;
     }
     const jobs: Job[] = [];
-    // The school's week carries the winter shift: the server moves every other timing by the same minutes in this one save (nothing to say when none keeps hours of its own).
+    // The school's week carries the winter shift: the server moves the ticked timings by the same minutes in this one save (nothing to say when none is ticked).
     const moveBy = moving.length > 0 ? shift : 0;
-    if (dirty) jobs.push({ label: "School timings", sent: { ...weekBody(plan), ...(moveBy !== 0 ? { shiftOthers: moveBy } : {}) } });
-    // A department sent again with the school's week goes with the same shift (its rows were moved by the server a moment ago).
+    if (dirty) jobs.push({ label: "School timings", sent: { ...weekBody(plan), ...(moveBy !== 0 ? { shiftOthers: moveBy, shiftOnly: moving.map((s) => s.id) } : {}) } });
+    // A department sent again with the school's week goes with the same shift when it was ticked (its rows were moved by the server a moment ago).
     for (const d of resends) {
       const rowsNow = departmentRows(schedules, d.id);
-      jobs.push({ label: `${d.name}'s timing`, sent: departmentRowsBody(plan, moveBy !== 0 ? (shiftSlots(rowsNow, moveBy) ?? rowsNow) : rowsNow, d.id) });
+      const moved = moveBy !== 0 && moving.some((s) => s.departmentId === d.id);
+      jobs.push({ label: `${d.name}'s timing`, sent: departmentRowsBody(plan, moved ? (shiftSlots(rowsNow, moveBy) ?? rowsNow) : rowsNow, d.id) });
     }
     setSaving(true);
     try {
@@ -227,7 +433,7 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
       setSaving(false);
     }
     push("success", jobs.length === 1 ? `${jobs[0].label} saved` : "Timings saved");
-    setJustSaved(true);
+    setSavedAt(nowIn12());
     return null;
   }
 
@@ -241,37 +447,50 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
   }, [schoolEdited]);
 
   const windowDepartment = windowOf ? departments.find((d) => d.id === windowOf) : undefined;
+  // The rows of the usual day: its figures (School time, Class time, Periods, Lunch) and its bar are worked out from them.
+  const usualSlots = generateDay(plan.usual).slots;
 
   return (
-    <div className={cn("space-y-5", !hasFooter && "pb-20")}>
-      {/* Two columns that begin together, under the title, and end together: the column beside the day stretches its last card to the foot. */}
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
+    <div className={cn("space-y-5", !hasFooter && "pb-24")}>
+      <Header status={<SavedPill dirty={dirty} savedAt={savedAt} />} />
+      {/* Two columns that begin together, under the title: the school's day and its week; beside them what runs differently. */}
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <div className="min-w-0 space-y-5">
-          <Card className="space-y-4 p-5">
-            <div className="flex min-w-0 items-start gap-3">
-              <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
-                <Clock3 className="size-5" />
-              </span>
-              <div className="min-w-0">
-                <h2 className="text-section-heading">Usual school day</h2>
-                <p className="text-sm text-foreground-muted">{daySummary(plan.usual)}</p>
+          <Card className="space-y-5 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+                  <Clock3 className="size-5" />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="text-section-heading">Usual school day</h2>
+                  <p className="text-sm text-foreground-muted">Applies to all classes without their own timing</p>
+                </div>
               </div>
+              <Button variant="outline" size="sm" onClick={() => setPreviewing(true)}>
+                <Send className="size-4" aria-hidden />
+                Preview week
+              </Button>
             </div>
-            <DayFields adaptive idPrefix="usual" name="Usual day" value={plan.usual} onChange={editUsual} />
-            {problemOf("usual") && (
+
+            <DayFigures slots={usualSlots} />
+
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-foreground">Your day at a glance</p>
+              <DayBar name="Usual day" slots={usualSlots} />
+            </div>
+
+            <div className="border-t border-border pt-5">
+              <DayFields adaptive idPrefix="usual" name="Usual day" value={plan.usual} onChange={editUsual} />
+            </div>
+            {/* A break inside a period is said by the boxes, with the way to move it (2026-11-22): not again here. */}
+            {problemOf("usual") && !visibleClash(plan.usual) && (
               <p role="alert" className="text-sm font-medium text-danger">
                 {problemOf("usual")}
               </p>
             )}
-            {/* Only when the start moved and some class or department keeps hours of its own: what else moves when this is saved. */}
-            {movingNames.length > 0 && !shiftProblem && (
-              <p className="flex items-start gap-2 rounded-xl border border-primary/20 bg-primary-soft px-4 py-3 text-sm text-primary-deep">
-                <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-                <span>
-                  {movingNames.join(", ")} will start {formatMinutes(Math.abs(shift))} {shift > 0 ? "later" : "earlier"} too when you save.
-                </span>
-              </p>
-            )}
+            {/* Only when the start moved and some class or department keeps hours of its own: a tick for each, to move it too when this is saved. */}
+            {shift !== 0 && movable.length > 0 && <MoveTooBox shift={shift} groups={movable} ticked={ticked} onToggle={toggleTick} />}
             {shiftProblem && (
               <p role="alert" className="text-sm font-medium text-danger">
                 {shiftProblem}
@@ -279,63 +498,7 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
             )}
           </Card>
 
-          <Card className="p-4">
-            <DayPreview variant="line" name="Usual day" value={plan.usual} />
-          </Card>
-
-          <Card className="overflow-hidden">
-            <div className="flex flex-wrap items-start gap-3 px-5 pt-5">
-              <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
-                <CalendarDays className="size-5" />
-              </span>
-              <div className="min-w-0 self-center">
-                <h2 className="text-section-heading">Days of the week</h2>
-              </div>
-            </div>
-            <ul className="mt-4 divide-y divide-border border-t border-border" aria-label="Days of the week">
-              {WEEK_DAYS.map((d) => {
-                const day = plan.days[d];
-                const name = DAY_NAMES[d];
-                const setup = setupOf(plan, d);
-                return (
-                  <li key={d} className={cn("px-5 py-3", day.mode === "off" && "bg-danger-soft/40")}>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                      <span className="w-24 shrink-0 text-sm font-bold text-foreground">{name}</span>
-                      <div role="radiogroup" aria-label={name} className="inline-flex rounded-lg border border-border bg-surface p-0.5">
-                        {MODES.map((m) => (
-                          <button
-                            key={m.value}
-                            type="button"
-                            role="radio"
-                            aria-checked={day.mode === m.value}
-                            onClick={() => setMode(d, m.value)}
-                            className={cn(
-                              "h-8 cursor-pointer rounded-md px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
-                              day.mode === m.value ? (m.value === "off" ? "bg-danger-soft text-danger" : "bg-primary-soft text-primary-deep") : "text-foreground-muted hover:text-foreground"
-                            )}
-                          >
-                            {m.label}
-                          </button>
-                        ))}
-                      </div>
-                      <span className="text-sm text-foreground-muted">{setup ? daySummary(setup) : "No school"}</span>
-                    </div>
-                    {day.mode === "own" && (
-                      <div className="mt-3 space-y-3 rounded-xl border border-border bg-background/60 p-4">
-                        <DayFields adaptive idPrefix={`day-school-${d}`} name={name} value={day.setup} onChange={(next) => editPlan({ ...plan, days: { ...plan.days, [d]: { mode: "own", setup: next } } })} />
-                        <DayPreview name={name} value={day.setup} />
-                        {problemOf(d) && (
-                          <p role="alert" className="text-sm font-medium text-danger">
-                            {problemOf(d)}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </Card>
+          <WeekDays plan={plan} problemOf={(d) => problemOf(d)} setMode={setMode} setOwn={(d, next) => editPlan({ ...plan, days: { ...plan.days, [d]: { mode: "own", setup: next } } })} />
 
           {read.handMade.length > 0 && (
             <p className="flex items-start gap-2 rounded-xl border border-warning-line bg-warning-soft px-4 py-3 text-sm text-warning">
@@ -359,37 +522,48 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
             </div>
           )}
           {!dirty && (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-              <span className="text-foreground-muted">{justSaved ? "Saved." : "Everything is saved."}</span>
-              <button type="button" onClick={onNext} className="inline-flex cursor-pointer items-center gap-1.5 font-semibold text-primary-deep hover:underline">
-                Now make each class's timetable
-                <ArrowRight className="size-4" aria-hidden />
-              </button>
-            </div>
+            <button type="button" onClick={onNext} className="inline-flex cursor-pointer items-center gap-1.5 text-sm font-semibold text-primary-deep hover:underline">
+              Now make each class's timetable
+              <ArrowRight className="size-4" aria-hidden />
+            </button>
           )}
         </div>
 
-        {/* Level with the Usual school day card: Class timings first (one class is the commonest change), then the departments. The last card
-            grows to the foot of the page (`[&>:last-child]:flex-1`), so there is no blank space left under this column. */}
-        <div className="flex min-w-0 flex-col gap-5 [&>:last-child]:flex-1">
-          <ClassTimings classes={classes} departments={departments} schedules={schedules} />
-          <DepartmentTimings rows={rows} onChange={setWindowOf} />
+        {/* Level with the Usual school day card: what runs differently (Add class timing, the departments, the classes with their own timing). */}
+        <div className="min-w-0">
+          <GroupTimings rows={rows} classes={classes} departments={departments} schedules={schedules} onChangeDepartment={setWindowOf} />
         </div>
       </div>
 
-      {/* Fixed to the bottom of the screen (it does not move when the page scrolls): only the buttons, no band or card behind them, so each
-          button has a solid look of its own, the disabled Save too. What is said when everything is saved is in the page, not here. */}
-      <FixedSaveBar>
+      {/* Fixed to the bottom of the screen (it does not move when the page scrolls): what is waiting to be saved at the left, Discard and Save
+          changes at the right. With nothing to save, Save changes stays (off) and the top says Saved. */}
+      <FixedSaveBar
+        note={
+          dirty ? (
+            <p className="flex items-start gap-2.5">
+              <span aria-hidden className="mt-1.5 size-2 shrink-0 rounded-full bg-orange ring-4 ring-orange/20" />
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-foreground">You have unsaved changes</span>
+                <span className="block truncate text-xs text-foreground-muted">
+                  {whatChanged(read.plan, plan, read.isNew)} · applies to {followers} {followers === 1 ? "class" : "classes"}
+                </span>
+              </span>
+            </p>
+          ) : undefined
+        }
+      >
         {schoolEdited && (
           <Button variant="outline" onClick={throwAway}>
-            Throw away changes
+            Discard
           </Button>
         )}
-        <Button onClick={() => void saveAll()} loading={saving} disabled={!dirty || firstProblem !== null} className="disabled:bg-primary-soft disabled:text-primary/60 disabled:opacity-100 disabled:shadow-none">
+        <Button variant="accent" onClick={() => void saveAll()} loading={saving} disabled={!dirty || firstProblem !== null} className="disabled:bg-orange-soft disabled:text-orange-hover/60 disabled:opacity-100 disabled:shadow-none">
+          {!saving && <Check className="size-4" aria-hidden />}
           Save changes
         </Button>
       </FixedSaveBar>
 
+      {previewing && <PreviewWeekModal plan={plan} onClose={() => setPreviewing(false)} />}
       {windowDepartment && <DepartmentTimingDialog key={windowDepartment.id} department={windowDepartment} schedules={schedules} plan={read.plan} onClose={() => setWindowOf(null)} />}
       {blocker.state === "blocked" && <SaveFirstModal what="the school's timing" problem={firstProblem} save={saveAll} onContinue={() => blocker.proceed()} onStay={() => blocker.reset()} />}
     </div>
@@ -414,6 +588,7 @@ export function SchoolTimings({ onNext }: { onNext: () => void }) {
   if (res.error && !schedules) {
     return (
       <div className="space-y-5">
+        <Header />
         <Card className="flex flex-col items-center gap-3 py-12 text-center">
           <p className="text-sm text-danger">{getApiError(res.error)?.message ?? "Could not load the timings."}</p>
           <Button variant="outline" onClick={() => res.refetch()}>
@@ -426,10 +601,74 @@ export function SchoolTimings({ onNext }: { onNext: () => void }) {
   if (!schedules) {
     return (
       <div className="space-y-5" aria-busy="true">
+        <Header />
         <Skeleton className="h-56 rounded-2xl" />
         <Skeleton className="h-72 rounded-2xl" />
       </div>
     );
   }
   return <Loaded schedules={schedules} departments={structure?.departments ?? []} classes={structure?.classes ?? []} onNext={onNext} />;
+}
+
+/** A class or department with hours of its own, with all its timings (a department can have a short Saturday too): what one tick moves. */
+interface MovableGroup {
+  key: string;
+  name: string;
+  timings: Schedule[];
+}
+
+/** The timings of the classes and departments, one group for each (by department, else by the one class, else the timing itself), in the order listed. */
+function movableGroups(timings: readonly Schedule[], nameOf: (s: Schedule) => string): MovableGroup[] {
+  const groups = new Map<string, MovableGroup>();
+  for (const s of timings) {
+    const key = s.departmentId ? `d:${s.departmentId}` : s.classIds.length === 1 ? `c:${s.classIds[0]}` : `s:${s.id}`;
+    const group = groups.get(key) ?? { key, name: nameOf(s), timings: [] };
+    group.timings.push(s);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
+/**
+ * School starts later (or earlier) than saved and some classes or departments keep hours of their own: a tick for each (2026-11-22). A ticked one
+ * starts as many minutes later too when this is saved ("09:30–11:40 → 10:30–12:40"); an unticked one keeps its hours. None is ticked to begin with.
+ */
+function MoveTooBox({ shift, groups, ticked, onToggle }: { shift: number; groups: MovableGroup[]; ticked: Set<string>; onToggle: (key: string) => void }) {
+  const when = `${formatMinutes(Math.abs(shift))} ${shift > 0 ? "later" : "earlier"}`;
+  return (
+    <div className="rounded-xl border border-primary/20 bg-primary-soft px-4 py-3 text-sm text-primary-deep">
+      <p className="flex items-center gap-2 font-semibold">
+        <Info className="size-4 shrink-0" aria-hidden />
+        Also start {when}?
+      </p>
+      <ul aria-label={`Start ${when} too`} className="mt-2 space-y-1.5">
+        {groups.map((g) => {
+          // The hours of its main timing (the one with the most days), and where they go.
+          const main = g.timings.reduce((best, t) => (t.days.length > best.days.length ? t : best), g.timings[0]);
+          const from = main.slots[0]?.start;
+          const to = main.slots[main.slots.length - 1]?.end;
+          const moved = shiftSlots(main.slots, shift);
+          const on = ticked.has(g.key);
+          return (
+            <li key={g.key}>
+              <label className="flex cursor-pointer flex-wrap items-center gap-x-2.5 gap-y-1">
+                <input type="checkbox" aria-label={`Move ${g.name} too`} className="size-4 accent-[var(--color-primary)]" checked={on} onChange={() => onToggle(g.key)} />
+                <span className="font-semibold text-foreground">{g.name}</span>
+                <span className="tabular-nums text-foreground-muted">
+                  {from}–{to}
+                  {/* Where it would go, always said (2026-11-22, user: "aage likho, 1 ghante aage ka time"): bold when ticked. */}
+                  {moved && moved.length > 0 && (
+                    <span className={cn(on ? "font-semibold text-primary-deep" : "text-foreground-muted")}>
+                      {" "}
+                      → {moved[0].start}–{moved[moved.length - 1].end}
+                    </span>
+                  )}
+                </span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 }

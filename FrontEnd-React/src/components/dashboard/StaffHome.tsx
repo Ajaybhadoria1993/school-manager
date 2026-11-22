@@ -2,6 +2,7 @@ import { UserRound } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { ROLE_LABELS } from "../layout/nav-config";
 import { Block, Row } from "../teachers/DetailBlocks";
+import { MyAttendanceCard } from "./MyAttendanceCard";
 import { WelcomeHeader } from "./school/WelcomeHeader";
 
 /**
@@ -16,6 +17,8 @@ export function StaffHome() {
   return (
     <div className="space-y-6">
       <WelcomeHeader firstName={user.name.split(" ")[0]} schoolName={tenant?.name ?? "your school"} shortcuts={false} />
+      {/* Their own attendance (2026-11-22): they mark themselves present, like a teacher; the school sees it on Attendance > Staff. */}
+      <MyAttendanceCard who="staff" />
       <Block icon={UserRound} tone="primary" title="About you">
         <Row label="Name">{user.name}</Row>
         <Row label="Role">{user.roleLabel ?? ROLE_LABELS[user.role]}</Row>

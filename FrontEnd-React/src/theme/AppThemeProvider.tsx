@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { DEFAULT_THEME, isThemeName, themeStyle, type ThemeName } from "./themes";
+import { DEFAULT_THEME, INITIAL_THEME, isThemeName, themeStyle, type ThemeName } from "./themes";
 
-const STORAGE_KEY = "edushiksha.appearance.v1";
+// v2 (2026-11-22): every device saved "Classic" under v1 without anyone choosing it, so the new default look would never have shown.
+const STORAGE_KEY = "edushiksha.appearance.v2";
 
 export type ThemeMode = "light" | "dark";
 export interface Appearance {
@@ -25,7 +26,7 @@ interface AppearanceContextValue extends Appearance {
   setTheme: (theme: ThemeName) => void;
 }
 
-const DEFAULT_APPEARANCE: Appearance = { mode: "light", accent: ACCENT_PRESETS[0].color, theme: DEFAULT_THEME };
+const DEFAULT_APPEARANCE: Appearance = { mode: "light", accent: ACCENT_PRESETS[0].color, theme: INITIAL_THEME };
 const AppearanceContext = createContext<AppearanceContextValue | null>(null);
 const isHexColor = (value: unknown): value is string => typeof value === "string" && /^#[\da-f]{6}$/i.test(value);
 
@@ -37,7 +38,7 @@ function readAppearance(): Appearance {
     return {
       mode: value.mode === "dark" ? "dark" : "light",
       accent: isHexColor(value.accent) ? value.accent : DEFAULT_APPEARANCE.accent,
-      // An appearance saved before themes existed has none: it is Classic, exactly as it was.
+      // An appearance saved with no theme in it is Classic, exactly as it was.
       theme: isThemeName(value.theme) ? value.theme : DEFAULT_THEME,
     };
   } catch {

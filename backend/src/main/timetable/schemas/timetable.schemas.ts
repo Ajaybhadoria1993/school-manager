@@ -104,6 +104,11 @@ export const schoolDaySchema = z
       .min(-MAX_SHIFT_MINUTES, "Move the timings by twelve hours at most")
       .max(MAX_SHIFT_MINUTES, "Move the timings by twelve hours at most")
       .optional(),
+    /**
+     * Which of the other timings the shift moves, by id (2026-11-22: a tick beside each on the School timings page; an unticked one stays where it
+     * is). Every other timing when missing; an id that is not another timing of the school moves nothing.
+     */
+    shiftOnly: z.array(objectId).max(60, "Too many timings").optional(),
   })
   .refine((value) => !value.shiftOthers || !value.departmentId, { message: "Only the whole school's save can move the other timings", path: ["shiftOthers"] });
 export type SchoolDayInput = z.infer<typeof schoolDaySchema>;

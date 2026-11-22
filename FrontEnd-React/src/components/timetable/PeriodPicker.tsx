@@ -43,7 +43,10 @@ export function PeriodPicker({
   onEditLesson,
   onTakeOut,
   onClose,
+  dotOf,
 }: {
+  /** A subject's colour (its dot in the list, as in the week), when it has one. */
+  dotOf?: (subjectId: string) => string | undefined;
   /** The period (its button) the box opens beside. */
   anchor: RefObject<HTMLElement | null>;
   /** For example "Monday, Period 1". */
@@ -275,6 +278,7 @@ export function PeriodPicker({
               const info = detail(choice, teacherName(choice.teacherId), trouble(choice));
               return (
                 <li key={choice.value} {...common} aria-label={choice.label} aria-describedby={`${uid}-d-${i}`} className={cn("flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5", here ? "bg-primary-soft/70 ring-1 ring-inset ring-primary/30" : isActive && "bg-surface-muted")}>
+                  <span aria-hidden className={cn("size-2 shrink-0 rounded-full", dotOf?.(choice.value) ?? "bg-border")} />
                   <span className="min-w-0 flex-1">
                     <span className={cn("block truncate text-sm text-foreground", here ? "font-bold text-primary-deep" : "font-semibold")}>{choice.label}</span>
                     <span id={`${uid}-d-${i}`} className={cn("block truncate text-xs", info.bad ? "font-medium text-danger" : "text-foreground-muted")}>

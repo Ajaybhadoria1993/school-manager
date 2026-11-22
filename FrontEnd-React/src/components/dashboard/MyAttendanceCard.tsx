@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { CalendarCheck2, UserRoundCheck } from "lucide-react";
-import { useGetMyAttendanceQuery, useGetMyMonthQuery, useMarkMePresentMutation } from "../../redux/api/attendanceApi";
+import { useGetMyAttendanceQuery, useGetMyMonthQuery, useGetMyStaffDayQuery, useGetMyStaffMonthQuery, useMarkMePresentMutation, useMarkMeStaffPresentMutation } from "../../redux/api/attendanceApi";
 import { getApiError } from "../../utils/apiErrors";
 import { lateText, teacherLook } from "../../utils/attendance";
 import { clock12, weekdayDay } from "../../utils/exams";
@@ -11,16 +11,22 @@ import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { useResultModal } from "../ui/ResultModal";
 import { Skeleton } from "../ui/Skeleton";
-import { TeacherDaysDialog } from "../attendance/TeacherDaysDialog";
+import { TeacherDaysDialog, type DaysOf } from "../attendance/TeacherDaysDialog";
 
 /**
- * A teacher's own attendance, on their home (2026-11-06). Nobody takes a teacher's attendance: they mark themselves present, here, and the
- * time is kept for the school. The card says what today is for them (not marked yet, present with the time, late and by how much, a holiday,
- * a day off, absent because school ended) and, while it is open, has one button. Every mark ends in a window that says what happened.
+ * A teacher's own attendance, on their home (2026-11-06), and a staff member's on theirs (`who="staff"`, 2026-11-22). Nobody takes it: they mark
+ * themselves present, here, and the time is kept for the school. The card says what today is for them (not marked yet, present with the time,
+ * late and by how much, a holiday, a day off, absent because school ended) and, while it is open, has one button. Every mark ends in a window that
+ * says what happened. A login that is not a staff member's (a staff member who also teaches is on the teachers' side) shows no card.
  */
-export function MyAttendanceCard() {
-  const res = useGetMyAttendanceQuery();
-  const [mark, { isLoading: marking }] = useMarkMePresentMutation();
+export function MyAttendanceCard({ who = "teacher" }: { who?: DaysOf }) {
+  const teacherDay = useGetMyAttendanceQuery(undefined, { skip: who !== "teacher" });
+  const staffDay = useGetMyStaffDayQuery(undefined, { skip: who !== "staff" });
+  const res = who === "staff" ? staffDay : teacherDay;
+  const [markTeacher, teacherMark] = useMarkMePresentMutation();
+  const [markStaff, staffMark] = useMarkMeStaffPresentMutation();
+  const mark = who === "staff" ? markStaff : markTeacher;
+  const marking = who === "staff" ? staffMark.isLoading : teacherMark.isLoading;
   const result = useResultModal();
   const sending = useRef(false);
   const day = res.data?.data;
@@ -42,6 +48,8 @@ export function MyAttendanceCard() {
       sending.current = false;
     }
   }
+
+  if (getApiError(res.error)?.code === "NOT_STAFF_MEMBER") return null;
 
   return (
     <section aria-label="My attendance" className="space-y-3">
@@ -86,15 +94,17 @@ export function MyAttendanceCard() {
           </div>
         </Card>
       )}
-      {showMonth && <MyDays onClose={() => setShowMonth(false)} />}
+      {showMonth && <MyDays who={who} onClose={() => setShowMonth(false)} />}
       {result.modal}
     </section>
   );
 }
 
 /** My month: each day that counts with what it was and the time (read only). Asked for when it is opened. */
-function MyDays({ onClose }: { onClose: () => void }) {
-  const res = useGetMyMonthQuery();
+function MyDays({ who, onClose }: { who: DaysOf; onClose: () => void }) {
+  const teacherMonth = useGetMyMonthQuery(undefined, { skip: who !== "teacher" });
+  const staffMonth = useGetMyStaffMonthQuery(undefined, { skip: who !== "staff" });
+  const res = who === "staff" ? staffMonth : teacherMonth;
   const month = res.data?.data;
   if (!month) {
     return (

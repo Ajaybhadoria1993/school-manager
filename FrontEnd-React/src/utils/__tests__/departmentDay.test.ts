@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Schedule } from "../../types";
 import { DEFAULT_SETUP, generateDay } from "../timings";
-import { deptProblem, deptRows, deptSummary, hoursFromRows, hoursProblem, hoursRows, isHoursDepartment, startingSetup, storedSetup, type Hours } from "../departmentDay";
+import { deptProblem, deptRows, deptSummary, endMessage, hoursClash, hoursFromRows, hoursProblem, hoursRows, isHoursDepartment, startingSetup, storedSetup, type Hours } from "../departmentDay";
 
 const school = generateDay(DEFAULT_SETUP).slots;
 const hours = (over: Partial<Hours> = {}): Hours => ({ start: "09:00", end: "12:00", lunchStart: null, lunchEnd: null, ...over });
@@ -44,7 +44,8 @@ describe("Pre-Primary's day as hours: from when to when, the periods follow from
   });
 
   it("reads the hours back from the rows of a day: first start, last end, the lunch", () => {
-    expect(hoursFromRows(school)).toEqual({ start: "08:30", end: "14:20", lunchStart: "10:30", lunchEnd: "11:00" });
+    // With how long most of its periods are (2026-11-22: a department set by hours can have its own length).
+    expect(hoursFromRows(school)).toEqual({ start: "08:30", end: "14:20", lunchStart: "10:30", lunchEnd: "11:00", periodMinutes: 40 });
     expect(hoursFromRows(generateDay({ ...DEFAULT_SETUP, lunchStart: null, lunchEnd: null }).slots)).toMatchObject({ lunchStart: null, lunchEnd: null });
     // The hours of a day come back as the same day.
     const back = hoursRows(hoursFromRows(school), 40)!;
@@ -52,10 +53,14 @@ describe("Pre-Primary's day as hours: from when to when, the periods follow from
   });
 
   it("says what is wrong with the hours, in words", () => {
-    expect(hoursProblem(hours(), 40)).toBeUndefined();
+    // 09:00 to 12:00 is four and a half periods of 40: the end is said (every period is the same length, 2026-11-22); 09:00 to 12:20 is five.
+    expect(hoursProblem(hours(), 40)).toBe("School ends at 12:00, in the middle of Period 5 (11:40 to 12:20). End it 20 min earlier (at 11:40) or 20 min later (at 12:20) so that every period is 40 min.");
+    expect(hoursProblem(hours({ end: "12:20" }), 40)).toBeUndefined();
+    expect(hoursProblem(hours({ end: "12:00", periodMinutes: 45 }), 40)).toBeUndefined();
     expect(hoursProblem(hours({ start: "" }), 40)).toBe("Enter when school starts and ends");
     expect(hoursProblem(hours({ end: "08:00" }), 40)).toBe("School must end after it starts");
-    expect(hoursProblem(hours({ end: "09:05" }), 40)).toBe("These hours are too short for a period");
+    // Shorter than one period: where the first period would end.
+    expect(hoursProblem(hours({ end: "09:05" }), 40)).toBe("School ends at 09:05, in the middle of Period 1 (09:00 to 09:40). End it 35 min later (at 09:40) so that every period is 40 min.");
     expect(hoursProblem(hours({ lunchStart: "10:30", lunchEnd: "" }), 40)).toBe("Enter the lunch times");
     expect(hoursProblem(hours({ lunchStart: "11:00", lunchEnd: "10:30" }), 40)).toBe("The lunch must end after it starts");
     expect(hoursProblem(hours({ lunchStart: "08:00", lunchEnd: "08:30" }), 40)).toBe("The lunch must be inside the school hours");
@@ -63,10 +68,60 @@ describe("Pre-Primary's day as hours: from when to when, the periods follow from
   });
 });
 
+describe("a day of hours lines up with whole periods (2026-11-22)", () => {
+  it("a lunch inside a period: how many minutes earlier or later it goes", () => {
+    const clash = hoursClash(hours({ end: "12:30", lunchStart: "10:30", lunchEnd: "11:20" }), 40);
+    expect(clash.end).toBeNull();
+    expect(clash.lunch).toMatchObject({ period: 3, periodStart: "10:20", periodEnd: "11:00", earlier: { start: "10:20", end: "11:10" }, moveTo: { start: "11:00", end: "11:50" } });
+  });
+
+  it("an end inside a period: where the day could end instead (not before the first period)", () => {
+    const clash = hoursClash(hours({ end: "12:00" }), 40);
+    expect(clash.end).toEqual({ end: "12:00", period: 5, periodStart: "11:40", periodEnd: "12:20", periodMinutes: 40, earlier: "11:40", later: "12:20" });
+    expect(endMessage(clash.end!)).toBe("School ends at 12:00, in the middle of Period 5 (11:40 to 12:20). End it 20 min earlier (at 11:40) or 20 min later (at 12:20) so that every period is 40 min.");
+    expect(hoursClash(hours({ end: "09:20" }), 40).end).toMatchObject({ period: 1, earlier: null, later: "09:40" });
+  });
+
+  it("a department's own length of a period is the one used (else the school's)", () => {
+    expect(hoursClash(hours({ end: "12:00", periodMinutes: 30 }), 40)).toEqual({ lunch: null, end: null });
+    expect(periods(hoursRows(hours({ end: "12:00", periodMinutes: 30 }), 40)!)).toBe(6);
+  });
+
+  it("nothing is said while the hours themselves are wrong", () => {
+    expect(hoursClash(hours({ end: "08:00" }), 40)).toEqual({ lunch: null, end: null });
+  });
+});
+
+describe("a day of hours with school time and class time apart (2026-11-22)", () => {
+  it("the time to come in is an Arrival row first, the periods from when classes start", () => {
+    const rows = hoursRows(hours({ start: "08:40", arrivalMinutes: 20, end: "12:20" }), 40)!;
+    expect(rows[0]).toEqual({ kind: "break", label: "Arrival", start: "08:40", end: "09:00" });
+    expect(rows.filter((r) => r.kind === "period").map((r) => r.start)).toEqual(["09:00", "09:40", "10:20", "11:00", "11:40"]);
+    expect(hoursProblem(hours({ start: "08:40", arrivalMinutes: 20, end: "12:20" }), 40)).toBeUndefined();
+  });
+
+  it("reads it back; the school's arrival and assembly together are a day of hours' time to come in (it has no assembly)", () => {
+    const own = hours({ start: "08:40", arrivalMinutes: 20, end: "12:20" });
+    expect(hoursFromRows(hoursRows(own, 40)!)).toEqual({ ...own, periodMinutes: 40 });
+    const usual = { ...DEFAULT_SETUP, start: "08:00", arrivalMinutes: 5, assemblyMinutes: 15, lunchStart: "10:20", lunchEnd: "10:50" };
+    expect(hoursFromRows(generateDay(usual).slots)).toMatchObject({ start: "08:00", arrivalMinutes: 20 });
+    // Pre-Primary starts from it with its periods where the school's are.
+    const pre = startingSetup("Pre-Primary", usual);
+    if (pre.kind !== "hours") throw new Error("hours expected");
+    expect(hoursRows(pre.hours, 40)!.find((r) => r.kind === "period")).toMatchObject({ start: "08:20", end: "09:00" });
+  });
+
+  it("says when classes start at a time that cannot be", () => {
+    expect(hoursProblem(hours({ arrivalMinutes: -10 }), 40)).toBe("Classes can start at 09:00 at the earliest, when school starts");
+    expect(hoursProblem(hours({ arrivalMinutes: 180 }), 40)).toBe("Classes must start before school ends");
+    expect(hoursProblem(hours({ arrivalMinutes: 60, lunchStart: "09:30", lunchEnd: "10:00" }), 40)).toBe("The lunch must start after classes start");
+  });
+});
+
 describe("a department's day, as periods or as hours", () => {
   it("Pre-Primary starts from the school's day as hours, any other department as the school's numbers", () => {
     const pre = startingSetup("Pre-Primary", DEFAULT_SETUP);
-    expect(pre).toEqual({ kind: "hours", hours: { start: "08:30", end: "14:20", lunchStart: "10:30", lunchEnd: "11:00" } });
+    expect(pre).toEqual({ kind: "hours", hours: { start: "08:30", end: "14:20", lunchStart: "10:30", lunchEnd: "11:00", periodMinutes: 40 } });
     const primary = startingSetup("Primary", DEFAULT_SETUP);
     expect(primary).toEqual({ kind: "periods", setup: DEFAULT_SETUP });
     // A copy: changing it never changes the school's numbers.
@@ -90,7 +145,7 @@ describe("a department's day, as periods or as hours", () => {
   it("says what is wrong with either kind", () => {
     expect(deptProblem({ kind: "periods", setup: { ...DEFAULT_SETUP, periods: 0 } }, 40)).toBe("Add at least one period");
     expect(deptProblem({ kind: "hours", hours: hours({ end: "08:00" }) }, 40)).toBe("School must end after it starts");
-    expect(deptProblem({ kind: "hours", hours: hours() }, 40)).toBeUndefined();
+    expect(deptProblem({ kind: "hours", hours: hours({ end: "12:20" }) }, 40)).toBeUndefined();
   });
 });
 
@@ -112,7 +167,7 @@ describe("what a department has now", () => {
     expect(primary.setup).toMatchObject({ kind: "periods", setup: { start: "08:30", periods: 4, lunchStart: null } });
     const pre = storedSetup({ id: "d1", name: "Pre-Primary" }, [own("d1")], DEFAULT_SETUP);
     expect(pre.stored).toBe(true);
-    expect(pre.setup).toEqual({ kind: "hours", hours: { start: "08:30", end: "11:10", lunchStart: null, lunchEnd: null } });
+    expect(pre.setup).toEqual({ kind: "hours", hours: { start: "08:30", end: "11:10", lunchStart: null, lunchEnd: null, periodMinutes: 40 } });
   });
 
   it("a timing with no period (a holiday only) is not a timing of its own", () => {

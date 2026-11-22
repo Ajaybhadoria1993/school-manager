@@ -328,6 +328,13 @@ describe("Fees > Dues", () => {
     expect(screen.getByText("As on 19 Nov 2026 · 2026-2027")).toBeInTheDocument();
   });
 
+  it("Collect is a small orange button on each row (2026-11-22)", async () => {
+    openDues();
+    const collect = await screen.findByRole("link", { name: "Collect from Asha Verma" });
+    expect(collect.className).toContain("bg-orange");
+    expect(collect).toHaveTextContent("Collect");
+  });
+
   it("the search asks the server; nothing due says so", async () => {
     const { calls, user } = openDues({ "GET /fees/dues": (_b, q) => (q.get("search") === "zzz" ? { ...DUES, items: [], totals: { students: 0, dueNow: 0, overdue: 0 } } : DUES) });
     await screen.findByRole("table", { name: "Students with fees due" });

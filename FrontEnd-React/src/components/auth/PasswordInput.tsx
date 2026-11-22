@@ -1,16 +1,18 @@
 import { InputHTMLAttributes, useState } from "react";
 import { Eye, EyeOff, Lock, type LucideIcon } from "lucide-react";
+import { cn } from "../../utils/helpers";
 import { Input } from "../ui/Input";
 
 /** Password field with a lock icon and a show/hide button. All normal input props pass through. */
 export function PasswordInput({
   icon = Lock,
+  className,
   ...props
 }: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { icon?: LucideIcon }) {
   const [visible, setVisible] = useState(false);
   return (
     <div className="relative">
-      <Input {...props} icon={icon} type={visible ? "text" : "password"} className="pr-11" />
+      <Input {...props} icon={icon} type={visible ? "text" : "password"} className={cn("pr-11", className)} />
       <button
         type="button"
         onClick={() => setVisible((v) => !v)}

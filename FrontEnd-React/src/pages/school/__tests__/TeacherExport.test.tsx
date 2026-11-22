@@ -57,7 +57,6 @@ function openPage(path = "/teachers/export", preview: ExportPreview = TWO, extra
       { path: "/teachers/export", element: <TeacherExportPage /> },
       { path: "/school/teachers/export", element: <TeacherExportPage /> },
       { path: "/teachers/fields", element: <p>Teacher fields</p> },
-      { path: "/teachers/inactive", element: <p>Teachers who have left</p> },
       { path: "/teachers", element: <p>All the teachers</p> },
       { path: "/school/teachers", element: <p>The Manage Teacher list</p> },
     ],
@@ -175,7 +174,9 @@ describe("Teacher > Export", () => {
     const second = openPage("/teachers/export?status=inactive");
     await screen.findByText("Asha Rao");
     await second.user.click(screen.getByRole("button", { name: "Teacher" }));
-    await waitFor(() => expect(second.router.state.location.pathname).toBe("/teachers/inactive"));
+    // The Left list is the Inactive tab of the Teachers page now (no page of its own).
+    await waitFor(() => expect(second.router.state.location.pathname).toBe("/teachers"));
+    expect(second.router.state.location.search).toBe("?status=inactive");
   });
 
   it("says why the file could not be made, and keeps the page as it was", async () => {

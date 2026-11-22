@@ -13,6 +13,7 @@ export function Field({
   error,
   optional,
   quiet,
+  hideLabel,
   className,
   children,
 }: {
@@ -23,12 +24,14 @@ export function Field({
   optional?: boolean;
   /** Neither the star nor "(optional)": for a group that says once, in its heading, that all of it is optional. */
   quiet?: boolean;
+  /** The label is there for a screen reader only: the words are in the box (a placeholder), like the sign-in page's. */
+  hideLabel?: boolean;
   className?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className={className}>
-      <Label id={`${id}-label`} htmlFor={id}>
+      <Label id={`${id}-label`} htmlFor={id} className={hideLabel ? "sr-only" : undefined}>
         {label}
         {quiet ? null : optional ? (
           <span className="ml-1 font-normal text-foreground-muted">(optional)</span>

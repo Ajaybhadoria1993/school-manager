@@ -50,8 +50,9 @@ export const classroomApi = createApi({
       query: () => "/classroom/my-classes",
       providesTags: ["MyClasses"],
     }),
-    getAttendance: build.query<ApiResponse<AttendanceSheet>, { classId: string; sectionId: string | null; date: string }>({
-      query: ({ classId, sectionId, date }) => ({ url: "/classroom/attendance", params: { classId, sectionId: sectionId ?? "none", date } }),
+    // `search` (the school's search box on Attendance > Student): the server lists only the children whose name, admission number or roll number holds it.
+    getAttendance: build.query<ApiResponse<AttendanceSheet>, { classId: string; sectionId: string | null; date: string; search?: string }>({
+      query: ({ classId, sectionId, date, search }) => ({ url: "/classroom/attendance", params: { classId, sectionId: sectionId ?? "none", date, ...(search ? { search } : {}) } }),
       providesTags: ["Attendance"],
       keepUnusedDataFor: 0,
     }),

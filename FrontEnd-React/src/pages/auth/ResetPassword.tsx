@@ -67,11 +67,11 @@ export default function ResetPassword() {
 
   if (!token || linkInvalid) {
     return (
-      <AuthShell title="This link doesn't work">
+      <AuthShell title="This link doesn't work" tall>
         <div className="space-y-4 text-sm text-foreground-muted">
           <p>The reset link is invalid, has already been used, or has expired. Reset links work only once and expire after a short time.</p>
           <Link to="/forgot-password">
-            <Button size="lg" className="w-full">Get a new link</Button>
+            <Button size="lg" className="h-[var(--lp-btn)] w-full rounded-full text-lg">Get a new link</Button>
           </Link>
         </div>
       </AuthShell>
@@ -81,7 +81,7 @@ export default function ResetPassword() {
   const mismatch = confirm.length > 0 && password !== confirm;
 
   return (
-    <AuthShell title="Choose a new password" subtitle="You will be signed in on this device and signed out everywhere else.">
+    <AuthShell title="Choose a new password" subtitle="You will be signed in on this device and signed out everywhere else." tall>
       <form onSubmit={onSubmit} className="space-y-4" noValidate>
         <div>
           <Label htmlFor="password">New password</Label>
@@ -92,6 +92,7 @@ export default function ResetPassword() {
             autoFocus
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            className="h-[var(--lp-field)]"
           />
           <PasswordChecklist password={password} />
         </div>
@@ -104,6 +105,7 @@ export default function ResetPassword() {
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             aria-invalid={mismatch}
+            className="h-[var(--lp-field)]"
           />
           {mismatch && <p className="mt-1 text-xs text-danger">The passwords do not match.</p>}
         </div>
@@ -114,7 +116,7 @@ export default function ResetPassword() {
           </p>
         )}
 
-        <Button type="submit" size="lg" className="w-full" loading={submitting} disabled={!password || !confirm}>
+        <Button type="submit" size="lg" className="h-[var(--lp-btn)] w-full rounded-full text-lg" loading={submitting} disabled={!password || !confirm}>
           Update password
         </Button>
       </form>

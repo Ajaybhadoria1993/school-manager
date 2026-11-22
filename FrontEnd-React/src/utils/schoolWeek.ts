@@ -1,4 +1,4 @@
-import { DEFAULT_SETUP, clockToMinutes, generateDay, setupFromSlots, setupProblems, shiftBreaks, shiftSetup, slotProblems, type DaySetup } from "./timings";
+import { ARRIVAL_LABEL, DEFAULT_SETUP, breakClash, classesStart, clashMessage, clockToMinutes, generateDay, setupFromSlots, setupProblems, shiftBreaks, shiftSetup, slotProblems, type DaySetup } from "./timings";
 import type { Schedule, SchoolDayInput, Slot } from "../types";
 
 /**
@@ -131,8 +131,14 @@ export interface WeekProblem {
   message: string;
 }
 
-/** The first thing wrong with a day's numbers: the lunch and the short break first, then what the rows made from them would be refused for. */
-export const dayProblem = (setup: DaySetup): string | undefined => setupProblems(setup)[0] ?? slotProblems(generateDay(setup).slots)[0]?.message;
+/**
+ * The first thing wrong with a day's numbers: the lunch and the short break first, then a break that would cut a period short (every period is
+ * the same length, 2026-11-22), then what the rows made from them would be refused for.
+ */
+export const dayProblem = (setup: DaySetup): string | undefined => {
+  const clash = breakClash(setup);
+  return setupProblems(setup)[0] ?? (clash ? clashMessage(clash) : undefined) ?? slotProblems(generateDay(setup).slots)[0]?.message;
+};
 
 /** What the server would refuse, said before anything is sent: no day with school, or a day whose numbers do not make a day. */
 export function weekProblems(plan: WeekPlan): WeekProblem[] {
@@ -157,8 +163,10 @@ export function rowsSummary(rows: readonly Slot[]): string {
   if (periods === 0) return "No periods";
   const lunch = rows.find((s) => s.kind === "lunch");
   const rest = rows.find((s) => s.kind === "break" && s.label === "Short break");
+  const firstPeriod = rows.find((s) => s.kind === "period");
   return [
     `${rows[0].start} to ${rows[rows.length - 1].end}`,
+    rows[0].label === ARRIVAL_LABEL && firstPeriod ? `classes from ${firstPeriod.start}` : null,
     `${periods} period${periods === 1 ? "" : "s"}`,
     lunch ? `lunch ${lunch.start} to ${lunch.end}` : "no lunch",
     rest ? `short break ${rest.start} to ${rest.end}` : null,
@@ -176,6 +184,8 @@ export function daySummary(setup: DaySetup): string {
   if (slots.length === 0) return "No periods";
   return [
     `${slots[0].start} to ${slots[slots.length - 1].end}`,
+    // School and classes start apart (2026-11-22): when the classes do.
+    (setup.arrivalMinutes ?? 0) > 0 ? `classes from ${classesStart(setup)}` : null,
     `${periods} period${periods === 1 ? "" : "s"}`,
     lunch ? `lunch ${lunch.start} to ${lunch.end}` : "no lunch",
     rest ? `short break ${rest.start} to ${rest.end}` : null,

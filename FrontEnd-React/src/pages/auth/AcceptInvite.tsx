@@ -146,7 +146,7 @@ export default function AcceptInvite() {
 
   if (!token) {
     return (
-      <AuthShell title="This link doesn't work">
+      <AuthShell title="This link doesn't work" tall>
         <p className="text-sm text-foreground-muted">
           The link is incomplete. Open the link from your email again, or
           register your school again to get a new one.
@@ -159,12 +159,12 @@ export default function AcceptInvite() {
 
   if (link.kind === "problem") {
     return (
-      <AuthShell title={PROBLEM_TITLES[link.code] ?? "This link doesn't work"}>
+      <AuthShell title={PROBLEM_TITLES[link.code] ?? "This link doesn't work"} tall>
         <div className="space-y-4 text-sm text-foreground-muted">
           <p>{link.message}</p>
           {link.code === "ALREADY_REGISTERED" && (
             <Link to="/login">
-              <Button size="lg" className="w-full">
+              <Button size="lg" className="h-[var(--lp-btn)] w-full rounded-full text-lg">
                 Go to sign in
               </Button>
             </Link>
@@ -173,7 +173,7 @@ export default function AcceptInvite() {
             link.code === "INVITE_EXPIRED" ||
             link.code === "INVITE_INVALID") && (
             <Link to="/signup">
-              <Button variant="outline" size="lg" className="w-full">
+              <Button variant="outline" size="lg" className="h-[var(--lp-btn)] w-full rounded-full">
                 Register your school again
               </Button>
             </Link>
@@ -189,7 +189,7 @@ export default function AcceptInvite() {
 
   return (
     <AuthShell
-      variant="register"
+      tall
       title={isSignup ? "Confirm your email" : `Set up ${info.schoolName}`}
       subtitle={
         isSignup
@@ -223,6 +223,7 @@ export default function AcceptInvite() {
             value={info.schoolName}
             readOnly
             disabled
+            className="h-[var(--lp-field)]"
           />
         </Field>
         <Field
@@ -238,6 +239,7 @@ export default function AcceptInvite() {
             readOnly
             disabled
             autoComplete="username"
+            className="h-[var(--lp-field)]"
           />
         </Field>
 
@@ -255,6 +257,7 @@ export default function AcceptInvite() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             aria-invalid={!!errors.name}
+            className="h-[var(--lp-field)]"
           />
         </Field>
 
@@ -271,6 +274,7 @@ export default function AcceptInvite() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               aria-invalid={!!errors.password}
+              className="h-[var(--lp-field)]"
             />
           </Field>
           <PasswordChecklist password={password} />
@@ -292,6 +296,7 @@ export default function AcceptInvite() {
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             aria-invalid={mismatch || !!errors.confirm}
+            className="h-[var(--lp-field)]"
           />
         </Field>
 
@@ -307,7 +312,7 @@ export default function AcceptInvite() {
         <Button
           type="submit"
           size="lg"
-          className="w-full"
+          className="h-[var(--lp-btn)] w-full rounded-full text-lg"
           loading={submitting}
           disabled={!name || !password || !confirm}
         >

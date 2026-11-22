@@ -16,7 +16,8 @@ import { rangeText } from "../../../utils/dateRange";
 import { todayInIndia } from "../../../utils/students";
 import AttendanceRedirect from "../AttendanceRedirect";
 import StaffAttendancePage from "../StaffAttendance";
-import StudentAttendancePage from "../StudentAttendance";
+// The school's register (weeks, months) since 2026-11-23: Attendance > Student itself is the day of one class (StudentDayAttendance.test.tsx).
+import StudentAttendancePage from "../StudentRegister";
 import { StudentAttendance } from "../../../components/attendance/StudentAttendance";
 import TeacherAttendancePage from "../TeacherAttendance";
 
@@ -164,10 +165,12 @@ async function chooseRange(user: ReturnType<typeof userEvent.setup>, name: strin
 describe("three pages, no tabs (2026-11-10: they were the three tabs of one page)", () => {
   it("Student has its own title and no tabs, and asks only for the students' attendance", async () => {
     const { calls } = open();
-    expect(await screen.findByRole("heading", { name: "Student attendance", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Student attendance register", level: 1 })).toBeInTheDocument();
     expect(screen.queryByRole("tab")).not.toBeInTheDocument();
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
+    // The round arrow's trail leads back to the day of one class.
+    expect(screen.getByRole("link", { name: "Student attendance" })).toHaveAttribute("href", "/attendance/students");
     await screen.findByRole("radiogroup", { name: "Class" });
     expect(reads(calls, "/attendance/teachers")).toHaveLength(0);
   });
@@ -180,11 +183,12 @@ describe("three pages, no tabs (2026-11-10: they were the three tabs of one page
     expect(reads(calls, "/attendance/students")).toHaveLength(0);
   });
 
-  it("Staff is coming: it has its own title, says so and asks the server nothing", async () => {
-    const { calls } = open("/attendance/staff");
+  it("Staff has its own title (built 2026-11-22, it was coming) and asks only for the staff's attendance", async () => {
+    const { calls } = open("/attendance/staff", { "GET /attendance/staff": () => ({ ...TEACHERS, departments: [], staff: [], summary: { staff: 0, present: 0, late: 0, absent: 0, leave: 0 } }) });
     expect(await screen.findByRole("heading", { name: "Staff attendance", level: 1 })).toBeInTheDocument();
-    expect(screen.getByText("Staff attendance is coming soon")).toBeInTheDocument();
-    expect(calls.filter((c) => c.path.startsWith("/attendance"))).toHaveLength(0);
+    expect(screen.queryByText("Staff attendance is coming soon")).not.toBeInTheDocument();
+    await waitFor(() => expect(reads(calls, "/attendance/staff")).toHaveLength(1));
+    expect(reads(calls, "/attendance/teachers")).toHaveLength(0);
   });
 
   it("the old addresses (a bookmark, a link in a notification) lead to the right page, with their filters", async () => {
@@ -279,8 +283,9 @@ describe("Student: the classes and their children", () => {
     expect(screen.queryByText("To")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Last week" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Previous period" })).toBeEnabled();
-    // This week reaches today, so there is nothing later to look at.
-    expect(screen.getByRole("button", { name: "Next period" })).toBeDisabled();
+    // This week (Monday to Saturday) reaches today, so there is nothing later to look at. On a Sunday the week ended yesterday and today is later.
+    if (THIS_WEEK.to >= today) expect(screen.getByRole("button", { name: "Next period" })).toBeDisabled();
+    else expect(screen.getByRole("button", { name: "Next period" })).toBeEnabled();
   });
 
   it("the arrows move a week at a time: the week before asks for last week's Monday to Saturday", async () => {
@@ -426,16 +431,16 @@ describe("Student: this week, a register for it, and the day in two sides (2026-
     await waitFor(() => expect(Object.fromEntries(lastQuery(calls, "/attendance/teachers"))).toEqual({ from: THIS_WEEK.from, to: THIS_WEEK.to }));
   });
 
-  it("the Staff page has the same date box, opens on today and asks the server nothing", async () => {
-    const { calls, router, user } = open("/attendance/staff");
-    expect(await screen.findByText("Staff attendance is coming soon")).toBeInTheDocument();
+  it("the Staff page has the same date box, opens on today, keeps a pick in the address and asks the staff's sheet for those days", async () => {
+    const { calls, router, user } = open("/attendance/staff", { "GET /attendance/staff": () => ({ ...TEACHERS, departments: [], staff: [], summary: { staff: 0, present: 0, late: 0, absent: 0, leave: 0 } }) });
+    expect(await screen.findByText("No staff yet")).toBeInTheDocument();
     expect(dateBox({ from: today, to: today })).toBeInTheDocument();
-    // A pick is kept in the address (like the Teacher page), so the filter is ready for when staff attendance comes.
+    expect(Object.fromEntries(lastQuery(calls, "/attendance/staff"))).toEqual({ from: today, to: today });
     await chooseRange(user, "Last Week");
     await waitFor(() => expect(router.state.location.search).toContain(`from=${LAST_WEEK.from}`));
     expect(router.state.location.search).toContain(`to=${LAST_WEEK.to}`);
     expect(dateBox(LAST_WEEK)).toBeInTheDocument();
-    expect(calls.filter((c) => c.path.startsWith("/attendance"))).toHaveLength(0);
+    await waitFor(() => expect(Object.fromEntries(lastQuery(calls, "/attendance/staff"))).toEqual(LAST_WEEK));
   });
 
   it("a week has Roll, Student Name, Admission No., a column for each day, then Present, Absent and % (nothing else)", async () => {
@@ -626,12 +631,13 @@ describe("Student: the top of the page like the reference (2026-11-16, third rou
 
   it("the page starts with the round arrow and the trail, no big title of its own (the top bar names the page); the heading is there for a screen reader only", async () => {
     open();
-    const heading = await screen.findByRole("heading", { name: "Student attendance", level: 1 });
+    const heading = await screen.findByRole("heading", { name: "Student attendance register", level: 1 });
     expect(heading).toHaveClass("sr-only");
     const trail = screen.getByRole("navigation", { name: "Breadcrumb" });
     expect(within(trail).getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
-    expect(within(trail).getByText("Student attendance")).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("button", { name: "Back to Dashboard" })).toBeInTheDocument();
+    expect(within(trail).getByRole("link", { name: "Student attendance" })).toHaveAttribute("href", "/attendance/students");
+    expect(within(trail).getByText("Register")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Back to Student attendance" })).toBeInTheDocument();
   });
 
   it("the classes that have not taken attendance are one row; with room for all of them there is no chevron", async () => {

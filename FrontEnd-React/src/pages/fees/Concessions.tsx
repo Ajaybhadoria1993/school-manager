@@ -35,7 +35,7 @@ export default function ConcessionsPage() {
   const items = res.data?.data.items;
 
   const add = (
-    <Button onClick={() => setDialog({})}>
+    <Button variant="accent" onClick={() => setDialog({})}>
       <Plus className="size-4" aria-hidden />
       Add a concession
     </Button>

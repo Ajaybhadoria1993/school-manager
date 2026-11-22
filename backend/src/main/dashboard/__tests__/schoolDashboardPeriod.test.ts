@@ -4,6 +4,7 @@ import app from "../../../app";
 import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { clock } from "../../../utils/clock";
 import { classroomSchool } from "../../../test/classroom";
+import { everyoneAddedToTheApp } from "../../../test/teachers";
 import { addTiming, auth } from "../../../test/timetable";
 import { Teacher } from "../../staff/models/Teacher";
 import { Student } from "../../students/models/Student";
@@ -33,6 +34,7 @@ async function setUp() {
   await on(s.kabir.id, "2026-10-15");
   await on(s.mira.id, "2026-10-20");
   await Teacher.updateMany({ tenantId: s.tenantId }, { $set: { joiningDate: new Date("2026-04-01T00:00:00.000Z") } });
+  await everyoneAddedToTheApp(s.tenantId);
   return s;
 }
 type School = Awaited<ReturnType<typeof setUp>>;

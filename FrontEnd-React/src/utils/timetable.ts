@@ -1,4 +1,4 @@
-import { DAY_NAMES, SUBJECT_COLORS } from "../constants/timetable";
+import { DAY_NAMES, SUBJECT_ACCENTS, SUBJECT_COLORS } from "../constants/timetable";
 import type { GridAllotment, GridCell, GridDay, GridTeacher, GridView, Lesson } from "../types";
 
 /**
@@ -444,6 +444,11 @@ export function matchChoices(choices: readonly SubjectChoice[], typed: string): 
 /** A soft colour for each subject of the class, in the order the class lists them, so a subject keeps its colour on the whole page. */
 export function subjectColors(view: GridView): Map<string, string> {
   return new Map(view.allotments.map((a, i) => [a.subjectId, SUBJECT_COLORS[i % SUBJECT_COLORS.length]]));
+}
+
+/** Each subject's solid colour (its dot, and the bar at the left of its lessons): the same turn as `subjectColors`. */
+export function subjectAccents(view: GridView): Map<string, (typeof SUBJECT_ACCENTS)[number]> {
+  return new Map(view.allotments.map((a, i) => [a.subjectId, SUBJECT_ACCENTS[i % SUBJECT_ACCENTS.length]]));
 }
 
 /** One kind of school day of a class: which days, from when to when, how many periods and its breaks ("Lunch 10:30 to 11:00"). */

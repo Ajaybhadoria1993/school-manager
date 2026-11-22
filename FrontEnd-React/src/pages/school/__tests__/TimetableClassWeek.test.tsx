@@ -116,7 +116,7 @@ describe("A class's timetable: the page", () => {
     expect(within(table).getByText("10:30 to 11:00")).toBeInTheDocument();
     expect(within(table).getByRole("rowheader", { name: /^Period 8/ })).toHaveTextContent("13:40 to 14:20");
     expect(MON1()).toHaveAccessibleName("Monday, Period 1, 08:30 to 09:10: empty");
-    expect(screen.getByText("0 of 40 periods have a lesson")).toBeInTheDocument();
+    expect(screen.getByText("0 of 40 periods filled")).toBeInTheDocument();
     // Nothing is placed: the server's checks say what is missing.
     expect(screen.getByText("Mathematics has none of its 6 periods")).toBeInTheDocument();
     // There is no subject to pick first: nothing above the week but its tools, and every period is a button that opens its own box.
@@ -307,7 +307,7 @@ describe("A class's timetable: putting subjects in", () => {
     expect(await screen.findByRole("radiogroup", { name: "Teacher for Mathematics" })).toBeInTheDocument();
     expect(MON1()).toHaveAccessibleName("Monday, Period 1, 08:30 to 09:10: Mathematics");
     expect(MON1()).toHaveTextContent("Meena");
-    expect(screen.getByText("5 of 40 periods have a lesson")).toBeInTheDocument();
+    expect(screen.getByText("5 of 40 periods filled")).toBeInTheDocument();
     expect(screen.getByText("Not saved")).toBeInTheDocument();
     // The box of another period says how many Mathematics periods are in now.
     await user.click(MON2());
@@ -392,7 +392,7 @@ describe("A class's timetable: putting subjects in", () => {
     await user.click(screen.getByRole("button", { name: "Change" }));
     await user.click(screen.getByRole("option", { name: "English" }));
     expect(MON1()).toHaveAccessibleName("Monday, Period 1, 08:30 to 09:10: ENG");
-    expect(screen.getByText("1 of 40 periods have a lesson")).toBeInTheDocument();
+    expect(screen.getByText("1 of 40 periods filled")).toBeInTheDocument();
     expect(screen.getByText("Not saved")).toBeInTheDocument();
   });
 
@@ -531,12 +531,12 @@ describe("A class's timetable: saving", () => {
     expect(screen.queryByText("Everything is saved.")).not.toBeInTheDocument();
   });
 
-  it("has ONE Save button, at the top with the page's other buttons, above the week; there is no Publish button and no second Save under it", async () => {
+  it("has ONE Save button, under the week (2026-11-22, the reference pictures); there is no Publish button and no second Save", async () => {
     openPage();
     const save = await screen.findByRole("button", { name: "Save the timetable" });
     const table = screen.getByRole("table", { name: "Weekly timetable" });
     expect(screen.getAllByRole("button", { name: "Save the timetable" })).toHaveLength(1);
-    expect(save.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(table.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Publish the timetable" })).not.toBeInTheDocument();
   });
@@ -589,15 +589,15 @@ describe("A class's timetable: saving", () => {
     expect(MON1()).not.toHaveAttribute("title");
   });
 
-  it("has no Throw away my changes (2026-11-17): a change stays until Save, and Save is in the one row with Fill, Periods & time and the class teacher", async () => {
+  it("has no Throw away my changes (2026-11-17): a change stays until Save; the tools stay one row (Fill, Periods & time, the class teacher) and Save is under the week", async () => {
     const { user } = openPage();
     await screen.findByRole("table", { name: "Weekly timetable" });
     await put(user, MON1(), "Mathematics");
     expect(screen.getByText("Not saved")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Throw away my changes" })).not.toBeInTheDocument();
-    // With a change to keep the row is the same row: nothing is added to it that could push Save to a second line.
     const row = screen.getByRole("button", { name: "Fill the empty periods" }).parentElement!;
-    for (const name of ["Periods & time", "Add class teacher", "Save the timetable"]) expect(row).toContainElement(screen.getByRole("button", { name }));
+    for (const name of ["Periods & time", "Add class teacher"]) expect(row).toContainElement(screen.getByRole("button", { name }));
+    expect(row).not.toContainElement(screen.getByRole("button", { name: "Save the timetable" }));
     expect(screen.getByRole("button", { name: "Save the timetable" })).toBeEnabled();
   });
 
@@ -833,7 +833,7 @@ describe("A class's timetable: a subject goes on every day", () => {
     await put(user, MON1(), "English");
     expect(firsts()).toEqual(["ENG", "ENG", "ENG", "ENG", "ENG"]);
     expect(MON2()).toHaveAccessibleName(/empty$/);
-    expect(screen.getByText("5 of 40 periods have a lesson")).toBeInTheDocument();
+    expect(screen.getByText("5 of 40 periods filled")).toBeInTheDocument();
     expect(screen.getByText("Not saved")).toBeInTheDocument();
     expect(puts(calls)).toHaveLength(0);
   });
@@ -1088,7 +1088,7 @@ describe("A Pre-Primary class: its class teacher takes the periods with no teach
     expect(slot("Monday", 8, "13:40 to 14:20")).toHaveAccessibleName(/ENG$/);
     expect(slot("Monday", 8, "13:40 to 14:20")).toHaveTextContent("Meena Singh");
     expect(TUE1()).toHaveAccessibleName(/empty$/);
-    expect(screen.getByText("8 of 40 periods have a lesson")).toBeInTheDocument();
+    expect(screen.getByText("8 of 40 periods filled")).toBeInTheDocument();
   });
 
   it("a whole day replaces what the day had, even when the period picked already has that subject", async () => {

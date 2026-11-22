@@ -19,7 +19,7 @@ export const CAPACITY: StudentCapacity = {
   academicYear: { id: "y1", name: "2026-2027" },
   sections: [{ sectionId: "c6-A", classId: "c6", capacity: 30, enrolled: 0, seatsLeft: 30, nextRollNumber: 1 }],
   classes: [],
-  totals: { students: 0, seats: 30, seatsLeft: 30, fullSections: 0 },
+  totals: { students: 0, seats: 30, seatsLeft: 30, fullSections: 0, newAdmissions: 0, inactive: 0 },
 };
 
 /** A new school's settings: the default needs and the default Excel layout. */

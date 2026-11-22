@@ -5,7 +5,7 @@ import { cn } from "../../utils/helpers";
 import { useAuth } from "../../hooks/useAuth";
 import { useSidebarCollapsed } from "../../hooks/useSidebarCollapsed";
 import { BrandMark } from "../brand/BrandMark";
-import { FOLDING_GROUPS, NAV_ITEMS, SUBMENUS, activeNavItem, groupLabel, navVisible, pathForMenu, type NavItem } from "./nav-config";
+import { FOLDING_GROUPS, NAV_ITEMS, SUBMENUS, activeNavItem, groupLabel, navVisible, pathForMenu, sectionOf, type NavItem } from "./nav-config";
 import { usePending } from "../../hooks/usePending";
 import { useThemeScope } from "../../theme/themeScopeContext";
 
@@ -47,7 +47,7 @@ export function Sidebar({
   // Group in the order the items appear.
   const groups: { name: string; items: typeof items }[] = [];
   for (const item of items) {
-    const name = groupLabel(item.group, user.role);
+    const name = groupLabel(sectionOf(item), user.role);
     const last = groups[groups.length - 1];
     if (last && last.name === name) last.items.push(item);
     else groups.push({ name, items: [item] });
@@ -82,7 +82,10 @@ export function Sidebar({
             nested && !compact ? "py-1.5 pl-2.5 pr-2" : "py-1.5",
             compact ? "justify-center px-1.5" : !nested && "px-2",
             active
-              ? "bg-primary text-primary-foreground shadow-sm"
+              ? deepMenu
+                ? // A deep menu (the reference pictures): a lighter band with an orange bar at its left.
+                  "bg-white/15 text-white before:absolute before:bottom-1.5 before:left-0 before:top-1.5 before:w-[3px] before:rounded-full before:bg-orange"
+                : "bg-primary text-primary-foreground shadow-sm"
               : "text-foreground-muted hover:bg-surface-muted hover:text-foreground",
           )}
         >
@@ -91,8 +94,12 @@ export function Sidebar({
               "relative flex shrink-0 items-center justify-center rounded-lg transition-all duration-200",
               nested && !compact ? "size-7" : "size-8",
               active
-                ? "bg-white/15 text-white"
-                : "bg-surface-muted text-foreground-muted group-hover:scale-110 group-hover:bg-border group-hover:text-foreground",
+                ? deepMenu
+                  ? "text-white"
+                  : "bg-white/15 text-white"
+                : deepMenu
+                  ? "text-foreground-muted group-hover:text-foreground"
+                  : "bg-surface-muted text-foreground-muted group-hover:scale-110 group-hover:bg-border group-hover:text-foreground",
             )}
           >
             <Icon className={nested && !compact ? "size-[15px]" : "size-[17px]"} aria-hidden />
@@ -110,7 +117,7 @@ export function Sidebar({
               </span>
               {count > 0 && (
                 <span
-                  className="inline-flex min-w-5 items-center justify-center rounded-full bg-warning px-1.5 py-0.5 text-[11px] font-bold leading-none text-white"
+                  className={cn("inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none text-white", deepMenu ? "bg-orange" : "bg-warning")}
                   aria-label={`${count} waiting for approval`}
                 >
                   {count}
@@ -157,9 +164,13 @@ export function Sidebar({
             className={cn(
               "flex shrink-0 items-center justify-center rounded-lg transition-all duration-200",
               topLevel ? "size-8" : "size-7",
-              hasCurrent
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-surface-muted text-foreground-muted group-hover:scale-110 group-hover:bg-border group-hover:text-foreground",
+              deepMenu
+                ? hasCurrent
+                  ? "text-white"
+                  : "text-foreground-muted group-hover:text-foreground"
+                : hasCurrent
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-surface-muted text-foreground-muted group-hover:scale-110 group-hover:bg-border group-hover:text-foreground",
             )}
           >
             <Icon className={topLevel ? "size-[17px]" : "size-[15px]"} aria-hidden />
@@ -207,9 +218,13 @@ export function Sidebar({
           <span
             className={cn(
               "flex size-8 shrink-0 items-center justify-center rounded-lg transition-all duration-200",
-              hasCurrent
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "bg-surface-muted text-foreground-muted group-hover:scale-110 group-hover:bg-border group-hover:text-foreground",
+              deepMenu
+                ? hasCurrent
+                  ? "text-white"
+                  : "text-foreground-muted group-hover:text-foreground"
+                : hasCurrent
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-surface-muted text-foreground-muted group-hover:scale-110 group-hover:bg-border group-hover:text-foreground",
             )}
           >
             <Icon className="size-[17px]" aria-hidden />

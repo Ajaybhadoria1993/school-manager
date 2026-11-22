@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router";
 import { AppThemeProvider } from "../../../theme/AppThemeProvider";
 import SettingsPage from "../Settings";
 
-const KEY = "edushiksha.appearance.v1";
+const KEY = "edushiksha.appearance.v2";
 
 beforeEach(() => localStorage.clear());
 afterEach(cleanup);
@@ -24,18 +24,26 @@ const themes = () => screen.getByRole("group", { name: "Theme" });
 const card = (name: string) => within(themes()).getByRole("button", { name: new RegExp(`^${name}`) });
 
 describe("Settings > Appearance > Theme", () => {
-  it("offers Classic (the look the app has), the look of the sign-up form and a green one; Classic is the one in use", () => {
+  it("offers Classic, the look of the reference pictures and a green one; a new device uses Onboarding (the reference look)", () => {
     openPage();
     expect(within(themes()).getAllByRole("button")).toHaveLength(3);
-    expect(card("Classic")).toHaveAttribute("aria-pressed", "true");
-    expect(card("Onboarding")).toHaveAttribute("aria-pressed", "false");
+    expect(card("Classic")).toHaveAttribute("aria-pressed", "false");
+    expect(card("Onboarding")).toHaveAttribute("aria-pressed", "true");
     expect(card("Evergreen")).toHaveAttribute("aria-pressed", "false");
-    // Classic keeps its own two choices.
+    // Only Classic has an accent colour and a display mode of its own.
+    expect(screen.queryByRole("group", { name: "Accent color" })).not.toBeInTheDocument();
+  });
+
+  it("Classic, once chosen, keeps its own two choices", async () => {
+    const user = openPage();
+    await user.click(card("Classic"));
+    expect(card("Classic")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("group", { name: "Accent color" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Display mode" })).toBeInTheDocument();
   });
 
   it("choosing one uses it at once and keeps it on this device; the accent and the display mode (Classic's) go away", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ mode: "light", accent: "#2563eb", theme: "classic" }));
     const user = openPage();
     await user.click(card("Onboarding"));
     expect(card("Onboarding")).toHaveAttribute("aria-pressed", "true");

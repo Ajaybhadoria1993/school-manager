@@ -13,8 +13,8 @@ export default function NotFound() {
         <h1 className="mt-2 text-page-heading">This page could not be found</h1>
         <p className="mt-1 text-sm text-foreground-muted">The address may have a typo, or the page may have moved.</p>
       </div>
-      <Link to={getToken() ? "/dashboard" : "/"}>
-        <Button size="lg">{getToken() ? "Go to your dashboard" : "Go to the home page"}</Button>
+      <Link to={getToken() ? "/dashboard" : "/login"}>
+        <Button size="lg">{getToken() ? "Go to your dashboard" : "Go to the login page"}</Button>
       </Link>
     </div>
   );

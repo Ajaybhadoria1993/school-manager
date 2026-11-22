@@ -53,6 +53,23 @@ export const MAX_SAME_SUBJECT_PER_DAY = 2;
 export const TIME_MESSAGE = "Enter a time like 08:30";
 
 /** What a subject looks like in the grid: a soft colour per subject, in a fixed order, so a subject keeps its colour as the page changes. */
+/**
+ * The solid colour of each of SUBJECT_COLORS, in the same order (2026-11-22, the reference pictures): the dot of a subject in "Subjects this week"
+ * and the bar at the left of its lessons in the week.
+ */
+export const SUBJECT_ACCENTS = [
+  { dot: "bg-blue-500", bar: "border-l-blue-500" },
+  { dot: "bg-emerald-500", bar: "border-l-emerald-500" },
+  { dot: "bg-amber-500", bar: "border-l-amber-500" },
+  { dot: "bg-rose-500", bar: "border-l-rose-500" },
+  { dot: "bg-violet-500", bar: "border-l-violet-500" },
+  { dot: "bg-cyan-500", bar: "border-l-cyan-500" },
+  { dot: "bg-orange-500", bar: "border-l-orange-500" },
+  { dot: "bg-lime-500", bar: "border-l-lime-500" },
+  { dot: "bg-fuchsia-500", bar: "border-l-fuchsia-500" },
+  { dot: "bg-teal-500", bar: "border-l-teal-500" },
+] as const;
+
 export const SUBJECT_COLORS = [
   "bg-blue-100 text-blue-900 border-blue-200",
   "bg-emerald-100 text-emerald-900 border-emerald-200",

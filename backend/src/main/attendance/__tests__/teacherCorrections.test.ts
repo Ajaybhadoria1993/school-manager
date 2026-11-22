@@ -6,6 +6,7 @@ import { clock } from "../../../utils/clock";
 import { classroomSchool } from "../../../test/classroom";
 import { addColleague } from "../../../test/schools";
 import { addTeacher, addTiming, auth } from "../../../test/timetable";
+import { addedToTheApp } from "../../../test/teachers";
 import { Notification } from "../../notifications/models/Notification";
 import { NotificationService } from "../../notifications/services/notification.service";
 
@@ -25,6 +26,8 @@ async function setUp() {
   const s = await classroomSchool();
   await addTiming(s.token);
   for (const id of [s.meena, s.dev, s.kiran]) await request(app).patch(`/api/v1/staff/teachers/${id}`).set(auth(s.token)).send({ joiningDate: "2026-04-01" });
+  // ... and were added to the app then too (the days count from the later of the two).
+  await addedToTheApp(s.tenantId, [s.meena, s.dev, s.kiran]);
   const set = (token: string, teacherId: string, body: object) => request(app).put(`${api}/teachers/${teacherId}/day`).set(auth(token)).send(body);
   const sheet = (token: string, from: string, to: string) => request(app).get(`${api}/teachers?from=${from}&to=${to}`).set(auth(token));
   const record = async (teacherId: string, date: string) => {
@@ -91,6 +94,7 @@ describe("the school marks a teacher's day", () => {
     const { s, set, record } = await setUp();
     const sunil = await addTeacher(s.token, "Sunil Das", { mobile: "9000000099" });
     await request(app).patch(`/api/v1/staff/teachers/${sunil}`).set(auth(s.token)).send({ joiningDate: "2026-04-01" });
+    await addedToTheApp(s.tenantId, [sunil]);
     at(FRI, "16:00");
     expect((await record(sunil, THU)).records[0].status).toBe("no_login");
     await set(s.token, sunil, { date: THU, status: "present", time: "08:00" });

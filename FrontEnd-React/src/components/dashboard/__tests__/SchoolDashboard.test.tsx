@@ -7,7 +7,7 @@ import { ToastProvider } from "../../ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { authChecked, sessionStarted, signedOut } from "../../../redux/slices/authSlice";
-import { fakeApi, type Call } from "../../../test/fakeApi";
+import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
 import type { SchoolDashboard as Dashboard, SchoolTrend } from "../../../types";
 import { SchoolDashboard } from "../SchoolDashboard";
 
@@ -102,7 +102,12 @@ const NEW_SCHOOL: Dashboard = dashboard({
   },
 });
 
-function openDashboard(answer: Dashboard | Response | (() => Promise<unknown>) | ((query: URLSearchParams) => unknown) = dashboard(), role = "school_admin", chart: SchoolTrend | ((query: URLSearchParams) => unknown) = trend()) {
+function openDashboard(
+  answer: Dashboard | Response | (() => Promise<unknown>) | ((query: URLSearchParams) => unknown) = dashboard(),
+  role = "school_admin",
+  chart: SchoolTrend | ((query: URLSearchParams) => unknown) = trend(),
+  extra: Record<string, Handler> = {}
+) {
   store.dispatch(
     sessionStarted({
       user: { id: "u1", name: "Anuj", email: "a@school.example", username: null, role, roleLabel: null, tenantId: "t1", emailVerifiedAt: null },
@@ -114,6 +119,7 @@ function openDashboard(answer: Dashboard | Response | (() => Promise<unknown>) |
     "GET /dashboard/school": typeof answer === "function" ? (_body, query) => (answer as (q: URLSearchParams) => unknown)(query) : () => answer,
     "GET /dashboard/school/trend": typeof chart === "function" ? (_body, query) => chart(query) : () => chart,
     "GET /academics/academic-years/current": () => ({ year: { id: "y1", name: "2026-2027", startDate: "2026-04-01", endDate: "2027-03-31", status: "active", activatedAt: null }, needsSetUp: false }),
+    ...extra,
   });
   const router = createMemoryRouter([{ path: "/dashboard", element: <SchoolDashboard /> }], { initialEntries: ["/dashboard"] });
   render(
@@ -147,6 +153,24 @@ afterEach(() => {
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
   store.dispatch(signedOut());
   vi.unstubAllGlobals();
+});
+
+describe("a staff member's own attendance on the school's dashboard (2026-11-22: the staff mark themselves, the school only looks)", () => {
+  const MY_DAY = { date: "2026-11-10", status: "pending", checkedInTime: null, lateByMinutes: null, log: [], school: { start: "08:30", end: "14:20" }, canCheckIn: true, why: null };
+
+  it("a staff member the school gave the dashboard (a receptionist) has the I am present card on it", async () => {
+    const calls = openDashboard(dashboard(), "receptionist", trend(), { "GET /attendance/staff/me": () => MY_DAY });
+    const mine = await card("My attendance");
+    expect(await within(mine).findByRole("button", { name: "I am present" })).toBeInTheDocument();
+    expect(asked(calls, "/attendance/staff/me")).toHaveLength(1);
+  });
+
+  it("the school admin is not a staff member: no card, and their own staff day is never asked for", async () => {
+    const calls = openDashboard();
+    await within(await tileWhenThere("Students")).findByText("120");
+    expect(screen.queryByRole("region", { name: "My attendance" })).not.toBeInTheDocument();
+    expect(asked(calls, "/attendance/staff/me")).toHaveLength(0);
+  });
 });
 
 describe("the top of the page", () => {

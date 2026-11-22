@@ -8,6 +8,7 @@ import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import type { InactivePage, InactiveStudent } from "../../../types";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
+import { InactiveStudentsList } from "../../../components/students/status/InactiveStudentsList";
 import InactiveStudentsPage from "../InactiveStudents";
 
 const ASHA: InactiveStudent = {
@@ -37,7 +38,7 @@ function school(items: InactiveStudent[], extra: Record<string, Handler> = {}): 
 function openPage() {
   const router = createMemoryRouter(
     [
-      { path: "/school/students/inactive", element: <InactiveStudentsPage /> },
+      { path: "/school/students/inactive", element: <InactiveStudentsList /> },
       { path: "/school/students", element: <p>The students</p> },
       { path: "/school/students/:id", element: <p>One student</p> },
     ],
@@ -61,11 +62,26 @@ afterEach(() => {
 
 const posts = (calls: Call[], path: string) => calls.filter((c) => c.method === "POST" && c.path === path);
 
+describe("the old address of the inactive students (2026-11-22: they are a tab of the Students page now)", () => {
+  it("sends to the Students page with the Inactive tab open", async () => {
+    const router = createMemoryRouter(
+      [
+        { path: "/school/students/inactive", element: <InactiveStudentsPage /> },
+        { path: "/school/students", element: <p>The students</p> },
+      ],
+      { initialEntries: ["/school/students/inactive"] }
+    );
+    render(<RouterProvider router={router} />);
+    expect(await screen.findByText("The students")).toBeInTheDocument();
+    expect(router.state.location.pathname + router.state.location.search).toBe("/school/students?tab=inactive");
+  });
+});
+
 describe("the inactive students", () => {
   it("lists inactive students and their history without in-page status tabs", async () => {
     school([ASHA, KABIR]);
     openPage();
-    expect(await screen.findByRole("heading", { name: "Inactive students", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("table", { name: "Inactive students" })).toBeInTheDocument();
     expect(await screen.findByText("Asha Verma")).toBeInTheDocument();
     const row = screen.getByText("Asha Verma").closest("tr")!;
     expect(row).toHaveTextContent("ADM-2026-0001");

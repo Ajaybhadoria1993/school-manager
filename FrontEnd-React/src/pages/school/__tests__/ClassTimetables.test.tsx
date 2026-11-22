@@ -137,8 +137,8 @@ describe("Class timetables: the list and the week", () => {
 
     await user.clear(screen.getByLabelText("Search classes"));
     const filter = screen.getByRole("radiogroup", { name: "Which timetables to show" });
-    expect(within(filter).getAllByRole("radio").map((r) => r.textContent)).toEqual(["All classes (3)", "Not started (1)", "Draft (1)", "Published (1)"]);
-    await user.click(within(filter).getByRole("radio", { name: "Published (1)" }));
+    expect(within(filter).getAllByRole("radio").map((r) => r.textContent)).toEqual(["All classes · 3", "Not started · 1", "Draft · 1", "Published · 1"]);
+    await user.click(within(filter).getByRole("radio", { name: "Published · 1" }));
     await waitFor(() => expect(overviewCalls(calls).at(-1)!.query).toBe("?status=published"));
   });
 
@@ -220,8 +220,8 @@ describe("Class timetables: the class is the title, the filter is beside it (202
     openPage();
     const header = await headerOf();
     const filter = within(header).getByRole("radiogroup", { name: "Which timetables to show" });
-    expect(within(filter).getAllByRole("radio").map((r) => r.textContent)).toEqual(["All classes (3)", "Not started (1)", "Draft (1)", "Published (1)"]);
-    expect(within(filter).getByRole("radio", { name: "All classes (3)" })).toBeChecked();
+    expect(within(filter).getAllByRole("radio").map((r) => r.textContent)).toEqual(["All classes · 3", "Not started · 1", "Draft · 1", "Published · 1"]);
+    expect(within(filter).getByRole("radio", { name: "All classes · 3" })).toBeChecked();
     expect(screen.queryByRole("button", { name: /Which timetables to show/ })).not.toBeInTheDocument();
     // The list keeps only its search box.
     expect(screen.getByLabelText("Search classes")).toBeInTheDocument();
@@ -230,8 +230,8 @@ describe("Class timetables: the class is the title, the filter is beside it (202
   it("a filter button asks the server for those timetables and is the one picked", async () => {
     const { calls, user } = openPage();
     const header = await headerOf();
-    await user.click(within(header).getByRole("radio", { name: "Draft (1)" }));
+    await user.click(within(header).getByRole("radio", { name: "Draft · 1" }));
     await waitFor(() => expect(overviewCalls(calls).at(-1)!.query).toBe("?status=draft"));
-    expect(within(header).getByRole("radio", { name: "Draft (1)" })).toBeChecked();
+    expect(within(header).getByRole("radio", { name: "Draft · 1" })).toBeChecked();
   });
 });

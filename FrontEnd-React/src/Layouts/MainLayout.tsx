@@ -10,7 +10,7 @@ import { FooterSlotContext } from "../components/layout/FooterSlot";
 import { FormBarSlotContext } from "../components/layout/FormBarSlot";
 import { Topbar } from "../components/layout/Topbar";
 import { YearViewBanner } from "../components/layout/YearViewBanner";
-import { NAV_ITEMS, activeNavItem, navVisible, pageTitleOf, pathForMenu } from "../components/layout/nav-config";
+import { NAV_ITEMS, activeNavItem, kickerOf, navVisible, pageTitleOf, pathForMenu } from "../components/layout/nav-config";
 import { appearanceStyle, useAppTheme } from "../theme/AppThemeProvider";
 import { ThemeScope } from "../theme/themeScope";
 import { useRootTheme } from "../theme/useRootTheme";
@@ -73,6 +73,7 @@ export default function MainLayout() {
           <Topbar
             onMenuClick={() => setMobileOpen(true)}
             title={pathname === "/school" ? "School Details" : pageTitleOf(active)}
+            kicker={user.role === "super_admin" ? undefined : kickerOf(pathname === "/school" ? undefined : active, tenant?.name ?? "Your school")}
           />
         </div>
         {/* Only while a year that is over is open (read only): which year it is, and the way back. */}
