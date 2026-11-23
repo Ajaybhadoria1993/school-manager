@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   Backpack,
   BadgePercent,
   FileText,
@@ -164,6 +165,17 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Class timetables",
     href: "/school/timetable",
     icon: CalendarClock,
+    roles: ["school_admin", "principal"],
+    permission: ["timetable.edit"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Timetable",
+  },
+  {
+    // The day's arrangement (2026-11-22): who is away today, their periods, and a free teacher put in for each.
+    label: "Arrangements",
+    href: "/school/arrangements",
+    icon: ArrowLeftRight,
     roles: ["school_admin", "principal"],
     permission: ["timetable.edit"],
     schoolWide: true,
@@ -480,7 +492,7 @@ export function kickerOf(item: NavItem | undefined, school: string): string {
   if (href.startsWith("/fees")) return "Finance";
   if (href.startsWith("/transport")) return "Transport";
   if (href.startsWith("/school/students") || href.startsWith("/teachers") || href === "/staff") return "People";
-  if (href.startsWith("/school/timings") || href.startsWith("/school/timetable") || href === "/school-class") return "Academics";
+  if (href.startsWith("/school/timings") || href.startsWith("/school/timetable") || href.startsWith("/school/arrangements") || href === "/school-class") return "Academics";
   if (["/permissions", "/calendar", "/leaves"].includes(href)) return "Admin";
   return school;
 }

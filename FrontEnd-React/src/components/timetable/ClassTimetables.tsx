@@ -16,6 +16,7 @@ import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Input } from "../ui/Input";
 import { Skeleton } from "../ui/Skeleton";
+import { ClassWeekView } from "../schoolClass/ClassWeekView";
 import { ClassWeek } from "./ClassWeek";
 
 const plainLink =
@@ -243,7 +244,20 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
       </Card>
 
       <div ref={detail} className="min-w-0 scroll-mt-4">
-        {picked ? (
+        {picked && readOnly ? (
+          // A year that is over is only looked at (2026-11-22): its week as it was, nothing to change (the editor, Fill and Save are not offered).
+          week ? (
+            <Card className="space-y-3 p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Badge tone="warning">Read only</Badge>
+                {week.unit.label}
+              </p>
+              <ClassWeekView view={week} label={week.unit.label} />
+            </Card>
+          ) : (
+            <Skeleton className="h-80 w-full rounded-2xl" />
+          )
+        ) : picked ? (
           <ClassWeek key={keyOf(picked)} unit={picked} onGoTimings={onGoTimings} />
         ) : (
           <Card className="flex flex-col items-center gap-2 px-6 py-20 text-center">

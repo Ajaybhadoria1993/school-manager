@@ -81,6 +81,7 @@ describe("the menu of the people who run a school", () => {
       ["Staff", "/attendance/staff"],
       ["School timings", "/school/timings"],
       ["Class timetables", "/school/timetable"],
+      ["Arrangements", "/school/arrangements"],
       ["Staff", "/staff"],
       ["Vehicles", "/transport/vehicles"],
       ["Drivers", "/transport/drivers"],
@@ -147,6 +148,7 @@ describe("the menu of the people who run a school", () => {
       "Teachers",
       "School timings",
       "Class timetables",
+      "Arrangements",
       "Staff",
       "Academic years",
       "Promotion",
@@ -156,7 +158,7 @@ describe("the menu of the people who run a school", () => {
     // One key, one Teachers row (active / inactive are its tabs); view and setup share the single Classes entry.
     expect(labelsOf(person("receptionist", ["teachers.view"]))).toEqual(["Dashboard", "Teachers", "Settings"]);
     expect(labelsOf(person("receptionist", ["classes.view"]))).toEqual(["Dashboard", "Classes", "Settings"]);
-    expect(labelsOf(person("receptionist", ["timetable.edit"]))).toEqual(["Dashboard", "School timings", "Class timetables", "Settings"]);
+    expect(labelsOf(person("receptionist", ["timetable.edit"]))).toEqual(["Dashboard", "School timings", "Class timetables", "Arrangements", "Settings"]);
     // Permissions is admin-only; the separate Manage Teacher entry has joined Teacher.
     for (const label of ["Manage Students", "Manage Teacher", "Permissions"]) expect(labelsOf(person("receptionist", [...keys, "students.view"]))).not.toContain(label);
     // A teacher (own classes) and a parent are not given the school's pages by these keys.

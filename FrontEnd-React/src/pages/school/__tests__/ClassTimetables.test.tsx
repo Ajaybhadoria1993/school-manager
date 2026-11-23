@@ -6,6 +6,7 @@ import { RouterProvider, createMemoryRouter } from "react-router";
 import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
+import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
 import { GRID, OVERVIEW, REGULAR } from "../../../test/timetableFixtures";
 import type { TimetableOverview } from "../../../types";
@@ -85,9 +86,11 @@ describe("Class timetables: a page of its own (2026-11-09: it was a tab of the T
 describe("School timings: a page of its own", () => {
   it("has its own title, no tabs, and the usual school day to set; it does not ask for the class list", async () => {
     const { calls } = openPage(OVERVIEW, "/school/timings");
-    expect(await screen.findByRole("heading", { name: "School timings", level: 1 })).toBeInTheDocument();
+    // The title is drawn again when the loaded page replaces the loading one, so it is asked for after the boxes are there.
     expect(await screen.findByLabelText("Usual day: school starts")).toBeInTheDocument();
-    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "School timings", level: 1 })).toBeInTheDocument();
+    // Its own tabs only (2026-11-23: Usual / Class / Department / Special Day Timings); no tab leads to the class timetables.
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Usual Timings", "Class Timings", "Department Timings", "Special Day Timings"]);
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
     expect(overviewCalls(calls)).toHaveLength(0);
   });
@@ -233,5 +236,22 @@ describe("Class timetables: the class is the title, the filter is beside it (202
     await user.click(within(header).getByRole("radio", { name: "Draft · 1" }));
     await waitFor(() => expect(overviewCalls(calls).at(-1)!.query).toBe("?status=draft"));
     expect(within(header).getByRole("radio", { name: "Draft · 1" })).toBeChecked();
+  });
+});
+
+/** A year that is over is only looked at (2026-11-22, user: "purane mein edit na ho paye"): the week as it was, nothing to change. */
+describe("Class timetables: a year that is over", () => {
+  afterEach(() => {
+    store.dispatch(yearViewChanged(null));
+  });
+
+  it("shows the class's week to read, without the editor (no Fill, no Save, no period to click)", async () => {
+    store.dispatch(yearViewChanged("y25"));
+    openPage();
+    expect(await screen.findByText("Read only")).toBeInTheDocument();
+    expect(await screen.findByRole("table", { name: "Weekly timetable of Class 5 - A" })).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "Weekly timetable" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Fill/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Save the timetable|Publish the timetable/ })).not.toBeInTheDocument();
   });
 });

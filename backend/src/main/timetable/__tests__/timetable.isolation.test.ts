@@ -25,7 +25,9 @@ itKeepsSchoolsApart("timetable", {
     const unit = { classId: klass.id, sectionId: klass.sections[0].id };
     await saveAllotments(a.token, unit, [{ subjectId: maths, periodsPerWeek: 6, teacherId }]);
     await request(app).put(`${api}/grid`).set(auth(a.token)).send({ ...unit, cells: [{ day: 1, period: 1, lessons: [{ subjectId: maths }] }] });
-    return { ...unit, otherSectionId: klass.sections[1].id, timingId, teacherId, other };
+    // A special day (2026-11-22), far enough ahead to stay a day to come.
+    const specialId = (await request(app).post(`${api}/special-days`).set(auth(a.token)).send({ date: "2027-03-01", title: "PTM", classIds: [klass.id], slots: [{ kind: "period", start: "08:30", end: "09:10" }] })).body.data.id as string;
+    return { ...unit, otherSectionId: klass.sections[1].id, timingId, teacherId, other, specialId };
   },
 
   snapshot: async (a, c) => ({
@@ -33,11 +35,13 @@ itKeepsSchoolsApart("timetable", {
     schedules: (await request(app).get(`${api}/schedules`).set(auth(a.token))).body.data,
     grid: (await request(app).get(`${api}/grid?classId=${c.classId}&sectionId=${c.sectionId}`).set(auth(a.token))).body.data,
     week: (await request(app).get(`${api}/teachers/${c.teacherId}`).set(auth(a.token))).body.data,
+    specials: (await request(app).get(`${api}/special-days`).set(auth(a.token))).body.data,
   }),
 
   lists: [
     { name: "the timings", path: `${api}/schedules`, showsRecords: (body) => body.data.items.length > 0 },
     { name: "the overview", path: `${api}/overview`, showsRecords: (body) => body.data.units.length > 0 && body.data.timings.length > 0 },
+    { name: "the special days", path: `${api}/special-days`, showsRecords: (body) => body.data.items.length > 0 },
   ],
 
   probes: [
@@ -51,6 +55,8 @@ itKeepsSchoolsApart("timetable", {
     { name: "deleting its timing", method: "delete", path: (c) => `${api}/schedules/${c.timingId}` },
     { name: "giving its class days of its own", method: "put", path: () => `${api}/class-day`, body: (c) => ({ classId: c.classId, days: [{ day: 1, slots: [{ kind: "period", start: "08:30", end: "09:10" }] }], removeLessons: true }) },
     { name: "reading its teacher's week", method: "get", path: (c) => `${api}/teachers/${c.teacherId}` },
+    { name: "changing its special day", method: "patch", path: (c) => `${api}/special-days/${c.specialId}`, body: () => ({ date: "2027-03-01", title: "Hacked", slots: [] }) },
+    { name: "taking its special day off", method: "delete", path: (c) => `${api}/special-days/${c.specialId}` },
     { name: "giving its teacher's classes away", method: "post", path: (c) => `${api}/teachers/${c.teacherId}/replace`, body: (c) => ({ withTeacherId: c.other }) },
   ],
 });

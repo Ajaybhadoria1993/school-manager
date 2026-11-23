@@ -113,6 +113,8 @@ const routes: RouteObject[] = [
             element: <PermissionRoute keys={["timetable.edit"]} />,
             children: [
               { path: "school/timings", ...lazyRoute(() => import("../pages/school/SchoolTimings")) },
+              // The day's arrangement is for the running year: a year that is over says so (2026-11-22).
+              { ...lazyRoute(() => import("./RunningYearRoute")), children: [{ path: "school/arrangements", ...lazyRoute(() => import("../pages/school/Arrangements")) }] },
               { path: "school/timetable", ...lazyRoute(() => import("../pages/school/ClassTimetables")) },
               { path: "school/timetable/timings", ...lazyRoute(() => import("../pages/school/TimetableRedirect")) },
               { path: "school/timetable/subjects", ...lazyRoute(() => import("../pages/school/TimetableSubjects")) },

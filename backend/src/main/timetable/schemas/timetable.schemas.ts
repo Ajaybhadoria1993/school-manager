@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DAY_NAMES, MAX_LABEL, MAX_LESSONS_PER_CELL, MAX_PERIODS, MAX_ROOM, MAX_SCHEDULE_NAME, SCHEDULE_SCOPES, SLOT_KINDS } from "../constants";
+import { DAY_NAMES, MAX_LABEL, MAX_LESSONS_PER_CELL, MAX_PERIODS, MAX_ROOM, MAX_SCHEDULE_NAME, MAX_SPECIAL_DAYS, MAX_SPECIAL_TITLE, SCHEDULE_SCOPES, SLOT_KINDS } from "../constants";
 import { MAX_PERIODS_PER_WEEK } from "../../subjects/constants";
 import { clockToMinutes } from "../time";
 import { idParamSchema, label, objectId } from "../../subjects/schemas/subjects.schemas";
@@ -228,3 +228,46 @@ export const overviewQuerySchema = z.object({
   status: z.enum(["all", "none", "draft", "published"]).default("all"),
 });
 export type OverviewQuery = z.infer<typeof overviewQuerySchema>;
+
+// ---- Special days and arrangements (2026-11-22) -------------------------------------------------------------------------------------------
+
+const DATE_MESSAGE = "Enter the date";
+const dateText = z
+  .string({ required_error: DATE_MESSAGE, invalid_type_error: DATE_MESSAGE })
+  .refine((v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && new Date(`${v}T00:00:00.000Z`).toISOString().slice(0, 10) === v, DATE_MESSAGE);
+
+/**
+ * One day with a timing of its own (a PTM, a half day): the date, what it is, the classes (none: the whole school) and the rows of that day (none:
+ * no classes that day for them).
+ */
+export const specialDaySchema = z
+  .object({
+  date: dateText,
+  /** The last day of days in a row (2026-11-23); left out: one day. */
+  endDate: dateText.optional(),
+  title: label("name of the day", MAX_SPECIAL_TITLE),
+  classIds: z
+    .array(objectId)
+    .max(200, "Too many classes")
+    .default([])
+    .transform((ids) => [...new Set(ids)]),
+  slots: z.array(slotSchema).max(60, "Too many rows").default([]),
+})
+  .refine((v) => !v.endDate || v.endDate >= v.date, { message: "The last day cannot be before the first", path: ["endDate"] })
+  .refine((v) => !v.endDate || (Date.parse(v.endDate) - Date.parse(v.date)) / 86_400_000 < MAX_SPECIAL_DAYS, { message: `Up to ${MAX_SPECIAL_DAYS} days in a row`, path: ["endDate"] });
+export type SpecialDayInput = z.infer<typeof specialDaySchema>;
+
+/** The day the arrangement page shows. */
+export const arrangementQuerySchema = z.object({ date: dateText });
+export type ArrangementQuery = z.infer<typeof arrangementQuerySchema>;
+
+/** A substitute for one lesson of an absent teacher on a day (`substituteTeacherId` null takes the substitute away). */
+export const arrangementSchema = z.object({
+  date: dateText,
+  classId: objectId,
+  sectionId: objectId.nullable().default(null),
+  period: z.number({ invalid_type_error: "Choose the period" }).int().min(1, "Choose the period").max(MAX_PERIODS, "Choose the period"),
+  absentTeacherId: objectId,
+  substituteTeacherId: objectId.nullable(),
+});
+export type ArrangementInput = z.infer<typeof arrangementSchema>;

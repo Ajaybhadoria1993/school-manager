@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useBlocker } from "react-router";
-import { ArrowRight, CalendarDays, Check, Clock3, Info, Save, Send, TriangleAlert } from "lucide-react";
+import { useBlocker, useSearchParams } from "react-router";
+import { ArrowRight, CalendarDays, Check, Clock3, Info, Landmark, Save, Send, Star, TriangleAlert, UsersRound } from "lucide-react";
 import { Button as HeroButton } from "@heroui/react";
 import { DAY_NAMES } from "../../constants/timetable";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
-import { useGetSchedulesQuery, useSaveSchoolDayMutation } from "../../redux/api/timetableApi";
+import { useGetSchedulesQuery, useGetSpecialDaysQuery, useSaveSchoolDayMutation } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
 import { classOwnTimings, periodCount } from "../../utils/classWeek";
 import { clock12 } from "../../utils/exams";
@@ -12,21 +12,24 @@ import { cn } from "../../utils/helpers";
 import { deptRows, deptSummary, storedSetup } from "../../utils/departmentDay";
 import { WEEK_DAYS, daySummary, departmentRows, departmentRowsBody, moveStart, readWeek, setupOf, shiftMinutes, usualDays, weekBody, weekProblems, type DayMode, type WeekPlan } from "../../utils/schoolWeek";
 import { visibleClash, clockToMinutes, formatMinutes, generateDay, shiftSlots, type DaySetup } from "../../utils/timings";
-import type { ClassItem, DepartmentItem, Schedule, SchoolDayInput } from "../../types";
+import type { ClassItem, DepartmentItem, Schedule, SchoolDayInput, SpecialDay } from "../../types";
 import { StudentFormHeader } from "../students/StudentFormHeader";
 import { AppModal, ModalError } from "../ui/AppModal";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
+import { PageTabs } from "../ui/PageTabs";
 import { Skeleton } from "../ui/Skeleton";
 import { useToast } from "../ui/toast-context";
 import { DayFields, DayPreview } from "./DayFields";
 import { DepartmentTimingDialog } from "./DepartmentTimingDialog";
-import { GroupTimings, type DepartmentRow } from "./GroupTimings";
+import { ClassTimingsCard, DepartmentTimingsCard, type DepartmentRow } from "./GroupTimings";
+import { ClassOwnTimingDialog } from "./ClassOwnTimingDialog";
+import { UseSchoolTimingModal } from "./UseSchoolTimingModal";
 import { useFooterSlot } from "../layout/FooterSlot";
 import { FixedSaveBar } from "./FixedSaveBar";
 import { DayBar, DayFigures } from "./TimingParts";
+import { SpecialDayDialog, SpecialDaysCard } from "./SpecialDays";
 
-const SHORT_DAY = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /** The page's title, its one line under it, and the trail; `status` at the right (Saved / Unsaved changes). */
 function Header({ status }: { status?: React.ReactNode }) {
@@ -151,10 +154,13 @@ function WeekDays({ plan, problemOf, setMode, setOwn }: { plan: WeekPlan; proble
         )}
       </div>
 
-      <div role="group" aria-label="School days" className="flex flex-wrap gap-2">
+      <div role="group" aria-label="School days" className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
         {WEEK_DAYS.map((d) => {
           const mode = plan.days[d].mode;
           const on = mode !== "off";
+          const setup = setupOf(plan, d);
+          const slots = setup ? generateDay(setup).slots : [];
+          const hours = on && slots.length > 0 ? `${slots[0].start}–${slots[slots.length - 1].end}` : "Holiday";
           return (
             <button
               key={d}
@@ -164,12 +170,15 @@ function WeekDays({ plan, problemOf, setMode, setOwn }: { plan: WeekPlan; proble
               title={on ? (mode === "own" ? `${DAY_NAMES[d]}: its own timing` : `${DAY_NAMES[d]}: usual timing`) : `${DAY_NAMES[d]}: holiday`}
               onClick={() => setMode(d, on ? "off" : "usual")}
               className={cn(
-                "relative h-11 min-w-16 flex-1 cursor-pointer rounded-xl border px-3 text-sm font-bold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25 sm:flex-none",
-                on ? "border-primary-deep bg-primary-deep text-white shadow-sm hover:bg-primary-deep/90" : "border-border bg-surface text-foreground-muted hover:border-primary/40 hover:text-foreground"
+                "relative flex cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border px-2 py-2.5 transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25",
+                on ? "border-primary/30 bg-primary-soft/70 text-primary-deep hover:bg-primary-soft" : "border-dashed border-border bg-surface text-foreground-muted hover:border-primary/40 hover:text-foreground"
               )}
             >
-              {SHORT_DAY[d]}
-              {mode === "own" && <span aria-hidden className="absolute right-1.5 top-1.5 size-2 rounded-full bg-orange ring-2 ring-primary-deep" />}
+              <span className="text-sm font-bold">{DAY_NAMES[d]}</span>
+              <span aria-hidden className="text-xs font-medium tabular-nums opacity-80">
+                {hours}
+              </span>
+              {mode === "own" && <span aria-hidden className="absolute right-1.5 top-1.5 size-2 rounded-full bg-orange ring-2 ring-surface" />}
             </button>
           );
         })}
@@ -321,6 +330,22 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
   const [previewing, setPreviewing] = useState(false);
   // The department whose window is open (Change timing).
   const [windowOf, setWindowOf] = useState<string | null>(null);
+  // Which tab is open (2026-11-23, the reference: Usual / Class / Department / Special day timings), kept in the address.
+  const [params, setParams] = useSearchParams();
+  const tab: TimingTab = TIMING_TABS.some((t) => t.id === params.get("tab")) ? (params.get("tab") as TimingTab) : "usual";
+  const openTab = (next: TimingTab) =>
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (next === "usual") p.delete("tab");
+      else p.set("tab", next);
+      return p;
+    });
+  // A class's own timing in its window (null: closed; classId null: adding), and the class about to go back to the school's timing.
+  const [classWindow, setClassWindow] = useState<{ classId: string | null } | null>(null);
+  const [going, setGoing] = useState<{ id: string; name: string } | null>(null);
+  // The days with a timing of their own (a PTM, a half day; 2026-11-22), and the one open in its window ("new" for Special day).
+  const specialDays = useGetSpecialDaysQuery().data?.data.items ?? [];
+  const [special, setSpecial] = useState<SpecialDay | "new" | null>(null);
   // The classes and departments ticked to move with the school's start (2026-11-22: none until ticked), kept against the timings they were ticked on.
   const [ticks, setTicks] = useState<{ sig: string; keys: string[] } | null>(null);
   // With the layout's footer strip the buttons have a place of their own; without it they are fixed over the page, which then leaves room for them.
@@ -438,7 +463,8 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
   }
 
   // Changes that were not saved are asked about before another page or a reload takes them away.
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => schoolEdited && (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search));
+  // Opening another tab of this page (only `tab` changes, 2026-11-23) keeps the changes on screen: nothing is asked then.
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => schoolEdited && (currentLocation.pathname !== nextLocation.pathname || withoutTab(currentLocation.search) !== withoutTab(nextLocation.search)));
   useEffect(() => {
     if (!schoolEdited) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -453,14 +479,19 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
   return (
     <div className={cn("space-y-5", !hasFooter && "pb-24")}>
       <Header status={<SavedPill dirty={dirty} savedAt={savedAt} />} />
-      {/* Two columns that begin together, under the title: the school's day and its week; beside them what runs differently. */}
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
+      {/* The reference picture (2026-11-23): the tabs and what the open one holds, the whole width (Quick actions and Other timings beside them were
+          taken away the same day: "full width rakho"). */}
+      <div className="min-w-0 space-y-5">
         <div className="min-w-0 space-y-5">
+          <PageTabs variant="card" label="Which timings" tabs={TIMING_TABS} value={tab} onChange={openTab} />
+
+          {tab === "usual" && (
+          <>
           <Card className="space-y-5 p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex min-w-0 items-start gap-3">
-                <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
-                  <Clock3 className="size-5" />
+                <span aria-hidden className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary-soft text-primary">
+                  <Clock3 className="size-6" />
                 </span>
                 <div className="min-w-0">
                   <h2 className="text-section-heading">Usual school day</h2>
@@ -527,13 +558,40 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
               <ArrowRight className="size-4" aria-hidden />
             </button>
           )}
-        </div>
+          </>
+          )}
 
-        {/* Level with the Usual school day card: what runs differently (Add class timing, the departments, the classes with their own timing). */}
-        <div className="min-w-0">
-          <GroupTimings rows={rows} classes={classes} departments={departments} schedules={schedules} onChangeDepartment={setWindowOf} />
+          {tab === "class" && (
+            <ClassTimingsCard
+              classes={classes}
+              departments={departments}
+              schedules={schedules}
+              onAdd={() => setClassWindow({ classId: null })}
+              onEdit={(classId) => setClassWindow({ classId })}
+              onUseSchool={setGoing}
+            />
+          )}
+          {tab === "department" && <DepartmentTimingsCard rows={rows} onChangeDepartment={setWindowOf} />}
+          {tab === "special" && <SpecialDaysCard days={specialDays} onChange={setSpecial} onAdd={() => setSpecial("new")} />}
         </div>
       </div>
+
+      {special && <SpecialDayDialog day={special === "new" ? null : special} usual={plan.usual} classes={classes} onClose={() => setSpecial(null)} />}
+      {classWindow && (
+        <ClassOwnTimingDialog
+          key={classWindow.classId ?? "new"}
+          classes={classes}
+          schedules={schedules}
+          classId={classWindow.classId}
+          onClose={() => setClassWindow(null)}
+          // The button of the window does not act at once: the window closes and "Are you sure?" opens.
+          onUseSchool={(klass) => {
+            setClassWindow(null);
+            setGoing(klass);
+          }}
+        />
+      )}
+      {going && <UseSchoolTimingModal key={going.id} klass={going} onClose={() => setGoing(null)} />}
 
       {/* Fixed to the bottom of the screen (it does not move when the page scrolls): what is waiting to be saved at the left, Discard and Save
           changes at the right. With nothing to save, Save changes stays (off) and the top says Saved. */}
@@ -564,7 +622,7 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
       </FixedSaveBar>
 
       {previewing && <PreviewWeekModal plan={plan} onClose={() => setPreviewing(false)} />}
-      {windowDepartment && <DepartmentTimingDialog key={windowDepartment.id} department={windowDepartment} schedules={schedules} plan={read.plan} onClose={() => setWindowOf(null)} />}
+      {windowDepartment && <DepartmentTimingDialog key={windowDepartment.id} department={windowDepartment} classes={classes} schedules={schedules} plan={read.plan} onClose={() => setWindowOf(null)} />}
       {blocker.state === "blocked" && <SaveFirstModal what="the school's timing" problem={firstProblem} save={saveAll} onContinue={() => blocker.proceed()} onStay={() => blocker.reset()} />}
     </div>
   );
@@ -672,3 +730,19 @@ function MoveTooBox({ shift, groups, ticked, onToggle }: { shift: number; groups
     </div>
   );
 }
+
+/** An address's search part without the open tab: a change of tab alone is not leaving the page. */
+const withoutTab = (search: string) => {
+  const p = new URLSearchParams(search);
+  p.delete("tab");
+  return p.toString();
+};
+
+/** The tabs of the page (2026-11-23, the reference picture). */
+type TimingTab = "usual" | "class" | "department" | "special";
+const TIMING_TABS: { id: TimingTab; label: string; icon: typeof Clock3 }[] = [
+  { id: "usual", label: "Usual Timings", icon: Clock3 },
+  { id: "class", label: "Class Timings", icon: UsersRound },
+  { id: "department", label: "Department Timings", icon: Landmark },
+  { id: "special", label: "Special Day Timings", icon: Star },
+];

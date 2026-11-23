@@ -9,25 +9,34 @@ import {
   autofillGrid,
   copyGrid,
   createSchedule,
+  createSpecialDay,
   deleteSchedule,
+  deleteSpecialDay,
+  getArrangement,
   getGrid,
   getOverview,
   getTeacherWeek,
   listPublished,
   listSchedules,
+  listSpecialDays,
   placeTeacherPeriods,
   publishGrid,
   removeDepartmentDay,
+  saveArrangement,
   saveClassDay,
   replaceTeacher,
   saveGrid,
   saveSchoolDay,
   scheduleExists,
+  specialDayExists,
   unpublishGrid,
   updateSchedule,
+  updateSpecialDay,
 } from "../../controllers/timetable.controller";
 import { TIMETABLE_READERS, TIMETABLE_WRITERS } from "../../constants";
 import {
+  arrangementQuerySchema,
+  arrangementSchema,
   autofillSchema,
   classDaySchema,
   copySchema,
@@ -37,6 +46,7 @@ import {
   replaceTeacherSchema,
   saveGridSchema,
   schoolDaySchema,
+  specialDaySchema,
   teacherPeriodsSchema,
   unitBodySchema,
   updateScheduleSchema,
@@ -76,6 +86,16 @@ router.post("/grid/unpublish", validate(unitBodySchema), unpublishGrid);
 // The program fills the empty periods (nothing is saved); one section's timetable is given to the class's other sections.
 router.post("/grid/autofill", validate(autofillSchema), autofillGrid);
 router.post("/grid/copy", validate(copySchema), copyGrid);
+
+// Days with a timing of their own (a PTM, a half day), for the whole school or some classes (2026-11-22).
+router.get("/special-days", listSpecialDays);
+router.post("/special-days", validate(specialDaySchema), createSpecialDay);
+router.patch("/special-days/:id", validate(idParamSchema, "params"), specialDayExists, validate(specialDaySchema), updateSpecialDay);
+router.delete("/special-days/:id", validate(idParamSchema, "params"), specialDayExists, deleteSpecialDay);
+
+// The day's arrangement: who is away, their lessons and the teachers free then; a substitute for a lesson, for that day only (2026-11-22).
+router.get("/arrangements", validate(arrangementQuerySchema, "query"), getArrangement);
+router.put("/arrangements", validate(arrangementSchema), saveArrangement);
 
 // A teacher who has left: their classes and lessons go to another teacher.
 router.post("/teachers/:id/replace", validate(idParamSchema, "params"), teacherExists, validate(replaceTeacherSchema), replaceTeacher);

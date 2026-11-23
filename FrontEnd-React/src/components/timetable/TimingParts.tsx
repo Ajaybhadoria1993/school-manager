@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Minus, Plus } from "lucide-react";
+import { CalendarDays, Hourglass, Minus, Plus, UsersRound, UtensilsCrossed, type LucideIcon } from "lucide-react";
 import { clockToMinutes, formatMinutes, isArrival, withoutArrival } from "../../utils/timings";
 import { cn } from "../../utils/helpers";
 import type { Slot } from "../../types";
@@ -149,11 +149,11 @@ export function DayFigures({ slots }: { slots: readonly Slot[] }) {
   return (
     <div className="@container">
       <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-4">
-        <StatBox label="School time" value={first && last ? `${first.start}–${last.end}` : "–"} sub={open > 0 ? formatMinutes(open) : undefined} />
-        <StatBox label="Class time" value={firstPeriod && last ? `${firstPeriod.start}–${last.end}` : "–"} tone="orange" sub={firstPeriod ? between || "From when school starts" : undefined} />
-        <StatBox label="Periods" value={periods.length > 0 && usual ? `${periods.length} × ${usual} min` : "–"} />
+        <StatBox icon={CalendarDays} label="School time" value={first && last ? `${first.start}–${last.end}` : "–"} sub={open > 0 ? formatMinutes(open) : undefined} />
+        <StatBox icon={UsersRound} label="Class time" value={firstPeriod && last ? `${firstPeriod.start}–${last.end}` : "–"} tone="primary" sub={firstPeriod ? between || "From when school starts" : undefined} />
+        <StatBox icon={Hourglass} label="Periods" value={periods.length > 0 && usual ? `${periods.length} × ${usual} min` : "–"} />
         {/* From when to when the lunch is, and how long (2026-11-22: "lunch kitne baje se kitne baje tak hai"). */}
-        <StatBox label="Lunch" value={lunch ? `${lunch.start}–${lunch.end}` : "None"} sub={lunch ? formatMinutes(length(lunch)) : undefined} />
+        <StatBox icon={UtensilsCrossed} label="Lunch" value={lunch ? `${lunch.start}–${lunch.end}` : "None"} sub={lunch ? formatMinutes(length(lunch)) : undefined} />
       </div>
     </div>
   );
@@ -163,10 +163,14 @@ export function DayFigures({ slots }: { slots: readonly Slot[] }) {
  * A figure of the day in a small box: "SCHOOL STARTS 08:30". `tone` "orange" for one that is worked out (School ends, auto). `tag` is a small word
  * beside the figure ("auto"); `sub` a line under it ("30 min" under the lunch's times).
  */
-export function StatBox({ label, value, tag, sub, tone = "plain" }: { label: string; value: ReactNode; tag?: string; sub?: string; tone?: "plain" | "orange" }) {
+export function StatBox({ label, value, tag, sub, tone = "plain", icon: Icon }: { label: string; value: ReactNode; tag?: string; sub?: string; tone?: "plain" | "orange" | "primary"; icon?: LucideIcon }) {
   return (
-    <div className={cn("rounded-xl border px-4 py-3", tone === "orange" ? "border-orange/40 bg-orange-soft/70" : "border-border bg-primary-soft/40")}>
-      <p className="text-[11px] font-bold uppercase tracking-wider text-foreground-muted">{label}</p>
+    <div className={cn("rounded-xl border px-4 py-3", tone === "orange" ? "border-orange/40 bg-orange-soft/70" : tone === "primary" ? "border-primary/30 bg-primary-soft/70" : "border-border bg-surface")}>
+      {/* With an icon (2026-11-23, the reference): the name in its own words beside it; the icon has no words, so the name is still the whole text. */}
+      <p className={cn("flex items-center gap-2 text-foreground-muted", Icon ? "text-sm font-semibold" : "text-[11px] font-bold uppercase tracking-wider")}>
+        {Icon && <Icon className="size-4 shrink-0 text-primary" aria-hidden />}
+        {label}
+      </p>
       <p className={cn("mt-1 flex items-baseline gap-1.5 text-xl font-bold tabular-nums", tone === "orange" ? "text-orange-hover" : "text-foreground")}>
         {value}
         {tag && <span className="text-xs font-semibold text-orange-hover">{tag}</span>}

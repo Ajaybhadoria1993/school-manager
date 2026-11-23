@@ -23,6 +23,8 @@ export const NOTIFICATION_KINDS = [
   "calendar.removed",
   "class.assigned",
   "subject.assigned",
+  "timetable.special_day",
+  "timetable.substitute",
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 

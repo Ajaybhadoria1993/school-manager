@@ -82,3 +82,10 @@ export const SUBJECT_COLORS = [
   "bg-fuchsia-100 text-fuchsia-900 border-fuchsia-200",
   "bg-teal-100 text-teal-900 border-teal-200",
 ] as const;
+
+/**
+ * What a special day usually is (2026-11-23, user: "What is the day par dropdown do, special jo bhi days hote hain, aur Other jisse alag likh paun"):
+ * the list of the Special day window; "Other" opens a box to type another name.
+ */
+export const SPECIAL_DAY_TITLES = ["PTM", "Half day", "Annual day", "Sports day", "Exam day", "Picnic / Trip", "Festival celebration", "Early closing"] as const;
+export const OTHER_SPECIAL_DAY = "Other";

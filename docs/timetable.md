@@ -225,6 +225,9 @@ All under `/api/v1`. Writers: school admin, principal. Readers add teachers (pub
 | `POST /timetable/teachers/:id/replace` | give all of a teacher's classes and lessons to another (a teacher who left) |
 | `GET /timetable/overview?search&status` | the steps and every unit with where it stands (filtered by the server) |
 | `GET /timetable/published` | the units whose timetable is published |
+| `GET /timetable/special-days`, `POST`, `PATCH/DELETE /timetable/special-days/:id` | (2026-11-22) days with a timing of their own: `{ date, endDate? (days in a row, up to 31), title, classIds (none: whole school), slots (none: no classes) }`. Today or a day to come only (400 `date`; 409 `SPECIAL_DAY_OVER` to change or take off a day that is over); 409 `SPECIAL_DAY_CLASH` when two of one date share a class (or one is for the whole school). The classes' parents and teachers (everyone for the whole school) get a `timetable.special_day` bell. `services/specialDay.service.ts` |
+| `GET /timetable/arrangements?date` | (2026-11-22) the day's arrangement: `away` = teachers marked Absent / Leave (today also `not_in`: with periods, not checked in), each with that day's lessons from the published timetables (a special day's periods for its classes) and the `free` teachers for each (not away, come that weekday, nothing else then in any class, medium or arrangement; fewest periods first, `in`/`full` flags); `holiday` for a holiday or a whole-school day without classes |
+| `PUT /timetable/arrangements` | `{ date (today only), classId, sectionId, period, absentTeacherId, substituteTeacherId \| null }`: puts a free teacher in for that lesson that day only (`Substitution`), or takes them off. 409 `NOT_AWAY`, 409 `TEACHER_NOT_FREE`. The teacher put in (and the one taken off) gets a `timetable.substitute` bell. Answers the day. `services/arrangement.service.ts` |
 
 ## The rules the server holds
 
@@ -304,9 +307,21 @@ no sections; a teacher who leaves (give everything to another, checked first); c
 archiving a subject or teacher in use (refused); deleting a section or class (its lists and timetables go); next year (the sections, what
 they study and their timetables can be copied as drafts); print; draft and published.
 
+## Special days, arrangements and a year that is over (2026-11-22)
+
+* **Special day** (button on School timings, list in the Special days card): a PTM, a half day, the annual day (a list, and Other to type a name;
+  2026-11-23), one day or days in a row (`date` to `endDate`, up to 31; a last day left empty is one day), for the whole school or some
+  classes, with that day's timing (DayFields, starting from the usual day) or no classes. A whole-school one is read by the teachers' attendance
+  (`attendance/services/schoolDays.ts`: its hours; no classes = a non-working day named after it); one for some classes leaves the school's day.
+* **Arrangements** (Timetable > Arrangements, `/school/arrangements`): today's away teachers in two tabs (Absent & on leave / Not checked in),
+  each period with a list of free teachers and Assign (Change / Remove once put in); the arrows read an earlier day (nothing to change).
+  The timetable itself is not changed. A teacher's leave for a day to come cannot be marked yet, so a day to come has no arrangement.
+* **A year that is over**: Class timetables shows the class's week read only (`ClassWeekView`, "Read only"), no editor; School timings sends
+  the person to Class timetables; Arrangements says the year is over (`RunningYearRoute`). The server refuses every change then anyway (`YEAR_READ_ONLY`).
+
 ## Not built (say if you want it)
 
-Substitution for a day when a teacher is absent (needs leave); alternate-week patterns and "2nd/4th Saturday off" (needs the school calendar);
+Arrangements for a day to come (a teacher's leave cannot be marked ahead yet); alternate-week patterns and "2nd/4th Saturday off" (needs the school calendar);
 teachers signing in to see or propose changes; parents' and students' views (the portals are not built); exam timetables; building the
 *next* year's timetable before it is switched on (it can be copied, then changed after it is on); one teacher's workload report across years.
 
@@ -319,7 +334,8 @@ teachers signing in to see or propose changes; parents' and students' views (the
   timing at a time); a new subject from the grid: `gridNewSubject.test.ts`.
 * Backend, the week in one save: `timetable/__tests__/schoolDay.test.ts` (days grouped, replaced not added, the usual name kept, timings of
   some classes left alone, a lesson left without its period refused with nothing changed, boxes named by day, a clash, who may, one school only).
-* Frontend (`npm test`): `utils/__tests__/timings.test.ts`, `schoolWeek.test.ts`, `timetable.test.ts`; `pages/school/__tests__/Timetable*.test.tsx`;
+* Backend, special days and arrangements (2026-11-22): `timetable/__tests__/specialDays.test.ts`, `arrangements.test.ts`, `shiftOthers.test.ts` (`shiftOnly`).
+* Frontend (`npm test`): `utils/__tests__/timings.test.ts`, `schoolWeek.test.ts`, `timetable.test.ts`; `pages/school/__tests__/Timetable*.test.tsx`, `Arrangements.test.tsx`, `ClassTimetables.test.tsx` (a year that is over);
   `components/timetable/__tests__/ClassSubjectsEditor.test.tsx`.
 * A browser journey (real Chrome, throwaway backend 5001 / app 5174 / database `school_erp_md`) walks the whole flow: timings, subjects,
   teachers, class subjects, the grid (fill, clash, save, publish, copy), a teacher's week, a teacher who leaves, a phone width.

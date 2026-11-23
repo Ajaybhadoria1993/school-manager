@@ -802,7 +802,8 @@ describe("The class teacher's register: Not taken, and a click to mark one child
     expect(screen.queryByRole("radiogroup", { name: "Class" })).not.toBeInTheDocument();
     expect(screen.queryByRole("radiogroup", { name: "Section" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Attendance not taken today" })).not.toBeInTheDocument();
-    expect(dateBox(THIS_WEEK)).toBeInTheDocument();
+    // The week the address names (2026-11-23: it was THIS_WEEK, which matched only while today was in 16 to 22 Nov).
+    expect(dateBox({ from: "2026-11-16", to: "2026-11-21" })).toBeInTheDocument();
     const read = reads(calls, "/classroom/attendance/register");
     expect(read).toHaveLength(1);
     expect(Object.fromEntries(new URLSearchParams(read[0].query))).toMatchObject({ classId: "c5", sectionId: "c5-A" });

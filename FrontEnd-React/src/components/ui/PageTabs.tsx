@@ -23,9 +23,15 @@ export function PageTabs<T extends string>({
   value,
   onChange,
   className,
+  variant = "line",
 }: {
   /** What the tabs choose between, for a screen reader ("Which students to show"). */
   label: string;
+  /**
+   * `line` (the default): side by side over a thin line, the open one with an orange bar. `card` (2026-11-23, the School timings reference): the tabs
+   * share a white card, each as wide as the others with its icon, the open one blue with a blue bar under it.
+   */
+  variant?: "line" | "card";
   tabs: readonly PageTab<T>[];
   value: T;
   onChange: (id: T) => void;
@@ -47,7 +53,15 @@ export function PageTabs<T extends string>({
   }
 
   return (
-    <div role="tablist" aria-label={label} className={cn("flex gap-1 overflow-x-auto overflow-y-hidden border-b border-border [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", className)}>
+    <div
+      role="tablist"
+      aria-label={label}
+      className={cn(
+        "flex gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        variant === "card" ? "rounded-[var(--radius-card)] border border-border bg-surface p-1.5 shadow-card" : "border-b border-border",
+        className
+      )}
+    >
       {tabs.map((tab, index) => {
         const open = tab.id === value;
         return (
@@ -65,10 +79,18 @@ export function PageTabs<T extends string>({
             }}
             onKeyDown={(event) => onKeyDown(event, index)}
             className={cn(
-              "relative inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-t-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
-              open
-                ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-full after:bg-orange"
-                : "text-foreground-muted hover:text-foreground",
+              "relative inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
+              variant === "card"
+                ? cn(
+                    "min-w-fit flex-1 justify-center rounded-xl",
+                    open
+                      ? "bg-primary-soft/60 text-primary-deep after:absolute after:inset-x-4 after:bottom-0 after:h-[3px] after:rounded-full after:bg-primary"
+                      : "text-foreground-muted hover:bg-background hover:text-foreground"
+                  )
+                : cn(
+                    "rounded-t-lg",
+                    open ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-full after:bg-orange" : "text-foreground-muted hover:text-foreground"
+                  ),
             )}
           >
             {tab.icon && <tab.icon className="size-4" aria-hidden />}

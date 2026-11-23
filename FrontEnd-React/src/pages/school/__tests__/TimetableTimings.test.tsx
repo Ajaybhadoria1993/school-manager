@@ -8,7 +8,9 @@ import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
 import { OVERVIEW, REGULAR, REGULAR_ROWS } from "../../../test/timetableFixtures";
-import type { AcademicStructure, Schedule, SchoolDayInput, Slot } from "../../../types";
+import type { AcademicStructure, Schedule, SchoolDayInput, Slot, SpecialDay, SpecialDayInput } from "../../../types";
+import { addDays } from "../../../utils/calendar";
+import { todayInIndia } from "../../../utils/students";
 import SchoolTimingsPage from "../SchoolTimings";
 
 const STRUCTURE: AcademicStructure = {
@@ -667,5 +669,119 @@ describe("School timings: changes that are not saved are asked about before leav
     expect(within(dialog).getByText("Add at least one period")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Save and continue" })).toBeDisabled();
     expect(sent(calls)).toHaveLength(0);
+  });
+});
+
+/**
+ * Special days (2026-11-22, user: "alag button do, jisse kisi date ka time change kar du aur bata saku, jaise PTM hai to kis kis class ka hai"): the
+ * first day and, for days in a row, the last (2026-11-23: "3 se 6 tak"), what the day is (a list, and Other to type a name), for the whole school or
+ * some classes, and that day's timing or no classes.
+ */
+describe("School timings: special days", () => {
+  const today = todayInIndia();
+  const tomorrow = addDays(today, 1);
+  const PTM: SpecialDay = { id: "sp1", date: tomorrow, endDate: tomorrow, title: "PTM", classIds: ["c1"], classNames: ["Nursery"], slots: REGULAR_ROWS.slice(0, 3) };
+  const posted = (calls: Call[]) => calls.filter((c) => c.method === "POST" && c.path === "/timetable/special-days").map((c) => c.body as SpecialDayInput);
+  const openWith = (days: SpecialDay[] = []) =>
+    openPage([REGULAR], {
+      "GET /timetable/special-days": () => ({ items: days }),
+      "POST /timetable/special-days": (body) => ({ id: "sp9", classNames: [], ...(body as SpecialDayInput) }),
+      "PATCH /timetable/special-days/sp2": (body) => ({ id: "sp2", classNames: ["Nursery"], ...(body as SpecialDayInput) }),
+      "DELETE /timetable/special-days/sp1": () => null,
+    });
+  /** Picks what the day is from the list. */
+  async function chooseKind(user: ReturnType<typeof userEvent.setup>, dialog: ReturnType<typeof within>, option: string) {
+    await user.click(dialog.getByRole("button", { name: /What is the day/ }));
+    await user.click(await screen.findByRole("option", { name: option }));
+  }
+
+  it("Special day opens a window: the whole school with no classes that day, one day, is sent with no rows", async () => {
+    const { calls, user } = openWith();
+    await screen.findByLabelText("Usual day: school starts");
+    fireEvent.click(screen.getByRole("tab", { name: "Special Day Timings" }));
+    await user.click(await screen.findByRole("button", { name: "Add special day" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    // Nothing can be saved before the day and what it is.
+    expect(dialog.getByRole("button", { name: "Save" })).toBeDisabled();
+    await user.click(dialog.getByRole("button", { name: "Tomorrow" }));
+    await chooseKind(user, dialog, "Annual day");
+    await user.click(dialog.getByLabelText("Classes this day"));
+    expect(dialog.getByText("No classes this day")).toBeInTheDocument();
+    await user.click(dialog.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posted(calls)).toHaveLength(1));
+    expect(posted(calls)[0]).toEqual({ date: tomorrow, endDate: tomorrow, title: "Annual day", classIds: [], slots: [] });
+  });
+
+  it("the list of days has the usual ones; Other opens a box to type another name", async () => {
+    const { calls, user } = openWith();
+    await screen.findByLabelText("Usual day: school starts");
+    fireEvent.click(screen.getByRole("tab", { name: "Special Day Timings" }));
+    await user.click(await screen.findByRole("button", { name: "Add special day" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    await user.click(dialog.getByRole("button", { name: "Tomorrow" }));
+    await user.click(dialog.getByRole("button", { name: /What is the day/ }));
+    for (const name of ["PTM", "Half day", "Annual day", "Sports day", "Exam day"]) expect(await screen.findByRole("option", { name })).toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: "Other (type a name)" }));
+    expect(dialog.getByRole("button", { name: "Save" })).toBeDisabled();
+    await user.type(dialog.getByLabelText(/^Name of the day/), "Science fair");
+    await user.click(dialog.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posted(calls)).toHaveLength(1));
+    expect(posted(calls)[0].title).toBe("Science fair");
+  });
+
+  it("for some classes, with that day's timing (the usual day to start with, its figures on top)", async () => {
+    const { calls, user } = openWith();
+    await screen.findByLabelText("Usual day: school starts");
+    fireEvent.click(screen.getByRole("tab", { name: "Special Day Timings" }));
+    await user.click(await screen.findByRole("button", { name: "Add special day" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    await user.click(dialog.getByRole("button", { name: "Tomorrow" }));
+    await chooseKind(user, dialog, "PTM");
+    await user.click(dialog.getByRole("radio", { name: "Some classes" }));
+    expect(dialog.getByRole("button", { name: "Save" })).toBeDisabled();
+    await user.click(dialog.getByRole("button", { name: /Choose the classes/ }));
+    await user.click(await screen.findByRole("option", { name: "Nursery" }));
+    await user.keyboard("{Escape}");
+    expect(dialog.getByText("School time").parentElement).toHaveTextContent("08:30–14:20");
+    // A half day: three periods.
+    fireEvent.change(dialog.getByLabelText("Special day: number of periods"), { target: { value: "3" } });
+    await user.click(dialog.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posted(calls)).toHaveLength(1));
+    const sent = posted(calls)[0];
+    expect(sent).toMatchObject({ date: tomorrow, endDate: tomorrow, title: "PTM", classIds: ["c1"] });
+    expect(sent.slots.filter((s) => s.kind === "period").map((s) => s.start)).toEqual(["08:30", "09:10", "09:50"]);
+  });
+
+  it("lists the special days to come (days in a row from the first to the last), for whom and their hours; Take off asks first", async () => {
+    const WEEK: SpecialDay = { ...PTM, id: "sp2", title: "Sports week", date: tomorrow, endDate: addDays(tomorrow, 3), classIds: [], classNames: [], slots: [] };
+    const { calls, user } = openWith([PTM, WEEK, { ...PTM, id: "old", date: addDays(today, -3), endDate: addDays(today, -3), title: "Sports day" }]);
+    fireEvent.click(await screen.findByRole("tab", { name: "Special Day Timings" }));
+    const card = within(await screen.findByRole("region", { name: "Special days" }));
+    expect(await card.findByRole("listitem", { name: /^PTM · / })).toHaveTextContent("Nursery · 08:30 to 10:30");
+    const week = card.getByRole("listitem", { name: /^Sports week · / });
+    expect(week).toHaveTextContent(" to ");
+    expect(week).toHaveTextContent("Whole school · No classes");
+    // Days that are over are not listed.
+    expect(card.queryByText(/Sports day/)).not.toBeInTheDocument();
+    await user.click(card.getByRole("button", { name: "Take off PTM" }));
+    const ask = within(await screen.findByRole("dialog"));
+    await user.click(ask.getByRole("button", { name: "Take off" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.path === "/timetable/special-days/sp1")).toBe(true));
+  });
+
+  it("Change opens the window with the days as they are, and Save sends the first and the last day", async () => {
+    const WEEK: SpecialDay = { ...PTM, id: "sp2", title: "Sports week", date: tomorrow, endDate: addDays(tomorrow, 3) };
+    const { calls, user } = openWith([WEEK]);
+    fireEvent.click(await screen.findByRole("tab", { name: "Special Day Timings" }));
+    const card = within(await screen.findByRole("region", { name: "Special days" }));
+    await user.click(await card.findByRole("button", { name: "Change Sports week" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    // Not one of the list: Other, with its name.
+    expect(dialog.getByLabelText(/^Name of the day/)).toHaveValue("Sports week");
+    expect(dialog.getByRole("radio", { name: "Some classes" })).toBeChecked();
+    expect(dialog.getByLabelText("Special day: number of periods")).toHaveValue(3);
+    await user.click(dialog.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+    expect(calls.find((c) => c.method === "PATCH")?.body).toMatchObject({ date: tomorrow, endDate: addDays(tomorrow, 3), title: "Sports week" });
   });
 });
