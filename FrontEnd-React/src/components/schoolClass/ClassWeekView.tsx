@@ -3,6 +3,7 @@ import { SUBJECT_COLORS } from "../../constants/timetable";
 import { buildModel, cellAt, subjectColors, teacherOf } from "../../utils/timetable";
 import { clock12, weekdayDay } from "../../utils/exams";
 import { cn } from "../../utils/helpers";
+import { withoutArrival } from "../../utils/timings";
 import type { ExamDay, GridView } from "../../types";
 
 /**
@@ -20,6 +21,8 @@ export function ClassWeekView({ view, label, examDays = [] }: { view: GridView; 
   const colors = useMemo(() => subjectColors(view), [view]);
   const reference = view.days.reduce((best, d) => (d.slots.length > best.slots.length ? d : best), view.days[0]);
   if (!reference) return null;
+  // The time to come in before classes is not a row of the week (2026-11-22).
+  const shown = withoutArrival(reference.slots);
   const subjectName = (id: string) => model.allotments.get(id)?.subjectName ?? "A subject";
   const examOn = new Map(examDays.map((e) => [e.day, e]));
   const columns = new Set(view.days.map((d) => d.day));
@@ -53,7 +56,7 @@ export function ClassWeekView({ view, label, examDays = [] }: { view: GridView; 
           </tr>
         </thead>
         <tbody>
-          {reference.slots.map((slot, i) =>
+          {shown.map((slot, i) =>
             slot.period === null ? (
               <tr key={i} className="bg-surface-muted/70">
                 <th scope="row" className="px-3 py-1.5 text-left text-xs font-semibold text-foreground-muted">
@@ -66,7 +69,7 @@ export function ClassWeekView({ view, label, examDays = [] }: { view: GridView; 
                 ).map((run, at) =>
                   run.kind === "exam" ? (
                     i === 0 ? (
-                      <ExamCell key={`exam-${run.day}`} exam={examOn.get(run.day)!} rows={reference.slots.length} />
+                      <ExamCell key={`exam-${run.day}`} exam={examOn.get(run.day)!} rows={shown.length} />
                     ) : null
                   ) : (
                     <td key={at} colSpan={run.length} className="px-2 py-1.5 text-center text-xs text-foreground-muted">
@@ -84,7 +87,7 @@ export function ClassWeekView({ view, label, examDays = [] }: { view: GridView; 
                   </span>
                 </th>
                 {view.days.map((d) => {
-                  if (replaced.has(d.day)) return i === 0 ? <ExamCell key={d.day} exam={examOn.get(d.day)!} rows={reference.slots.length} /> : null;
+                  if (replaced.has(d.day)) return i === 0 ? <ExamCell key={d.day} exam={examOn.get(d.day)!} rows={shown.length} /> : null;
                   const here = d.slots.find((s) => s.period === slot.period);
                   const cell = here ? cellAt(view.cells, d.day, slot.period!) : undefined;
                   if (!cell) {

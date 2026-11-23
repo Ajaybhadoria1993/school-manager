@@ -19,8 +19,9 @@ const SHEET = {
   label: "Class 5 - A",
   date: todayInIndia(),
   holiday: null,
-  saved: false,
-  markedBy: null,
+  // A day the class teacher has taken: the school sees the marks only of such a day (2026-11-23), not the server's Present of a day nobody took.
+  saved: true,
+  markedBy: { name: "Meena Singh", role: "teacher" },
   counts: { present: 2, absent: 0, late: 0, leave: 0 },
   students: [
     { id: "s1", name: "Asha Verma", admissionNumber: "ADM-1", rollNumber: 1, status: "present", reason: null },
@@ -66,6 +67,17 @@ describe("a class's attendance for the school's staff", () => {
     expect(screen.queryByRole("button", { name: "Save attendance" })).not.toBeInTheDocument();
     // They work on any class: no list of their own classes is asked for.
     expect(calls.some((c) => c.path === "/classroom/my-classes")).toBe(false);
+  });
+
+  it("a person who only looks has the summary of the day but no Mark all present, no Reset and no Save", async () => {
+    openPage("receptionist", ["attendance.view"]);
+    await screen.findByRole("list", { name: "Attendance" });
+    const summary = within(screen.getByRole("region", { name: "Summary of the day" }));
+    expect(summary.getByRole("heading", { name: "Today's summary" })).toBeInTheDocument();
+    expect(summary.getByText("Present").parentElement).toHaveTextContent("Present2");
+    expect(screen.queryByRole("button", { name: "Mark all present" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reset" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save attendance" })).not.toBeInTheDocument();
   });
 
   it("even with attendance.mark ticked a staff member only looks: the marks are fixed and there is no Save (only the class teacher takes it)", async () => {

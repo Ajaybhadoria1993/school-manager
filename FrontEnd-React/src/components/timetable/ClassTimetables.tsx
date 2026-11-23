@@ -2,12 +2,13 @@ import { useRef, useState, type ReactNode } from "react";
 import { skipToken } from "@reduxjs/toolkit/query";
 import { Link, useSearchParams } from "react-router";
 import { CalendarClock, Clock3, FolderTree, MousePointerClick, Search } from "lucide-react";
+import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useGetGridQuery, useGetOverviewQuery } from "../../redux/api/timetableApi";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
-import type { ClassWeekStatus, OverviewQuery, OverviewUnit, UnitRef } from "../../types";
+import type { OverviewQuery, OverviewUnit, UnitRef } from "../../types";
 import { StudentFormHeader } from "../students/StudentFormHeader";
 import { StudentsNotice } from "../students/StudentsNotice";
 import { Badge } from "../ui/Badge";
@@ -15,6 +16,7 @@ import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Input } from "../ui/Input";
 import { Skeleton } from "../ui/Skeleton";
+import { ClassWeekView } from "../schoolClass/ClassWeekView";
 import { ClassWeek } from "./ClassWeek";
 
 const plainLink =
@@ -22,14 +24,30 @@ const plainLink =
 
 type Status = NonNullable<OverviewQuery["status"]>;
 
-/** Where a class's timetable stands, in two or three words, coloured. */
+/** Where a class's timetable stands, in two or three words, as a small coloured badge (2026-11-22, the reference pictures). */
 function StatusText({ unit }: { unit: OverviewUnit }) {
-  if (!unit.hasTiming) return <span className="text-warning">No timing</span>;
-  if (unit.subjects === 0) return <span className="text-foreground-muted">No subjects yet</span>;
-  if (unit.errors > 0) return <span className="font-semibold text-danger">{unit.errors} to fix</span>;
-  if (unit.status === "published") return <span className="font-semibold text-success">Published</span>;
-  if (unit.status === "draft") return <span className="text-warning">Draft · {unit.filled} of {unit.total}</span>;
-  return <span className="text-foreground-muted">Not started</span>;
+  const pill = "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-bold";
+  if (!unit.hasTiming) return <span className={cn(pill, "bg-warning-soft text-warning")}>No timing</span>;
+  if (unit.subjects === 0) return <span className={cn(pill, "bg-surface-muted text-foreground-muted")}>No subjects yet</span>;
+  if (unit.errors > 0) return <span className={cn(pill, "bg-danger-soft text-danger")}>{unit.errors} to fix</span>;
+  if (unit.status === "published") return <span className={cn(pill, "bg-success-soft text-success")}>Published</span>;
+  if (unit.status === "draft")
+    return (
+      <span className={cn(pill, "bg-orange-soft text-orange-hover")}>
+        Draft · {unit.filled} of {unit.total}
+      </span>
+    );
+  return <span className={cn(pill, "bg-surface-muted text-foreground-muted")}>Not started</span>;
+}
+
+/** The bar under a class in the list: how much of its week has a lesson; green once it is published. */
+function UnitBar({ unit }: { unit: OverviewUnit }) {
+  const share = unit.total > 0 ? Math.min(100, Math.round((unit.filled / unit.total) * 100)) : 0;
+  return (
+    <span aria-hidden className="block h-1 w-full overflow-hidden rounded-full bg-surface-muted">
+      <span className={cn("block h-full rounded-full", unit.status === "published" ? "bg-success" : "bg-orange")} style={{ width: `${unit.status === "published" ? 100 : share}%` }} />
+    </span>
+  );
 }
 
 const keyOf = (u: { classId: string; sectionId: string | null }) => `${u.classId}:${u.sectionId ?? "none"}`;
@@ -52,8 +70,8 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
   const res = useGetOverviewQuery({ ...(typed ? { search: typed } : {}), status });
   const overview = res.data?.data;
   const detail = useRef<HTMLDivElement>(null);
-  // What the class open says about itself (periods filled, not saved, no teacher): shown under the filter, in the title row.
-  const [info, setInfo] = useState<ClassWeekStatus | null>(null);
+  // The departments, to put the classes of the list under their department's name (the same read as Classes & Sections: no request of its own).
+  const structure = useGetStructureQuery().data?.data;
 
   const chosen = params.get("class");
   const picked: UnitRef | null = !overview
@@ -67,10 +85,10 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
 
   const tabs: { value: Status; label: string }[] = overview
     ? [
-        { value: "all", label: `All classes (${overview.summary.units})` },
-        { value: "none", label: `Not started (${overview.summary.none})` },
-        { value: "draft", label: `Draft (${overview.summary.draft})` },
-        { value: "published", label: `Published (${overview.summary.published})` },
+        { value: "all", label: `All classes · ${overview.summary.units}` },
+        { value: "none", label: `Not started · ${overview.summary.none}` },
+        { value: "draft", label: `Draft · ${overview.summary.draft}` },
+        { value: "published", label: `Published · ${overview.summary.published}` },
       ]
     : [];
   const listed = !!overview && !!overview.academicYear && overview.summary.units > 0 && overview.counts.timings > 0;
@@ -90,20 +108,9 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
             </span>
           ) : undefined
         }
-        meta={
-          picked && info ? (
-            <>
-              {info.dirty && <Badge tone="warning">Not saved</Badge>}
-              <span role="status" aria-label="Periods with a lesson" className="text-foreground-muted">
-                {info.filled} of {info.total} periods have a lesson
-              </span>
-              {info.noTeacher && <span className="font-medium text-warning">No teacher available in your school</span>}
-            </>
-          ) : undefined
-        }
         actions={
           listed ? (
-            <div role="radiogroup" aria-label="Which timetables to show" className="inline-flex max-w-full overflow-x-auto rounded-lg border border-border bg-surface p-0.5">
+            <div role="radiogroup" aria-label="Which timetables to show" className="inline-flex max-w-full overflow-x-auto rounded-xl border border-border bg-surface p-1 shadow-card">
               {tabs.map((t) => (
                 <button
                   key={t.value}
@@ -112,8 +119,8 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
                   aria-checked={status === t.value}
                   onClick={() => setStatus(t.value)}
                   className={cn(
-                    "h-8 shrink-0 cursor-pointer whitespace-nowrap rounded-md px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
-                    status === t.value ? "bg-primary-soft text-primary-deep" : "text-foreground-muted hover:text-foreground"
+                    "h-8 shrink-0 cursor-pointer whitespace-nowrap rounded-lg px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                    status === t.value ? "bg-primary-deep text-white shadow-sm" : "text-foreground-muted hover:text-foreground"
                   )}
                 >
                   {t.label}
@@ -178,6 +185,12 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
     );
   }
 
+  /** The department a class is in, by name; null for a class in none (or a school with no departments). */
+  function departmentOf(classId: string): string | null {
+    const departmentId = structure?.classes.find((c) => c.id === classId)?.departmentId;
+    return departmentId ? (structure?.departments.find((d) => d.id === departmentId)?.name ?? null) : null;
+  }
+
   function pick(unit: OverviewUnit) {
     setParams((prev) => {
       const next = new URLSearchParams(prev);
@@ -198,25 +211,30 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
         {overview.units.length === 0 ? (
           <p className="px-4 py-8 text-center text-sm text-foreground-muted">No class matches.</p>
         ) : (
-          <ul aria-label="Classes" className="max-h-[32rem] divide-y divide-border overflow-y-auto lg:max-h-[70vh]">
-            {overview.units.map((u) => {
+          <ul aria-label="Classes" className="max-h-[32rem] space-y-1 overflow-y-auto p-2 lg:max-h-[70vh]">
+            {overview.units.map((u, i) => {
               const selected = picked !== null && keyOf(u) === keyOf(picked);
+              // A department's name over its first class (the list is in teaching order, so its classes are together).
+              const group = departmentOf(u.classId);
+              const heading = group && (i === 0 || departmentOf(overview.units[i - 1].classId) !== group) ? group : null;
               return (
                 <li key={keyOf(u)}>
+                  {heading && <p className="px-2 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wider text-foreground-muted first:pt-1">{heading}</p>}
                   <button
                     type="button"
                     aria-current={selected ? "true" : undefined}
                     onClick={() => pick(u)}
                     className={cn(
-                      "relative flex w-full cursor-pointer flex-col items-start gap-0.5 px-4 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40",
-                      selected ? "bg-primary-soft/70" : "hover:bg-background"
+                      "relative flex w-full cursor-pointer flex-col gap-1.5 rounded-xl border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40",
+                      selected ? "border-orange bg-orange-soft/40 shadow-sm" : "border-transparent hover:bg-background"
                     )}
                   >
-                    {selected && <span aria-hidden className="absolute inset-y-0 left-0 w-1 rounded-r-full bg-primary" />}
-                    <span className="text-sm font-bold text-foreground">{u.label}</span>
-                    <span className="text-xs">
+                    {selected && <span aria-hidden className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-orange" />}
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <span className="truncate text-sm font-bold text-foreground">{u.label}</span>
                       <StatusText unit={u} />
                     </span>
+                    <UnitBar unit={u} />
                   </button>
                 </li>
               );
@@ -226,8 +244,21 @@ export function ClassTimetables({ onGoTimings }: { onGoTimings: () => void }) {
       </Card>
 
       <div ref={detail} className="min-w-0 scroll-mt-4">
-        {picked ? (
-          <ClassWeek key={keyOf(picked)} unit={picked} onGoTimings={onGoTimings} onStatus={setInfo} />
+        {picked && readOnly ? (
+          // A year that is over is only looked at (2026-11-22): its week as it was, nothing to change (the editor, Fill and Save are not offered).
+          week ? (
+            <Card className="space-y-3 p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <Badge tone="warning">Read only</Badge>
+                {week.unit.label}
+              </p>
+              <ClassWeekView view={week} label={week.unit.label} />
+            </Card>
+          ) : (
+            <Skeleton className="h-80 w-full rounded-2xl" />
+          )
+        ) : picked ? (
+          <ClassWeek key={keyOf(picked)} unit={picked} onGoTimings={onGoTimings} />
         ) : (
           <Card className="flex flex-col items-center gap-2 px-6 py-20 text-center">
             <span className="flex size-12 items-center justify-center rounded-2xl bg-primary-soft text-primary">

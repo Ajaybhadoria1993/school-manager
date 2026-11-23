@@ -8,6 +8,7 @@ import { comparisonLabel, percentChange, pointsChange, rangeFor, rangeLabel, typ
 import { todayInIndia } from "../../utils/students";
 import { Badge } from "../ui/Badge";
 import { Card } from "../ui/Card";
+import { MyAttendanceCard } from "./MyAttendanceCard";
 import { AbsentClassesCard } from "./school/AbsentClassesCard";
 import { AcademicYearSetUp } from "./school/AcademicYearStatus";
 import { AdmissionsCard } from "./school/AdmissionsCard";
@@ -83,6 +84,10 @@ export function SchoolDashboard() {
           }}
         />
       </header>
+
+      {/* A staff member the school gave this dashboard (a principal, a receptionist...) marks their own attendance here, like on the staff home
+          (2026-11-22: the staff mark themselves, the school only looks). The school admin is not a staff member; anyone else who is not one sees no card. */}
+      {user.role !== "school_admin" && <MyAttendanceCard who="staff" />}
 
       <AcademicYearSetUp />
 

@@ -1,6 +1,6 @@
 import { MAX_PERIODS, MIN_PERIOD_MINUTES } from "../constants/timetable";
 import type { ClassDayInput, Schedule, Slot } from "../types";
-import { DEFAULT_SETUP, clockToMinutes, generateDay, setupFromSlots, type DaySetup } from "./timings";
+import { DEFAULT_SETUP, clockToMinutes, generateDay, setupFromSlots, withArrival, type DaySetup } from "./timings";
 
 /**
  * A class's own hours, as the "Class timing" box of its timetable thinks of them. A class has the school's times (the school's one day:
@@ -73,7 +73,7 @@ export function classHours(days: readonly ClassDay[]): { start: string; end: str
 
 /**
  * The numbers of a class's day from `start`: the school's length of a period (taken from `reference`, a day of the school), its lunch and
- * short break when they fall inside the hours (after the start, and before `until` when the end is known), no assembly.
+ * short break when they fall inside the hours (after the start, and before `until` when the end is known), no assembly and no time to come in.
  */
 function classSetup(start: string, from: number, until: number, reference: readonly Slot[], periods: number): DaySetup {
   const school = setupFromSlots(reference);
@@ -84,7 +84,7 @@ function classSetup(start: string, from: number, until: number, reference: reado
   };
   const lunch = inside(school.lunchStart, school.lunchEnd);
   const rest = inside(school.breakStart, school.breakEnd);
-  return {
+  return withArrival({
     ...school,
     start,
     periods,
@@ -93,7 +93,7 @@ function classSetup(start: string, from: number, until: number, reference: reado
     lunchEnd: lunch ? school.lunchEnd : null,
     breakStart: rest ? school.breakStart : null,
     breakEnd: rest ? school.breakEnd : null,
-  };
+  }, 0);
 }
 
 /**

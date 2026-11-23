@@ -11,7 +11,8 @@ import { STRUCTURE } from "../../../test/schoolClass";
 import { signInAs, signOut } from "../../../test/session";
 import { todayInIndia } from "../../../utils/students";
 import type { UserRole } from "../../../types";
-import StudentAttendancePage from "../StudentAttendance";
+// The register (weeks, months): Attendance > Student itself is the day of one class since 2026-11-23.
+import StudentAttendancePage from "../StudentRegister";
 
 /** Attendance > Student gives the way to take a class's day only to the people the school allowed to take it (Permissions). */
 

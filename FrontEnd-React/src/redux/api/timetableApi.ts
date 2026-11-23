@@ -1,6 +1,8 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
 import type { TeacherMedium,
   ApiResponse,
+  ArrangementDay,
+  ArrangementInput,
   AllotmentView,
   AssignTeacherInput,
   AutofillAnswer,
@@ -23,6 +25,8 @@ import type { TeacherMedium,
   Schedule,
   ScheduleInput,
   SchoolDayInput,
+  SpecialDay,
+  SpecialDayInput,
   Subject,
   SubjectInput,
   TeacherImportResult,
@@ -61,7 +65,7 @@ export const unitTag = (unit: UnitRef) => `${unit.classId}:${sectionOf(unit)}`;
 export const timetableApi = createApi({
   reducerPath: "timetableApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["TeacherMediums", "Subject", "Teacher", "Schedule", "Allotment", "Overview", "TeacherWeek", "Grid", "TeacherSettings"],
+  tagTypes: ["TeacherMediums", "Subject", "Teacher", "Schedule", "Allotment", "Overview", "TeacherWeek", "Grid", "TeacherSettings", "SpecialDays", "Arrangement"],
   refetchOnMountOrArgChange: 60,
   refetchOnReconnect: true,
   endpoints: (build) => ({
@@ -354,6 +358,36 @@ export const timetableApi = createApi({
       query: ({ id, ...body }) => ({ url: `/timetable/teachers/${id}/replace`, method: "POST", body }),
       invalidatesTags: ["Teacher", "Allotment", "Overview", "TeacherWeek", "Grid"],
     }),
+    /** The days with a timing of their own (a PTM, a half day), by date (2026-11-22). */
+    getSpecialDays: build.query<ApiResponse<{ items: SpecialDay[] }>, void>({
+      query: () => "/timetable/special-days",
+      providesTags: ["SpecialDays"],
+    }),
+    saveSpecialDay: build.mutation<ApiResponse<SpecialDay>, SpecialDayInput & { id?: string }>({
+      query: ({ id, ...body }) => (id ? { url: `/timetable/special-days/${id}`, method: "PATCH", body } : { url: "/timetable/special-days", method: "POST", body }),
+      invalidatesTags: ["SpecialDays", "Arrangement"],
+    }),
+    removeSpecialDay: build.mutation<ApiResponse<null>, string>({
+      query: (id) => ({ url: `/timetable/special-days/${id}`, method: "DELETE" }),
+      invalidatesTags: ["SpecialDays", "Arrangement"],
+    }),
+    /** One day's arrangement: who is away, their periods, the teachers free then (2026-11-22). */
+    getArrangement: build.query<ApiResponse<ArrangementDay>, string>({
+      query: (date) => ({ url: "/timetable/arrangements", params: { date } }),
+      providesTags: ["Arrangement"],
+    }),
+    /** A substitute for one lesson today (or none); the answer is the day as it is now, put straight into the read. */
+    saveArrangement: build.mutation<ApiResponse<ArrangementDay>, ArrangementInput>({
+      query: (body) => ({ url: "/timetable/arrangements", method: "PUT", body }),
+      async onQueryStarted(input, { dispatch, queryFulfilled }) {
+        try {
+          const { data } = await queryFulfilled;
+          dispatch(timetableApi.util.updateQueryData("getArrangement", input.date, () => data));
+        } catch {
+          // The page shows the reason.
+        }
+      },
+    }),
     /** The set-up at a glance; the class list is filtered by the server (by name, by where the timetable stands). */
     getOverview: build.query<ApiResponse<TimetableOverview>, OverviewQuery>({
       query: (params) => ({ url: "/timetable/overview", params }),
@@ -412,6 +446,11 @@ export const {
   useReplaceTeacherMutation,
   useGetOverviewQuery,
   useGetPublishedUnitsQuery,
+  useGetSpecialDaysQuery,
+  useSaveSpecialDayMutation,
+  useRemoveSpecialDayMutation,
+  useGetArrangementQuery,
+  useSaveArrangementMutation,
 } = timetableApi;
 
 /** After a bulk upload of teachers: the teacher lists and numbers, and the subjects a file may have added, are read again (the ones on screen only). */

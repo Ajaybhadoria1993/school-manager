@@ -159,6 +159,8 @@ export interface StudentListQuery {
   /** A section's id, or "none" for a class without sections. */
   sectionId?: string;
   gender?: Gender;
+  /** `year`: only the students admitted on a day of the year shown (the New admissions tab). */
+  admitted?: "year";
   sort?: StudentSort;
   dir?: "asc" | "desc";
   page?: number;
@@ -191,7 +193,16 @@ export interface StudentCapacity {
   sections: SectionLoad[];
   /** `nextRollNumber`: for a class without sections (its students sit in the class as a whole). */
   classes: { classId: string; enrolled: number; nextRollNumber: number | null }[];
-  totals: { students: number; seats: number; seatsLeft: number; fullSections: number };
+  totals: {
+    students: number;
+    seats: number;
+    seatsLeft: number;
+    fullSections: number;
+    /** Of those students, the ones admitted on a day of this year (the New admissions tab). */
+    newAdmissions: number;
+    /** Every inactive student of the school (the Inactive tab). */
+    inactive: number;
+  };
 }
 
 /** One guardian of an admission: new, or one the school has (`guardianId`, kept as they are unless `updateDetails`). */

@@ -132,17 +132,17 @@ function UserMenu() {
 export function Topbar({
   onMenuClick,
   title,
+  kicker,
 }: {
   onMenuClick: () => void;
   title: string;
+  /** The small words above the title: the kind of page (People, Daily register...); the school's name when left out. */
+  kicker?: string;
 }) {
   const { user, tenant } = useAuth();
   if (!user) return null;
 
-  const context =
-    user.role === "super_admin"
-      ? "Platform console"
-      : (tenant?.name ?? "Your school");
+  const context = kicker ?? (user.role === "super_admin" ? "Platform console" : (tenant?.name ?? "Your school"));
 
   return (
     <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface/90 px-4 backdrop-blur lg:px-8">

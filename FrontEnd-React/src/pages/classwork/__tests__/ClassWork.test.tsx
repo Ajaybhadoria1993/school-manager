@@ -234,3 +234,98 @@ describe("the reason of an absence (2026-11-06)", () => {
     expect((puts(calls)[0].body as { marks: object[] }).marks[0]).toEqual({ studentId: "s1", status: "late", reason: "Bus" });
   });
 });
+
+describe("the marking sheet in the look of the reference pictures (2026-11-22)", () => {
+  const row = (name: string) => within(screen.getByRole("listitem", { name }));
+  const summary = () => within(screen.getByRole("region", { name: "Summary of the day" }));
+  /** "Absent1": the name of a count and its number, as the summary writes them. */
+  const countOf = (label: string) => summary().getByText(label).parentElement!.textContent;
+  async function open(extra: Record<string, Handler> = {}) {
+    const page = openPage("/class-work/c5?section=c5-A", "teacher", extra);
+    await screen.findByRole("list", { name: "Attendance" });
+    return page;
+  }
+
+  it("each child has four short buttons, P, A, L and Lv, and the lit one is a solid colour (the full words are for a screen reader)", async () => {
+    await open();
+    const asha = row("Asha Verma");
+    for (const letter of ["P", "A", "L", "Lv"]) expect(asha.getByText(letter)).toBeInTheDocument();
+    expect(asha.getByRole("radio", { name: "Present" }).closest("label")!.className).toContain("bg-success");
+    expect(asha.getByRole("radio", { name: "Absent" }).closest("label")!.className).not.toContain("bg-danger");
+    expect(row("Kabir Rao").getByRole("radio", { name: "Leave" }).closest("label")!.className).toContain("bg-info");
+  });
+
+  it("Today's summary: a ring and the four counts, which follow every click", async () => {
+    const { user } = await open();
+    expect(summary().getByRole("heading", { name: "Today's summary" })).toBeInTheDocument();
+    expect(summary().getByRole("img", { name: "50% came to school" })).toBeInTheDocument();
+    expect([countOf("Present"), countOf("Absent"), countOf("Late"), countOf("On leave")]).toEqual(["Present1", "Absent0", "Late0", "On leave1"]);
+    await user.click(row("Asha Verma").getByRole("radio", { name: "Absent" }));
+    expect([countOf("Present"), countOf("Absent"), countOf("On leave")]).toEqual(["Present0", "Absent1", "On leave1"]);
+    expect(summary().getByRole("img", { name: "0% came to school" })).toBeInTheDocument();
+    await user.click(row("Asha Verma").getByRole("radio", { name: "Late" }));
+    // A child who came late came: late is there.
+    expect(summary().getByRole("img", { name: "50% came to school" })).toBeInTheDocument();
+  });
+
+  it("Mark all present puts every child to Present except the one on an approved leave, and takes their reasons away", async () => {
+    const { calls, user } = await open();
+    await user.click(row("Asha Verma").getByRole("radio", { name: "Absent" }));
+    await user.type(row("Asha Verma").getByRole("textbox", { name: "Reason for Asha Verma" }), "Fever");
+    await user.click(screen.getByRole("button", { name: "Mark all present" }));
+    expect(row("Asha Verma").getByRole("radio", { name: "Present" })).toBeChecked();
+    expect(row("Asha Verma").queryByRole("textbox", { name: "Reason for Asha Verma" })).not.toBeInTheDocument();
+    expect(row("Kabir Rao").getByRole("radio", { name: "Leave" })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Save attendance" }));
+    await waitFor(() => expect(puts(calls)).toHaveLength(1));
+    expect((puts(calls)[0].body as { marks: object[] }).marks).toEqual([
+      { studentId: "s1", status: "present" },
+      { studentId: "s2", status: "leave" },
+    ]);
+  });
+
+  it("Reset goes back to what the day was when it was opened (the saved marks and reasons)", async () => {
+    const saved = { ...SHEET, saved: true, students: [{ ...SHEET.students[0], status: "absent" as const, reason: "Wedding" }, SHEET.students[1]] };
+    const { user } = await open({ "GET /classroom/attendance": () => saved });
+    await waitFor(() => expect(row("Asha Verma").getByRole("textbox", { name: "Reason for Asha Verma" })).toHaveValue("Wedding"));
+    await user.click(row("Asha Verma").getByRole("radio", { name: "Present" }));
+    await user.click(row("Kabir Rao").getByRole("radio", { name: "Absent" }));
+    await user.click(screen.getByRole("button", { name: "Reset" }));
+    expect(row("Asha Verma").getByRole("radio", { name: "Absent" })).toBeChecked();
+    expect(row("Asha Verma").getByRole("textbox", { name: "Reason for Asha Verma" })).toHaveValue("Wedding");
+    expect(row("Kabir Rao").getByRole("radio", { name: "Leave" })).toBeChecked();
+  });
+
+  it("a search finds a child by name, roll number or admission number; the summary and the Save are still of the whole class", async () => {
+    const { calls, user } = await open();
+    await user.type(screen.getByRole("textbox", { name: "Search the children" }), "kab");
+    expect(screen.queryByRole("listitem", { name: "Asha Verma" })).not.toBeInTheDocument();
+    expect(screen.getByRole("listitem", { name: "Kabir Rao" })).toBeInTheDocument();
+    expect(countOf("Present")).toBe("Present1");
+    // Nobody matching says so, and does not look like an empty class.
+    await user.clear(screen.getByRole("textbox", { name: "Search the children" }));
+    await user.type(screen.getByRole("textbox", { name: "Search the children" }), "zzz");
+    expect(screen.getByText("Nobody matches")).toBeInTheDocument();
+    await user.clear(screen.getByRole("textbox", { name: "Search the children" }));
+    await user.type(screen.getByRole("textbox", { name: "Search the children" }), "ADM-1");
+    expect(screen.getByRole("listitem", { name: "Asha Verma" })).toBeInTheDocument();
+    expect(screen.queryByRole("listitem", { name: "Kabir Rao" })).not.toBeInTheDocument();
+    // Saved while only Asha is on screen: both children are sent.
+    await user.click(screen.getByRole("button", { name: "Save attendance" }));
+    await waitFor(() => expect(puts(calls)).toHaveLength(1));
+    expect((puts(calls)[0].body as { marks: object[] }).marks).toHaveLength(2);
+  });
+
+  it("Save attendance is the orange main button, and it is in the summary", async () => {
+    await open();
+    const save = screen.getByRole("button", { name: "Save attendance" });
+    expect(save.className).toContain("bg-orange");
+    expect(summary().getByRole("button", { name: "Save attendance" })).toBe(save);
+  });
+
+  it("the tabs of a class's work are the page tabs: the open one has the orange bar", async () => {
+    await open();
+    expect(screen.getByRole("tab", { name: "Attendance" }).className).toContain("after:bg-orange");
+    expect(screen.getByRole("tab", { name: "Diary" }).className).not.toContain("after:bg-orange");
+  });
+});

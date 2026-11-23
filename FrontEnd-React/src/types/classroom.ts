@@ -81,8 +81,14 @@ export interface AttendanceSheet {
   holiday: { title: string } | null;
   saved: boolean;
   markedBy: { name: string; role: string } | null;
+  /** The class teacher of the class or section this year (2026-11-23); null when nobody is, missing from an older server. */
+  classTeacher?: { id: string; name: string } | null;
+  /** The class's own counts: of every child, whatever a search left in `students`. */
   counts: Record<AttendanceStatus, number>;
-  students: { id: string; name: string; admissionNumber: string; rollNumber: number | null; status: AttendanceStatus; reason: string | null }[];
+  /** How many children the class or section has (a search narrows `students`, never this); missing from an older server. */
+  total?: number;
+  /** `position`: the child's place in the whole class (1 is the first); missing from an older server. */
+  students: { id: string; name: string; admissionNumber: string; rollNumber: number | null; position?: number; status: AttendanceStatus; reason: string | null }[];
 }
 
 export type AttendanceTally = Record<AttendanceStatus, number> & { days: number; percent: number | null };

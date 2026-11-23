@@ -9,6 +9,7 @@ import {
   ownColumnsOf,
   prepareTeacherRow,
   serverTeacherProblem,
+  takenTeacherFieldNote,
   teacherFieldsByColumn,
   type TeacherImportField,
   type TeacherMapping,
@@ -91,5 +92,28 @@ describe("the columns of a file that are not uploaded", () => {
     ]);
     // A name the list has is never offered; a name the school has made already is not offered again.
     expect(newFieldCandidates(["Mobile", "PAN Number", "Gender"], [null, null, null], [PAN]).map((c) => c.title)).toEqual([]);
+  });
+});
+
+describe("a name a new field of the school's own cannot take (the heading's list says so instead of offering it)", () => {
+  it("a usual detail of the list is already a field, whatever its case or spacing", () => {
+    expect(takenTeacherFieldNote("mobile", [])).toBe("“Mobile” is already one of your fields. Choose it from the list, or add yours under another name.");
+    expect(takenTeacherFieldNote("  employee   code ", [])).toContain("“Employee Code” is already one of your fields");
+  });
+
+  it("one of the school's own fields too, even a switched-off one", () => {
+    expect(takenTeacherFieldNote("pan number", [PAN])).toBe("“PAN Number” is already one of your fields. Choose it from the list, or add yours under another name.");
+  });
+
+  it("the columns the export adds (Status, Class teacher of, Classes given) are not uploaded, so the note says to use another name", () => {
+    const note = takenTeacherFieldNote("class teacher of", []);
+    expect(note).toContain("“Class teacher of”");
+    expect(note).toContain("another name");
+    expect(note).not.toContain("Choose it from the list");
+    expect(takenTeacherFieldNote("Status", [])).toContain("another name");
+  });
+
+  it("a name that is free has no note, and neither has an empty one (Class teacher, without the of, is free)", () => {
+    for (const typed of ["Class teacher", "Hobby", "Bus route", "", "   "]) expect(takenTeacherFieldNote(typed, [PAN]), typed).toBeNull();
   });
 });

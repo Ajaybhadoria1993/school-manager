@@ -5,6 +5,7 @@ import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { clock } from "../../../utils/clock";
 import { classroomSchool } from "../../../test/classroom";
 import { auth, REGULAR_DAY, timetableSchool } from "../../../test/timetable";
+import { addedToTheApp } from "../../../test/teachers";
 import { BellScheduleVersion } from "../../timetable/models/BellScheduleVersion";
 
 /**
@@ -29,6 +30,8 @@ const later = (minutes: number) => REGULAR_DAY.map((s) => ({ ...s, start: plus(s
 async function setUp() {
   const s = await classroomSchool();
   for (const id of [s.meena, s.dev, s.kiran]) await request(app).patch(`/api/v1/staff/teachers/${id}`).set(auth(s.token)).send({ joiningDate: "2026-04-01" });
+  // ... and were added to the app then too (the days count from the later of the two).
+  await addedToTheApp(s.tenantId, [s.meena, s.dev, s.kiran]);
   const save = (days: object[], extra: object = {}) => request(app).put(schoolDay).set(auth(s.token)).send({ days, ...extra });
   const sheet = async (from: string, to = from) => (await request(app).get(`${api}/teachers?from=${from}&to=${to}`).set(auth(s.token))).body.data as {
     days: { date: string; working: boolean; start: string | null; end: string | null }[];

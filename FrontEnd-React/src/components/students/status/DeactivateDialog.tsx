@@ -44,8 +44,7 @@ export function DeactivateDialog({
     >
       <p>{one ? `${one.name} (${one.admissionNumber})` : namesPreview(students.map((s) => s.name))}</p>
       <p>
-        They leave the list, the seat counts and the Excel export, as if they were not in the school. Nothing is deleted: their record is kept, and one click
-        choose Inactive students in the Students menu to make them active again. The record keeps who did this and when.
+        They leave the list, the seat counts and the Excel export, as if they were not in the school. Nothing is deleted: their record is kept, and the Inactive tab of Students makes them active again with one click. The record keeps who did this and when.
       </p>
       <Field id="inactive-reason" label="Why" optional>
         <Input id="inactive-reason" value={reason} maxLength={MAX_REASON} placeholder="For example: left the school, transferred, admitted by mistake" onChange={(e) => setReason(e.target.value)} />

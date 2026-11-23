@@ -262,17 +262,16 @@ describe("The teachers of the school, in the box that picks the subject", () => 
 describe("The class's buttons are one line (2026-11-13)", () => {
   const headerOf = async () => (await screen.findByRole("heading", { level: 1, name: "Class 5 - A" })).closest("header")!;
 
-  it("Fill, Periods & time, the class teacher and Save the timetable stand in one row, Save at its right; Print, Add a teacher and Take back to a draft are not in it (2026-11-17)", async () => {
+  it("Fill, Periods & time and the class teacher stand in one row of tools; Save is under the week (2026-11-22); Print, Add a teacher and Take back to a draft are not there (2026-11-17)", async () => {
     openPage();
     await ready();
     const row = screen.getByRole("button", { name: "Fill the empty periods" }).parentElement!;
-    for (const name of ["Periods & time", "Add class teacher", "Save the timetable"]) expect(row).toContainElement(screen.getByRole("button", { name }));
-    // The actions are pushed to the right of the row.
-    expect(screen.getByRole("button", { name: "Save the timetable" }).parentElement?.className ?? "").toContain("ml-auto");
+    for (const name of ["Periods & time", "Add class teacher"]) expect(row).toContainElement(screen.getByRole("button", { name }));
+    expect(row).not.toContainElement(screen.getByRole("button", { name: "Save the timetable" }));
     for (const name of ["Print", "Take back to a draft"]) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Add a teacher" })).not.toBeInTheDocument();
     // The count, Not saved, the note about teachers and Empty the whole week are elsewhere (below), so the row stays one line.
-    expect(within(row).queryByText(/periods have a lesson/)).not.toBeInTheDocument();
+    expect(within(row).queryByText(/periods filled/)).not.toBeInTheDocument();
     expect(within(row).queryByText("Not saved")).not.toBeInTheDocument();
     expect(within(row).queryByText("No teacher available in your school")).not.toBeInTheDocument();
     expect(within(row).queryByRole("button", { name: "Empty the whole week" })).not.toBeInTheDocument();
@@ -284,28 +283,42 @@ describe("The class's buttons are one line (2026-11-13)", () => {
     expect(screen.queryByRole("heading", { name: "Class 5 - A", level: 2 })).not.toBeInTheDocument();
   });
 
-  it("the count of periods and the note about teachers are under the filter in the page's header; Not saved appears there once a period is changed", async () => {
+  it("the count of periods (with a bar) and the note about teachers are on top of the week, with the tools; Not saved appears there once a period is changed", async () => {
     const { user } = openPage({ ...GRID, teachers: [] });
     await ready();
-    const header = await headerOf();
-    expect(await within(header).findByText("0 of 40 periods have a lesson")).toBeInTheDocument();
-    expect(within(header).getByText("No teacher available in your school")).toBeInTheDocument();
-    expect(within(header).queryByText("Not saved")).not.toBeInTheDocument();
+    const count = await screen.findByRole("status", { name: "Periods with a lesson" });
+    const tools = count.closest(".flex-wrap.p-4")!;
+    expect(count).toHaveTextContent("0 of 40 periods filled");
+    expect(within(tools as HTMLElement).getByText("40 empty")).toBeInTheDocument();
+    expect(within(tools as HTMLElement).getByText("No teacher available in your school")).toBeInTheDocument();
+    expect(within(tools as HTMLElement).queryByText("Not saved")).not.toBeInTheDocument();
+    // It is not in the page's header any more.
+    expect(within(await headerOf()).queryByText(/periods filled/)).not.toBeInTheDocument();
     await put(user, MON1(), "English");
-    expect(await within(header).findByText("Not saved")).toBeInTheDocument();
-    expect(await within(header).findByText(/^5 of 40 periods have a lesson$/)).toBeInTheDocument();
+    expect(await within(tools as HTMLElement).findByText("Not saved")).toBeInTheDocument();
+    expect(await screen.findByText(/^5 of 40 periods filled$/)).toBeInTheDocument();
+    expect(within(tools as HTMLElement).getByText("35 empty")).toBeInTheDocument();
   });
 
-  it("Save is at the top, in the row; Empty the whole week is alone under the week", async () => {
+  it("Save and Empty the whole week are under the week, side by side", async () => {
     const { user } = openPage();
     await ready();
     await put(user, MON1(), "English");
     const table = screen.getByRole("table", { name: "Weekly timetable" });
     const save = screen.getByRole("button", { name: "Save the timetable" });
     const empty = await screen.findByRole("button", { name: "Empty the whole week" });
-    expect(save.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(table.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(table.compareDocumentPosition(empty) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(save.parentElement).not.toContainElement(empty);
+    expect(save.parentElement).toContainElement(empty);
+  });
+
+  it("Subjects this week: each subject with how many periods it has in the week and how many it needs", async () => {
+    const { user } = openPage();
+    await ready();
+    const subjects = screen.getByRole("list", { name: "Subjects this week" });
+    expect(within(subjects).getAllByRole("listitem").length).toBeGreaterThan(0);
+    await put(user, MON1(), "English");
+    expect(within(subjects).getByRole("listitem", { name: /^English: 5 placed of / })).toBeInTheDocument();
   });
 });
 

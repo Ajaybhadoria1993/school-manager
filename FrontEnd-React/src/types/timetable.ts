@@ -61,6 +61,8 @@ export interface SchoolDayInput {
    * own) moves by in the same save, so that when school starts later they start later too.
    */
   shiftOthers?: number;
+  /** Which of the other timings move, by id (2026-11-22: only the ticked ones); all of them when missing. */
+  shiftOnly?: string[];
 }
 
 /**
@@ -328,4 +330,72 @@ export interface ClassWeekStatus {
   filled: number;
   total: number;
   noTeacher: boolean;
+}
+
+// ---- Special days and the day's arrangement (2026-11-22) --------------------------------------------------------------------------------
+
+/** One day with a timing of its own (a PTM, a half day): for the whole school (`classIds` empty) or some classes; no rows is no classes that day. */
+export interface SpecialDay {
+  id: string;
+  /** "2026-11-28": the first day. */
+  date: string;
+  /** The last day (2026-11-23: days in a row); the first day for a single one. */
+  endDate: string;
+  title: string;
+  classIds: string[];
+  classNames: string[];
+  slots: Slot[];
+}
+
+export interface SpecialDayInput {
+  date: string;
+  /** Left out: one day. */
+  endDate?: string;
+  title: string;
+  classIds: string[];
+  slots: Slot[];
+}
+
+/** Why a teacher is on the arrangement page: marked Absent or Leave, or (today) not checked in yet. */
+export type AwayStatus = "absent" | "leave" | "not_in";
+
+export interface FreeTeacher {
+  id: string;
+  name: string;
+  /** Periods they have that day already. */
+  today: number;
+  /** As many periods that day as they can take. */
+  full: boolean;
+  /** They are in (marked present) that day. */
+  in: boolean;
+}
+
+export interface ArrangementLesson {
+  classId: string;
+  sectionId: string | null;
+  label: string;
+  period: number;
+  start: string;
+  end: string;
+  subjectId: string;
+  subjectName: string;
+  substitute: { id: string; name: string } | null;
+  free: FreeTeacher[];
+}
+
+export interface ArrangementDay {
+  date: string;
+  /** Only today's arrangement can be changed. */
+  today: boolean;
+  holiday: string | null;
+  away: { teacher: { id: string; name: string }; status: AwayStatus; lessons: ArrangementLesson[] }[];
+}
+
+export interface ArrangementInput {
+  date: string;
+  classId: string;
+  sectionId: string | null;
+  period: number;
+  absentTeacherId: string;
+  substituteTeacherId: string | null;
 }

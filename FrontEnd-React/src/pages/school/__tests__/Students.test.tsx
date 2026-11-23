@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
-import { RouterProvider, createMemoryRouter } from "react-router";
+import { RouterProvider, createMemoryRouter, useLocation } from "react-router";
 import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { yearViewChanged } from "../../../redux/slices/yearViewSlice";
-import type { StudentCapacity, StudentPage, StudentRow, StudentSettings, UserRole } from "../../../types";
+import type { Dues, InactiveStudent, StudentCapacity, StudentPage, StudentRow, StudentSettings, UserRole } from "../../../types";
 import { fakeApi, spreadsheet, type Handler } from "../../../test/fakeApi";
 import { CAPACITY, SETTINGS, STRUCTURE } from "../../../test/fixtures";
 import { signInAs, signOut } from "../../../test/session";
@@ -45,10 +45,29 @@ function school(students: StudentRow[] = [], extra: Record<string, Handler> = {}
   });
 }
 
+/** Where the address is now (the tab and the filters are kept in it). */
+function Where() {
+  const here = useLocation();
+  return <div data-testid="where">{here.pathname + here.search}</div>;
+}
+
 function openPage(entry = "/school/students", who: { role?: UserRole; permissions?: string[] } = {}) {
   // The school admin unless said: the page asks who is looking (what the school allowed them).
   signInAs(who.role ?? "school_admin", who.permissions);
-  const router = createMemoryRouter([{ path: "/school/students", element: <StudentsPage /> }], { initialEntries: [entry] });
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/school/students",
+        element: (
+          <>
+            <StudentsPage />
+            <Where />
+          </>
+        ),
+      },
+    ],
+    { initialEntries: [entry] }
+  );
   render(
     <Provider store={store}>
       <ToastProvider>
@@ -126,7 +145,7 @@ describe("Students, active and inactive", () => {
         { classId: "c1", enrolled: 2, nextRollNumber: 3 },
         { classId: "c6", enrolled: 6, nextRollNumber: 7 },
       ],
-      totals: { students: 8, seats: 30, seatsLeft: 24, fullSections: 0 },
+      totals: { students: 8, seats: 30, seatsLeft: 24, fullSections: 0, newAdmissions: 0, inactive: 0 },
     };
     school([ASHA, KABIR], { "GET /students/capacity": () => classCapacity });
     const user = openPage("/school/students?class=c6");
@@ -229,6 +248,246 @@ describe("Students, a school that has students", () => {
     expect(screen.queryByText("No students yet")).not.toBeInTheDocument();
     expect(headerButtons()).toEqual(["Guide", "Export", "Bulk upload", "Add student"]);
     expect(screen.getByRole("link", { name: "Bulk upload" })).toHaveAttribute("href", "/school/students/import");
+  });
+});
+
+const LEFT: InactiveStudent = {
+  id: "s9",
+  name: "Dev Patel",
+  gender: "Male",
+  admissionNumber: "ADM-2025-0009",
+  dateOfBirth: "2015-01-01",
+  className: "Class 5",
+  sectionName: "A",
+  rollNumber: 4,
+  parentName: "Raj Patel",
+  parentMobile: "9222222222",
+  reason: "Moved to another city",
+  transfer: null,
+  inactiveAt: "2026-10-25T10:30:00.000Z",
+  inactiveBy: { name: "Meena Singh", role: "school_admin" },
+};
+
+describe("Students on ONE page with tabs (2026-11-22): Active students, New admissions, Inactive", () => {
+  const counted = (over: Partial<StudentCapacity["totals"]> = {}) => ({
+    "GET /students/capacity": () => ({ ...CAPACITY, totals: { ...CAPACITY.totals, students: 2, newAdmissions: 1, inactive: 3, ...over } }),
+  });
+  const tabs = () => screen.getByRole("tablist", { name: "Which students to show" });
+  const tab = (name: RegExp) => within(tabs()).getByRole("tab", { name });
+  const here = () => screen.getByTestId("where").textContent;
+  const lists = (calls: ReturnType<typeof school>) => calls.filter((c) => c.method === "GET" && c.path === "/students");
+  /** A second school in the same test: the page is taken away and what the first one answered is forgotten. */
+  const fresh = () => {
+    cleanup();
+    for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
+  };
+
+  it("has the tabs side by side with their counts (they come with the read the page already makes); Active students is the one open", async () => {
+    const calls = school([ASHA, KABIR], counted());
+    openPage();
+    await screen.findByText("Asha Verma");
+    expect(within(tabs()).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Active students2", "New admissions1", "Inactive3"]);
+    expect(tab(/Active students/)).toHaveAttribute("aria-selected", "true");
+    // The counts cost no request of their own.
+    expect(calls.filter((c) => c.path === "/students/capacity")).toHaveLength(1);
+    expect(calls.filter((c) => c.path === "/students/inactive")).toHaveLength(0);
+  });
+
+  it("New admissions asks the server for this year's admissions only, and keeps the search, the class and the section", async () => {
+    const calls = school([ASHA], counted());
+    const user = openPage("/school/students?class=c6&q=asha");
+    await screen.findByText("Asha Verma");
+    await user.click(tab(/New admissions/));
+    await waitFor(() => expect(lists(calls).some((c) => new URLSearchParams(c.query).get("admitted") === "year")).toBe(true));
+    const asked = new URLSearchParams(lists(calls).at(-1)!.query);
+    expect(Object.fromEntries(asked)).toMatchObject({ admitted: "year", classId: "c6", q: "asha" });
+    expect(here()).toBe("/school/students?class=c6&q=asha&tab=new");
+    expect(tab(/New admissions/)).toHaveAttribute("aria-selected", "true");
+    // The same search box and class pickers.
+    expect(screen.getByRole("textbox", { name: "Search students by name or admission number" })).toHaveValue("asha");
+    expect(screen.getByLabelText("Show the students of a class")).toBeInTheDocument();
+    // Going back to Active students takes the filter off again (that list was read a moment ago, so it is shown from what the page holds).
+    await user.click(tab(/Active students/));
+    expect(here()).toBe("/school/students?class=c6&q=asha");
+    expect(tab(/Active students/)).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("Asha Verma")).toBeInTheDocument();
+  });
+
+  it("a new tab starts again from the first page", async () => {
+    school([ASHA], counted());
+    const user = openPage("/school/students?page=3");
+    await screen.findByText("Asha Verma");
+    await user.click(tab(/New admissions/));
+    expect(here()).toBe("/school/students?tab=new");
+  });
+
+  it("the tiles (students, classes, seats) belong to the Active students tab only", async () => {
+    school([ASHA], counted());
+    const user = openPage();
+    await screen.findByText("Asha Verma");
+    expect(screen.getByRole("region", { name: "Students at a glance" })).toBeInTheDocument();
+    await user.click(tab(/New admissions/));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Students at a glance" })).not.toBeInTheDocument());
+  });
+
+  it("the tabs sit BETWEEN the tiles and the filter row: tiles, then tabs, then the search box", async () => {
+    school([ASHA], counted());
+    openPage();
+    await screen.findByText("Asha Verma");
+    const tiles = screen.getByRole("region", { name: "Students at a glance" });
+    const search = screen.getByRole("textbox", { name: "Search students by name or admission number" });
+    const follows = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(follows(tiles, tabs())).toBe(true);
+    expect(follows(tabs(), search)).toBe(true);
+  });
+
+  it("Inactive shows the students who left, with their own search and Make active, and does not read the active list", async () => {
+    const calls = school([ASHA], {
+      ...counted(),
+      "GET /students/inactive": () => ({ items: [LEFT], page: 1, limit: 20, total: 1, totalPages: 1 }),
+    });
+    const user = openPage();
+    await screen.findByText("Asha Verma");
+    const before = lists(calls).length;
+    await user.click(tab(/Inactive/));
+    expect(await screen.findByText("Dev Patel")).toBeInTheDocument();
+    expect(here()).toBe("/school/students?tab=inactive");
+    expect(screen.getByRole("textbox", { name: "Search the inactive students" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Make Dev Patel active" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Students", level: 1 })).toBeInTheDocument();
+    expect(lists(calls)).toHaveLength(before);
+  });
+
+  it("opens straight on a tab from the address (a link, a reload, the old Inactive students address)", async () => {
+    school([ASHA], { ...counted(), "GET /students/inactive": () => ({ items: [LEFT], page: 1, limit: 20, total: 1, totalPages: 1 }) });
+    openPage("/school/students?tab=inactive");
+    expect(await screen.findByText("Dev Patel")).toBeInTheDocument();
+    expect(tab(/Inactive/)).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("Inactive is for the people the school allowed to make students inactive; without it there is no such tab, and its address shows the active list", async () => {
+    school([ASHA], counted());
+    openPage("/school/students?tab=inactive", { role: "receptionist", permissions: ["students.view"] });
+    expect(await screen.findByText("Asha Verma")).toBeInTheDocument();
+    expect(within(tabs()).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Active students2", "New admissions1"]);
+    expect(tab(/Active students/)).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("a school with nobody on the rolls and nobody inactive has no tabs, only the card that says so; one whose students all left still reaches them", async () => {
+    school([], counted({ students: 0, newAdmissions: 0, inactive: 0 }));
+    openPage();
+    await screen.findByText("No students yet");
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    fresh();
+    school([], counted({ students: 0, newAdmissions: 0, inactive: 2 }));
+    openPage();
+    await screen.findByText("No students yet");
+    expect(tab(/Inactive/)).toBeInTheDocument();
+  });
+
+  it("New admissions with nobody in it says so in one line (not the \"Nobody matches\" of a search)", async () => {
+    school([], counted({ students: 5, newAdmissions: 0 }));
+    openPage("/school/students?tab=new");
+    expect(await screen.findByRole("heading", { name: "No new admissions this year" })).toBeInTheDocument();
+    expect(screen.queryByText("Nobody matches")).not.toBeInTheDocument();
+  });
+
+  it("the main button of the page is orange (Add student), and so is the one on the empty card", async () => {
+    school([ASHA], counted());
+    openPage();
+    await screen.findByText("Asha Verma");
+    expect(screen.getByRole("link", { name: "Add student" }).className).toContain("bg-orange");
+    fresh();
+    school([], counted({ students: 0, inactive: 0 }));
+    openPage();
+    await screen.findByText("No students yet");
+    expect(screen.getByRole("link", { name: "Add your first student" }).className).toContain("bg-orange");
+  });
+});
+
+const OWES: Dues = {
+  year: "2026-2027",
+  asOn: "2026-11-19",
+  totals: { students: 2, dueNow: 5000, overdue: 3000 },
+  items: [
+    { studentId: "s1", name: "Asha Verma", admissionNumber: "ADM-2026-0001", classId: "c1", classLabel: "Class 1", dueNow: 3000, overdue: 3000, instalments: 3, oldestDue: "2026-04-10", lateFine: 300 },
+    { studentId: "s2", name: "Kabir Rao", admissionNumber: "ADM-2026-0002", classId: "c6", classLabel: "Class 6 - A", dueNow: 2000, overdue: 0, instalments: 2, oldestDue: "2026-11-10", lateFine: 0 },
+  ],
+};
+
+describe("Students: the Fee overdue tab (2026-11-22: the fee collection module is there, so the tab of the reference pictures is real)", () => {
+  const counted = () => ({ "GET /students/capacity": () => ({ ...CAPACITY, totals: { ...CAPACITY.totals, students: 2, newAdmissions: 1, inactive: 3 } }) });
+  const owing = (over: Record<string, Handler> = {}) => ({ ...counted(), "GET /fees/dues": () => OWES, ...over });
+  const tabs = () => screen.getByRole("tablist", { name: "Which students to show" });
+  const tab = (name: RegExp) => within(tabs()).getByRole("tab", { name });
+  const here = () => screen.getByTestId("where").textContent;
+
+  it("is a tab between New admissions and Inactive, with the number of students who owe (the same read as the Dues page)", async () => {
+    const calls = school([ASHA, KABIR], owing());
+    openPage();
+    await screen.findByText("Asha Verma");
+    await waitFor(() => expect(within(tabs()).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Active students2", "New admissions1", "Fee overdue2", "Inactive3"]));
+    expect(calls.filter((c) => c.path === "/fees/dues")).toHaveLength(1);
+  });
+
+  it("is for the people who may collect fees: without fees.collect there is no tab, and the dues are not even asked for", async () => {
+    const calls = school([ASHA], owing());
+    openPage("/school/students", { role: "receptionist", permissions: ["students.view", "students.status"] });
+    await screen.findByText("Asha Verma");
+    expect(within(tabs()).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Active students2", "New admissions1", "Inactive3"]);
+    expect(calls.filter((c) => c.path === "/fees/dues")).toHaveLength(0);
+  });
+
+  it("opens the students who owe: class, due now, late and the oldest due, and an orange Collect that leads to the account; the active list is not read again", async () => {
+    const calls = school([ASHA], owing());
+    const user = openPage();
+    await screen.findByText("Asha Verma");
+    const before = calls.filter((c) => c.method === "GET" && c.path === "/students").length;
+    await user.click(await screen.findByRole("tab", { name: /Fee overdue/ }));
+    const table = await screen.findByRole("table", { name: "Students with fees overdue" });
+    const asha = within(table).getByRole("row", { name: /Asha Verma/ });
+    expect(asha).toHaveTextContent("Class 1");
+    expect(within(asha).getByText("₹3,000", { selector: "td.text-danger" })).toBeInTheDocument();
+    expect(asha).toHaveTextContent("10 Apr 2026");
+    const collect = within(table).getByRole("link", { name: "Collect from Kabir Rao" });
+    expect(collect).toHaveAttribute("href", "/fees/collect?student=s2");
+    expect(collect.className).toContain("bg-orange");
+    expect(within(table).getByRole("link", { name: "Asha Verma" })).toHaveAttribute("href", "/school/students/s1");
+    expect(here()).toBe("/school/students?tab=fees");
+    expect(tab(/Fee overdue/)).toHaveAttribute("aria-selected", "true");
+    expect(calls.filter((c) => c.method === "GET" && c.path === "/students")).toHaveLength(before);
+    // The tiles are the Active tab's.
+    expect(screen.queryByRole("region", { name: "Students at a glance" })).not.toBeInTheDocument();
+  });
+
+  it("has its own search and class pickers, and the server does the finding (the same one the Dues page uses)", async () => {
+    const calls = school([ASHA], owing({ "GET /fees/dues": (_b, q) => (q.get("search") === "zzz" ? { ...OWES, items: [], totals: { students: 0, dueNow: 0, overdue: 0 } } : q.get("classId") === "c6" ? { ...OWES, items: [OWES.items[1]], totals: { students: 1, dueNow: 2000, overdue: 0 } } : OWES) }));
+    const user = openPage("/school/students?tab=fees");
+    await screen.findByRole("table", { name: "Students with fees overdue" });
+    await user.click(screen.getByLabelText("Show the students of a class"));
+    await user.click(await screen.findByRole("option", { name: "Class 6" }));
+    await waitFor(() => expect(calls.some((c) => c.path === "/fees/dues" && c.query.includes("classId=c6"))).toBe(true));
+    expect(await screen.findByRole("link", { name: "Collect from Kabir Rao" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Collect from Asha Verma" })).not.toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "Search students who owe fees" }), "zzz");
+    expect(await screen.findByText("No student matches")).toBeInTheDocument();
+    expect(calls.some((c) => c.path === "/fees/dues" && c.query.includes("search=zzz"))).toBe(true);
+  });
+
+  it("nobody owing says so in one line", async () => {
+    school([ASHA], owing({ "GET /fees/dues": () => ({ ...OWES, items: [], totals: { students: 0, dueNow: 0, overdue: 0 } }) }));
+    openPage("/school/students?tab=fees");
+    expect(await screen.findByRole("heading", { name: "No fees are overdue" })).toBeInTheDocument();
+  });
+
+  it("is not there while a year that is over is open (the dues are the running year's)", async () => {
+    const calls = school([ASHA], owing());
+    store.dispatch(yearViewChanged("y26"));
+    openPage();
+    await screen.findByText("Asha Verma");
+    expect(within(tabs()).queryByRole("tab", { name: /Fee overdue/ })).not.toBeInTheDocument();
+    expect(calls.filter((c) => c.path === "/fees/dues")).toHaveLength(0);
+    store.dispatch(yearViewChanged(null));
   });
 });
 

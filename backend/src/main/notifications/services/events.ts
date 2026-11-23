@@ -386,6 +386,45 @@ export const Notify = {
     });
   },
 
+  // ---- The timetable's days (2026-11-22) ---------------------------------------------------------------------------------------------------
+
+  /**
+   * A special day (a PTM, a half day) was set, changed or taken off: for the whole school everyone hears it; for some classes the parents of their
+   * children, their teachers and the school. `hours` is the day in words ("09:00 to 12:00"), null when there are no classes that day.
+   */
+  specialDay(tenantId: string, actorId: string, change: "added" | "changed" | "removed", facts: { title: string; when: string; hours: string | null; classes: NamedClass[] | null; yearId: Types.ObjectId }) {
+    NotificationService.later(tenantId, actorId, async () => {
+      // `when` is "on 28 Nov" or "from 3 Dec to 6 Dec".
+      const title = change === "added" ? `${facts.title} ${facts.when}` : change === "changed" ? `${facts.title} ${facts.when} is changed` : `${facts.title} ${facts.when} is taken off`;
+      const hours = change === "removed" ? null : (facts.hours ?? "No classes");
+      const kind = "timetable.special_day" as const;
+      if (!facts.classes) return [{ kind, title, body: joined(hours, "Whole school"), link: "/dashboard", to: await Audience.everyone(tenantId) }];
+      const { classes } = facts;
+      const { children, teachers } = await audienceOf(tenantId, facts.yearId, classes);
+      const classOfChild = new Map(children.map((c) => [c.id, classes.find((k) => k.id === c.classId)?.name ?? "Class"]));
+      return [
+        ...toParents(children, (id) => ({ kind, title, body: joined(hours, classOfChild.get(id)) })),
+        ...[...teachers.entries()].map(([login, units]): Message => ({
+          kind,
+          title,
+          body: joined(hours, joinNames(classes.filter((c) => units.some((u) => u.classId === c.id)).map((c) => c.name))),
+          link: classWorkLink(units[0]),
+          to: [login],
+        })),
+        { kind, title, body: joined(hours, joinNames(classes.map((c) => c.name))), link: "/school/timings", to: "admins" },
+      ];
+    });
+  },
+
+  /** A teacher was put in for an absent teacher's lesson on a day, or taken off it: that teacher hears it. */
+  substitute(tenantId: string, actorId: string, change: "added" | "removed", facts: { teacherId: string; date: string; today: boolean; label: string; period: number; hours: string; subjectName: string; absentName: string }) {
+    NotificationService.later(tenantId, actorId, async () => {
+      const when = facts.today ? "today" : `on ${shortDay(facts.date)}`;
+      const title = change === "added" ? `Arrangement ${when}: ${facts.label}, Period ${facts.period}` : `Arrangement taken off ${when}: ${facts.label}, Period ${facts.period}`;
+      return [{ kind: "timetable.substitute" as const, title, body: joined(facts.hours, facts.subjectName, `in place of ${facts.absentName}`), link: "/dashboard", to: await Audience.teacherLogins(tenantId, [facts.teacherId]) }];
+    });
+  },
+
   // ---- A teacher's classes -----------------------------------------------------------------------------------------------------------
 
   /** The class teacher of a class or section changed: the new one, the one before, and the school. */

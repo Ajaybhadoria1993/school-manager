@@ -39,9 +39,12 @@ export function DateBox({
   invalid,
   shortcuts,
   compact = false,
+  clearable = true,
 }: {
   /** One step shorter (36px), and without the clear button, for a box that sits in a line of small buttons (the filters of a list). */
   compact?: boolean;
+  /** `false`: no clear button, at the usual height (a day that must always be chosen, like the one a register is opened on). */
+  clearable?: boolean;
   id: string;
   /** The words of the label, for the calendar and the clear button ("Clear joining date"). */
   label: string;
@@ -112,7 +115,7 @@ export function DateBox({
               )}
             </DateField.Input>
             <DateField.Suffix className="flex shrink-0 items-center gap-0.5">
-              {value && !compact && (
+              {value && !compact && clearable && (
                 <button
                   type="button"
                   aria-label={`Clear ${label.toLowerCase()}`}

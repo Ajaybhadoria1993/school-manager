@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { cn } from "../../utils/helpers";
 import { useFooterSlot } from "../layout/FooterSlot";
 
 /**
@@ -10,19 +11,21 @@ import { useFooterSlot } from "../layout/FooterSlot";
  * its own) they are fixed to the bottom right of the screen, drawn on the page itself (a portal into the body, outside the page's animated box,
  * where a fixed element would be moved by its ancestors), under the windows (they are above it) and not printed.
  */
-export function FixedSaveBar({ children }: { children: ReactNode }) {
+export function FixedSaveBar({ children, note }: { children: ReactNode; /** Said at the left of the buttons (2026-11-22: "You have unsaved changes"), when there is something to say. */ note?: ReactNode }) {
   const slot = useFooterSlot();
   if (slot) {
     return createPortal(
-      <div data-fixed-bar className="flex items-center justify-end gap-2">
-        {children}
+      <div data-fixed-bar className={cn("flex items-center gap-3", note ? "justify-between" : "justify-end")}>
+        {note && <div className="min-w-0">{note}</div>}
+        <div className="flex shrink-0 items-center gap-2">{children}</div>
       </div>,
       slot
     );
   }
   return createPortal(
-    <div data-fixed-bar className="pointer-events-none fixed inset-x-0 bottom-4 z-30 flex justify-end pr-4 sm:pr-8 lg:pr-12 print:hidden">
-      <div className="pointer-events-auto flex items-center gap-2">{children}</div>
+    <div data-fixed-bar className={cn("pointer-events-none fixed inset-x-0 bottom-4 z-30 flex items-center gap-3 pl-4 pr-4 sm:pr-8 lg:pr-12 print:hidden", note ? "justify-between" : "justify-end")}>
+      {note && <div className="pointer-events-auto min-w-0">{note}</div>}
+      <div className="pointer-events-auto flex shrink-0 items-center gap-2">{children}</div>
     </div>,
     document.body
   );

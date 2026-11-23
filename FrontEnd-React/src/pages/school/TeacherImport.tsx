@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useBlocker } from "react-router";
-import { ChevronLeft, ChevronRight, FolderTree, UserPlus } from "lucide-react";
+import { useBlocker, useNavigate } from "react-router";
+import { ChevronLeft, ChevronRight, FolderTree, RefreshCw, UserPlus } from "lucide-react";
 import { IMPORT_ROWS_PER_PAGE } from "../../constants/students";
 import { MAX_CUSTOM_FIELDS, isCustomKey, newCustomKey, type CustomFieldDef } from "../../constants/studentFields";
 import { useSampleDownload } from "../../hooks/useSampleDownload";
@@ -22,6 +22,7 @@ import {
   ownColumnsOf,
   prepareTeacherRow,
   serverTeacherProblem,
+  takenTeacherFieldNote,
   teacherColumnsToAdd,
   teacherFieldNamed,
   teacherFieldsByColumn,
@@ -35,9 +36,8 @@ import {
 import { ConfirmModal } from "../../components/classes/ConfirmModal";
 import { TEACHER_WORDS } from "../../constants/teachers";
 import { CustomFieldDialog } from "../../components/students/export/CustomFieldDialog";
-import { FormActionBar } from "../../components/students/form/FormActionBar";
 import { AskDialog } from "../../components/students/form/AskDialog";
-import { FileBar, ProgressCard, StoppedNote } from "../../components/students/import/ImportPanels";
+import { FileChip, ProgressCard, StoppedNote } from "../../components/students/import/ImportPanels";
 import { ImportStepper } from "../../components/students/import/ImportStepper";
 import { PreviewToolbar, type RowFilter } from "../../components/students/import/PreviewPanels";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
@@ -81,6 +81,7 @@ const withCell = (cells: string[], column: number, value: string): string[] => {
  */
 export default function TeacherImportPage() {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const { base, label } = useTeacherBase();
   const { download: downloadTemplate, downloading } = useSampleDownload("teachers");
   const [importRows] = useImportTeachersMutation();
@@ -229,12 +230,16 @@ export default function TeacherImportPage() {
 
   // ---- Changing the table -------------------------------------------------------------------------------------------------------
 
-  /** A box was kept: shaped as the school writes it (a mobile number as 10 digits, a day as DD-MM-YYYY...); what the server said about the row is dropped. */
-  function setCell(row: number, column: number, value: string) {
+  /**
+   * A box was kept: shaped as the school writes it (a mobile number as 10 digits, a day as DD-MM-YYYY...); what the server said about
+   * the row is dropped. `live`: kept while it is being typed, so it is kept as typed (the box is shaped when it is left): a space the
+   * person has just typed must not vanish under their hands.
+   */
+  function setCell(row: number, column: number, value: string, live = false) {
     if (!sheet) return;
     const key = byColumn[column];
     const mine = key ? active.find((f) => f.key === key) : undefined;
-    const kept = mine ? normaliseOwnCell(mine, value) : key ? normaliseTeacherCell(key as TeacherImportField, value) : value;
+    const kept = live ? value : mine ? normaliseOwnCell(mine, value) : key ? normaliseTeacherCell(key as TeacherImportField, value) : value;
     setSheet({ ...sheet, rows: sheet.rows.map((r) => (r.row === row ? { ...r, cells: withCell(r.cells, column, kept) } : r)) });
     setAnswers((a) => {
       if (!a.has(row)) return a;
@@ -242,6 +247,20 @@ export default function TeacherImportPage() {
       left.delete(row);
       return left;
     });
+  }
+
+  /**
+   * Would `typed`, put in this box, take the box's problem away? Asked at each letter of a box that is red, so its red goes the moment
+   * what is typed is right: by the rules of the row, and by the file as a whole (the same mobile number as an earlier row).
+   */
+  function fixesBox(row: number, column: number, typed: string): boolean {
+    const key = byColumn[column];
+    const source = sheet?.rows.find((r) => r.row === row);
+    if (!key || !source || !mapping) return false;
+    const trial = prepareTeacherRow({ ...source, cells: withCell(source.cells, column, typed) }, mapping, known, ownList);
+    if (trial.problems.some((p) => p.fields.includes(key))) return false;
+    const same = crossCheckTeachers([...added.map((a) => a.source), ...prepared.map((p) => (p.row === row ? trial : p))]).get(row) ?? [];
+    return !same.some((p) => p.fields.includes(key));
   }
 
   function removeRow(row: number) {
@@ -368,6 +387,9 @@ export default function TeacherImportPage() {
       setStopped(failure);
       return;
     }
+    // Every row of the file is in (or was in the school already): nothing is left to fix, so the person goes to the teachers.
+    const stays = rows.filter((r) => !gone.has(r.p.row) && !r.already && !refused.get(r.p.row)?.already);
+    if (made.length > 0 && stays.length === 0 && finish([...added, ...made], rows.filter((r) => r.already).length + [...refused.values()].filter((a) => a.already).length)) return;
     setLastRun(made.length);
     setFilter("all");
     setPage(1);
@@ -381,9 +403,37 @@ export default function TeacherImportPage() {
     saveBlob(problemsCsv(sheet.headers, bad), `${(file?.name ?? "teachers").replace(/\.[^.]+$/, "")}-to-fix.csv`);
   }
 
+  /** Saves the logins as a file named after the school's file. */
+  function saveLogins(list: readonly AddedTeacher[]) {
+    saveBlob(loginsCsv(list, `${window.location.origin}/login`), `${(file?.name ?? "teachers").replace(/\.[^.]+$/, "")}-logins.csv`);
+  }
+
   function downloadLogins() {
-    saveBlob(loginsCsv(added, `${window.location.origin}/login`), `${(file?.name ?? "teachers").replace(/\.[^.]+$/, "")}-logins.csv`);
+    saveLogins(added);
     setDownloaded(true);
+  }
+
+  /**
+   * The upload is over and every row is in: the logins file is saved on its own when the server made up any password (it tells them only
+   * now, so the page that lists them is about to go), and the person is taken to the teachers, told what happened. False (nothing is
+   * done, the Done step stays with the logins on it) when that file could not be saved.
+   */
+  function finish(everyone: readonly (AddedTeacher & { source: PreparedTeacher })[], already: number): boolean {
+    const madeUp = everyone.some((a) => !a.source.input.password);
+    if (madeUp) {
+      try {
+        saveLogins(everyone);
+      } catch {
+        return false;
+      }
+    }
+    leaving.current = true;
+    push(
+      "success",
+      `${everyone.length} teacher${everyone.length === 1 ? "" : "s"} added.${already > 0 ? ` ${already} row${already === 1 ? " was" : "s were"} already in your school.` : ""}${madeUp ? " The login details are saved to your downloads." : ""}`
+    );
+    navigate(base);
+    return true;
   }
 
   // ---- Leaving ------------------------------------------------------------------------------------------------------------------
@@ -391,7 +441,9 @@ export default function TeacherImportPage() {
   // Logins made and not downloaded yet (the passwords are not shown again), or rows in the table that were not uploaded.
   const unseen = added.length > 0 && !downloaded;
   const unsent = step === 1 && rows.length > 0 && !busy;
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => (unseen || unsent) && currentLocation.pathname !== nextLocation.pathname);
+  // The page itself is going to the teachers (everything is in, the logins are saved): nothing to ask.
+  const leaving = useRef(false);
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => !leaving.current && (unseen || unsent) && currentLocation.pathname !== nextLocation.pathname);
   useEffect(() => {
     if (!unseen && !unsent && !busy) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -401,21 +453,39 @@ export default function TeacherImportPage() {
 
   // ---- The page -----------------------------------------------------------------------------------------------------------------
 
-  const header = <StudentFormHeader title="Bulk upload teachers" crumbs={[{ label, to: base }]} current="Bulk upload" />;
+  // Choose another file is at the right of the title while the table is open: one button, in the one place, not a card and a bar.
+  const header = (
+    <StudentFormHeader
+      title="Bulk upload teachers"
+      crumbs={[{ label, to: base }]}
+      current="Bulk upload"
+      actions={
+        step === 1 && file ? (
+          <Button variant="outline" size="sm" onClick={startOver} disabled={!!busy}>
+            <RefreshCw className="size-3.5" aria-hidden />
+            Choose another file
+          </Button>
+        ) : undefined
+      }
+    />
+  );
 
   return (
     <>
-      <div className="space-y-5">
+      <div className="space-y-4">
         {header}
-        <div className="rounded-2xl border border-border bg-surface px-4 py-3.5 shadow-card sm:px-5">
-          <ImportStepper current={step} />
+        {/* The steps in one thin line (the file is named at its right while the table is open): the table below gets the room. */}
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+          <div className="min-w-[18rem] flex-1">
+            <ImportStepper current={step} compact />
+          </div>
+          {step === 1 && sheet && file && <FileChip file={file} sheetName={sheet.sheetName} />}
         </div>
 
         {step === 0 && <TeacherUploadStep onFile={(f) => void readFile(f)} reading={reading} error={readError} onTemplate={downloadTemplate} downloading={downloading} manageFieldsTo={`${base}/fields`} />}
 
         {step === 1 && sheet && mapping && file && (
           <>
-            <FileBar file={file} sheetName={sheet.sheetName} rows={rows.length} ready={ready.length} toFix={toFix} already={skipped.length} onChangeFile={startOver} disabled={!!busy} />
             {ready.length === 0 && toFix === 0 && skipped.length > 0 && (
               <p className="rounded-2xl border border-primary/30 bg-primary-soft/60 px-4 py-3 text-sm text-primary-deep">Every teacher of this file is already in your school. There is nothing new to upload.</p>
             )}
@@ -469,10 +539,12 @@ export default function TeacherImportPage() {
                 byColumn={byColumn}
                 own={active}
                 onCell={setCell}
+                wouldFix={fixesBox}
                 onRemove={removeRow}
                 onColumn={placeColumn}
                 onMissing={addMissing}
                 onNewField={settings && room > 0 ? (column, title) => setCreating({ column, title }) : undefined}
+                newFieldProblem={(name) => takenTeacherFieldNote(name, customFields ?? [])}
               />
             )}
 
@@ -495,23 +567,19 @@ export default function TeacherImportPage() {
               </nav>
             )}
 
-            <FormActionBar>
-              {/* On a phone the file bar above has this button; the bar keeps only Upload, across the screen. */}
-              <Button variant="ghost" className="hidden sm:inline-flex" onClick={startOver} disabled={!!busy}>
-                Choose another file
+            {/* The very end of the page, under the table (and its pages): reached by scrolling down, never floating over the rows. Only the
+                button, in no card. The count of rows to fix is on the "Need a fix" tab; a screen reader still hears it here. */}
+            <div className="flex items-center justify-end gap-3">
+              {toFix > 0 && (
+                <span className="sr-only">
+                  {toFix} row{toFix === 1 ? " needs" : "s need"} a fix and {toFix === 1 ? "is" : "are"} not uploaded.
+                </span>
+              )}
+              <Button size="lg" loading={!!busy} disabled={!!busy || ready.length === 0} onClick={() => setAsk("upload")}>
+                {!busy && <UserPlus className="size-4" aria-hidden />}
+                Upload {ready.length} teacher{ready.length === 1 ? "" : "s"}
               </Button>
-              <div className="flex flex-1 items-center justify-end gap-3 [&>button]:w-full sm:flex-none sm:[&>button]:w-auto">
-                {toFix > 0 && (
-                  <p className="hidden text-xs text-foreground-muted md:block">
-                    {toFix} row{toFix === 1 ? " needs" : "s need"} a fix and {toFix === 1 ? "is" : "are"} not uploaded.
-                  </p>
-                )}
-                <Button size="lg" loading={!!busy} disabled={!!busy || ready.length === 0} onClick={() => setAsk("upload")}>
-                  {!busy && <UserPlus className="size-4" aria-hidden />}
-                  Upload {ready.length} teacher{ready.length === 1 ? "" : "s"}
-                </Button>
-              </div>
-            </FormActionBar>
+            </div>
           </>
         )}
 

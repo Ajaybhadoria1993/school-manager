@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Slot } from "../../types";
-import { clockToMinutes, describeDay, formatMinutes, generateDay, minutesToClock, setupFromSlots, setupProblems, slotProblems, type DaySetup } from "../timings";
+import { ARRIVAL_LABEL, classesStart, isArrival, withArrival, withoutArrival, breakClash, clashMessage, clockToMinutes, describeDay, formatMinutes, generateDay, minutesToClock, setupFromSlots, setupProblems, slotProblems, visibleClash, type DaySetup } from "../timings";
 
 const SETUP: DaySetup = { start: "08:30", periodMinutes: 40, periods: 8, assemblyMinutes: 0, lunchStart: "10:30", lunchEnd: "11:00", breakStart: null, breakEnd: null };
 const rows = (slots: Slot[]) => slots.map((s) => `${s.kind === "period" ? "P" : s.kind === "lunch" ? "L" : "B"} ${s.start}-${s.end}${s.label && s.kind !== "period" ? ` ${s.label}` : ""}`);
@@ -18,6 +18,32 @@ describe("a length of time in words", () => {
   it("is minutes up to an hour, then hours (and the minutes left): 60 minutes is 1 hr", () => {
     expect([0, 5, 40, 59].map(formatMinutes)).toEqual(["0 min", "5 min", "40 min", "59 min"]);
     expect([60, 90, 120, 135].map(formatMinutes)).toEqual(["1 hr", "1 hr 30 min", "2 hr", "2 hr 15 min"]);
+  });
+});
+
+describe("a break that starts inside a period (2026-11-22: every period is the same length, so the break moves)", () => {
+  it("is none when the periods end as the lunch starts", () => {
+    expect(breakClash(SETUP)).toBeNull();
+  });
+
+  it("names the period it would cut, that period at its full length, and where the break goes (keeping its length)", () => {
+    const clash = breakClash({ ...SETUP, assemblyMinutes: 15 });
+    expect(clash).toEqual({ kind: "lunch", what: "lunch", period: 3, periodStart: "10:05", periodEnd: "10:45", periodMinutes: 40, breakStart: "10:30", moveTo: { start: "10:45", end: "11:15" }, earlier: { start: "10:05", end: "10:35" } });
+    expect(clashMessage(clash!)).toBe("Lunch starts at 10:30, in the middle of Period 3 (10:05 to 10:45). Move it 25 min earlier (to 10:05) or 15 min later (to 10:45) so that every period is 40 min.");
+    // Moved there, the day fits.
+    expect(breakClash({ ...SETUP, assemblyMinutes: 15, lunchStart: "10:45", lunchEnd: "11:15" })).toBeNull();
+  });
+
+  it("the short break too", () => {
+    const clash = breakClash({ ...SETUP, lunchStart: null, lunchEnd: null, breakStart: "09:00", breakEnd: "09:10" });
+    expect(clash).toMatchObject({ kind: "break", period: 1, moveTo: { start: "09:10", end: "09:20" } });
+    expect(clashMessage(clash!)).toBe("The short break starts at 09:00, in the middle of Period 1 (08:30 to 09:10). Move it 10 min later (to 09:10) so that every period is 40 min.");
+  });
+
+  it("is not said while the break times themselves are wrong (an overlap is said first)", () => {
+    const overlap = { ...SETUP, breakStart: "10:20", breakEnd: "10:40" };
+    expect(setupProblems(overlap)).toEqual(["The short break and the lunch overlap"]);
+    expect(visibleClash(overlap)).toBeNull();
   });
 });
 
@@ -95,6 +121,53 @@ describe("making a day from what the head tells: start, period length, number of
       const withBreak = generateDay({ ...SETUP, periods, breakStart: "09:50", breakEnd: "10:05" }).slots;
       expect(problems(withBreak), `${periods} periods, a short break`).toEqual([]);
     }
+  });
+});
+
+describe("school starts before classes (2026-11-22: school at 8:00, classes from 8:20, so everyone is in first)", () => {
+  it("the time to come in is a row of its own, first; the assembly after it; the first period when classes start", () => {
+    const { slots, clashes } = generateDay({ ...SETUP, start: "08:00", arrivalMinutes: 5, assemblyMinutes: 15, lunchStart: "10:20", lunchEnd: "10:50" });
+    expect(slots.slice(0, 3)).toEqual([
+      { kind: "break", label: ARRIVAL_LABEL, start: "08:00", end: "08:05" },
+      { kind: "break", label: "Assembly", start: "08:05", end: "08:20" },
+      { kind: "period", label: "", start: "08:20", end: "09:00" },
+    ]);
+    expect(clashes).toEqual([]);
+    expect(generateDay({ ...SETUP, start: "08:00", arrivalMinutes: 20 }).slots[0]).toEqual({ kind: "break", label: "Arrival", start: "08:00", end: "08:20" });
+  });
+
+  it("the Arrival row is kept in the rows (it holds when school starts) but left out where the day is drawn", () => {
+    const slots = generateDay({ ...SETUP, arrivalMinutes: 20 }).slots;
+    expect(isArrival(slots[0])).toBe(true);
+    expect(isArrival({ kind: "break", label: "Assembly" })).toBe(false);
+    expect(withoutArrival(slots)).toHaveLength(slots.length - 1);
+    expect(withoutArrival(slots)[0]).toMatchObject({ kind: "period", start: "08:50" });
+  });
+
+  it("says when classes start: after school starts, the time to come in and the assembly", () => {
+    expect(classesStart({ ...SETUP, start: "08:00", arrivalMinutes: 20 })).toBe("08:20");
+    expect(classesStart({ ...SETUP, start: "08:00", arrivalMinutes: 5, assemblyMinutes: 15 })).toBe("08:20");
+    expect(classesStart(SETUP)).toBe("08:30");
+    expect(classesStart({ ...SETUP, start: "" })).toBeNull();
+  });
+
+  it("no time to come in is no key at all, so a day without it reads as it always did", () => {
+    expect(withArrival(SETUP, 20)).toEqual({ ...SETUP, arrivalMinutes: 20 });
+    expect(withArrival({ ...SETUP, arrivalMinutes: 20 }, 0)).toEqual(SETUP);
+    expect("arrivalMinutes" in withArrival({ ...SETUP, arrivalMinutes: 20 }, 0)).toBe(false);
+  });
+
+  it("reads the time to come in and the assembly back from the rows", () => {
+    const setup: DaySetup = { ...SETUP, start: "08:00", arrivalMinutes: 5, assemblyMinutes: 15, lunchStart: "10:20", lunchEnd: "10:50" };
+    expect(setupFromSlots(generateDay(setup).slots)).toEqual(setup);
+    // An old day: one row before the first period is its assembly.
+    expect(setupFromSlots(generateDay({ ...SETUP, assemblyMinutes: 15, lunchStart: "10:45", lunchEnd: "11:15" }).slots)).toMatchObject({ assemblyMinutes: 15, start: "08:30" });
+    expect("arrivalMinutes" in setupFromSlots(generateDay(SETUP).slots)).toBe(false);
+  });
+
+  it("classes cannot start before school does (and its assembly): the earliest time is said", () => {
+    expect(setupProblems({ ...SETUP, arrivalMinutes: -10 })).toEqual(["Classes can start at 08:30 at the earliest, when school starts"]);
+    expect(setupProblems({ ...SETUP, arrivalMinutes: -10, assemblyMinutes: 15 })).toEqual(["Classes can start at 08:45 at the earliest: school starts at 08:30, then the 15 min assembly"]);
   });
 });
 

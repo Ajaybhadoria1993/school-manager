@@ -135,9 +135,12 @@ describe("attendance", () => {
 
   it("the school-wide sheets are for attendance.view, and teachers' attendance for attendance.teachers", async () => {
     expect(await status("get", "/attendance/students", reception)).toBe(403);
+    expect(await status("get", `/attendance/students/day?date=${day}`, reception)).toBe(403);
     await tell(school.token, "receptionist", ["attendance.view"]);
     expect(await status("get", "/attendance/students", reception)).not.toBe(403);
     expect(await status("get", "/attendance/students/today", reception)).toBe(200);
+    // The day of every class (2026-11-22).
+    expect(await status("get", `/attendance/students/day?date=${day}`, reception)).toBe(200);
     expect(await status("get", "/attendance/teachers", reception)).toBe(403);
     await tell(school.token, "receptionist", ["attendance.teachers"]);
     expect(await status("get", "/attendance/teachers", reception)).not.toBe(403);
@@ -176,6 +179,7 @@ describe("the dashboard", () => {
   it("a teacher is not let into the whole school's dashboard or attendance sheets by a permission: theirs is their own classes", async () => {
     expect(await status("get", "/dashboard/school", school.tokens.meena)).toBe(403);
     expect(await status("get", "/attendance/students", school.tokens.meena)).toBe(403);
+    expect(await status("get", `/attendance/students/day?date=${todayInIndia()}`, school.tokens.meena)).toBe(403);
   });
 });
 

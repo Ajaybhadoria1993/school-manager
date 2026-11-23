@@ -4,8 +4,10 @@ import { asyncHandler } from "../../../utils/asyncHandler";
 import { sendCreated, sendOk } from "../../../utils/response";
 import { Types } from "mongoose";
 import { Teacher } from "../../staff/models/Teacher";
-import type { MonthQuery, MyDayQuery, RangeQuery, SetTeacherDayInput, StudentsQuery } from "../schemas/attendance.schemas";
+import type { DayQuery, MonthQuery, MyDayQuery, SetTeacherDayInput, StaffSheetQuery, StudentsQuery, TeacherSheetQuery } from "../schemas/attendance.schemas";
+import { StaffAttendanceService } from "../services/staff.service";
 import { StudentAttendanceService } from "../services/student.service";
+import { StudentDayService } from "../services/studentDay.service";
 import { TeacherAttendanceService } from "../services/teacher.service";
 
 function who(req: Request): { tenantId: string; userId: string } {
@@ -14,7 +16,7 @@ function who(req: Request): { tenantId: string; userId: string } {
 }
 
 export const getStudentsAttendance = asyncHandler(async (req: Request, res: Response) => sendOk(res, await StudentAttendanceService.range(who(req).tenantId, req.validatedQuery as StudentsQuery)));
-export const getTeachersAttendance = asyncHandler(async (req: Request, res: Response) => sendOk(res, await TeacherAttendanceService.sheet(who(req).tenantId, req.validatedQuery as RangeQuery)));
+export const getTeachersAttendance = asyncHandler(async (req: Request, res: Response) => sendOk(res, await TeacherAttendanceService.sheet(who(req).tenantId, req.validatedQuery as TeacherSheetQuery)));
 export const getMyDay = asyncHandler(async (req: Request, res: Response) => {
   const { tenantId, userId } = who(req);
   return sendOk(res, await TeacherAttendanceService.myDay(tenantId, userId, req.validatedQuery as MyDayQuery));
@@ -26,6 +28,8 @@ export const markMePresent = asyncHandler(async (req: Request, res: Response) =>
   return day.alreadyMarked ? sendOk(res, day, "You are already marked present") : sendCreated(res, day, "You are marked present");
 });
 
+/** The day of every class (or of the class picked), with the search. */
+export const getStudentsDay = asyncHandler(async (req: Request, res: Response) => sendOk(res, await StudentDayService.day(who(req).tenantId, req.validatedQuery as DayQuery)));
 export const getStudentsToday = asyncHandler(async (req: Request, res: Response) => sendOk(res, await StudentAttendanceService.today(who(req).tenantId)));
 export const getMyMonth = asyncHandler(async (req: Request, res: Response) => {
   const { tenantId, userId } = who(req);
@@ -37,6 +41,22 @@ export const teacherExists = asyncHandler(async (req: Request, _res: Response, n
   const { teacherId } = req.validatedParams as { teacherId: string };
   if (!(await Teacher.exists({ _id: new Types.ObjectId(teacherId), tenantId: new Types.ObjectId(who(req).tenantId) }))) throw ApiError.notFound("Teacher not found", "TEACHER_NOT_FOUND");
   next();
+});
+// ---- The staff's attendance (2026-11-22) -------------------------------------------------------------------------------------------------
+export const getStaffAttendance = asyncHandler(async (req: Request, res: Response) => sendOk(res, await StaffAttendanceService.sheet(who(req).tenantId, req.validatedQuery as StaffSheetQuery)));
+export const getMyStaffDay = asyncHandler(async (req: Request, res: Response) => {
+  const { tenantId, userId } = who(req);
+  return sendOk(res, await StaffAttendanceService.myDay(tenantId, userId, req.validatedQuery as MyDayQuery));
+});
+/** 201 when this tap made the mark, 200 when it was already there. */
+export const markStaffPresent = asyncHandler(async (req: Request, res: Response) => {
+  const { tenantId, userId } = who(req);
+  const day = await StaffAttendanceService.checkIn(tenantId, userId);
+  return day.alreadyMarked ? sendOk(res, day, "You are already marked present") : sendCreated(res, day, "You are marked present");
+});
+export const getMyStaffMonth = asyncHandler(async (req: Request, res: Response) => {
+  const { tenantId, userId } = who(req);
+  return sendOk(res, await StaffAttendanceService.myMonth(tenantId, userId, req.validatedQuery as MonthQuery));
 });
 export const setTeacherDay = asyncHandler(async (req: Request, res: Response) => {
   const { tenantId, userId } = who(req);

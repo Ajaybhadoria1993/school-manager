@@ -285,6 +285,8 @@ export class StudentService {
       }),
       { $match: { student: { $exists: true } } },
       ...(query.gender ? [{ $match: { "student.gender": query.gender } } as PipelineStage] : []),
+      // New admissions: admitted on a day of this year (a student brought in from another school's sheet keeps the admission date it had).
+      ...(query.admitted === "year" ? [{ $match: { "student.admissionDate": { $gte: year.startDate, $lte: year.endDate } } } as PipelineStage] : []),
       ...search,
       ...lookupOne(SchoolClass.collection.name, "classId", "klass", { name: 1, order: 1 }),
       ...lookupOne(Section.collection.name, "sectionId", "section", { name: 1 }),

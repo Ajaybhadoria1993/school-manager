@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { User } from "lucide-react";
+import { ArrowRight, GraduationCap, Mail } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { getApiError } from "../../utils/apiErrors";
 import { PageSpinner } from "../../components/shared/PageSpinner";
@@ -59,28 +59,41 @@ export default function Login() {
 
   return (
     <AuthShell
-      title="Sign in to your account"
-      subtitle="Enter your email or username and password."
+      title="Login to Your Account"
+      subtitle="Access your dashboard and explore more"
       footer={
-        <span>
-          New school?{" "}
-          <Link to="/signup" className="font-semibold text-primary hover:underline">
+        // Where the design has "or / Login as Student": students have no login of their own, so this is the way to a new school
+        // (the landing page, which used to lead there, is gone).
+        <>
+          <p aria-hidden className="flex items-center gap-4 text-sm text-foreground-muted">
+            <span className="h-px flex-1 bg-border" />
+            or
+            <span className="h-px flex-1 bg-border" />
+          </p>
+          <Link
+            to="/signup"
+            className="login-register mt-[var(--lp-gap)] inline-flex h-[var(--lp-field)] w-full items-center justify-center gap-2.5 rounded-full border border-primary/25 bg-primary-soft text-[15px] font-semibold text-primary-deep transition-colors hover:border-primary/50 hover:bg-primary-soft/70 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20"
+          >
+            <GraduationCap className="size-5" aria-hidden />
             Register your school
           </Link>
-        </span>
+        </>
       }
     >
       {notice && (
-        <p role="status" className="mb-4 rounded-lg bg-info-soft px-3 py-2 text-sm text-info">
+        <p role="status" className="mb-4 rounded-xl bg-info-soft px-3.5 py-2.5 text-sm text-info">
           {notice}
         </p>
       )}
 
-      <form onSubmit={onSubmit} className="space-y-4" noValidate>
+      <form onSubmit={onSubmit} className="space-y-[var(--lp-gap)]" noValidate>
+        {/* The design shows the words inside the boxes; the labels stay for screen readers. */}
         <div>
-          <Label htmlFor="identifier">Email or username</Label>
+          <Label htmlFor="identifier" className="sr-only">
+            Email or username
+          </Label>
           <Input
-            icon={User}
+            icon={Mail}
             id="identifier"
             type="text"
             lowercase
@@ -91,46 +104,53 @@ export default function Login() {
             autoFocus
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
-            placeholder="you@school.in or username"
+            placeholder="Email or username"
+            className="h-[var(--lp-field)]"
           />
         </div>
         <div>
-          <div className="mb-1.5 flex items-center justify-between">
-            <Label htmlFor="password" className="mb-0">
-              Password
-            </Label>
-            <Link to="/forgot-password" className="text-xs font-semibold text-primary hover:underline">
-              Forgot password?
-            </Link>
-          </div>
+          <Label htmlFor="password" className="sr-only">
+            Password
+          </Label>
           <PasswordInput
             id="password"
             autoComplete="current-password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
+            placeholder="Password"
+            className="h-[var(--lp-field)]"
           />
         </div>
 
-        <label className="flex items-center gap-2 text-sm text-foreground-muted">
-          <input
-            type="checkbox"
-            checked={rememberMe}
-            onChange={(e) => setRememberMe(e.target.checked)}
-            className="size-4 rounded border-border accent-[var(--primary)]"
-          />
-          Keep me signed in on this device
-        </label>
+        <div className="flex items-center justify-between gap-3">
+          <label className="flex cursor-pointer items-center gap-2.5 text-[15px] text-foreground">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="size-[18px] rounded border-border accent-[var(--primary)]"
+            />
+            Remember me
+          </label>
+          <Link to="/forgot-password" className="text-[15px] font-semibold text-primary hover:underline">
+            Forgot password?
+          </Link>
+        </div>
 
         {error && (
-          <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
+          <p role="alert" className="rounded-xl bg-danger-soft px-3.5 py-2.5 text-sm text-danger">
             {error}
           </p>
         )}
 
-        <Button type="submit" size="lg" className="w-full" loading={submitting} disabled={!identifier || !password}>
-          {submitting ? "Signing in" : "Sign in"}
+        <Button type="submit" size="lg" className="h-[var(--lp-btn)] w-full rounded-full text-lg" loading={submitting} disabled={!identifier || !password}>
+          {submitting ? "Logging in" : "Login"}
+          {!submitting && (
+            <span aria-hidden className="ml-1 flex size-8 items-center justify-center rounded-full bg-white text-primary">
+              <ArrowRight className="size-5" />
+            </span>
+          )}
         </Button>
       </form>
     </AuthShell>

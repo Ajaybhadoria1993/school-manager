@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   Backpack,
   BadgePercent,
   FileText,
@@ -21,11 +22,7 @@ import {
   ScrollText,
   Settings2,
   Tags,
-  UserCheck,
   UserCog,
-  UserRoundCheck,
-  UserRoundMinus,
-  UserX,
   ShieldCheck,
   Route,
   MapPinned,
@@ -100,46 +97,24 @@ export const NAV_ITEMS: NavItem[] = [
     group: "Overview",
   },
   {
-    // Students is one expandable menu: active and inactive lists are separate pages within it.
-    label: "Active students",
+    // Students is ONE row (2026-11-22): its lists (Active students, New admissions, Inactive) are tabs on its page, not pages of a submenu.
+    label: "Students",
     href: "/school/students",
-    icon: UserCheck,
+    icon: Backpack,
     roles: ["school_admin", "principal"],
     permission: ["students.view"],
     schoolWide: true,
     group: "Overview",
-    submenu: "Students",
   },
   {
-    label: "Inactive students",
-    href: "/school/students/inactive",
-    icon: UserX,
-    roles: ["school_admin", "principal"],
-    permission: ["students.status"],
-    schoolWide: true,
-    group: "Overview",
-    submenu: "Students",
-  },
-  {
-    // Teacher directory and management share one menu. Active and inactive teachers are separate pages under this row.
-    label: "Active teachers",
+    // Teachers is ONE row (2026-11-22), like Students: the active and the inactive teachers are tabs on its page, not pages of a submenu.
+    label: "Teachers",
     href: "/teachers",
-    icon: UserRoundCheck,
+    icon: UsersRound,
     roles: ["school_admin", "principal"],
     permission: ["teachers.view"],
     schoolWide: true,
     group: "Overview",
-    submenu: "Teachers",
-  },
-  {
-    label: "Inactive teachers",
-    href: "/teachers/inactive",
-    icon: UserRoundMinus,
-    roles: ["school_admin", "principal"],
-    permission: ["teachers.view"],
-    schoolWide: true,
-    group: "Overview",
-    submenu: "Teachers",
   },
   {
     // Attendance, for the people who run the school: one row of the menu that opens Student, Teacher and Staff (2026-11-10; they were three tabs).
@@ -190,6 +165,17 @@ export const NAV_ITEMS: NavItem[] = [
     label: "Class timetables",
     href: "/school/timetable",
     icon: CalendarClock,
+    roles: ["school_admin", "principal"],
+    permission: ["timetable.edit"],
+    schoolWide: true,
+    group: "Overview",
+    submenu: "Timetable",
+  },
+  {
+    // The day's arrangement (2026-11-22): who is away today, their periods, and a free teacher put in for each.
+    label: "Arrangements",
+    href: "/school/arrangements",
+    icon: ArrowLeftRight,
     roles: ["school_admin", "principal"],
     permission: ["timetable.edit"],
     schoolWide: true,
@@ -324,16 +310,6 @@ export const NAV_ITEMS: NavItem[] = [
     submenu: "Fees",
   },
   {
-    // Documents (2026-11-19): the ID cards and the exam report cards of a class, to print; for the people the school allowed (documents.view).
-    label: "Documents",
-    href: "/documents",
-    icon: FileText,
-    roles: ["school_admin", "principal"],
-    permission: ["documents.view"],
-    schoolWide: true,
-    group: "Manage school",
-  },
-  {
     // What each kind of person of the school (Receptionist, Teacher, Parent...) may do, with checkboxes (2026-11-10). Only the school admin changes it.
     label: "Permissions",
     href: "/permissions",
@@ -366,6 +342,17 @@ export const NAV_ITEMS: NavItem[] = [
     roles: ["super_admin"],
     group: "Overview",
     showPendingBadge: true,
+  },
+  // The pages of Manage school sit together (2026-11-22: Documents was between Fees and Permissions, so the menu drew the folding row twice).
+  {
+    // Documents (2026-11-19): the ID cards and the exam report cards of a class, to print; for the people the school allowed (documents.view).
+    label: "Documents",
+    href: "/documents",
+    icon: FileText,
+    roles: ["school_admin", "principal"],
+    permission: ["documents.view"],
+    schoolWide: true,
+    group: "Manage school",
   },
   {
     label: "Academic years",
@@ -441,10 +428,7 @@ export function cameFromOf(state: unknown): CameFrom | null {
 /** The address the menu is lit by: the page the person came from when the link said so, else the page's own address. */
 export function pathForMenu(location: { pathname: string; state: unknown; search?: string }): string {
   const from = cameFromOf(location.state);
-  const path = from ? from.href.split(/[?#]/)[0] : location.pathname;
-  // Older teacher links can still express the inactive list as a query filter.
-  if (path === "/teachers" && new URLSearchParams(location.search ?? "").get("status") === "inactive") return "/teachers/inactive";
-  return path;
+  return from ? from.href.split(/[?#]/)[0] : location.pathname;
 }
 
 /** What the top bar calls the page of a menu entry. */
@@ -482,9 +466,36 @@ export const SUBMENUS: Record<string, { icon: LucideIcon }> = {
   Attendance: { icon: CalendarCheck2 },
   Transport: { icon: Bus },
   Fees: { icon: Wallet },
-  Students: { icon: Backpack },
-  Teachers: { icon: UsersRound },
 };
+
+/**
+ * The heading of the menu an item stands under (2026-11-22, from the reference pictures): Main (the daily pages), Finance & transport
+ * (fees and the buses) and Admin (permissions, the calendar, leave). An item of a folding group (Manage school) or Settings keeps its own
+ * group's name. `group` itself is unchanged: it is what the pages and the permissions know the item by.
+ */
+export function sectionOf(item: NavItem): string {
+  if (item.group !== "Overview") return item.group;
+  if (item.href.startsWith("/transport") || item.href.startsWith("/fees")) return "Finance & transport";
+  if (["/permissions", "/calendar", "/leaves", "/super-admin/schools"].includes(item.href)) return "Admin";
+  return "Main";
+}
+
+/**
+ * The small capital words above the page's name in the top bar: the kind of page (People, Daily register, Finance...); the school's name for
+ * the dashboard and for a page with no kind of its own.
+ */
+export function kickerOf(item: NavItem | undefined, school: string): string {
+  if (!item) return school;
+  const { href } = item;
+  if (href === "/dashboard") return school;
+  if (href.startsWith("/attendance")) return "Daily register";
+  if (href.startsWith("/fees")) return "Finance";
+  if (href.startsWith("/transport")) return "Transport";
+  if (href.startsWith("/school/students") || href.startsWith("/teachers") || href === "/staff") return "People";
+  if (href.startsWith("/school/timings") || href.startsWith("/school/timetable") || href.startsWith("/school/arrangements") || href === "/school-class") return "Academics";
+  if (["/permissions", "/calendar", "/leaves"].includes(href)) return "Admin";
+  return school;
+}
 
 /** The menu heading as the person sees it: the platform team has a single "Platform" section. */
 export const groupLabel = (group: string, role: UserRole) =>

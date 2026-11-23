@@ -67,7 +67,7 @@ const server = (status: number, message: string, code: string) => () =>
   new Response(JSON.stringify({ success: false, message, code }), { status, headers: { "Content-Type": "application/json" } });
 
 describe("Accept the school administrator's invitation (the email link stays for the school admin)", () => {
-  it("says Set up and Create my account, with the registration side panel and the name empty to fill in", async () => {
+  it("says Set up and Create my account, with the name empty to fill in (and no side panel: the sign-in page's picture is the frame)", async () => {
     const { calls } = openPage(SCHOOL_LINK);
     expect(await screen.findByRole("heading", { name: "Set up Sunrise Public School" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create my account" })).toBeInTheDocument();
@@ -75,7 +75,7 @@ describe("Accept the school administrator's invitation (the email link stays for
     expect(screen.getByLabelText(/^Your full name/)).toHaveValue("");
     expect(screen.getByLabelText(/^Email/)).toHaveValue("admin@school.example");
     expect(screen.getByLabelText(/^Email/)).toBeDisabled();
-    expect(screen.getByText("What happens next")).toBeInTheDocument();
+    expect(screen.queryByText("What happens next")).not.toBeInTheDocument();
     // The token travels in the body of one check, never in the address.
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ method: "POST", path: "/auth/invite/check", body: { token: "abc123" } });

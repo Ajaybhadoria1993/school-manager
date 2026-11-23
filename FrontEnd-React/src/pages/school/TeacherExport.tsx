@@ -107,8 +107,9 @@ export default function TeacherExportPage() {
     if (await exportTeachers(query)) push("success", sample ? "The sample file is downloaded" : "The teachers file is downloaded");
   }
 
-  const backTo = query.status === "inactive" && base === "/teachers" ? "/teachers/inactive" : base;
-  const back = () => navigate({ pathname: backTo, search: "" });
+  // The teachers who left are the Inactive tab of the Teachers page: back goes there from the Left list's export.
+  const backSearch = query.status === "inactive" && base === "/teachers" ? "?status=inactive" : "";
+  const back = () => navigate({ pathname: base, search: backSearch });
   const leave = () => (dirty ? setAsk("leave") : back());
 
   return (

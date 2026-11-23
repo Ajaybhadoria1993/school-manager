@@ -31,7 +31,7 @@ const SENIOR = structure([
   klass("c12s", "Class 12 Science", 14),
   klass("c12c", "Class 12 Commerce", 15),
 ]);
-const CAPACITY: StudentCapacity = { academicYear: { id: "y1", name: "2026-2027" }, sections: [], classes: [], totals: { students: 0, seats: 0, seatsLeft: 0, fullSections: 0 } };
+const CAPACITY: StudentCapacity = { academicYear: { id: "y1", name: "2026-2027" }, sections: [], classes: [], totals: { students: 0, seats: 0, seatsLeft: 0, fullSections: 0, newAdmissions: 0, inactive: 0 } };
 
 /** The class part of Add student with a real form behind it; the form's class is shown under it. */
 function Placement({ classes = SENIOR, classId = "" }: { classes?: AcademicStructure; classId?: string }) {

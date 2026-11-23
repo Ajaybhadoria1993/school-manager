@@ -3,6 +3,8 @@ import { ApiError } from "../../../utils/ApiError";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { isDuplicateKey } from "../../academics/services/shared";
 import { ParentService } from "../../parents/services/parent.service";
+import { ClassTeacher } from "../../staff/models/ClassTeacher";
+import { Teacher } from "../../staff/models/Teacher";
 import { Enrolment } from "../../students/models/Enrolment";
 import { Student } from "../../students/models/Student";
 import { todayInIndia } from "../../students/schemas/students.schemas";
@@ -28,8 +30,14 @@ export interface AttendanceSheetDto {
   holiday: { title: string } | null;
   saved: boolean;
   markedBy: { name: string; role: string } | null;
+  /** The class teacher of this class or section this year (2026-11-23: the school's page says whose class it is); null when nobody is. */
+  classTeacher: { id: string; name: string } | null;
+  /** The class's own numbers: of EVERY child of the class or section, whatever a search left in `students`. */
   counts: Record<AttendanceStatus, number>;
-  students: { id: string; name: string; admissionNumber: string; rollNumber: number | null; status: AttendanceStatus; reason: string | null }[];
+  /** How many children the class or section has (a search narrows `students`, never this). */
+  total: number;
+  /** `position` is the child's place in the whole class (1 is the first), the number a child with no roll number is shown under. */
+  students: { id: string; name: string; admissionNumber: string; rollNumber: number | null; position: number; status: AttendanceStatus; reason: string | null }[];
 }
 
 export type AttendanceTally = Record<AttendanceStatus, number> & { days: number; percent: number | null };
@@ -77,22 +85,30 @@ export class AttendanceService {
     await assertSees(tenantId, caller, unit);
     const school = new Types.ObjectId(tenantId);
     const day = fromDay(query.date);
-    const [children, holidays, saved] = await Promise.all([
+    const [children, holidays, saved, post] = await Promise.all([
       childrenOf(tenantId, unit),
       CalendarService.holidaysBetween(school, query.date, query.date),
       AttendanceDay.findOne({ tenantId: school, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null, date: day }).lean(),
+      ClassTeacher.findOne({ tenantId: school, academicYearId: unit.yearId, classId: new Types.ObjectId(unit.classId), sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null }).select("teacherId").lean(),
     ]);
+    const head = post ? await Teacher.findOne({ _id: post.teacherId, tenantId: school }).select("name").lean() : null;
     const onLeave = new Set(
       (await LeaveRequest.find({ tenantId: school, studentId: { $in: children.map((c) => new Types.ObjectId(c.id)) }, status: "approved", fromDate: { $lte: day }, toDate: { $gte: day } }).select("studentId").lean()).map((l) =>
         l.studentId.toString()
       )
     );
     const marks = new Map((saved?.marks ?? []).map((m) => [m.studentId.toString(), m]));
-    const students = children.map((c) => ({
+    const students = children.map((c, index) => ({
       ...c,
+      position: index + 1,
       status: marks.get(c.id)?.status ?? (onLeave.has(c.id) ? ("leave" as const) : ("present" as const)),
       reason: marks.get(c.id)?.reason ?? null,
     }));
+    // The school's search box (2026-11-22): the words are plain text (no pattern), found in the name, the admission number or the roll number.
+    const word = (query.search ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+    const shown = word
+      ? students.filter((s) => s.name.toLowerCase().includes(word) || s.admissionNumber.toLowerCase().includes(word) || (s.rollNumber !== null && String(s.rollNumber).includes(word)))
+      : students;
     return {
       classId: unit.classId,
       sectionId: unit.sectionId,
@@ -102,8 +118,11 @@ export class AttendanceService {
       // A day the school only partly marked (one child at a time) is not a day that was saved: the sheet opens unsaved, with those marks in it.
       saved: !!saved && !saved.partial,
       markedBy: saved ? { name: saved.markedBy.name, role: saved.markedBy.role } : null,
+      classTeacher: head ? { id: head._id.toString(), name: head.name } : null,
+      // The class's numbers, not the search's: the ring and the counts of the page do not shrink to the children shown.
       counts: countOf(students.map((s) => s.status)),
-      students,
+      total: students.length,
+      students: shown,
     };
   }
 

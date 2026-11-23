@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { ToastProvider } from "../../../components/ui/toast-context";
@@ -160,7 +160,7 @@ describe("The home of a receptionist or a member of the management (Staff > Add 
   it.each([
     ["receptionist", "Receptionist"],
     ["management", "Management"],
-  ] as const)("greets the %s and shows who they are signed in as (the username, no email), and asks the server for nothing", async (role, label) => {
+  ] as const)("greets the %s and shows who they are signed in as (the username, no email), and asks the server only for their own attendance of the day", async (role, label) => {
     const calls = openPage(role, {}, { email: null, username: "meena.singh_41" });
     expect(await screen.findByRole("heading", { name: /Good (morning|afternoon|evening), Meena/ })).toBeInTheDocument();
     const about = await screen.findByRole("region", { name: "About you" });
@@ -170,7 +170,8 @@ describe("The home of a receptionist or a member of the management (Staff > Add 
     expect(about).toHaveTextContent("meena.singh_41");
     expect(about).not.toHaveTextContent("Email");
     expect(about).toHaveTextContent("Sunrise Public School");
-    expect(calls).toHaveLength(0);
+    // Their own attendance (2026-11-22: a staff member marks themselves present on their home): nothing of the school's.
+    await waitFor(() => expect(paths(calls)).toEqual(["GET /attendance/staff/me"]));
   });
 
   it("shows the email too when the person has one", async () => {
@@ -196,7 +197,8 @@ describe("The home of a receptionist or a member of the management (Staff > Add 
     expect(about).toHaveTextContent("Lab technician");
     expect(about).not.toHaveTextContent("Staff member");
     expect(screen.queryByText("My classes")).not.toBeInTheDocument();
-    expect(calls).toHaveLength(0);
+    // Only their own attendance of the day (2026-11-22).
+    await waitFor(() => expect(paths(calls)).toEqual(["GET /attendance/staff/me"]));
   });
 
   it("is not the school's dashboard: no admin tiles, no shortcuts, no sample charts, and not a teacher's home", async () => {

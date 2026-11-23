@@ -28,7 +28,7 @@ export const yearViewMiddleware: Middleware = (store) => (next) => (action) => {
     remember(action.payload);
     store.dispatch(academicsApi.util.invalidateTags(["Structure", "ClassList", "Class"]));
     store.dispatch(studentsApi.util.invalidateTags(["StudentList", "Student", "Capacity"]));
-    store.dispatch(attendanceApi.util.invalidateTags(["StudentAttendance", "TeacherAttendance"]));
+    store.dispatch(attendanceApi.util.invalidateTags(["StudentAttendance", "TeacherAttendance", "StaffAttendance"]));
     store.dispatch(examsApi.util.invalidateTags(["Exams", "Exam", "ClassExams", "MarksSheet"]));
     // The timetable, what a class studies and a teacher's classes are a year's; the subjects' list, the timings and the calendar are not.
     store.dispatch(timetableApi.util.invalidateTags(["Teacher", "Allotment", "Overview", "TeacherWeek", "Grid"]));

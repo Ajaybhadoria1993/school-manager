@@ -17,6 +17,8 @@ export interface NotificationHandlers {
   onReconnect: () => void;
   /** A teacher marked themselves present (the school's open sheet of the teachers' attendance reads again). A quiet push: no bell line. */
   onTeacherAttendance?: () => void;
+  /** A staff member marked themselves present, or the school marked a staff day (2026-11-22): the staff's open sheet reads again. */
+  onStaffAttendance?: () => void;
 }
 
 /**
@@ -51,6 +53,7 @@ export function connectNotifications(handlers: NotificationHandlers): () => void
   socket.on("notification", (item: NotificationItem) => handlers.onNotification(item));
   socket.on("notifications:unread", (p: { unread: number; id?: string }) => handlers.onUnread(p.unread, p.id));
   socket.on("attendance:teacher", () => handlers.onTeacherAttendance?.());
+  socket.on("attendance:staff", () => handlers.onStaffAttendance?.());
   socket.on("connect_error", (err: Error) => {
     if (stopped) return;
     const code = err.message;

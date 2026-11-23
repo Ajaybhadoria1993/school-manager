@@ -5,6 +5,7 @@ import { attendanceApi } from "../redux/api/attendanceApi";
 import { examsApi } from "../redux/api/examsApi";
 import { addLive, notificationsApi, setUnread } from "../redux/api/notificationsApi";
 import { parentApi } from "../redux/api/parentApi";
+import { timetableApi } from "../redux/api/timetableApi";
 import { useAppDispatch } from "../redux/hooks";
 import { connectNotifications } from "../realtime/notificationSocket";
 import type { NotificationItem } from "../types";
@@ -50,6 +51,9 @@ function staleBy(n: NotificationItem) {
     case "class.assigned":
     case "subject.assigned":
       return [classroomApi.util.invalidateTags(["MyClasses"])];
+    case "timetable.special_day":
+      // A special day was set, changed or taken off: the School timings page reads its list again (when it is open).
+      return [timetableApi.util.invalidateTags(["SpecialDays"])];
     default:
       return [];
   }
@@ -80,6 +84,7 @@ export function useLiveNotifications() {
       onReconnect: () => dispatch(notificationsApi.util.invalidateTags(["Notifications"])),
       // A teacher marked themselves present: the school's sheet of the teachers (if it is open) reads again.
       onTeacherAttendance: () => dispatch(attendanceApi.util.invalidateTags(["TeacherAttendance"])),
+      onStaffAttendance: () => dispatch(attendanceApi.util.invalidateTags(["StaffAttendance"])),
     });
   }, [userId, dispatch, push]);
 }

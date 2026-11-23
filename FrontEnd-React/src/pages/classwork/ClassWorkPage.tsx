@@ -4,7 +4,6 @@ import { useAuth } from "../../hooks/useAuth";
 import { useCan } from "../../hooks/useCan";
 import { useGetMyClassesQuery } from "../../redux/api/classroomApi";
 import { useGetClassOverviewQuery } from "../../redux/api/studentsApi";
-import { cn } from "../../utils/helpers";
 import { StudentAttendance } from "../../components/attendance/StudentAttendance";
 import { AttendancePanel } from "../../components/classwork/AttendancePanel";
 import { DiaryPanel } from "../../components/classwork/DiaryPanel";
@@ -12,6 +11,7 @@ import { ExamsPanel } from "../../components/classwork/ExamsPanel";
 import { TestsPanel } from "../../components/classwork/TestsPanel";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { Card } from "../../components/ui/Card";
+import { PageTabs, type PageTab } from "../../components/ui/PageTabs";
 import { Skeleton } from "../../components/ui/Skeleton";
 
 type Tab = "attendance" | "diary" | "tests" | "exams";
@@ -42,13 +42,13 @@ export default function ClassWorkPage() {
   // The subjects a test may be added for: the teacher's own (every one for the class teacher and the school: the server says which).
   const testSubjects = myClass?.subjects ?? [];
   // Each tab is what the school allowed this person (Permissions): the people who run the school have them all.
-  const tabs: { value: Tab; label: string; icon: typeof CalendarCheck2 }[] = [
-    ...(takesAttendance && can("attendance.view") ? [{ value: "attendance" as const, label: "Attendance", icon: CalendarCheck2 }] : []),
-    ...(can("classwork.view") ? [{ value: "diary" as const, label: "Diary", icon: BookOpenText }, { value: "tests" as const, label: "Tests", icon: ClipboardList }] : []),
-    ...(can("exams.view") ? [{ value: "exams" as const, label: "Exams", icon: GraduationCap }] : []),
+  const tabs: PageTab<Tab>[] = [
+    ...(takesAttendance && can("attendance.view") ? [{ id: "attendance" as const, label: "Attendance", icon: CalendarCheck2 }] : []),
+    ...(can("classwork.view") ? [{ id: "diary" as const, label: "Diary", icon: BookOpenText }, { id: "tests" as const, label: "Tests", icon: ClipboardList }] : []),
+    ...(can("exams.view") ? [{ id: "exams" as const, label: "Exams", icon: GraduationCap }] : []),
   ];
   const asked = params.get("tab") as Tab | null;
-  const tab: Tab | undefined = asked && tabs.some((t) => t.value === asked) ? asked : tabs[0]?.value;
+  const tab: Tab | undefined = asked && tabs.some((t) => t.id === asked) ? asked : tabs[0]?.id;
 
   if (!runsSchool && mine.isLoading) return <Skeleton className="h-64 rounded-2xl" />;
   if (tabs.length === 0) {
@@ -63,34 +63,22 @@ export default function ClassWorkPage() {
   return (
     <div className="space-y-6">
       <StudentFormHeader title={label} crumbs={[{ label: "Dashboard", to: "/dashboard" }]} />
-      <div role="tablist" aria-label="Class work" className="inline-flex flex-wrap gap-1 rounded-xl bg-surface-muted p-1">
-        {tabs.map((t) => (
-          <button
-            key={t.value}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.value}
-            onClick={() =>
-              setParams(
-                (prev) => {
-                  const next = new URLSearchParams(prev);
-                  next.set("tab", t.value);
-                  return next;
-                },
-                { replace: true }
-              )
-            }
-            className={cn(
-              "inline-flex h-10 items-center gap-2 rounded-lg px-4 text-sm font-bold transition-all duration-200 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/25",
-              tab === t.value ? "bg-primary text-primary-foreground shadow-[0_4px_10px_-2px_rgb(37_99_235/0.45)]" : "text-foreground-muted hover:bg-surface hover:text-foreground"
-            )}
-          >
-            <t.icon className="size-4" aria-hidden />
-            {t.label}
-          </button>
-        ))}
-      </div>
-      <div role="tabpanel" aria-label={tabs.find((t) => t.value === tab)?.label}>
+      <PageTabs
+        label="Class work"
+        tabs={tabs}
+        value={tab ?? tabs[0].id}
+        onChange={(next) =>
+          setParams(
+            (prev) => {
+              const params = new URLSearchParams(prev);
+              params.set("tab", next);
+              return params;
+            },
+            { replace: true }
+          )
+        }
+      />
+      <div role="tabpanel" aria-label={tabs.find((t) => t.id === tab)?.label}>
         {tab === "attendance" && (
           <div className="space-y-8">
             {/* The class teacher's week: Not taken, and a click on a cell marks one child on one day. */}

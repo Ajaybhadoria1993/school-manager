@@ -30,17 +30,48 @@ export function shiftClock(clock: string, delta: number): string | null {
 
 /** What the head tells: the day's numbers. */
 export interface DaySetup {
+  /** When school starts (the gates open): the first row of the day. */
   start: string;
   periodMinutes: number;
   periods: number;
   /** An assembly or prayer before the first period; 0 for none. */
   assemblyMinutes: number;
+  /**
+   * Time to come in after school starts, before the assembly and the first period (2026-11-22, user: school at 8:00, classes from 8:20, so
+   * everyone is in first). A row of its own, "Arrival"; missing or 0 for none, so classes start when school does (after the assembly).
+   */
+  arrivalMinutes?: number;
   /** The lunch, the same for every class: from when to when; null for a day without one. */
   lunchStart: string | null;
   lunchEnd: string | null;
   /** One short break, at its own time like the lunch (from when to when); null for a day without one. */
   breakStart: string | null;
   breakEnd: string | null;
+}
+
+/** What the row of time to come in, before the assembly and the first period, is called. */
+export const ARRIVAL_LABEL = "Arrival";
+
+/**
+ * The "Arrival" row: kept in the rows (it holds when school starts) but not drawn as a box or a band (2026-11-22, user: "arrival wala section hatao,
+ * zaruri nahi"): the School time and Class time figures say it.
+ */
+export const isArrival = (slot: { kind: string; label?: string | null }): boolean => slot.kind === "break" && slot.label === ARRIVAL_LABEL;
+export const withoutArrival = <T extends { kind: string; label?: string | null }>(slots: readonly T[]): T[] => slots.filter((s) => !isArrival(s));
+
+/** When the first period starts: school's start, then the time to come in and the assembly. Null when the start is not a time or classes would leave the day. */
+export function classesStart(setup: DaySetup): string | null {
+  const opens = clockToMinutes(setup.start);
+  if (opens === null) return null;
+  const at = opens + (setup.arrivalMinutes ?? 0) + setup.assemblyMinutes;
+  return at < 0 || at > 1439 ? null : minutesToClock(at);
+}
+
+/** The day with this much time to come in (none kept as no key, so a day without it reads as it always did). */
+export function withArrival(setup: DaySetup, minutes: number): DaySetup {
+  const next: DaySetup = { ...setup, arrivalMinutes: minutes };
+  if (minutes === 0) delete next.arrivalMinutes;
+  return next;
 }
 
 export const DEFAULT_SETUP: DaySetup = { start: "08:30", periodMinutes: 40, periods: 8, assemblyMinutes: 0, lunchStart: "10:30", lunchEnd: "11:00", breakStart: null, breakEnd: null };
@@ -73,19 +104,49 @@ function fixedBreak(kind: Fixed["kind"], label: string, what: string, from: stri
 }
 
 /**
+ * A period that a break (the lunch, the short break) would cut short: it starts inside the period. Every period is the same length (user,
+ * 2026-11-22: "sab period ek hi time par rahega"), so the timings pages refuse such a day and offer to move the break to where that period ends
+ * (`moveTo`, the break keeping its length).
+ */
+export interface BreakClash {
+  kind: "lunch" | "break";
+  /** "lunch", "the short break". */
+  what: string;
+  /** The number of the period it would cut (1 is the first). */
+  period: number;
+  /** That period at its full length. */
+  periodStart: string;
+  periodEnd: string;
+  periodMinutes: number;
+  /** When the break starts now. */
+  breakStart: string;
+  /** Where it goes, later, so the period keeps its length: at that period's end. */
+  moveTo: { start: string; end: string };
+  /** Or earlier: where that period would start (none for the first period: a break does not come before it). */
+  earlier: { start: string; end: string } | null;
+}
+
+/**
  * The rows of a day from the head's numbers: periods of the same length one after another, an assembly first, and the lunch and the short
  * break each at their own time (the periods fit round them, in the order of their times). A period that would run into a break is cut to
- * end where it starts; a gap too small for a period before it is a short break. Every such decision is said in `notes`; the rows can be
- * changed after, one by one.
+ * end where it starts (and said in `clashes`: the timings pages do not save such a day, 2026-11-22); a gap too small for a period before it is
+ * a short break. Every such decision is said in `notes`; the rows can be changed after, one by one.
  */
-export function generateDay(setup: DaySetup): { slots: Slot[]; notes: string[] } {
+export function generateDay(setup: DaySetup): { slots: Slot[]; notes: string[]; clashes: BreakClash[] } {
   const slots: Slot[] = [];
   const notes: string[] = [];
+  const clashes: BreakClash[] = [];
   const start = clockToMinutes(setup.start) ?? 510;
   const pending = [...fixedBreak("lunch", "Lunch", "lunch", setup.lunchStart, setup.lunchEnd), ...fixedBreak("break", "Short break", "the short break", setup.breakStart, setup.breakEnd)].sort((a, b) => a.start - b.start);
   let cursor = start;
   let periodNo = 0;
 
+  // Time to come in, then the assembly, then the first period (a negative time is a mistake `setupProblems` says; nothing is made of it here).
+  const arrival = Math.max(0, setup.arrivalMinutes ?? 0);
+  if (arrival > 0) {
+    slots.push(row("break", ARRIVAL_LABEL, cursor, cursor + arrival));
+    cursor += arrival;
+  }
   if (setup.assemblyMinutes > 0) {
     slots.push(row("break", "Assembly", cursor, cursor + setup.assemblyMinutes));
     cursor += setup.assemblyMinutes;
@@ -109,6 +170,18 @@ export function generateDay(setup: DaySetup): { slots: Slot[]; notes: string[] }
         periodNo += 1;
         slots.push(row("period", "", cursor, next.start));
         notes.push(`Period ${periodNo} is cut to ${gap} minutes so that ${next.what} starts at ${minutesToClock(next.start)}.`);
+        const length = next.end - next.start;
+        clashes.push({
+          kind: next.kind,
+          what: next.what,
+          period: periodNo,
+          periodStart: minutesToClock(cursor),
+          periodEnd: minutesToClock(Math.min(end, 1439)),
+          periodMinutes: setup.periodMinutes,
+          breakStart: minutesToClock(next.start),
+          moveTo: { start: minutesToClock(Math.min(end, 1439)), end: minutesToClock(Math.min(end + length, 1439)) },
+          earlier: periodNo > 1 ? { start: minutesToClock(cursor), end: minutesToClock(Math.min(cursor + length, 1439)) } : null,
+        });
       } else if (gap > 0) {
         slots.push(row("break", "Short break", cursor, next.start));
         notes.push(`The ${gap} minutes left before ${next.what} are a break.`);
@@ -125,7 +198,27 @@ export function generateDay(setup: DaySetup): { slots: Slot[]; notes: string[] }
     const noun = left.what.startsWith("the ") ? left.what : `the ${left.what}`;
     notes.push(`${noun[0].toUpperCase()}${noun.slice(1)} (${minutesToClock(left.start)} to ${minutesToClock(left.end)}) comes after the last period, so no ${left.label.toLowerCase()} row was added.`);
   }
-  return { slots, notes };
+  return { slots, notes, clashes };
+}
+
+/** The first break of a day that starts inside a period (it would cut that period short), or null. */
+export const breakClash = (setup: DaySetup): BreakClash | null => generateDay(setup).clashes[0] ?? null;
+
+/** The clash the screen says (with its way out): only once the break times themselves are right (an overlap or a missing time is said first). */
+export const visibleClash = (setup: DaySetup): BreakClash | null => (setupProblems(setup).length === 0 ? breakClash(setup) : null);
+
+/** Minutes between two times of day ("10:05", "10:30" is 25). */
+const minutesBetween = (from: string, to: string) => Math.abs((clockToMinutes(to) ?? 0) - (clockToMinutes(from) ?? 0));
+
+/**
+ * "Lunch starts at 10:30, in the middle of Period 3 (10:05 to 10:45). Move it 25 min earlier (to 10:05) or 15 min later (to 10:45) so that every
+ * period is 40 min." (2026-11-22: how many minutes each way, so the periods and the lunch line up.)
+ */
+export function clashMessage(clash: BreakClash): string {
+  const name = clash.what === "lunch" ? "Lunch" : `${clash.what[0].toUpperCase()}${clash.what.slice(1)}`;
+  const later = `${minutesBetween(clash.breakStart, clash.moveTo.start)} min later (to ${clash.moveTo.start})`;
+  const ways = clash.earlier ? `${minutesBetween(clash.earlier.start, clash.breakStart)} min earlier (to ${clash.earlier.start}) or ${later}` : later;
+  return `${name} starts at ${clash.breakStart}, in the middle of Period ${clash.period} (${clash.periodStart} to ${clash.periodEnd}). Move it ${ways} so that every period is ${formatMinutes(clash.periodMinutes)}.`;
 }
 
 /** One pair of times (a lunch, a short break) moved together; both stay as they are when either would leave the day. */
@@ -167,8 +260,8 @@ export function shiftSlots(slots: readonly Slot[], delta: number): Slot[] | null
 }
 
 /**
- * The head's numbers behind a day's rows, to change them: the start, the usual length of a period (the most common one), the lunch, an
- * assembly first and the short breaks. A new timing starts from the usual day.
+ * The head's numbers behind a day's rows, to change them: the start, the usual length of a period (the most common one), the lunch, the time to
+ * come in ("Arrival", the first row) and an assembly before the first period, and the short breaks. A new timing starts from the usual day.
  */
 export function setupFromSlots(slots: readonly Slot[]): DaySetup {
   if (slots.length === 0) return { ...DEFAULT_SETUP };
@@ -185,7 +278,9 @@ export function setupFromSlots(slots: readonly Slot[]): DaySetup {
     else if (s.kind === "lunch") {
       setup.lunchStart = s.start;
       setup.lunchEnd = s.end;
-    } else if (i === 0 && seen === 0) setup.assemblyMinutes = s.to - s.from;
+    } else if (i === 0 && seen === 0 && s.label === ARRIVAL_LABEL) setup.arrivalMinutes = s.to - s.from;
+    // The assembly: the first row, or the one straight after the time to come in.
+    else if (seen === 0 && (i === 0 || (i === 1 && setup.arrivalMinutes))) setup.assemblyMinutes = s.to - s.from;
     // Only one short break is kept: the first.
     else if (seen > 0 && setup.breakStart === null) {
       setup.breakStart = s.start;
@@ -201,6 +296,12 @@ export function setupFromSlots(slots: readonly Slot[]): DaySetup {
  */
 export function setupProblems(setup: DaySetup): string[] {
   const found: string[] = [];
+  // Classes typed before school starts (and its assembly): the earliest they can start, in words.
+  const opens = clockToMinutes(setup.start);
+  if ((setup.arrivalMinutes ?? 0) < 0 && opens !== null) {
+    const earliest = minutesToClock(Math.min(opens + setup.assemblyMinutes, 1439));
+    found.push(setup.assemblyMinutes > 0 ? `Classes can start at ${earliest} at the earliest: school starts at ${setup.start}, then the ${formatMinutes(setup.assemblyMinutes)} assembly` : `Classes can start at ${setup.start} at the earliest, when school starts`);
+  }
   const spans: { name: string; start: number; end: number }[] = [];
   for (const [name, from, to] of [
     ["lunch", setup.lunchStart, setup.lunchEnd],

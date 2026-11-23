@@ -18,7 +18,7 @@ import { Topbar } from "../Topbar";
  * the medium, the bell and the account.
  */
 
-function openBar() {
+function openBar(props: { kicker?: string } = {}) {
   setTokens("token-1", "refresh-1");
   store.dispatch(
     sessionStarted({
@@ -41,7 +41,7 @@ function openBar() {
       <AppThemeProvider>
         <ToastProvider>
           <MemoryRouter>
-            <Topbar title="Students" onMenuClick={() => {}} />
+            <Topbar title="Students" onMenuClick={() => {}} {...props} />
           </MemoryRouter>
         </ToastProvider>
       </AppThemeProvider>
@@ -69,6 +69,13 @@ describe("the top bar", () => {
     openBar();
     expect(await screen.findByText("Sunrise Public School")).toBeInTheDocument();
     expect(screen.getByText("Students")).toBeInTheDocument();
+  });
+
+  it("shows a kind of page (People, Daily register...) above the page's name when the page has one, instead of the school's name", async () => {
+    openBar({ kicker: "People" });
+    expect(await screen.findByText("People")).toBeInTheDocument();
+    expect(screen.getByText("Students")).toBeInTheDocument();
+    expect(screen.queryByText("Sunrise Public School")).not.toBeInTheDocument();
   });
 
   it("has, at the right and in this order: New, the time and date, the medium, the bell, the account", async () => {

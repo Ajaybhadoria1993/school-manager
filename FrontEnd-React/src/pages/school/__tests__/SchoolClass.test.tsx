@@ -11,7 +11,7 @@ import { STRUCTURE, classOverviewFor, studentsFor } from "../../../test/schoolCl
 import SchoolClassPage from "../SchoolClass";
 
 /** The school's seat counts (the tiles): 23 students in 72 seats. */
-const CAPACITY: StudentCapacity = { academicYear: { id: "y1", name: "2026-2027" }, sections: [], classes: [], totals: { students: 23, seats: 72, seatsLeft: 49, fullSections: 1 } };
+const CAPACITY: StudentCapacity = { academicYear: { id: "y1", name: "2026-2027" }, sections: [], classes: [], totals: { students: 23, seats: 72, seatsLeft: 49, fullSections: 1, newAdmissions: 0, inactive: 0 } };
 
 function openPage(entry = "/school-class", structure: AcademicStructure = STRUCTURE) {
   const calls = fakeApi({

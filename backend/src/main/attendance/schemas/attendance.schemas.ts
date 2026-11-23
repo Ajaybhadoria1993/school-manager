@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { dayText, objectId } from "../../classroom/schemas/classroom.schemas";
+import { STAFF_MEMBER_ROLE_KEYS } from "../../staff/constants";
 import { clockToMinutes } from "../../timetable/time";
 import { MAX_RANGE_DAYS } from "../constants";
 import { MAX_NOTE, TEACHER_MARKS } from "../models/TeacherAttendance";
@@ -15,8 +16,23 @@ const inOrder = (v: { from: string; to: string }, ctx: z.RefinementCtx) => {
   else if (days > MAX_RANGE_DAYS) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Choose a year or less" });
 };
 
-export const rangeQuerySchema = z.object({ from: dayText("first day"), to: dayText("last day") }).superRefine(inOrder);
+/** The most letters a search box of these sheets takes (the frontend's boxes stop at 60 too). */
+const MAX_SEARCH = 60;
+const searchText = z.string().trim().max(MAX_SEARCH, `The search is up to ${MAX_SEARCH} letters`).optional();
+const rangeShape = { from: dayText("first day"), to: dayText("last day") };
+
+export const rangeQuerySchema = z.object(rangeShape).superRefine(inOrder);
 export type RangeQuery = z.infer<typeof rangeQuerySchema>;
+
+/** The teachers' sheet (2026-11-22): with a class, only the teachers of that class this year; with a search, only those whose name, code or post holds it. */
+export const teacherSheetQuerySchema = z.object({ ...rangeShape, classId: objectId.optional(), search: searchText }).superRefine(inOrder);
+export type TeacherSheetQuery = z.infer<typeof teacherSheetQuerySchema>;
+
+/** The staff's sheet (2026-11-22): with a department (the staff member's role), only that department; with a search, only those it finds. */
+export const staffSheetQuerySchema = z
+  .object({ ...rangeShape, role: z.enum(STAFF_MEMBER_ROLE_KEYS, { errorMap: () => ({ message: "Choose a department of the list" }) }).optional(), search: searchText })
+  .superRefine(inOrder);
+export type StaffSheetQuery = z.infer<typeof staffSheetQuerySchema>;
 
 /** A class, a section of it, "all" (every section of the class) or "none" (a class that is not split). */
 export const studentsQuerySchema = z
@@ -28,6 +44,22 @@ export const studentsQuerySchema = z
   })
   .superRefine(inOrder);
 export type StudentsQuery = z.infer<typeof studentsQuerySchema>;
+
+/**
+ * The day of every class (2026-11-22): one day; with a class, only that class (with a section of it, only that section; "none" for a class that is
+ * not split); with a search, only the children whose name, admission number or roll number holds the words.
+ */
+export const dayQuerySchema = z
+  .object({
+    date: dayText("day"),
+    classId: objectId.optional(),
+    sectionId: z.union([z.literal("none"), objectId]).optional(),
+    search: searchText,
+  })
+  .superRefine((v, ctx) => {
+    if (v.sectionId && !v.classId) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["classId"], message: "Choose the class of the section" });
+  });
+export type DayQuery = z.infer<typeof dayQuerySchema>;
 
 export const myDayQuerySchema = z.object({ date: dayText("day").optional() });
 export type MyDayQuery = z.infer<typeof myDayQuerySchema>;

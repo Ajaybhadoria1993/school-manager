@@ -593,7 +593,7 @@ describe("seats", () => {
       ])
     );
     expect(capacity.classes).toEqual([{ classId: s.class5.id, enrolled: 3, nextRollNumber: 1 }]);
-    expect(capacity.totals).toEqual({ students: 3, seats: 42, seatsLeft: 40, fullSections: 1 });
+    expect(capacity.totals).toEqual({ students: 3, seats: 42, seatsLeft: 40, fullSections: 1, newAdmissions: 3, inactive: 0 });
   });
 
   it("says the next free roll number of each section and of a class without sections (the one after the highest given)", async () => {
@@ -744,6 +744,28 @@ describe("the student list", () => {
     expect((await get(s.token, "?q=nobody")).body.data).toMatchObject({ items: [], total: 0 });
     expect((await get(s.token, "?classId=nope")).status).toBe(400);
     expect((await get(s.token, "?limit=500")).status).toBe(400);
+  });
+
+  it("shows only the new admissions of the year when asked (admitted on a day of the year), and counts them in the capacity read", async () => {
+    const s = await filled();
+    // Admitted the year before: on the rolls, but not a new admission of this year.
+    const old = await post(s.token, "", admission(s.class5.id, s.a, { firstName: "Old", lastName: "Hand", admissionDate: "2025-06-01", guardians: [{ name: "Hand Parent", relation: "Father", isPrimary: true, mobile: "9000000005" }] }));
+    expect(old.status).toBe(201);
+
+    expect(names(await get(s.token, ""))).toEqual(["Dev Sharma", "Asha Verma", "Kabir Khan", "Old Hand", "Zoya Ali"]);
+    const fresh = await get(s.token, "?admitted=year");
+    expect(names(fresh)).toEqual(["Dev Sharma", "Asha Verma", "Kabir Khan", "Zoya Ali"]);
+    expect(fresh.body.data).toMatchObject({ total: 4, totalPages: 1 });
+    // It is one more filter among the others.
+    expect(names(await get(s.token, `?admitted=year&classId=${s.class5.id}&q=a`))).toEqual(["Asha Verma", "Kabir Khan", "Zoya Ali"]);
+    expect((await get(s.token, "?admitted=never")).status).toBe(400);
+
+    expect((await get(s.token, "/capacity")).body.data.totals).toMatchObject({ students: 5, newAdmissions: 4, inactive: 0 });
+    // A new admission who has left is on neither list of the rolls; the school's inactive count has them.
+    const zoya = (await get(s.token, "?q=zoya")).body.data.items[0];
+    expect((await post(s.token, "/deactivate", { ids: [zoya.id], reason: "Left the school" })).status).toBe(200);
+    expect(names(await get(s.token, "?admitted=year"))).toEqual(["Dev Sharma", "Asha Verma", "Kabir Khan"]);
+    expect((await get(s.token, "/capacity")).body.data.totals).toMatchObject({ students: 4, newAdmissions: 3, inactive: 1 });
   });
 });
 

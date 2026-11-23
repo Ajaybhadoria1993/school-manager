@@ -37,7 +37,7 @@ const FULL_CAPACITY: StudentCapacity = {
     { classId: "c1", enrolled: 40, nextRollNumber: 41 },
     { classId: "c6", enrolled: 30, nextRollNumber: null },
   ],
-  totals: { students: 70, seats: 30, seatsLeft: 0, fullSections: 1 },
+  totals: { students: 70, seats: 30, seatsLeft: 0, fullSections: 1, newAdmissions: 0, inactive: 0 },
 };
 const ADMITTED = {
   id: "s9",

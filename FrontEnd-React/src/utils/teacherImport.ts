@@ -103,10 +103,27 @@ export function teacherFieldsByColumn(mapping: TeacherMapping, columns: number, 
   return byColumn;
 }
 
+/** The columns the export adds that a file cannot give back (they are read from the school, not uploaded). */
+const EXPORT_ONLY = ["Status", "Class teacher of", "Classes given"] as const;
 /** The names the usual details have (and the extras of the export): a field of the school's own may not take one. */
-const RESERVED_NAMES = new Map<string, string>([...TEACHER_IMPORT_FIELDS.map((f) => f.label), "Status", "Class teacher of", "Classes given"].map((n) => [n.toLowerCase(), n] as [string, string]));
+const RESERVED_NAMES = new Map<string, string>([...TEACHER_IMPORT_FIELDS.map((f) => f.label), ...EXPORT_ONLY].map((n) => [n.toLowerCase(), n] as [string, string]));
 /** The usual detail called `name` (as the list writes it), whatever the case or the spaces; nothing when none has that name. */
 export const teacherFieldNamed = (name: string): string | undefined => RESERVED_NAMES.get(tidy(name).toLowerCase());
+
+/**
+ * What a heading's list says when the word typed is a name a new field of the school's own cannot take (a detail of the list, a field the
+ * school has already, or a column the export adds): the list shows this note in place of offering it. Nothing (null) when the name is free.
+ */
+export function takenTeacherFieldNote(word: string, own: readonly CustomFieldDef[]): string | null {
+  const name = tidy(word);
+  if (!name) return null;
+  const reserved = teacherFieldNamed(name);
+  if (reserved && (EXPORT_ONLY as readonly string[]).includes(reserved)) {
+    return `“${reserved}” is a column the export adds, so it cannot be uploaded as it is. Add it under another name, for example “${reserved === "Class teacher of" ? "Class teacher" : `${reserved} (file)`}”.`;
+  }
+  const taken = reserved ?? own.find((f) => f.label.toLowerCase() === name.toLowerCase())?.label;
+  return taken ? `“${taken}” is already one of your fields. Choose it from the list, or add yours under another name.` : null;
+}
 
 /**
  * Which columns of a file are the school's own fields: a title that is the field's name (a file made from the sample file or from the

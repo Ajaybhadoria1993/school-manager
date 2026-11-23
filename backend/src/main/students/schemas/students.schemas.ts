@@ -499,6 +499,8 @@ export const listStudentsQuerySchema = z.object({
   /** A section's id, or `none` for the students of a class that has no sections. */
   sectionId: z.union([objectId, z.literal("none")]).optional(),
   gender: z.enum(GENDERS).optional(),
+  /** `year`: only the students admitted on a day of the shown year (the list's "New admissions" tab). */
+  admitted: z.literal("year").optional(),
   sort: z.enum(STUDENT_SORTS).default("class"),
   dir: z.enum(["asc", "desc"]).default("asc"),
   page: z.coerce.number().int().min(1).max(1000).default(1),

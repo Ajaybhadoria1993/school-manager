@@ -73,9 +73,9 @@ export default function SignupPage() {
 
   if (sentTo) {
     return (
-      <AuthShell title="Check your email" variant="register" footer={<span />}>
-        <div className="space-y-4 text-sm text-foreground-muted">
-          <div className="flex size-12 items-center justify-center rounded-full bg-primary-soft text-primary">
+      <AuthShell title="Check your email">
+        <div className="space-y-3 text-center text-sm text-foreground-muted">
+          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary-soft text-primary">
             <MailCheck className="size-6" aria-hidden />
           </div>
           <p>
@@ -92,6 +92,7 @@ export default function SignupPage() {
             <Button
               variant="outline"
               size="lg"
+              className="h-[var(--lp-field)] rounded-full"
               onClick={() => submit()}
               loading={submitting}
               disabled={cooldown > 0}
@@ -115,11 +116,10 @@ export default function SignupPage() {
 
   return (
     <AuthShell
-      variant="register"
       title="Register your school"
       subtitle="We will email you a link to confirm your address. It takes about five minutes."
       footer={
-        <span>
+        <span className="block text-center text-sm text-foreground-muted">
           Already registered?{" "}
           <Link
             to="/login"
@@ -130,12 +130,12 @@ export default function SignupPage() {
         </span>
       }
     >
-      <form onSubmit={submit} className="space-y-4" noValidate>
+      <form onSubmit={submit} className="space-y-[var(--lp-gap)]" noValidate>
         <Field
           id="schoolName"
           label="School name"
+          hideLabel
           error={errors.schoolName}
-          hint="As it should appear on the platform. Add the city if the name is common."
         >
           <Input
             icon={Building2}
@@ -146,6 +146,7 @@ export default function SignupPage() {
             autoComplete="organization"
             autoFocus
             required
+            className="h-[var(--lp-field)]"
             aria-invalid={!!errors.schoolName}
             aria-describedby={
               errors.schoolName ? "schoolName-error" : undefined
@@ -156,8 +157,8 @@ export default function SignupPage() {
         <Field
           id="email"
           label="Your email"
+          hideLabel
           error={errors.email}
-          hint="You will sign in with this. We send the confirmation link here."
         >
           <Input
             icon={Mail}
@@ -168,6 +169,7 @@ export default function SignupPage() {
             placeholder="principal@school.in"
             autoComplete="email"
             required
+            className="h-[var(--lp-field)]"
             aria-invalid={!!errors.email}
             aria-describedby={errors.email ? "email-error" : undefined}
           />
@@ -185,13 +187,13 @@ export default function SignupPage() {
         <Button
           type="submit"
           size="lg"
-          className="w-full"
+          className="h-[var(--lp-btn)] w-full rounded-full text-lg"
           loading={submitting}
           disabled={!schoolName || !email}
         >
           Continue
         </Button>
-        <p className="text-xs leading-relaxed text-foreground-muted">
+        <p className="text-center text-[11px] leading-snug text-foreground-muted">
           By continuing you agree to be contacted about your registration. Our
           team reviews every school.
         </p>

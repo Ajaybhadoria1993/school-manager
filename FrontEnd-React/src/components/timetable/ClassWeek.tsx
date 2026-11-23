@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBlocker, Link } from "react-router";
-import { BookOpen, CircleAlert, Clock3, Copy, ListOrdered, Printer, Save, Sparkles, TriangleAlert, Undo2, UserPlus } from "lucide-react";
+import { BookOpen, Check, CircleAlert, Clock3, Copy, ListOrdered, Printer, Save, Send, Sparkles, TriangleAlert, Undo2, UserPlus } from "lucide-react";
 import { DAY_NAMES, SUBJECT_PRESETS } from "../../constants/timetable";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import {
@@ -13,7 +13,9 @@ import {
 } from "../../redux/api/timetableApi";
 import { useCan } from "../../hooks/useCan";
 import { getApiError } from "../../utils/apiErrors";
-import { PRESET_PREFIX, applyMotherTeacher, buildModel, cellAt, cellKey, changeLesson, choiceOf, clearCell, isPrePrimaryName, localProblems, placeAcrossWeek, placeHalfDay, placeWholeDay, placedCounts, sameGrid, subjectChoices, subjectColors, teacherChoices, teacherOf, teacherOnRange, teacherTrouble, type Spread, type SubjectChoice } from "../../utils/timetable";
+import { PRESET_PREFIX, applyMotherTeacher, buildModel, cellAt, cellKey, changeLesson, choiceOf, clearCell, isPrePrimaryName, localProblems, placeAcrossWeek, placeHalfDay, placeWholeDay, placedCounts, sameGrid, subjectAccents, subjectChoices, subjectColors, teacherChoices, teacherOf, teacherOnRange, teacherTrouble, type Spread, type SubjectChoice } from "../../utils/timetable";
+import { cn } from "../../utils/helpers";
+import { Badge } from "../ui/Badge";
 import type { AutofillAnswer, ClassWeekStatus, GridAllotment, GridCell, GridView, Issue, Lesson, UnitRef } from "../../types";
 import { ConfirmModal } from "../classes/ConfirmModal";
 import { ClassTeacherButton } from "../schoolClass/ClassTeacherButton";
@@ -99,6 +101,7 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
   const can = useCan();
   const activeTeachers = view.teachers.filter((t) => t.isActive);
   const colors = useMemo(() => subjectColors(view), [view]);
+  const accents = useMemo(() => subjectAccents(view), [view]);
   const dirty = !sameGrid(cells, view.cells);
   const counts = useMemo(() => placedCounts(cells), [cells]);
   const total = view.stats.total;
@@ -307,8 +310,10 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
   const untaught = cells.reduce((n, c) => n + c.lessons.filter((l) => !teacherOf(model, l)).length, 0);
   // One lesson: its teacher is picked in the box. Several (a choice): each has a teacher, so that stays in the window.
   const pickingLesson = pickingCell?.lessons.length === 1 ? pickingCell.lessons[0] : undefined;
-  // The count of periods, Not saved and the note about teachers are said in the title row of the page, not in the toolbar: the toolbar is one line.
+  // No teacher in the school at all: said under the count of periods.
   const noTeacher = activeTeachers.length === 0 && !mother;
+  // The subjects of "Subjects this week": those given periods a week, and any other that has a lesson in the week.
+  const subjectRows = view.allotments.filter((a) => a.periodsPerWeek > 0 || (counts.get(a.subjectId) ?? 0) > 0);
   useEffect(() => {
     onStatus?.({ dirty, filled, total, noTeacher });
   }, [onStatus, dirty, filled, total, noTeacher]);
@@ -384,46 +389,80 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
         </>
       ) : (
         <div className="min-w-0 space-y-4">
-          {/* One line (2026-11-13): what is done to the week at the left, the class's buttons at the right. The count of periods, Not saved and the
-              note about teachers are in the page's title row (ClassTimetables), and Empty the whole week is with Save, under the week. */}
-          <div className="flex flex-wrap items-center gap-2 print:hidden">
-            <Button onClick={fillOrAsk} loading={filling} variant="secondary">
-              <Sparkles className="size-4" aria-hidden />
-              {fill ? "Try another arrangement" : "Fill the empty periods"}
-            </Button>
-            {fill && (
-              <Button variant="ghost" onClick={() => edit(fill.base)}>
-                <Undo2 className="size-4" aria-hidden />
-                Undo the fill
+          {/* The week's progress and its tools (2026-11-22, the reference pictures): how many periods have a lesson (a bar), Not saved, then Fill, Periods &
+              time, the class teacher and Copy. Save is under the week, with Empty the whole week. */}
+          <Card className="flex flex-wrap items-center gap-x-5 gap-y-3 p-4 print:hidden">
+            <div className="min-w-[14rem] flex-1 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span role="status" aria-label="Periods with a lesson" className="font-bold text-foreground">
+                    {filled} of {total} periods filled
+                  </span>
+                  {dirty && <Badge tone="warning">Not saved</Badge>}
+                </span>
+                <span className="text-xs font-semibold text-foreground-muted">{Math.max(0, total - filled)} empty</span>
+              </div>
+              <div aria-hidden className="h-2 overflow-hidden rounded-full bg-surface-muted">
+                <div className="h-full rounded-full bg-orange transition-[width]" style={{ width: `${total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0}%` }} />
+              </div>
+              {noTeacher && <p className="text-xs font-medium text-warning">No teacher available in your school</p>}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={fillOrAsk} loading={filling} variant="outline">
+                <Sparkles className="size-4" aria-hidden />
+                {fill ? "Try another arrangement" : "Fill the empty periods"}
               </Button>
-            )}
-            <Button variant="outline" onClick={() => setEditingPeriods(true)} disabled={dirty} title={dirty ? "Save the timetable first" : undefined}>
-              <ListOrdered className="size-4" aria-hidden />
-              Periods & time
-            </Button>
-            {/* Who the class teacher is (2026-11-17, in place of Add a teacher): with none it says Add class teacher, with one it says who, and a click
-                changes them (the list, then a window that asks first). In a Pre-Primary class they also take the periods that have no teacher. */}
-            <ClassTeacherButton classId={unit.classId} sectionId={unit.sectionId} label={view.unit.label} current={head} look="button" onAssigned={headAssigned} />
-            {prePrimary && mother && motherName && untaught > 0 && (
-              <Button variant="ghost" onClick={() => edit(applyMotherTeacher(model, cells, mother, null))}>
-                Put {motherName} on {untaught} period{untaught === 1 ? "" : "s"} with no teacher
+              {fill && (
+                <Button variant="ghost" onClick={() => edit(fill.base)}>
+                  <Undo2 className="size-4" aria-hidden />
+                  Undo the fill
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => setEditingPeriods(true)} disabled={dirty} title={dirty ? "Save the timetable first" : undefined}>
+                <Clock3 className="size-4" aria-hidden />
+                Periods & time
               </Button>
-            )}
-            {/* Print, Add a teacher, Take back to a draft and Throw away my changes are not here any more (2026-11-17): the row is the week's tools, the class
-                teacher, and Save, in ONE line (a change is kept or lost by Save, or by leaving, which asks first). */}
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              {/* Who the class teacher is (2026-11-17, in place of Add a teacher): with none it says Add class teacher, with one it says who, and a click
+                  changes them (the list, then a window that asks first). In a Pre-Primary class they also take the periods that have no teacher. */}
+              <ClassTeacherButton classId={unit.classId} sectionId={unit.sectionId} label={view.unit.label} current={head} look="button" onAssigned={headAssigned} />
+              {prePrimary && mother && motherName && untaught > 0 && (
+                <Button variant="ghost" onClick={() => edit(applyMotherTeacher(model, cells, mother, null))}>
+                  Put {motherName} on {untaught} period{untaught === 1 ? "" : "s"} with no teacher
+                </Button>
+              )}
               {siblings.length > 0 && (
                 <Button variant="outline" onClick={() => setCopying(true)} disabled={dirty || !view.exists || view.cells.length === 0} title={dirty ? "Save first" : undefined}>
                   <Copy className="size-4" aria-hidden />
                   Copy to other sections
                 </Button>
               )}
-              <Button onClick={() => void submit()} loading={saving || publishing} disabled={!dirty && !publishSaved} title={!dirty && !publishSaved ? "Everything is saved" : undefined}>
-                <Save className="size-4" aria-hidden />
-                {saveLabel}
-              </Button>
             </div>
-          </div>
+          </Card>
+
+          {/* Subjects this week: each subject the class has with how many periods it has in the week and how many it was given. */}
+          {subjectRows.length > 0 && (
+            <Card className="p-4 print:hidden">
+              <p className="mb-2.5 flex items-baseline gap-2 text-sm font-bold text-foreground">
+                Subjects this week <span className="text-xs font-normal text-foreground-muted">placed / needed</span>
+              </p>
+              <ul aria-label="Subjects this week" className="flex flex-wrap gap-2">
+                {subjectRows.map((a) => {
+                  const placed = counts.get(a.subjectId) ?? 0;
+                  const need = a.periodsPerWeek;
+                  const tone = need === 0 ? "text-foreground-muted" : placed === need ? "text-success" : placed > need ? "text-danger" : "text-warning";
+                  return (
+                    <li key={a.subjectId} aria-label={`${a.subjectName}: ${placed} placed of ${need || "no"} needed`} className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-sm font-semibold text-foreground">
+                      <span aria-hidden className={cn("size-2 rounded-full", accents.get(a.subjectId)?.dot ?? "bg-primary")} />
+                      {a.subjectName}
+                      <span aria-hidden className={cn("text-xs font-bold tabular-nums", tone)}>
+                        {placed}/{need || "–"}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+          )}
 
           {fill && (
             <div role="status" aria-label="The fill" className="rounded-xl border border-primary/25 bg-primary-soft/60 px-4 py-3 text-sm text-foreground print:hidden">
@@ -451,15 +490,26 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
             </p>
           )}
 
-          <GridTable view={view} model={model} cells={cells} colors={colors} problems={problems} looks={looks} openKey={picking ? cellKey(picking.day, picking.period) : null} onCell={openPeriod} />
+          <GridTable view={view} model={model} cells={cells} colors={colors} accents={accents} problems={problems} looks={looks} openKey={picking ? cellKey(picking.day, picking.period) : null} onCell={openPeriod} />
 
-          {cells.length > 0 && (
-            <div className="flex justify-end print:hidden">
-              <Button variant="ghost" onClick={() => setClearing(true)}>
-                Empty the whole week
+          {/* Under the week: who sees it, Empty the whole week, and the one Save (it publishes a draft too: user, 2026-11-13). */}
+          <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+            <p className="flex items-center gap-1.5 text-xs text-foreground-muted">
+              <Check className="size-3.5 shrink-0 text-success" aria-hidden />
+              {view.status === "published" ? "Published: students and teachers see a change once you save it." : "Students and teachers see the timetable once you save it."}
+            </p>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {cells.length > 0 && (
+                <Button variant="ghost" onClick={() => setClearing(true)}>
+                  Empty the whole week
+                </Button>
+              )}
+              <Button variant="accent" onClick={() => void submit()} loading={saving || publishing} disabled={!dirty && !publishSaved} title={!dirty && !publishSaved ? "Everything is saved" : undefined}>
+                {!(saving || publishing) && (publishSaved ? <Send className="size-4" aria-hidden /> : <Save className="size-4" aria-hidden />)}
+                {saveLabel}
               </Button>
             </div>
-          )}
+          </div>
 
           {(dirty || errors.length > 0 || warnings.length > 0) && (
             <Card className="space-y-2 p-4 print:hidden" aria-label="Checks">
@@ -504,6 +554,7 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
           title={`${DAY_NAMES[picking.day]}, ${pickingSlot.label}`}
           times={`${pickingSlot.start} to ${pickingSlot.end}`}
           choices={choices}
+          dotOf={(subjectId) => accents.get(subjectId)?.dot}
           current={pickingCell?.lessons.map((l) => l.subjectId) ?? []}
           teacherName={(id) => (id ? (model.teachers.get(id)?.name ?? null) : null)}
           trouble={(choice) => teacherTrouble(model, choice.teacherId, picking.day, picking.period)}

@@ -45,7 +45,7 @@ export default function FeeHeadsPage() {
         <ListChecks className="size-4" aria-hidden />
         Add the usual fees
       </Button>
-      <Button onClick={() => setDialog({ kind: "head" })}>
+      <Button variant="accent" onClick={() => setDialog({ kind: "head" })}>
         <Plus className="size-4" aria-hidden />
         Add a fee
       </Button>

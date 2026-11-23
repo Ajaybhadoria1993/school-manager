@@ -8,7 +8,11 @@ import type { CSSProperties } from "react";
  */
 export type ThemeName = "classic" | "onboarding" | "evergreen";
 
+/** What a saved appearance with no (or an unknown) theme in it is: the app as it was. */
 export const DEFAULT_THEME: ThemeName = "classic";
+
+/** The look a device starts on when nothing was chosen yet: the royal blue menu and orange actions of the reference pictures (2026-11-22). */
+export const INITIAL_THEME: ThemeName = "onboarding";
 
 export interface ThemeInfo {
   id: ThemeName;
@@ -21,7 +25,7 @@ export interface ThemeInfo {
 
 export const THEMES: readonly ThemeInfo[] = [
   { id: "classic", name: "Classic", description: "The look you have now, with your accent colour and light or dark mode", swatches: { menu: "#ffffff", accent: "#0f7774", page: "#faf8f5" } },
-  { id: "onboarding", name: "Onboarding", description: "The deep blue menu and soft boxes of the sign-up form", swatches: { menu: "#1e3a8a", accent: "#2563eb", page: "#f2f7ff" } },
+  { id: "onboarding", name: "Onboarding", description: "A royal blue menu, orange actions and soft boxes", swatches: { menu: "#1243b5", accent: "#2563eb", page: "#f4f7fd" } },
   { id: "evergreen", name: "Evergreen", description: "The same soft look in deep green", swatches: { menu: "#134e4a", accent: "#0f766e", page: "#f1f8f6" } },
 ];
 
@@ -50,9 +54,9 @@ interface Palette {
 
 const PALETTES: Record<Exclude<ThemeName, "classic">, Palette> = {
   onboarding: {
-    background: "#f2f7ff",
+    background: "#f4f7fd",
     surfaceMuted: "#eef3fb",
-    border: "#dce5f3",
+    border: "#e1e8f4",
     foreground: "#0f172a",
     foregroundMuted: "#64748b",
     foregroundSecondary: "#475569",
@@ -62,8 +66,8 @@ const PALETTES: Record<Exclude<ThemeName, "classic">, Palette> = {
     primaryDeep: "#1e3a8a",
     brand: "#2563eb",
     tint: "30 58 138",
-    menuFrom: "#1e3a8a",
-    menuTo: "#172554",
+    menuFrom: "#1243b5",
+    menuTo: "#0b2c83",
     menuActive: "#2f67e5",
   },
   evergreen: {
@@ -124,6 +128,14 @@ export function themeStyle(theme: Exclude<ThemeName, "classic">): CSSProperties 
     "--brand": p.brand,
     // The strip that starts each part of a form (and the icons beside it) takes the look's colour instead of gold.
     "--gold": p.primary,
+    // The orange of the main actions (Add student, Collect fee), the active tab and the menu's badge: the same in every look.
+    "--orange": "#f59e0b",
+    "--orange-hover": "#ea8a00",
+    "--orange-soft": "#fff4de",
+    // The dashboard's charts: blue, orange and slate (Classic keeps the bronze, gold and slate of the style sheet).
+    "--chart-1": "#2563eb",
+    "--chart-2": "#f59e0b",
+    "--chart-3": "#808892",
     ...LIGHT_STATUS,
     "--accent": "var(--primary)",
     "--accent-foreground": "var(--primary-foreground)",

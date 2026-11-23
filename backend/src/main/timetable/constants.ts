@@ -36,3 +36,7 @@ export const MAX_LESSONS_PER_CELL = 6;
 export const MAX_ROOM = 30;
 /** A subject more often than this in one day is a warning (a double period counts once). */
 export const MAX_SAME_SUBJECT_PER_DAY = 2;
+/** How long the name of a special day can be ("PTM", "Annual day", 2026-11-22). */
+export const MAX_SPECIAL_TITLE = 40;
+/** How many days in a row one special day can cover (2026-11-23). */
+export const MAX_SPECIAL_DAYS = 31;

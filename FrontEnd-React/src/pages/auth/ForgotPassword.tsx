@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import { Mail, MailCheck } from "lucide-react";
 import { useForgotPasswordMutation } from "../../redux/api/authApi";
 import { getApiError } from "../../utils/apiErrors";
@@ -9,6 +10,15 @@ import { Input, Label } from "../../components/ui/Input";
 
 // Matches the server, which ignores a second request for the same account within a minute.
 const RESEND_SECONDS = 60;
+
+/** Under the form of every screen here: the way back (small words, in the middle of the circle). */
+const BACK = (
+  <p className="text-center text-sm text-foreground-muted">
+    <Link to="/login" className="font-semibold text-primary hover:underline">
+      Back to sign in
+    </Link>
+  </p>
+);
 
 export default function ForgotPassword() {
   const [forgotPassword] = useForgotPasswordMutation();
@@ -47,9 +57,9 @@ export default function ForgotPassword() {
 
   if (sentTo) {
     return (
-      <AuthShell title="Check your email">
-        <div className="space-y-4 text-sm text-foreground-muted">
-          <div className="flex size-12 items-center justify-center rounded-full bg-primary-soft text-primary">
+      <AuthShell title="Check your email" footer={BACK}>
+        <div className="space-y-3 text-center text-sm text-foreground-muted">
+          <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary-soft text-primary">
             <MailCheck className="size-6" aria-hidden />
           </div>
           {/* Same wording whether or not the account exists, on purpose. */}
@@ -58,7 +68,7 @@ export default function ForgotPassword() {
             to reset the password. It works once and expires {ttlMinutes ? `in ${ttlMinutes} minutes` : "soon"}.
           </p>
           <p>Nothing in your inbox? Check the spam folder.</p>
-          <Button variant="outline" size="lg" className="w-full" onClick={() => send()} loading={submitting} disabled={cooldown > 0}>
+          <Button variant="outline" size="lg" className="h-[var(--lp-field)] w-full rounded-full" onClick={() => send()} loading={submitting} disabled={cooldown > 0}>
             {cooldown > 0 ? `Send again in ${cooldown}s` : "Send again"}
           </Button>
         </div>
@@ -67,10 +77,12 @@ export default function ForgotPassword() {
   }
 
   return (
-    <AuthShell title="Forgot your password?" subtitle="Enter your email and we will send you a link to choose a new one.">
-      <form onSubmit={send} className="space-y-4" noValidate>
+    <AuthShell title="Forgot your password?" subtitle="Enter your email and we will send you a link to choose a new one." footer={BACK}>
+      <form onSubmit={send} className="space-y-[var(--lp-gap)]" noValidate>
         <div>
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email" className="sr-only">
+            Email
+          </Label>
           <Input
             icon={Mail}
             id="email"
@@ -80,7 +92,8 @@ export default function ForgotPassword() {
             autoFocus
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@school.in"
+            placeholder="Email address"
+            className="h-[var(--lp-field)]"
           />
         </div>
 
@@ -90,7 +103,7 @@ export default function ForgotPassword() {
           </p>
         )}
 
-        <Button type="submit" size="lg" className="w-full" loading={submitting} disabled={!email}>
+        <Button type="submit" size="lg" className="h-[var(--lp-btn)] w-full rounded-full text-lg" loading={submitting} disabled={!email}>
           Send reset link
         </Button>
       </form>

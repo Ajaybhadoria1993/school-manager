@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { CalendarService } from "../../classroom/services/calendar.service";
 import { BellSchedule } from "../../timetable/models/BellSchedule";
 import { timingHistory, timingsOn } from "../../timetable/services/scheduleHistory";
+import { SpecialDayService } from "../../timetable/services/specialDay.service";
 
 /**
  * What each day is for the school (2026-11-06): does it run, from when to when, and is it a holiday. Teachers' attendance is worked out
@@ -35,13 +36,22 @@ export async function schoolDays(tenantId: string, from: string, to: string): Pr
   const days = eachDay(from, to);
   if (days.length === 0) return [];
   const school = new Types.ObjectId(tenantId);
-  const [current, history, holidays] = await Promise.all([
+  const [current, history, holidays, specials] = await Promise.all([
     BellSchedule.find({ tenantId: school }).select("days slots").lean(),
     timingHistory(tenantId, from),
     CalendarService.holidaysBetween(school, from, to),
+    SpecialDayService.between(school, from, to),
   ]);
   return days.map((date) => {
     const weekday = weekdayOf(date);
+    // A special day of the whole school (2026-11-22) is read with its own hours; one without classes is like a holiday. One for some classes leaves the school's day as it is.
+    const special = specials.find((s) => s.date <= date && s.endDate >= date && s.classIds.length === 0);
+    if (special && !holidays.some((h) => h.startDate <= date && h.endDate >= date)) {
+      const rows = special.slots;
+      return rows.length === 0
+        ? { date, weekday, working: false, start: null, end: null, holiday: special.title }
+        : { date, weekday, working: true, start: Math.min(...rows.map((x) => x.start)), end: Math.max(...rows.map((x) => x.end)), holiday: null };
+    }
     // A day is read with the timing that was in force on it (a Saturday taken off later is still a school day, and an absence, before the change).
     const schedules = timingsOn(date, history, current);
     const running = schedules.filter((s) => s.days.includes(weekday) && s.slots.length > 0);

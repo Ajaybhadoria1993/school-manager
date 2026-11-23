@@ -30,7 +30,7 @@ const SHORT = [
   { kind: "period", start: "10:50", end: "11:30" },
 ];
 
-type Listed = { name: string; days: number[]; scope: string; classIds: string[]; departmentId: string | null; slots: { kind: string; start: string; end: string }[] };
+type Listed = { id: string; name: string; days: number[]; scope: string; classIds: string[]; departmentId: string | null; slots: { kind: string; start: string; end: string }[] };
 const list = async (token: string) => (await request(app).get("/api/v1/timetable/schedules").set(auth(token))).body.data.items as Listed[];
 const starts = (t: Listed) => `${t.slots[0].start}-${t.slots[t.slots.length - 1].end}`;
 
@@ -117,6 +117,40 @@ describe("shiftOthers: the timings of the classes and departments move with the 
     const r = await ready();
     const res = await put(r.token, { departmentId: r.pre, days: [1, 2, 3, 4, 5].map((d) => day(d, SHORT)), shiftOthers: 60 });
     expect(res.status).toBe(400);
+  });
+
+  // 2026-11-22, user: a tick beside each timing on the School timings page; only the ticked ones move ("check na kare to time nahi badhega").
+  it("shiftOnly moves only the timings it names; the others stay where they are", async () => {
+    const r = await ready();
+    const pre = (await list(r.token)).filter((t) => t.departmentId === r.pre).map((t) => t.id);
+    const res = await put(r.token, { days: week(LATER), shiftOthers: 60, shiftOnly: pre });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const after = await list(r.token);
+    expect(after.filter((t) => t.departmentId === r.pre).map(starts)).toEqual(["10:00-12:30"]);
+    expect(after.filter((t) => t.classIds.join() === r.one && !t.departmentId).map(starts)).toEqual(["08:30-11:00"]);
+  });
+
+  it("shiftOnly with no timing moves none of them; a timing it names that is not another of the school's is not moved", async () => {
+    const r = await ready();
+    expect((await put(r.token, { days: week(LATER), shiftOthers: 60, shiftOnly: [] })).status).toBe(200);
+    expect((await put(r.token, { days: week(LATER), shiftOthers: 60, shiftOnly: ["5f0000000000000000000000"] })).status).toBe(200);
+    const after = await list(r.token);
+    expect(after.filter((t) => t.departmentId === r.pre).map(starts)).toEqual(["09:00-11:30"]);
+    expect(after.filter((t) => t.classIds.join() === r.one && !t.departmentId).map(starts)).toEqual(["08:30-11:00"]);
+  });
+
+  it("a timing past midnight that is not moved does not stop the save", async () => {
+    const r = await ready();
+    const pre = (await list(r.token)).filter((t) => t.departmentId === r.pre).map((t) => t.id);
+    // Ten hours earlier both Pre-Primary (09:00) and Class 1 (08:30) would start before 00:00: refused only when one of them is to move.
+    const res = await put(r.token, { days: week(LATER), shiftOthers: -600, shiftOnly: [] });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect((await put(r.token, { days: week(LATER), shiftOthers: -600, shiftOnly: pre })).status).toBe(400);
+  });
+
+  it("shiftOnly is a list of timing ids", async () => {
+    const r = await ready();
+    expect((await put(r.token, { days: week(LATER), shiftOthers: 60, shiftOnly: ["nope"] })).status).toBe(400);
   });
 
   it("must be a whole number of minutes, not more than twelve hours either way", async () => {

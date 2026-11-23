@@ -29,6 +29,12 @@ function logText(l: LogLine): string {
   return `${clock12(l.time)} · Marked by ${l.by.name} (school)${l.note ? `: ${l.note}` : ""}`;
 }
 
+/**
+ * Whose days these are: a teacher's or a staff member's (2026-11-22): the same days, another record. Only a teacher's day can be changed by the
+ * school; a staff member marks their own and the school only reads them.
+ */
+export type DaysOf = "teacher" | "staff";
+
 /** The school changes one day of a teacher: Present (and the time they came), Absent or Leave, and why. */
 function ChangeDayForm({ teacher, record, onDone, onCancel }: { teacher: TeacherSheetRow; record: TeacherRecord; onDone: (title: string, message: string) => void; onCancel: () => void }) {
   const [save, { isLoading }] = useSetTeacherDayMutation();

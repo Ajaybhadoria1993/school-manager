@@ -2,9 +2,9 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { GraduationCap, Megaphone, type LucideIcon } from "lucide-react";
 
-/** The page's two shortcuts as links, in the look of the primary and the outline button (the same as the Students page). */
+/** The page's two shortcuts as links: the main one orange (2026-11-22, the reference pictures; the same as Add student on the Students page) and the plain outline one. */
 const primaryLink =
-  "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-[0_4px_10px_-2px_rgb(37_99_235/0.4)] transition-all duration-150 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
+  "inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-orange px-4 text-sm font-semibold text-white shadow-[0_4px_10px_-2px_rgb(245_158_11/0.45)] transition-all duration-150 hover:bg-orange-hover focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/25";
 const outlineLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:border-[#cbd5e1] hover:bg-background focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 

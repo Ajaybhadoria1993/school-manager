@@ -3,10 +3,12 @@ import { ApiError } from "../../../utils/ApiError";
 import { asyncHandler } from "../../../utils/asyncHandler";
 import { sendCreated, sendOk } from "../../../utils/response";
 import type { UnitQuery } from "../../subjects/schemas/subjects.schemas";
-import type { AutofillBody, ClassDayInput, CopyBody, CreateScheduleInput, OverviewQuery, ReplaceTeacherBody, SaveGridInput, SchoolDayInput, TeacherPeriodsInput, UnitBody, UpdateScheduleInput } from "../schemas/timetable.schemas";
+import type { ArrangementInput, ArrangementQuery, AutofillBody, ClassDayInput, CopyBody, CreateScheduleInput, OverviewQuery, ReplaceTeacherBody, SaveGridInput, SchoolDayInput, SpecialDayInput, TeacherPeriodsInput, UnitBody, UpdateScheduleInput } from "../schemas/timetable.schemas";
+import { ArrangementService } from "../services/arrangement.service";
 import { GridService } from "../services/grid.service";
 import { OverviewService } from "../services/overview.service";
 import { ScheduleService } from "../services/schedule.service";
+import { SpecialDayService } from "../services/specialDay.service";
 import { TeacherPeriodsService } from "../services/teacherPeriods.service";
 import { TeacherTimetableService } from "../services/teacherView.service";
 import { ToolsService } from "../services/tools.service";
@@ -105,4 +107,37 @@ export const removeDepartmentDay = asyncHandler(async (req: Request, res: Respon
 export const deleteSchedule = asyncHandler(async (req: Request, res: Response) => {
   await ScheduleService.remove(tenantOf(req), idOf(req));
   return sendOk(res, { id: idOf(req) }, "Timing deleted");
+});
+
+// ---- Special days and the day's arrangement (2026-11-22) ------------------------------------------------------------------------------------
+
+/** 404 before 400: the special day must be this school's before its body is read. */
+export const specialDayExists = asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
+  if (!(await SpecialDayService.exists(tenantOf(req), idOf(req)))) throw ApiError.notFound("Special day not found", "SPECIAL_DAY_NOT_FOUND");
+  next();
+});
+
+export const listSpecialDays = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await SpecialDayService.list(tenantOf(req)));
+});
+
+export const createSpecialDay = asyncHandler(async (req: Request, res: Response) => {
+  return sendCreated(res, await SpecialDayService.create(tenantOf(req), req.user!.userId, body<SpecialDayInput>(req)), "Special day saved");
+});
+
+export const updateSpecialDay = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await SpecialDayService.update(tenantOf(req), req.user!.userId, idOf(req), body<SpecialDayInput>(req)), "Special day saved");
+});
+
+export const deleteSpecialDay = asyncHandler(async (req: Request, res: Response) => {
+  await SpecialDayService.remove(tenantOf(req), req.user!.userId, idOf(req));
+  return sendOk(res, null, "Special day taken off");
+});
+
+export const getArrangement = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await ArrangementService.get(tenantOf(req), (req.validatedQuery as ArrangementQuery).date));
+});
+
+export const saveArrangement = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await ArrangementService.set(tenantOf(req), req.user!.userId, body<ArrangementInput>(req)), "Arrangement saved");
 });

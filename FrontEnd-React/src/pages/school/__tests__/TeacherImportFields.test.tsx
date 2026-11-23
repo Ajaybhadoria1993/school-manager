@@ -10,6 +10,7 @@ import type { CustomFieldDef } from "../../../constants/studentFields";
 import type { ImportSheet } from "../../../types";
 import { fakeApi as pretendApi, type Call, type Handler } from "../../../test/fakeApi";
 import { ENGLISH, MATHS } from "../../../test/timetableFixtures";
+import { stubDownloads } from "../../../test/downloads";
 import TeacherImportPage from "../TeacherImport";
 
 /**
@@ -73,7 +74,7 @@ async function openFile(user: U) {
 }
 const box = (title: string, row: number) => screen.getByLabelText(`${title}, row ${row}`, { selector: "input" });
 const said = (title: string, row: number) => box(title, row).parentElement?.querySelector("p")?.textContent;
-const heading = (title: string) => screen.getByRole("button", { name: new RegExp(`What the column "${title}" is$`) });
+const heading = (title: string) => screen.getByRole("combobox", { name: new RegExp(`What the column "${title}" is$`) });
 const puts = (calls: Call[]) => calls.filter((c) => c.method === "PUT" && c.path === "/staff/teachers/settings");
 const imports = (calls: Call[]) => calls.filter((c) => c.method === "POST" && c.path === "/staff/teachers/import");
 
@@ -86,10 +87,11 @@ afterEach(() => {
 describe("Bulk upload of teachers: the school's own fields", () => {
   it("reads a column that is the name of one of the school's fields as that field, and sends its answers by key", async () => {
     const calls = fakeApi([PAN, BLOOD]);
+    stubDownloads();
     const user = openPage();
     await openFile(user);
-    expect(heading("PAN Number")).toHaveTextContent("PAN Number (your own)");
-    expect(heading("Blood Group")).toHaveTextContent("Blood Group (your own)");
+    expect(heading("PAN Number")).toHaveValue("PAN Number (your own)");
+    expect(heading("Blood Group")).toHaveValue("Blood Group (your own)");
     // A box is shown as it is kept: the list's own name for a choice.
     await user.click(box("PAN Number", 2));
     await user.tab();
@@ -100,7 +102,8 @@ describe("Bulk upload of teachers: the school's own fields", () => {
     expect(box("Blood Group", 3)).toHaveValue("O+");
     await user.click(screen.getByRole("button", { name: /^Upload \d+ teachers?$/ }));
     await user.click(await screen.findByRole("button", { name: "Upload and add" }));
-    await screen.findByRole("heading", { name: "2 teachers added" });
+    // Every row is in: the person is taken to the teachers.
+    await screen.findByText("list");
     expect((imports(calls)[0].body as Body).rows.map((r) => r.teacher.custom)).toEqual([
       { c_pan00001: "abcde1234f", c_blood001: "B+" },
       { c_blood001: "O+" },
@@ -129,19 +132,20 @@ describe("Bulk upload of teachers: the school's own fields", () => {
 
   it("offers the columns that are no detail as new fields, all at once: one save, and the file comes in as it is", async () => {
     const calls = fakeApi([PAN, BLOOD]);
+    stubDownloads();
     const user = openPage();
     await openFile(user);
     const notice = screen.getByRole("status", { name: "Columns not uploaded" });
     expect(notice).toHaveTextContent("2 columns of your file are not uploaded: Hobby, Remarks");
     expect(puts(calls)).toHaveLength(0);
     await user.click(within(notice).getByRole("button", { name: "Add them as your own fields" }));
-    await waitFor(() => expect(heading("Hobby")).toHaveTextContent("Hobby (your own)"));
+    await waitFor(() => expect(heading("Hobby")).toHaveValue("Hobby (your own)"));
     expect(puts(calls)).toHaveLength(1);
     const saved = (puts(calls)[0].body as { customFields: CustomFieldDef[] }).customFields;
     expect(saved.slice(0, 2)).toEqual([PAN, BLOOD]);
     expect(saved.slice(2).map((f) => [f.label, f.type, f.mode])).toEqual([["Hobby", "text", "optional"], ["Remarks", "text", "optional"]]);
     expect(saved[2].key).toMatch(/^c_[a-z0-9]{4,16}$/);
-    expect(heading("Remarks")).toHaveTextContent("Remarks (your own)");
+    expect(heading("Remarks")).toHaveValue("Remarks (your own)");
     expect(screen.queryByRole("status", { name: "Columns not uploaded" })).not.toBeInTheDocument();
 
     await user.clear(box("Blood Group", 3));
@@ -149,7 +153,7 @@ describe("Bulk upload of teachers: the school's own fields", () => {
     await user.tab();
     await user.click(screen.getByRole("button", { name: /^Upload \d+ teachers?$/ }));
     await user.click(await screen.findByRole("button", { name: "Upload and add" }));
-    await screen.findByRole("heading", { name: "2 teachers added" });
+    await screen.findByText("list");
     const custom = (imports(calls)[0].body as Body).rows[0].teacher.custom as Record<string, unknown>;
     expect(Object.values(custom).sort()).toEqual(["Chess", "abcde1234f", "B+", "senior"].sort());
   });
@@ -165,7 +169,7 @@ describe("Bulk upload of teachers: the school's own fields", () => {
     await user.click(await screen.findByRole("option", { name: "Not uploaded" }));
     // PAN Number is a field of the school: leaving its column out was the person's choice, so it is not offered as a new field.
     expect(screen.getByRole("status", { name: "Columns not uploaded" })).toHaveTextContent("2 columns of your file are not uploaded: Hobby, Remarks");
-    expect(heading("PAN Number")).toHaveTextContent("Not uploaded");
+    expect(heading("PAN Number")).toHaveValue("Not uploaded");
     expect(puts(calls)).toHaveLength(0);
   });
 
@@ -179,11 +183,43 @@ describe("Bulk upload of teachers: the school's own fields", () => {
     expect(within(dialog).getByLabelText(/^Name of the field/)).toHaveValue("Hobby");
     expect(dialog).toHaveTextContent("As Add teacher and the Excel show it");
     await user.click(within(dialog).getByRole("button", { name: "Add the field" }));
-    await waitFor(() => expect(heading("Hobby")).toHaveTextContent("Hobby (your own)"));
+    await waitFor(() => expect(heading("Hobby")).toHaveValue("Hobby (your own)"));
     expect(puts(calls)).toHaveLength(1);
     expect((puts(calls)[0].body as { customFields: CustomFieldDef[] }).customFields.map((f) => f.label)).toEqual(["PAN Number", "Blood Group", "Hobby"]);
     // Only that column: the other one is still waiting in the notice.
     expect(screen.getByRole("status", { name: "Columns not uploaded" })).toHaveTextContent("1 column of your file is not uploaded: Remarks");
+  });
+
+  it("a heading can be typed in: a name that is not a detail is added as a field of its own, kept in the school's record, and its answers are sent", async () => {
+    const sheet: ImportSheet = { ...SHEET, headers: ["Name *", "Mobile *", "Class teacher of"], rows: [{ row: 2, cells: ["Meena Singh", "9876543210", "Class 5"] }] };
+    const calls = fakeApi([PAN], {}, sheet);
+    stubDownloads();
+    const user = openPage();
+    await openFile(user);
+    expect(heading("Class teacher of")).toHaveValue("Not uploaded");
+    await user.click(heading("Class teacher of"));
+    await user.keyboard("Class teacher");
+    await user.click(await screen.findByRole("option", { name: "Add “Class teacher” as a new field" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add your own field" });
+    expect(within(dialog).getByLabelText(/^Name of the field/)).toHaveValue("Class teacher");
+    await user.click(within(dialog).getByRole("button", { name: "Add the field" }));
+    await waitFor(() => expect(heading("Class teacher of")).toHaveValue("Class teacher (your own)"));
+    expect((puts(calls)[0].body as { customFields: CustomFieldDef[] }).customFields.map((f) => f.label)).toEqual(["PAN Number", "Class teacher"]);
+    await user.click(screen.getByRole("button", { name: /^Upload \d+ teachers?$/ }));
+    await user.click(await screen.findByRole("button", { name: "Upload and add" }));
+    await screen.findByText("list");
+    expect(Object.values((imports(calls)[0].body as Body).rows[0].teacher.custom as Record<string, unknown>)).toEqual(["Class 5"]);
+  });
+
+  it("typing the export's own name for a column (Class teacher of) says why it is not offered, and what to do", async () => {
+    fakeApi([PAN], {}, { ...SHEET, headers: ["Name *", "Mobile *", "Class teacher of"], rows: [{ row: 2, cells: ["Meena Singh", "9876543210", ""] }] });
+    const user = openPage();
+    await openFile(user);
+    await user.click(heading("Class teacher of"));
+    await user.keyboard("Class teacher of");
+    const note = await screen.findByRole("option", { name: /Class teacher of.*another name/ });
+    expect(note).toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("option", { name: /as a new field/ })).not.toBeInTheDocument();
   });
 
   it("does not let a field take the name of a usual detail (Mobile, Designation...), in the teachers' words", async () => {
@@ -207,7 +243,7 @@ describe("Bulk upload of teachers: the school's own fields", () => {
     await openFile(user);
     await user.click(within(screen.getByRole("status", { name: "Columns not uploaded" })).getByRole("button", { name: "Add them as your own fields" }));
     expect(await screen.findByText("Up to 20 fields of your own")).toBeInTheDocument();
-    expect(heading("Hobby")).toHaveTextContent("Not uploaded");
+    expect(heading("Hobby")).toHaveValue("Not uploaded");
   });
 
   it("leads to Manage fields from the first step", async () => {

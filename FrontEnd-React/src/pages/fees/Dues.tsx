@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { CircleAlert, HandCoins, Search, UsersRound, Wand2 } from "lucide-react";
 import { StatTile } from "../../components/dashboard/school/StatTile";
+import { collectLink } from "../../components/fees/collectLink";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
 import { Button } from "../../components/ui/Button";
@@ -113,7 +114,7 @@ export default function DuesPage() {
                   <td className="px-3 py-3 text-right tabular-nums">{d.lateFine > 0 ? rupees(d.lateFine) : "-"}</td>
                   <td className="px-3 py-3 text-foreground-secondary">{formatDay(d.oldestDue)}</td>
                   <td className="px-3 py-3 text-right">
-                    <Link to={`/fees/collect?student=${d.studentId}`} className="font-semibold text-primary hover:underline" aria-label={`Collect from ${d.name}`}>
+                    <Link to={`/fees/collect?student=${d.studentId}`} className={collectLink} aria-label={`Collect from ${d.name}`}>
                       Collect
                     </Link>
                   </td>

@@ -36,7 +36,7 @@ export function BrandMark({
         alt=""
         width={48}
         height={48}
-        className={cn("shrink-0", logo)}
+        className={cn("shrink-0", logo, inverse && "rounded-xl bg-white p-1")}
         fetchPriority="high"
         decoding="async"
       />
@@ -49,7 +49,7 @@ export function BrandMark({
           )}
         >
           Edu
-          <span className={inverse ? "text-sky" : "text-brand"}>Shiksha</span>
+          <span className={inverse ? "text-orange" : "text-brand"}>Shiksha</span>
         </span>
         <span
           className={cn(

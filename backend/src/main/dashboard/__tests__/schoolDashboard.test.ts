@@ -4,6 +4,7 @@ import app from "../../../app";
 import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { clock } from "../../../utils/clock";
 import { classroomSchool } from "../../../test/classroom";
+import { everyoneAddedToTheApp } from "../../../test/teachers";
 import { addColleague, createSchool } from "../../../test/schools";
 import { addClass, addTiming, auth, timetableSchool } from "../../../test/timetable";
 import { Teacher } from "../../staff/models/Teacher";
@@ -30,6 +31,7 @@ async function setUp() {
   await on(s.mira.id, "2026-10-20");
   // The teachers joined when the session began: a day counts for a teacher only from the day they joined.
   await Teacher.updateMany({ tenantId: s.tenantId }, { $set: { joiningDate: new Date("2026-04-01T00:00:00.000Z") } });
+  await everyoneAddedToTheApp(s.tenantId);
   return s;
 }
 

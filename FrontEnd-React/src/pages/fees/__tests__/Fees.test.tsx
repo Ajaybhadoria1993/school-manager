@@ -436,3 +436,20 @@ describe("Fees > Fee rules", () => {
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
   });
 });
+
+describe("Fees: the main button of a page is orange (2026-11-22, the reference pictures)", () => {
+  it("Add fee, Add a fee and Add a concession are the orange buttons; the others stay plain", async () => {
+    open("structure");
+    // The one in the page's header (each class's own list has a small one too).
+    const [addFee] = await screen.findAllByRole("button", { name: "Add fee" });
+    expect(addFee.className).toContain("bg-orange");
+    expect(screen.getByRole("button", { name: "Copy fees" }).className).not.toContain("bg-orange");
+    cleanup();
+    open("heads");
+    expect((await screen.findByRole("button", { name: "Add a fee" })).className).toContain("bg-orange");
+    expect(screen.getByRole("button", { name: "Add the usual fees" }).className).not.toContain("bg-orange");
+    cleanup();
+    open("concessions");
+    expect((await screen.findByRole("button", { name: "Add a concession" })).className).toContain("bg-orange");
+  });
+});

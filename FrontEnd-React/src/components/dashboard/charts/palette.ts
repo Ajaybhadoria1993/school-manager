@@ -1,10 +1,11 @@
 /**
  * The colours of the dashboard's charts (the dataviz palette, validated with its script on the light surface).
- *  - SERIES: categorical slots 1 to 3 in their fixed order (bronze, gold, slate); the one hue of a single-series chart is bronze.
+ *  - SERIES: categorical slots 1 to 3 in their fixed order; the one hue of a single-series chart is the first. They are the look's variables
+ *    (2026-11-22): bronze, gold and slate in Classic (index.css), blue, orange and slate in the looks of the reference pictures (themes.ts).
  *  - STATUS: the fixed status palette (good, warning, critical); a segment in one always comes with its word, never the colour alone.
  * The text beside a mark wears the text tokens, never these.
  */
-export const SERIES = ["#9a7152", "#c28b4c", "#808892"] as const;
+export const SERIES = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)"] as const;
 
 export const STATUS = {
   good: "#0ca30c",
