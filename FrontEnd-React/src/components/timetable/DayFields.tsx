@@ -15,8 +15,12 @@ function InWords({ minutes }: { minutes: number }) {
   return <p className="mt-1 text-xs font-semibold text-foreground">= {formatMinutes(minutes)}</p>;
 }
 
-/** The two times of a break and how long it is: "10:30  to  11:00  30 min". `id` is the first box's (a warning puts the cursor there). */
-function BreakTimes({ id, name, what, from, to, onFrom, onTo }: { id?: string; name: string; what: string; from: string; to: string; onFrom: (clock: string) => void; onTo: (clock: string) => void }) {
+/**
+ * The two times of a break and how long it is: "10:30  to  11:00  30 min". `id` is the first box's (a warning puts the cursor there). `corner`: in a wide
+ * box, where the row is across (2026-11-23, user: "20 min right end par dikhao, height kam ho"), the length is at the row's top right, on the line of its
+ * name, so the boxes stay in one line; narrow, it is after the boxes.
+ */
+function BreakTimes({ id, name, what, from, to, onFrom, onTo, corner = false }: { id?: string; name: string; what: string; from: string; to: string; onFrom: (clock: string) => void; onTo: (clock: string) => void; corner?: boolean }) {
   const start = clockToMinutes(from);
   const end = clockToMinutes(to);
   return (
@@ -24,7 +28,9 @@ function BreakTimes({ id, name, what, from, to, onFrom, onTo }: { id?: string; n
       <TimeBox id={id} label={`${name}: ${what} from`} className="w-36 min-w-32" value={from} onChange={onFrom} />
       <span className="text-sm text-foreground-muted">to</span>
       <TimeBox label={`${name}: ${what} to`} className="w-36 min-w-32" value={to} onChange={onTo} />
-      {start !== null && end !== null && end > start && <span className="rounded-full bg-orange-soft px-2.5 py-1 text-xs font-bold text-orange-hover ring-1 ring-inset ring-orange/30">{formatMinutes(end - start)}</span>}
+      {start !== null && end !== null && end > start && (
+        <span className={cn("rounded-full bg-orange-soft px-2.5 py-1 text-xs font-bold text-orange-hover ring-1 ring-inset ring-orange/30", corner && "@4xl:absolute @4xl:right-4 @4xl:top-3")}>{formatMinutes(end - start)}</span>
+      )}
     </>
   );
 }
@@ -125,8 +131,10 @@ export function DayFields({ idPrefix, name, value, adaptive = false, showEnd = f
         </Field>
       </div>
 
-      <div className="space-y-2.5">
+      {/* Assembly, Lunch and Short break in one line when the box is wide (2026-11-23, user: "ek hi line mein rakho"); one under the other when it is narrow. */}
+      <div role="group" aria-label={`${name}: assembly, lunch and short break`} className="grid gap-2.5 @4xl:grid-cols-3">
         <ToggleRow
+          across
           title="Assembly"
           sub={assemblyFrom && classes ? `${assemblyFrom}–${classes}` : "Before first period"}
           switchLabel={`${name}: assembly`}
@@ -143,6 +151,7 @@ export function DayFields({ idPrefix, name, value, adaptive = false, showEnd = f
           <InWords minutes={value.assemblyMinutes} />
         </ToggleRow>
         <ToggleRow
+          across
           title="Lunch"
           sub={value.lunchStart !== null ? afterPeriod(value, "lunch") : undefined}
           switchLabel={`${name}: lunch break`}
@@ -150,9 +159,10 @@ export function DayFields({ idPrefix, name, value, adaptive = false, showEnd = f
           onToggle={(on) => change(on ? { lunchStart: "10:30", lunchEnd: "11:00" } : { lunchStart: null, lunchEnd: null })}
           offText="No lunch"
         >
-          <BreakTimes id={`${idPrefix}-lunch-from`} name={name} what="lunch" from={value.lunchStart ?? ""} to={value.lunchEnd ?? ""} onFrom={(lunchStart) => change({ lunchStart })} onTo={(lunchEnd) => change({ lunchEnd })} />
+          <BreakTimes corner id={`${idPrefix}-lunch-from`} name={name} what="lunch" from={value.lunchStart ?? ""} to={value.lunchEnd ?? ""} onFrom={(lunchStart) => change({ lunchStart })} onTo={(lunchEnd) => change({ lunchEnd })} />
         </ToggleRow>
         <ToggleRow
+          across
           title="Short break"
           sub={value.breakStart !== null ? afterPeriod(value, "break") : "Optional, e.g. 10 min"}
           switchLabel={`${name}: short break`}
@@ -160,7 +170,7 @@ export function DayFields({ idPrefix, name, value, adaptive = false, showEnd = f
           onToggle={(on) => change(on ? firstBreak(value) : { breakStart: null, breakEnd: null })}
           offText="Not in this day"
         >
-          <BreakTimes id={`${idPrefix}-break-from`} name={name} what="short break" from={value.breakStart ?? ""} to={value.breakEnd ?? ""} onFrom={(breakStart) => change({ breakStart })} onTo={(breakEnd) => change({ breakEnd })} />
+          <BreakTimes corner id={`${idPrefix}-break-from`} name={name} what="short break" from={value.breakStart ?? ""} to={value.breakEnd ?? ""} onFrom={(breakStart) => change({ breakStart })} onTo={(breakEnd) => change({ breakEnd })} />
         </ToggleRow>
       </div>
 

@@ -10,6 +10,7 @@ import { User } from "../../users/models/User";
 import { StaffAttendance, type IStaffAttendance } from "../models/StaffAttendance";
 import type { MonthQuery, MyDayQuery, StaffSheetQuery } from "../schemas/attendance.schemas";
 import { schoolDays } from "./schoolDays";
+import { StaffLeaveService } from "./staffLeave.service";
 import { clockOf, dayDto, dayStatus, finds, rowFor, searchWords, type MyDayDto } from "./teacher.service";
 
 const asId = (id: string | Types.ObjectId) => new Types.ObjectId(String(id));
@@ -51,11 +52,12 @@ export class StaffAttendanceService {
     const date = query.date ?? now.date;
     const [school] = await schoolDays(tenantId, date, date);
     const record = await StaffAttendanceService.recordOf(tenantId, staff._id, date);
-    const status = dayStatus({ date, today: now.date, nowMinutes: now.minutes, school, teacher: staff, record });
+    const onLeave = (await StaffLeaveService.leaveDays(tenantId, "staff", [staff._id], date, date)).get(staff._id.toString())?.has(date) ?? false;
+    const status = dayStatus({ date, today: now.date, nowMinutes: now.minutes, school, teacher: staff, record, onLeave });
     const isToday = date === now.date;
     // Only they mark their day (the school looks): today's words say why there is no button.
     const why =
-      !isToday || record ? null : status === "holiday" ? `Holiday: ${school.holiday}` : status === "off" ? "Not a working day" : status === "absent" ? "School time is over" : null;
+      !isToday || record ? null : status === "leave" ? "On approved leave" : status === "holiday" ? `Holiday: ${school.holiday}` : status === "off" ? "Not a working day" : status === "absent" ? "School time is over" : null;
     return { ...dayDto(date, status, record), school: { start: clockOf(school.start), end: clockOf(school.end) }, canCheckIn: isToday && status === "pending", why };
   }
 
@@ -114,7 +116,8 @@ export class StaffAttendanceService {
     const departments = STAFF_MEMBER_ROLES.map((r) => ({ key: r.key, label: r.label, count: everyone.filter((s) => s.role === r.key).length })).filter((d) => d.count > 0);
     const staff = query.role ? everyone.filter((s) => s.role === query.role) : everyone;
     const byKey = days.length === 0 ? new Map<string, IStaffAttendance>() : await StaffAttendanceService.recordsBetween(tenantId, query.from, to);
-    const rows = staff.sort((a, b) => a.name.localeCompare(b.name)).map((s) => ({ ...rowFor(s, days, byKey, now), department: departmentOf(s) }));
+    const leaves = await StaffLeaveService.leaveDays(tenantId, "staff", staff.map((s) => s._id), query.from, to);
+    const rows = staff.sort((a, b) => a.name.localeCompare(b.name)).map((s) => ({ ...rowFor(s, days, byKey, now, leaves), department: departmentOf(s) }));
     const word = searchWords(query.search);
     const sum = (key: "present" | "late" | "absent" | "leave") => rows.reduce((n, r) => n + r.tally[key], 0);
     return {
@@ -137,6 +140,7 @@ export class StaffAttendanceService {
     const to = last > now.date ? now.date : last;
     const days = from > to ? [] : await schoolDays(tenantId, from, to);
     const byKey = days.length === 0 ? new Map<string, IStaffAttendance>() : await StaffAttendanceService.recordsBetween(tenantId, from, to, [staff._id]);
-    return { month, from, to, row: { ...rowFor(staff, days, byKey, now), department: departmentOf(staff) } };
+    const leaves = await StaffLeaveService.leaveDays(tenantId, "staff", [staff._id], from, to);
+    return { month, from, to, row: { ...rowFor(staff, days, byKey, now, leaves), department: departmentOf(staff) } };
   }
 }

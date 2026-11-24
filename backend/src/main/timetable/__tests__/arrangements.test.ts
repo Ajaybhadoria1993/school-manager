@@ -105,7 +105,7 @@ describe("the day's arrangement: who is away and who is free", () => {
     expect(titles).toEqual(["Arrangement today: Class 5, Period 3 | 09:50 to 10:30 · Mathematics · in place of Meena Singh", "Arrangement taken off today: Class 5, Period 3 | 09:50 to 10:30 · Mathematics · in place of Meena Singh"]);
   });
 
-  it("refuses a teacher who is not free then, a lesson whose teacher is not away, and another day than today", async () => {
+  it("refuses a teacher who is not free then, a lesson whose teacher is not away (also on a day to come), and a day that is over", async () => {
     const r = await ready();
     await mark(r.token, r.meena, "absent");
     const busy = await put(r.token, { date: TODAY, classId: r.five, sectionId: null, period: 1, absentTeacherId: r.meena, substituteTeacherId: r.dev });
@@ -116,15 +116,23 @@ describe("the day's arrangement: who is away and who is free", () => {
     const notAway = await put(r.token, { date: TODAY, classId: r.six, sectionId: null, period: 1, absentTeacherId: r.dev, substituteTeacherId: r.asha });
     expect(notAway.status).toBe(409);
     expect(notAway.body.code).toBe("NOT_AWAY");
-    expect((await put(r.token, { date: "2026-11-11", classId: r.five, sectionId: null, period: 3, absentTeacherId: r.meena, substituteTeacherId: r.dev })).status).toBe(400);
+    // Tomorrow Meena is not away (no leave, nothing marked yet): there is nobody to cover for.
+    const tomorrow = await put(r.token, { date: "2026-11-11", classId: r.five, sectionId: null, period: 3, absentTeacherId: r.meena, substituteTeacherId: r.dev });
+    expect(tomorrow.status).toBe(409);
+    expect(tomorrow.body.code).toBe("NOT_AWAY");
+    const over = await put(r.token, { date: "2026-11-09", classId: r.five, sectionId: null, period: 3, absentTeacherId: r.meena, substituteTeacherId: r.dev });
+    expect(over.status).toBe(400);
+    expect(JSON.stringify(over.body)).toContain("Choose today or a day to come");
   });
 
-  it("another day is only read: the absences marked then, without the ones who had not checked in", async () => {
+  it("a day that is over is only read: the absences marked then, without the ones who had not checked in", async () => {
     const r = await ready();
     const res = await day(r.token, "2026-11-03");
     expect(res.status).toBe(200);
-    expect(res.body.data.today).toBe(false);
+    expect(res.body.data).toMatchObject({ today: false, editable: false });
     expect(res.body.data.away).toEqual([]);
+    expect((await day(r.token)).body.data).toMatchObject({ today: true, editable: true });
+    expect((await day(r.token, "2026-11-17")).body.data).toMatchObject({ today: false, editable: true });
   });
 
   it("a holiday has no arrangement", async () => {
@@ -154,5 +162,71 @@ describe("the day's arrangement: who is away and who is free", () => {
     const token = login.body.data.accessToken as string;
     expect((await day(token)).status).toBe(403);
     expect((await put(token, { date: TODAY, classId: r.five, sectionId: null, period: 3, absentTeacherId: r.meena, substituteTeacherId: r.dev })).status).toBe(403);
+  });
+});
+
+/**
+ * A teacher's approved leave (2026-11-24): the days of it are known before they come, so the arrangement is made ahead. Dev Patel (login arr.dev) teaches
+ * Class 6 in period 1 on Tuesday; Tuesday 17 November is his leave. Kiran has a login and no lessons: the one put in.
+ */
+describe("a teacher on an approved leave: the arrangement is made for the days to come", () => {
+  const NEXT_TUESDAY = "2026-11-17";
+  const signIn = async (identifier: string) => (await request(app).post("/api/v1/auth/login").send({ identifier, password: LOGIN_PASSWORD })).body.data.accessToken as string;
+  const leaveOf = async (r: Awaited<ReturnType<typeof ready>>, answer: "approved" | "declined" | null) => {
+    const kiran = await addTeacher(r.token, "Kiran Das", { mobile: "9110000009", login: { username: "arr.kiran", password: LOGIN_PASSWORD } });
+    const dev = await signIn("arr.dev");
+    const applied = await request(app).post("/api/v1/attendance/leaves/mine").set(auth(dev)).send({ fromDate: NEXT_TUESDAY, reason: "Sister's wedding" });
+    expect(applied.status, JSON.stringify(applied.body)).toBe(201);
+    if (answer) expect((await request(app).post(`/api/v1/attendance/leaves/${applied.body.data.id}/decide`).set(auth(r.token)).send({ status: answer })).status).toBe(200);
+    return { kiran, dev, leaveId: applied.body.data.id as string };
+  };
+  const away = async (token: string, date: string) => (await day(token, date)).body.data.away.map((a: { teacher: { name: string }; status: string }) => `${a.teacher.name} ${a.status}`);
+
+  it("lists them as On leave with their lessons that day; a waiting leave does not", async () => {
+    const r = await ready();
+    const { leaveId } = await leaveOf(r, null);
+    expect(await away(r.token, NEXT_TUESDAY)).toEqual([]);
+    expect((await request(app).post(`/api/v1/attendance/leaves/${leaveId}/decide`).set(auth(r.token)).send({ status: "approved" })).status).toBe(200);
+    const res = await day(r.token, NEXT_TUESDAY);
+    expect(res.body.data).toMatchObject({ today: false, editable: true });
+    expect(await away(r.token, NEXT_TUESDAY)).toEqual(["Dev Patel leave"]);
+    expect(res.body.data.away[0].lessons.map((l: { period: number; label: string }) => `${l.period} ${l.label}`)).toEqual(["1 Class 6"]);
+    // The days after are as usual.
+    expect(await away(r.token, "2026-11-24")).toEqual([]);
+  });
+
+  it("a declined leave does not make the teacher away", async () => {
+    const r = await ready();
+    await leaveOf(r, "declined");
+    expect(await away(r.token, NEXT_TUESDAY)).toEqual([]);
+  });
+
+  it("the free list leaves out the teacher on leave; a substitute is put in for the day to come and hears it", async () => {
+    const r = await ready();
+    const { kiran } = await leaveOf(r, "approved");
+    const lesson = (await day(r.token, NEXT_TUESDAY)).body.data.away[0].lessons[0];
+    expect(lesson.free.map((t: { name: string }) => t.name)).not.toContain("Dev Patel");
+    const made = await put(r.token, { date: NEXT_TUESDAY, classId: r.six, sectionId: null, period: 1, absentTeacherId: r.dev, substituteTeacherId: kiran });
+    expect(made.status, JSON.stringify(made.body)).toBe(200);
+    expect(made.body.data.date).toBe(NEXT_TUESDAY);
+    expect(made.body.data.away[0].lessons[0].substitute).toEqual({ id: kiran, name: "Kiran Das" });
+    // It is for that day only: today shows nothing of it.
+    expect(JSON.stringify((await day(r.token)).body.data)).not.toContain('"substitute":{');
+    await NotificationService.idle();
+    const heard = (await request(app).get("/api/v1/notifications").set(auth(await signIn("arr.kiran")))).body.data.items as { kind: string; title: string }[];
+    expect(heard.filter((n) => n.kind === "timetable.substitute").map((n) => n.title)).toHaveLength(1);
+  });
+
+  it("taking the leave back lets go of the arrangement and tells the one who was put in", async () => {
+    const r = await ready();
+    const { kiran, dev, leaveId } = await leaveOf(r, "approved");
+    await put(r.token, { date: NEXT_TUESDAY, classId: r.six, sectionId: null, period: 1, absentTeacherId: r.dev, substituteTeacherId: kiran });
+    const out = await request(app).post(`/api/v1/attendance/leaves/mine/${leaveId}/cancel`).set(auth(dev));
+    expect(out.status, JSON.stringify(out.body)).toBe(200);
+    expect(await away(r.token, NEXT_TUESDAY)).toEqual([]);
+    await NotificationService.idle();
+    const heard = (await request(app).get("/api/v1/notifications").set(auth(await signIn("arr.kiran")))).body.data.items as { kind: string; title: string; body: string }[];
+    const released = heard.find((n) => n.title === "Arrangement taken off: Dev Patel is back");
+    expect(released?.body).toBe("17 Nov");
   });
 });

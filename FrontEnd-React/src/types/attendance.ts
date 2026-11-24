@@ -234,3 +234,55 @@ export interface StudentsDay {
   /** Of every class asked for (a search never narrows it); the counts are of the classes that were taken. */
   summary: { students: number; classes: number; taken: number; counts: Record<AttendanceStatus, number> };
 }
+
+// ---- The leave of the teachers and the staff (2026-11-24) ---------------------------------------------------------------------------------
+// A person applies from their own login for today or days to come; the school (admin, principal) answers. Approved days are "Leave" in the
+// attendance, and a teacher's lessons on them can be arranged ahead (Leave & arrangements).
+
+export type StaffLeaveKind = "teacher" | "staff";
+
+/** One application: who, their role ("Teacher", "Receptionist"), the days, the reason and where it stands. */
+export interface StaffLeave {
+  id: string;
+  kind: StaffLeaveKind;
+  personId: string;
+  name: string;
+  roleLabel: string;
+  fromDate: string;
+  toDate: string;
+  days: number;
+  reason: string;
+  status: "pending" | "approved" | "declined" | "cancelled";
+  /** The school's note with the answer. */
+  note: string | null;
+  decidedBy: { name: string; role: string } | null;
+  decidedAt: string | null;
+  createdAt: string;
+  /** The person can take it back (their own list): waiting, or approved and not begun. */
+  canCancel: boolean;
+}
+
+/** The school's list: the applications and how many are waiting in all (the count on the tab). */
+export interface StaffLeaveList {
+  items: StaffLeave[];
+  waiting: number;
+}
+
+export type StaffLeaveWho = "all" | "teacher" | "staff";
+
+export interface StaffLeaveQuery {
+  status: "pending" | "all";
+  who: StaffLeaveWho;
+}
+
+export interface StaffLeaveInput {
+  fromDate: string;
+  toDate?: string | null;
+  reason: string;
+}
+
+export interface StaffLeaveDecision {
+  id: string;
+  status: "approved" | "declined";
+  note?: string | null;
+}

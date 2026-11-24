@@ -4,7 +4,8 @@ import { asyncHandler } from "../../../utils/asyncHandler";
 import { sendCreated, sendOk } from "../../../utils/response";
 import { Types } from "mongoose";
 import { Teacher } from "../../staff/models/Teacher";
-import type { DayQuery, MonthQuery, MyDayQuery, SetTeacherDayInput, StaffSheetQuery, StudentsQuery, TeacherSheetQuery } from "../schemas/attendance.schemas";
+import type { ApplyStaffLeaveInput, DayQuery, DecideStaffLeaveInput, MonthQuery, MyDayQuery, SetTeacherDayInput, StaffLeaveQuery, StaffSheetQuery, StudentsQuery, TeacherSheetQuery } from "../schemas/attendance.schemas";
+import { StaffLeaveService } from "../services/staffLeave.service";
 import { StaffAttendanceService } from "../services/staff.service";
 import { StudentAttendanceService } from "../services/student.service";
 import { StudentDayService } from "../services/studentDay.service";
@@ -62,4 +63,32 @@ export const setTeacherDay = asyncHandler(async (req: Request, res: Response) =>
   const { tenantId, userId } = who(req);
   const { teacherId } = req.validatedParams as { teacherId: string };
   return sendOk(res, await TeacherAttendanceService.setDay(tenantId, { userId, role: req.user!.role }, teacherId, req.validatedBody as SetTeacherDayInput), "Attendance saved");
+});
+
+// ---- Leave of the teachers and the staff (2026-11-24) ---------------------------------------------------------------------------------------
+
+const caller = (req: Request) => ({ ...who(req), role: req.user!.role });
+
+export const getMyLeaves = asyncHandler(async (req: Request, res: Response) => {
+  const c = caller(req);
+  return sendOk(res, await StaffLeaveService.mine(c.tenantId, c));
+});
+export const applyMyLeave = asyncHandler(async (req: Request, res: Response) => {
+  const c = caller(req);
+  return sendCreated(res, await StaffLeaveService.apply(c.tenantId, c, req.validatedBody as ApplyStaffLeaveInput), "Leave sent to the school");
+});
+export const cancelMyLeave = asyncHandler(async (req: Request, res: Response) => {
+  const c = caller(req);
+  return sendOk(res, await StaffLeaveService.cancelMine(c.tenantId, c, (req.validatedParams as { id: string }).id), "Leave taken back");
+});
+export const listStaffLeaves = asyncHandler(async (req: Request, res: Response) => sendOk(res, await StaffLeaveService.list(who(req).tenantId, req.validatedQuery as StaffLeaveQuery)));
+/** 404 before 400: the leave must be this school's before its answer is looked at. */
+export const leaveExists = asyncHandler(async (req: Request, _res: Response, next: NextFunction) => {
+  if (!(await StaffLeaveService.exists(who(req).tenantId, (req.validatedParams as { id: string }).id))) throw ApiError.notFound("Leave not found", "LEAVE_NOT_FOUND");
+  next();
+});
+export const decideStaffLeave = asyncHandler(async (req: Request, res: Response) => {
+  const c = caller(req);
+  const done = await StaffLeaveService.decide(c.tenantId, c, (req.validatedParams as { id: string }).id, req.validatedBody as DecideStaffLeaveInput);
+  return sendOk(res, done, done.status === "approved" ? "Leave approved" : "Leave declined");
 });

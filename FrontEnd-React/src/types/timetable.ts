@@ -325,11 +325,17 @@ export interface PublishedUnits {
  * What a class's workspace says to the title row of its page (2026-11-13, so that the toolbar of the class is one line): whether the week has
  * changes that are not saved, how many periods have a lesson of how many, and that the school has no teacher to pick from.
  */
+/** The tabs over a class's week on Class timetables (2026-11-23): its week and its settings (Subject Teachers was taken away the same day). */
+export type ClassWeekTab = "timetable" | "settings";
+
 export interface ClassWeekStatus {
   dirty: boolean;
   filled: number;
   total: number;
   noTeacher: boolean;
+  /** The subjects of the week on screen (its list and the ones put in, not saved yet), and how many of them nobody teaches (2026-11-23). */
+  subjects?: number;
+  withoutTeacher?: number;
 }
 
 // ---- Special days and the day's arrangement (2026-11-22) --------------------------------------------------------------------------------
@@ -385,8 +391,10 @@ export interface ArrangementLesson {
 
 export interface ArrangementDay {
   date: string;
-  /** Only today's arrangement can be changed. */
+  /** The date is today (the teachers who have not checked in yet are listed only then). */
   today: boolean;
+  /** Today or a day to come: the arrangement can be made; a day that is over is only read. */
+  editable: boolean;
   holiday: string | null;
   away: { teacher: { id: string; name: string }; status: AwayStatus; lessons: ArrangementLesson[] }[];
 }

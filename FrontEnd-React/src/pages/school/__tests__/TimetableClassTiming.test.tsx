@@ -86,7 +86,9 @@ type Sent = { classId: string; removeLessons: boolean; days: { day: number; slot
 /** Opens the box and waits for the school's timings. */
 async function openBox(user: User) {
   await screen.findByRole("table", { name: "Weekly timetable" });
-  await user.click(screen.getByRole("button", { name: "Periods & time" }));
+  // Periods & time is on the Class Settings tab (2026-11-23, the reference picture).
+  await user.click(screen.getByRole("tab", { name: "Class Settings" }));
+  await user.click(await screen.findByRole("button", { name: "Periods & time" }));
   const dialog = await screen.findByRole("dialog", { name: "Periods & time: Class 5" });
   await within(dialog).findByLabelText("Class starts");
   return dialog;
@@ -226,7 +228,9 @@ describe("the Periods & time box: what the server refuses, and other ways in", (
   it("says when the timings could not be read, and offers no Save", async () => {
     openPage([REGULAR], { "GET /timetable/schedules": server(500, "The server is busy") });
     await screen.findByRole("table", { name: "Weekly timetable" });
-    await userEvent.setup().click(screen.getByRole("button", { name: "Periods & time" }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: "Class Settings" }));
+    await user.click(await screen.findByRole("button", { name: "Periods & time" }));
     const dialog = await screen.findByRole("dialog", { name: "Periods & time: Class 5" });
     expect(await within(dialog).findByText(/Could not load the school's timings/)).toBeInTheDocument();
     expect(save(dialog)).toBeDisabled();

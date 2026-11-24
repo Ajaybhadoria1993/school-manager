@@ -325,7 +325,7 @@ describe("the marking sheet in the look of the reference pictures (2026-11-22)",
 
   it("the tabs of a class's work are the page tabs: the open one has the orange bar", async () => {
     await open();
-    expect(screen.getByRole("tab", { name: "Attendance" }).className).toContain("after:bg-orange");
-    expect(screen.getByRole("tab", { name: "Diary" }).className).not.toContain("after:bg-orange");
+    expect(screen.getByRole("tab", { name: "Attendance" }).className).toContain("after:scale-x-100");
+    expect(screen.getByRole("tab", { name: "Diary" }).className).not.toContain("after:scale-x-100");
   });
 });

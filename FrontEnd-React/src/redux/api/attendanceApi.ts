@@ -3,6 +3,11 @@ import type {
   ApiResponse,
   DateRange,
   MyDay,
+  StaffLeave,
+  StaffLeaveDecision,
+  StaffLeaveInput,
+  StaffLeaveList,
+  StaffLeaveQuery,
   StaffSheet,
   StaffSheetQuery,
   StudentRange,
@@ -19,6 +24,7 @@ import type {
 /** Only the parts of a sheet's question that are set go in the address (no empty class, department or search). */
 const setOnly = (params: Record<string, string | undefined>) => Object.fromEntries(Object.entries(params).filter((e): e is [string, string] => !!e[1]));
 import { baseQueryWithReauth } from "./baseQueryWithReauth";
+import { timetableApi } from "./timetableApi";
 
 /**
  * Attendance for the people who run the school (2026-11-06): the students of any class and the teachers for any days (read here; the
@@ -28,7 +34,7 @@ import { baseQueryWithReauth } from "./baseQueryWithReauth";
 export const attendanceApi = createApi({
   reducerPath: "attendanceApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["StudentAttendance", "TeacherAttendance", "MyAttendance", "StaffAttendance", "MyStaffAttendance"],
+  tagTypes: ["StudentAttendance", "TeacherAttendance", "MyAttendance", "StaffAttendance", "MyStaffAttendance", "StaffLeaves", "MyLeaves"],
   refetchOnMountOrArgChange: true,
   refetchOnReconnect: true,
   endpoints: (build) => ({
@@ -93,6 +99,36 @@ export const attendanceApi = createApi({
       query: () => "/attendance/teachers/me",
       providesTags: ["MyAttendance"],
     }),
+    // ---- The leave of the teachers and the staff (2026-11-24) -------------------------------------------------------------------------------
+    /** The school's list: waiting ones (the oldest day first) or all, of everyone or only teachers or staff. */
+    getStaffLeaves: build.query<ApiResponse<StaffLeaveList>, StaffLeaveQuery>({
+      query: ({ status, who }) => ({ url: "/attendance/leaves", params: { status, ...(who !== "all" ? { who } : {}) } }),
+      providesTags: ["StaffLeaves"],
+    }),
+    /** The school answers one: approving makes the days Leave in the attendance and puts a teacher's lessons of those days on the arrangement. */
+    decideStaffLeave: build.mutation<ApiResponse<StaffLeave>, StaffLeaveDecision>({
+      query: ({ id, ...body }) => ({ url: `/attendance/leaves/${id}/decide`, method: "POST", body }),
+      invalidatesTags: ["StaffLeaves", "TeacherAttendance", "StaffAttendance"],
+      async onQueryStarted(_input, { dispatch, queryFulfilled }) {
+        await queryFulfilled.then(() => dispatch(timetableApi.util.invalidateTags(["Arrangement"])), () => undefined);
+      },
+    }),
+    /** The signed-in teacher's or staff member's own applications, newest first. */
+    getMyLeaves: build.query<ApiResponse<{ items: StaffLeave[] }>, void>({
+      query: () => "/attendance/leaves/mine",
+      providesTags: ["MyLeaves"],
+    }),
+    applyMyLeave: build.mutation<ApiResponse<StaffLeave>, StaffLeaveInput>({
+      query: (body) => ({ url: "/attendance/leaves/mine", method: "POST", body }),
+      invalidatesTags: ["MyLeaves", "StaffLeaves"],
+    }),
+    cancelMyLeave: build.mutation<ApiResponse<StaffLeave>, string>({
+      query: (id) => ({ url: `/attendance/leaves/mine/${id}/cancel`, method: "POST" }),
+      invalidatesTags: ["MyLeaves", "StaffLeaves", "MyAttendance", "MyStaffAttendance"],
+      async onQueryStarted(_id, { dispatch, queryFulfilled }) {
+        await queryFulfilled.then(() => dispatch(timetableApi.util.invalidateTags(["Arrangement"])), () => undefined);
+      },
+    }),
     /** The signed-in teacher marks themselves present now. */
     markMePresent: build.mutation<ApiResponse<MyDay>, void>({
       query: () => ({ url: "/attendance/teachers/me/present", method: "POST" }),
@@ -114,4 +150,9 @@ export const {
   useSetTeacherDayMutation,
   useGetMyAttendanceQuery,
   useMarkMePresentMutation,
+  useGetStaffLeavesQuery,
+  useDecideStaffLeaveMutation,
+  useGetMyLeavesQuery,
+  useApplyMyLeaveMutation,
+  useCancelMyLeaveMutation,
 } = attendanceApi;

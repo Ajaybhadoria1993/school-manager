@@ -88,3 +88,49 @@ export const setTeacherDaySchema = z.object({
     .transform((v) => (v ? v : null)),
 });
 export type SetTeacherDayInput = z.infer<typeof setTeacherDaySchema>;
+
+// ---- Leave of the teachers and the staff (2026-11-24) ----------------------------------------------------------------------------------
+
+const MAX_LEAVE_REASON_LETTERS = 300;
+const MAX_LEAVE_RANGE = 60;
+
+/** A teacher or staff member applies: the first day, the last (left out: one day) and why. Today or a day to come is the server's check (it knows today). */
+export const applyStaffLeaveSchema = z
+  .object({
+    fromDate: dayText("first day"),
+    toDate: dayText("last day").nullable().optional(),
+    reason: z
+      .string({ required_error: "Write why you need the leave", invalid_type_error: "Write why you need the leave" })
+      .trim()
+      .min(1, "Write why you need the leave")
+      .max(MAX_LEAVE_REASON_LETTERS, `The reason is up to ${MAX_LEAVE_REASON_LETTERS} letters`),
+  })
+  .superRefine((v, ctx) => {
+    if (!v.toDate) return;
+    if (v.toDate < v.fromDate) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["toDate"], message: "The last day cannot be before the first day" });
+    else if ((Date.parse(`${v.toDate}T00:00:00Z`) - Date.parse(`${v.fromDate}T00:00:00Z`)) / DAY_MS + 1 > MAX_LEAVE_RANGE) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["toDate"], message: `A leave is up to ${MAX_LEAVE_RANGE} days` });
+    }
+  });
+export type ApplyStaffLeaveInput = z.infer<typeof applyStaffLeaveSchema>;
+
+/** The school's list of applications: the waiting ones (the default) or all, of everyone or only teachers or only staff. */
+export const staffLeaveQuerySchema = z.object({
+  status: z.enum(["pending", "all"]).default("pending"),
+  who: z.enum(["all", "teacher", "staff"]).default("all"),
+});
+export type StaffLeaveQuery = z.infer<typeof staffLeaveQuerySchema>;
+
+export const decideStaffLeaveSchema = z.object({
+  status: z.enum(["approved", "declined"], { errorMap: () => ({ message: "Approve or decline" }) }),
+  note: z
+    .string({ invalid_type_error: "The note must be text" })
+    .trim()
+    .max(MAX_LEAVE_REASON_LETTERS, `The note is up to ${MAX_LEAVE_REASON_LETTERS} letters`)
+    .nullable()
+    .optional()
+    .transform((v) => (v ? v : null)),
+});
+export type DecideStaffLeaveInput = z.infer<typeof decideStaffLeaveSchema>;
+
+export const leaveIdParamSchema = z.object({ id: objectId });

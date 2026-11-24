@@ -18,6 +18,7 @@ import { AppModal, ModalError } from "../ui/AppModal";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { PageTabs } from "../ui/PageTabs";
+import { TabPanel } from "../ui/TabPanel";
 import { Skeleton } from "../ui/Skeleton";
 import { useToast } from "../ui/toast-context";
 import { DayFields, DayPreview } from "./DayFields";
@@ -483,8 +484,9 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
           taken away the same day: "full width rakho"). */}
       <div className="min-w-0 space-y-5">
         <div className="min-w-0 space-y-5">
-          <PageTabs variant="card" label="Which timings" tabs={TIMING_TABS} value={tab} onChange={openTab} />
+          <PageTabs label="Which timings" tabs={TIMING_TABS} value={tab} onChange={openTab} />
 
+          <TabPanel tab={tab} className="space-y-5">
           {tab === "usual" && (
           <>
           <Card className="space-y-5 p-5">
@@ -573,6 +575,7 @@ function Loaded({ schedules, departments, classes, onNext }: { schedules: Schedu
           )}
           {tab === "department" && <DepartmentTimingsCard rows={rows} onChangeDepartment={setWindowOf} />}
           {tab === "special" && <SpecialDaysCard days={specialDays} onChange={setSpecial} onAdd={() => setSpecial("new")} />}
+          </TabPanel>
         </div>
       </div>
 

@@ -53,8 +53,9 @@ describe("the menu: Timetable below Attendance with its two pages nested under i
     openMenu("/school/classes");
     expect(timetableRow()).toHaveAttribute("aria-expanded", "false");
     // The two pages are only inside the Timetable row's panel.
-    // Arrangements (2026-11-22): the day's substitutes, the third page of Timetable.
-    expect(nested().getAllByRole("link").map((a) => a.textContent)).toEqual(["School timings", "Class timetables", "Arrangements"]);
+    // Leave & arrangements (2026-11-24) is a row of its own at the side, not a page of Timetable.
+    expect(nested().getAllByRole("link").map((a) => a.textContent)).toEqual(["School timings", "Class timetables"]);
+    expect(screen.getByRole("link", { name: "Leave & arrangements" })).toHaveAttribute("href", "/school/arrangements");
     expect(screen.getAllByRole("link", { name: "School timings" })).toHaveLength(1);
     expect(screen.queryByRole("link", { name: "Timetable" })).not.toBeInTheDocument();
   });

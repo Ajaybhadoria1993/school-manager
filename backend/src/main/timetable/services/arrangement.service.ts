@@ -4,6 +4,7 @@ import { indiaNow } from "../../../utils/clock";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { TeacherAttendance } from "../../attendance/models/TeacherAttendance";
 import { CalendarService } from "../../classroom/services/calendar.service";
+import { StaffLeaveService } from "../../attendance/services/staffLeave.service";
 import { Notify } from "../../notifications/services/events";
 import { Substitution } from "../models/Substitution";
 import type { ArrangementInput } from "../schemas/timetable.schemas";
@@ -18,7 +19,9 @@ import { labelOf, loadWorld, unitKey } from "./world";
  * today also the ones who have not checked in yet), each with the lessons they have that day in the published timetables, and for each lesson the
  * teachers who are free then (they come that weekday, are not away, teach nothing else at that time in any class or medium, and are not already
  * put in somewhere else then), the ones with the fewest periods that day first. A special day's periods are the day's (a half day has fewer).
- * Putting a teacher in is for that day only (`Substitution`); the timetable stays as it is. Made for today; another day is only read.
+ * Putting a teacher in is for that day only (`Substitution`); the timetable stays as it is. A teacher with an **approved leave** (2026-11-24: they
+ * applied from their login) is away on every day of it, so the arrangement can be made for days to come too: today and any day after it can be changed,
+ * a day that is over is only read.
  */
 
 export type AwayStatus = "absent" | "leave" | "not_in";
@@ -49,8 +52,10 @@ export interface ArrangementLesson {
 
 export interface ArrangementDay {
   date: string;
-  /** The date is today: only today's arrangement can be changed. */
+  /** The date is today (the teachers who have not checked in yet are listed only then). */
   today: boolean;
+  /** Today or a day to come: the arrangement can be made; a day that is over is only read. */
+  editable: boolean;
   /** No school that day for everyone: a holiday, or a special day without classes. */
   holiday: string | null;
   away: { teacher: { id: string; name: string }; status: AwayStatus; lessons: ArrangementLesson[] }[];
@@ -77,12 +82,13 @@ const STATUS_ORDER: Record<AwayStatus, number> = { absent: 0, leave: 1, not_in: 
 async function readDay(tenantId: string, date: string, yearId: Types.ObjectId) {
   const school = new Types.ObjectId(tenantId);
   const weekday = weekdayOf(date);
-  const [world, marks, specials, holidays, subs] = await Promise.all([
+  const [world, marks, specials, holidays, subs, leave] = await Promise.all([
     loadWorld(tenantId, yearId),
     TeacherAttendance.find({ tenantId: school, date: new Date(`${date}T00:00:00.000Z`) }).select("teacherId mark").lean(),
     SpecialDayService.between(tenantId, date, date),
     CalendarService.holidaysBetween(school, date, date),
     Substitution.find({ tenantId: school, date }).lean(),
+    StaffLeaveService.onLeaveOn(tenantId, "teacher", date),
   ]);
   const mark = new Map(marks.map((m) => [m.teacherId.toString(), m.mark]));
   const wholeSchool = specials.find((s) => s.classIds.length === 0);
@@ -128,18 +134,23 @@ async function readDay(tenantId: string, date: string, yearId: Types.ObjectId) {
     }
   }
   lessons.sort((a, b) => a.start - b.start || a.label.localeCompare(b.label));
-  return { world, weekday, mark, holiday, lessons, subs, periodsFor };
+  return { world, weekday, mark, holiday, lessons, subs, periodsFor, leave };
 }
 
 type Day = Awaited<ReturnType<typeof readDay>>;
 
-/** Who is away that day: marked Absent or Leave; today also the ones who come that weekday, have lessons and have not checked in yet. */
+/**
+ * Who is away that day: marked Absent or Leave; on an approved leave (and not marked present: they came after all) when they come that weekday and have
+ * lessons; today also the ones who come that weekday, have lessons and have not checked in yet.
+ */
 function awayTeachers(day: Day, isToday: boolean): { id: string; status: AwayStatus }[] {
   const found: { id: string; status: AwayStatus }[] = [];
   for (const t of day.world.teachers.values()) {
     if (!t.isActive) continue;
     const m = day.mark.get(t.id);
+    const lessons = !day.holiday && !t.offDays.includes(day.weekday) && day.lessons.some((l) => l.teacherId === t.id);
     if (m === "absent" || m === "leave") found.push({ id: t.id, status: m });
+    else if (m !== "present" && lessons && day.leave.has(t.id)) found.push({ id: t.id, status: "leave" });
     else if (!m && isToday && !day.holiday && !t.offDays.includes(day.weekday) && day.lessons.some((l) => l.teacherId === t.id)) found.push({ id: t.id, status: "not_in" });
   }
   return found;
@@ -160,6 +171,8 @@ function freeFor(day: Day, lesson: DayLesson, exceptSub: string | null): FreeTea
     if (!t.isActive || t.id === lesson.teacherId || t.offDays.includes(day.weekday)) continue;
     const m = day.mark.get(t.id);
     if (m === "absent" || m === "leave") continue;
+    // On an approved leave that day (unless they came after all).
+    if (m !== "present" && day.leave.has(t.id)) continue;
     const own = day.lessons.filter((l) => l.teacherId === t.id);
     const covering = subSpans.filter((s) => s.teacherId === t.id);
     if (own.some((l) => overlaps(l, lesson)) || covering.some((s) => overlaps(s.span, lesson)) || outside.some((b) => b.teacherId === t.id && overlaps(b, lesson))) continue;
@@ -169,13 +182,14 @@ function freeFor(day: Day, lesson: DayLesson, exceptSub: string | null): FreeTea
   return found.sort((a, b) => Number(a.full) - Number(b.full) || Number(b.in) - Number(a.in) || a.today - b.today || a.name.localeCompare(b.name));
 }
 
-function build(day: Day, date: string, isToday: boolean): ArrangementDay {
+function build(day: Day, date: string, isToday: boolean, editable: boolean): ArrangementDay {
   const away = awayTeachers(day, isToday);
   const subOf = new Map(day.subs.map((s) => [lessonKey(s.classId.toString(), s.sectionId ? s.sectionId.toString() : null, s.period, s.absentTeacherId.toString()), s]));
   const nameOf = (id: string) => day.world.teachers.get(id)?.name ?? "A teacher";
   return {
     date,
     today: isToday,
+    editable,
     holiday: day.holiday,
     away: away
       .map(({ id, status }) => ({
@@ -206,27 +220,31 @@ function build(day: Day, date: string, isToday: boolean): ArrangementDay {
 
 export class ArrangementService {
   static async get(tenantId: string, date: string): Promise<ArrangementDay> {
-    const isToday = date === indiaNow().date;
+    const today = indiaNow().date;
+    const isToday = date === today;
     const yearId = await AcademicYearService.shownYearId(tenantId);
-    if (!yearId) return { date, today: isToday, holiday: null, away: [] };
-    return build(await readDay(tenantId, date, yearId), date, isToday);
+    if (!yearId) return { date, today: isToday, editable: date >= today, holiday: null, away: [] };
+    return build(await readDay(tenantId, date, yearId), date, isToday, date >= today);
   }
 
-  /** Puts a free teacher in for an away teacher's lesson today, or takes the one put in away (`substituteTeacherId` null). Answers the day as it is now. */
+  /**
+   * Puts a free teacher in for an away teacher's lesson on a day (today or a day to come), or takes the one put in away (`substituteTeacherId` null).
+   * Answers the day as it is now.
+   */
   static async set(tenantId: string, actorId: string, input: ArrangementInput): Promise<ArrangementDay> {
     const today = indiaNow().date;
-    if (input.date !== today) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "date", message: "The arrangement is made for today" }]);
+    if (input.date < today) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "date", message: "Choose today or a day to come" }]);
     const yearId = await AcademicYearService.activeYearId(tenantId);
     if (!yearId) throw ApiError.conflict("Your school has no running academic year yet.", "NO_ACTIVE_YEAR");
-    const day = await readDay(tenantId, today, yearId);
-    const shown = build(day, today, true);
+    const day = await readDay(tenantId, input.date, yearId);
+    const shown = build(day, input.date, input.date === today, true);
     const lesson = shown.away.find((a) => a.teacher.id === input.absentTeacherId)?.lessons.find((l) => l.classId === input.classId && l.sectionId === input.sectionId && l.period === input.period);
-    if (!lesson) throw ApiError.conflict("This teacher is not away for this lesson today.", "NOT_AWAY");
+    if (!lesson) throw ApiError.conflict("This teacher is not away for this lesson that day.", "NOT_AWAY");
 
     const school = new Types.ObjectId(tenantId);
-    const where = { tenantId: school, date: today, classId: new Types.ObjectId(input.classId), sectionId: input.sectionId ? new Types.ObjectId(input.sectionId) : null, period: input.period, absentTeacherId: new Types.ObjectId(input.absentTeacherId) };
+    const where = { tenantId: school, date: input.date, classId: new Types.ObjectId(input.classId), sectionId: input.sectionId ? new Types.ObjectId(input.sectionId) : null, period: input.period, absentTeacherId: new Types.ObjectId(input.absentTeacherId) };
     const before = lesson.substitute?.id ?? null;
-    const facts = { date: today, today: true, label: lesson.label, period: lesson.period, hours: `${lesson.start} to ${lesson.end}`, subjectName: lesson.subjectName, absentName: day.world.teachers.get(input.absentTeacherId)?.name ?? "the teacher" };
+    const facts = { date: input.date, today: input.date === today, label: lesson.label, period: lesson.period, hours: `${lesson.start} to ${lesson.end}`, subjectName: lesson.subjectName, absentName: day.world.teachers.get(input.absentTeacherId)?.name ?? "the teacher" };
 
     if (input.substituteTeacherId === null) {
       await Substitution.deleteOne(where);
@@ -234,7 +252,7 @@ export class ArrangementService {
     } else {
       const chosen = input.substituteTeacherId;
       if (chosen !== before && !lesson.free.some((t) => t.id === chosen)) {
-        throw ApiError.conflict(`${day.world.teachers.get(chosen)?.name ?? "This teacher"} is not free from ${lesson.start} to ${lesson.end} today.`, "TEACHER_NOT_FREE");
+        throw ApiError.conflict(`${day.world.teachers.get(chosen)?.name ?? "This teacher"} is not free from ${lesson.start} to ${lesson.end} that day.`, "TEACHER_NOT_FREE");
       }
       await Substitution.findOneAndUpdate(where, { $set: { substituteTeacherId: new Types.ObjectId(chosen), subjectId: new Types.ObjectId(lesson.subjectId) }, $setOnInsert: { academicYearId: yearId } }, { upsert: true });
       if (chosen !== before) {
@@ -242,7 +260,7 @@ export class ArrangementService {
         if (before) Notify.substitute(tenantId, actorId, "removed", { ...facts, teacherId: before });
       }
     }
-    return ArrangementService.get(tenantId, today);
+    return ArrangementService.get(tenantId, input.date);
   }
 }
 

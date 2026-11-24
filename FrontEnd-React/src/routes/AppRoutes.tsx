@@ -47,6 +47,8 @@ const routes: RouteObject[] = [
           { path: "calendar", ...lazyRoute(() => import("../pages/calendar/CalendarPage")) },
           // Leave sent by parents: a class teacher's classes', or every one for the people who run the school (the API decides).
           { path: "leaves", ...lazyRoute(() => import("../pages/leaves/LeavesPage")) },
+          // A teacher's or a staff member's own leave (2026-11-24): they apply and see the answer; the API says who may.
+          { path: "my-leave", ...lazyRoute(() => import("../pages/leaves/MyLeavePage")) },
           // A class's work: attendance (class teacher, the school), diary and tests (docs/parent-teacher-flow.md); the API checks who.
           { path: "class-work/:classId", ...lazyRoute(() => import("../pages/classwork/ClassWorkPage")) },
           { path: "modules/:slug", ...lazyRoute(() => import("../pages/modules/ModulePreview")) },

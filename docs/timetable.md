@@ -313,15 +313,19 @@ they study and their timetables can be copied as drafts); print; draft and publi
   2026-11-23), one day or days in a row (`date` to `endDate`, up to 31; a last day left empty is one day), for the whole school or some
   classes, with that day's timing (DayFields, starting from the usual day) or no classes. A whole-school one is read by the teachers' attendance
   (`attendance/services/schoolDays.ts`: its hours; no classes = a non-working day named after it); one for some classes leaves the school's day.
-* **Arrangements** (Timetable > Arrangements, `/school/arrangements`): today's away teachers in two tabs (Absent & on leave / Not checked in),
-  each period with a list of free teachers and Assign (Change / Remove once put in); the arrows read an earlier day (nothing to change).
-  The timetable itself is not changed. A teacher's leave for a day to come cannot be marked yet, so a day to come has no arrangement.
+* **Leave & arrangements** (its own sidebar row since 2026-11-24, no longer under Timetable; `/school/arrangements`): two tabs, **Arrangements**
+  and **Leave requests** (`?view=leave`; the bell's link opens it; the waiting count is on the tab). Arrangements: one day's away teachers in two
+  tabs (Absent & on leave / Not checked in, today only), each period with a list of free teachers and Assign (Change / Remove once put in). Today and
+  up to 60 days ahead can be changed (`ArrangementDay.editable`); a day that is over is only read. A teacher with an **approved leave** is "On leave"
+  on every working day of it and is left out of the free lists, so the arrangement is made ahead; one marked present anyway (they came) is not away.
+  Taking the leave back deletes the substitutes put in for those days and tells each ("Arrangement taken off: X is back"). The timetable itself is not changed.
+  Leave requests (what teachers and staff send): see `docs/attendance.md` > "Leave of the teachers and the staff".
 * **A year that is over**: Class timetables shows the class's week read only (`ClassWeekView`, "Read only"), no editor; School timings sends
   the person to Class timetables; Arrangements says the year is over (`RunningYearRoute`). The server refuses every change then anyway (`YEAR_READ_ONLY`).
 
 ## Not built (say if you want it)
 
-Arrangements for a day to come (a teacher's leave cannot be marked ahead yet); alternate-week patterns and "2nd/4th Saturday off" (needs the school calendar);
+Arrangements for a day a teacher is absent but did not ask for leave (only an approved leave, or a mark on the day, makes a teacher away); alternate-week patterns and "2nd/4th Saturday off" (needs the school calendar);
 teachers signing in to see or propose changes; parents' and students' views (the portals are not built); exam timetables; building the
 *next* year's timetable before it is switched on (it can be copied, then changed after it is on); one teacher's workload report across years.
 
@@ -334,7 +338,7 @@ teachers signing in to see or propose changes; parents' and students' views (the
   timing at a time); a new subject from the grid: `gridNewSubject.test.ts`.
 * Backend, the week in one save: `timetable/__tests__/schoolDay.test.ts` (days grouped, replaced not added, the usual name kept, timings of
   some classes left alone, a lesson left without its period refused with nothing changed, boxes named by day, a clash, who may, one school only).
-* Backend, special days and arrangements (2026-11-22): `timetable/__tests__/specialDays.test.ts`, `arrangements.test.ts`, `shiftOthers.test.ts` (`shiftOnly`).
+* Backend, special days and arrangements (2026-11-22): `timetable/__tests__/specialDays.test.ts`, `arrangements.test.ts` (also: the days to come of an approved leave, 2026-11-24), `shiftOthers.test.ts` (`shiftOnly`).
 * Frontend (`npm test`): `utils/__tests__/timings.test.ts`, `schoolWeek.test.ts`, `timetable.test.ts`; `pages/school/__tests__/Timetable*.test.tsx`, `Arrangements.test.tsx`, `ClassTimetables.test.tsx` (a year that is over);
   `components/timetable/__tests__/ClassSubjectsEditor.test.tsx`.
 * A browser journey (real Chrome, throwaway backend 5001 / app 5174 / database `school_erp_md`) walks the whole flow: timings, subjects,

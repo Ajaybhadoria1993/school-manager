@@ -425,6 +425,42 @@ export const Notify = {
     });
   },
 
+  // ---- The leave of the teachers and the staff (2026-11-24) -----------------------------------------------------------------------------
+
+  /** A teacher or staff member applied for leave: the people who run the school hear it (the page has the application, with its reason). */
+  staffLeaveApplied(tenantId: string, actorId: string, facts: { personName: string; roleLabel: string; when: string; reason: string }) {
+    NotificationService.later(tenantId, actorId, async () => [
+      { kind: "staff_leave.applied" as const, title: `Leave request: ${facts.personName}`, body: joined(facts.roleLabel, facts.when, facts.reason), link: "/school/arrangements?view=leave", to: "admins" as const },
+    ]);
+  },
+
+  /** The school answered an application: the person who applied hears it, with the school's note. */
+  staffLeaveDecided(tenantId: string, actorId: string, facts: { userId: string; status: "approved" | "declined"; when: string; decider: string; note: string | null }) {
+    NotificationService.later(tenantId, actorId, async () => [
+      { kind: "staff_leave.decided" as const, title: `${facts.decider} ${facts.status} your leave`, body: joined(facts.when, facts.note), link: "/my-leave", to: [facts.userId] },
+    ]);
+  },
+
+  /** A person took back a leave the school had approved: the people who run the school hear it (a waiting one is only taken off their list). */
+  staffLeaveCancelled(tenantId: string, actorId: string, facts: { personName: string; roleLabel: string; when: string }) {
+    NotificationService.later(tenantId, actorId, async () => [
+      { kind: "staff_leave.cancelled" as const, title: `Leave taken back: ${facts.personName}`, body: joined(facts.roleLabel, facts.when), link: "/school/arrangements?view=leave", to: "admins" as const },
+    ]);
+  },
+
+  /** The teacher a substitute was put in for is back (their leave was taken back): that substitute hears the periods are not theirs any more. */
+  substituteReleased(tenantId: string, actorId: string, facts: { teacherId: string; absentName: string; days: string[] }) {
+    NotificationService.later(tenantId, actorId, async () => [
+      {
+        kind: "timetable.substitute" as const,
+        title: `Arrangement taken off: ${facts.absentName} is back`,
+        body: joined(facts.days.map(shortDay).join(", ")),
+        link: "/dashboard",
+        to: await Audience.teacherLogins(tenantId, [facts.teacherId]),
+      },
+    ]);
+  },
+
   // ---- A teacher's classes -----------------------------------------------------------------------------------------------------------
 
   /** The class teacher of a class or section changed: the new one, the one before, and the school. */

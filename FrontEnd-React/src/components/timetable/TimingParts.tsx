@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { CalendarDays, Hourglass, Minus, Plus, UsersRound, UtensilsCrossed, type LucideIcon } from "lucide-react";
 import { clockToMinutes, formatMinutes, isArrival, withoutArrival } from "../../utils/timings";
 import { cn } from "../../utils/helpers";
+import { TONES, type Tone } from "../../constants/tones";
 import type { Slot } from "../../types";
 
 /**
@@ -60,15 +61,46 @@ export function Switch({ label, checked, onChange }: { label: string; checked: b
 }
 
 /** A row a switch turns on: the switch, the name with a word under it, and what the row holds when on (`offText` when off). Tinted orange when on. */
-export function ToggleRow({ title, sub, on, onToggle, switchLabel, offText, children }: { title: string; sub?: string; on: boolean; onToggle: (on: boolean) => void; switchLabel: string; offText: string; children?: ReactNode }) {
+export function ToggleRow({
+  title,
+  sub,
+  on,
+  onToggle,
+  switchLabel,
+  offText,
+  across = false,
+  children,
+}: {
+  title: string;
+  sub?: string;
+  on: boolean;
+  onToggle: (on: boolean) => void;
+  switchLabel: string;
+  offText: string;
+  /**
+   * In a wide container (the row's ancestor is a container query, 2026-11-23: Assembly, Lunch and Short break in one line) the switch and the name are on
+   * top and what the row holds under them, so a few rows sit side by side. Narrow, it is the row it always was.
+   */
+  across?: boolean;
+  children?: ReactNode;
+}) {
   return (
-    <div className={cn("flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-xl border px-4 py-3 transition-colors", on ? "border-orange/40 bg-orange-soft/60" : "border-border bg-surface")}>
-      <Switch label={switchLabel} checked={on} onChange={onToggle} />
-      <div className="min-w-[7.5rem]">
-        <p className="text-sm font-bold text-foreground">{title}</p>
-        {sub && <p className="text-xs text-foreground-muted">{sub}</p>}
+    <div
+      className={cn(
+        "flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-xl border px-4 py-3 transition-colors",
+        // `relative`: a badge of the row (the length of the lunch) may sit at its top right corner.
+        across && "relative @4xl:flex-col @4xl:flex-nowrap @4xl:items-start @4xl:gap-y-3",
+        on ? "border-orange/40 bg-orange-soft/60" : "border-border bg-surface"
+      )}
+    >
+      <div className="flex items-center gap-4">
+        <Switch label={switchLabel} checked={on} onChange={onToggle} />
+        <div className="min-w-[7.5rem]">
+          <p className="text-sm font-bold text-foreground">{title}</p>
+          {sub && <p className="text-xs text-foreground-muted">{sub}</p>}
+        </div>
       </div>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{on ? children : <span className="text-sm text-foreground-muted">{offText}</span>}</div>
+      <div className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2", across && "@4xl:w-full @4xl:flex-none")}>{on ? children : <span className="text-sm text-foreground-muted">{offText}</span>}</div>
     </div>
   );
 }
@@ -148,34 +180,36 @@ export function DayFigures({ slots }: { slots: readonly Slot[] }) {
   const open = first && last ? length({ ...first, end: last.end }) : 0;
   return (
     <div className="@container">
-      <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-4">
-        <StatBox icon={CalendarDays} label="School time" value={first && last ? `${first.start}–${last.end}` : "–"} sub={open > 0 ? formatMinutes(open) : undefined} />
-        <StatBox icon={UsersRound} label="Class time" value={firstPeriod && last ? `${firstPeriod.start}–${last.end}` : "–"} tone="primary" sub={firstPeriod ? between || "From when school starts" : undefined} />
-        <StatBox icon={Hourglass} label="Periods" value={periods.length > 0 && usual ? `${periods.length} × ${usual} min` : "–"} />
+      {/* Class time is the widest: its line says the arrival and the assembly. */}
+      <div className="grid grid-cols-2 gap-4 @2xl:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,0.85fr)_minmax(0,1fr)]">
+        <FigureTile icon={CalendarDays} label="School time" value={first && last ? `${first.start}–${last.end}` : "–"} hint={open > 0 ? formatMinutes(open) : undefined} tone="info" />
+        <FigureTile icon={UsersRound} label="Class time" value={firstPeriod && last ? `${firstPeriod.start}–${last.end}` : "–"} hint={firstPeriod ? between || "From when school starts" : undefined} tone="primary" />
+        <FigureTile icon={Hourglass} label="Periods" value={periods.length > 0 && usual ? `${periods.length} × ${usual} min` : "–"} tone="success" />
         {/* From when to when the lunch is, and how long (2026-11-22: "lunch kitne baje se kitne baje tak hai"). */}
-        <StatBox icon={UtensilsCrossed} label="Lunch" value={lunch ? `${lunch.start}–${lunch.end}` : "None"} sub={lunch ? formatMinutes(length(lunch)) : undefined} />
+        <FigureTile icon={UtensilsCrossed} label="Lunch" value={lunch ? `${lunch.start}–${lunch.end}` : "None"} hint={lunch ? formatMinutes(length(lunch)) : undefined} tone="warning" />
       </div>
     </div>
   );
 }
 
 /**
- * A figure of the day in a small box: "SCHOOL STARTS 08:30". `tone` "orange" for one that is worked out (School ends, auto). `tag` is a small word
- * beside the figure ("auto"); `sub` a line under it ("30 min" under the lunch's times).
+ * A figure in a card (2026-11-23, user: "School timings ke card ka size bhi Class timetables jaisa"): the icon in a soft square at the left, the name,
+ * the figure, and under it a line in small letters shown whole (it wraps rather than being cut). The same card on the School timings page, in a
+ * department's and a special day's window, and at the top of Class timetables; tight padding keeps it close to the height of the Classes page's tiles.
  */
-export function StatBox({ label, value, tag, sub, tone = "plain", icon: Icon }: { label: string; value: ReactNode; tag?: string; sub?: string; tone?: "plain" | "orange" | "primary"; icon?: LucideIcon }) {
+export function FigureTile({ label, value, hint, icon: Icon, tone = "primary" }: { label: string; value: ReactNode; hint?: string; icon: LucideIcon; tone?: Tone }) {
   return (
-    <div className={cn("rounded-xl border px-4 py-3", tone === "orange" ? "border-orange/40 bg-orange-soft/70" : tone === "primary" ? "border-primary/30 bg-primary-soft/70" : "border-border bg-surface")}>
-      {/* With an icon (2026-11-23, the reference): the name in its own words beside it; the icon has no words, so the name is still the whole text. */}
-      <p className={cn("flex items-center gap-2 text-foreground-muted", Icon ? "text-sm font-semibold" : "text-[11px] font-bold uppercase tracking-wider")}>
-        {Icon && <Icon className="size-4 shrink-0 text-primary" aria-hidden />}
-        {label}
-      </p>
-      <p className={cn("mt-1 flex items-baseline gap-1.5 text-xl font-bold tabular-nums", tone === "orange" ? "text-orange-hover" : "text-foreground")}>
-        {value}
-        {tag && <span className="text-xs font-semibold text-orange-hover">{tag}</span>}
-      </p>
-      {sub && <p className="text-xs font-semibold text-foreground-muted">{sub}</p>}
+    <div className="flex min-w-0 items-center gap-4 rounded-[var(--radius-card)] border border-border bg-surface px-4 py-3 shadow-card">
+      <span className={cn("flex size-11 shrink-0 items-center justify-center rounded-xl", TONES[tone].tile)}>
+        <Icon className="size-5" aria-hidden />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-body-label">{label}</p>
+        <p className="truncate text-stat-value">{value ?? <span className="text-foreground-muted/60">-</span>}</p>
+        <p className="min-h-4 text-xs font-medium text-foreground-muted" title={hint || undefined}>
+          {hint}
+        </p>
+      </div>
     </div>
   );
 }

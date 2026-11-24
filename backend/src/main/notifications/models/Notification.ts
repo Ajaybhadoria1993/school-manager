@@ -25,6 +25,9 @@ export const NOTIFICATION_KINDS = [
   "subject.assigned",
   "timetable.special_day",
   "timetable.substitute",
+  "staff_leave.applied",
+  "staff_leave.decided",
+  "staff_leave.cancelled",
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 

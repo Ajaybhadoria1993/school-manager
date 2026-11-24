@@ -58,7 +58,7 @@ export function PageTabs<T extends string>({
       aria-label={label}
       className={cn(
         "flex gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-        variant === "card" ? "rounded-[var(--radius-card)] border border-border bg-surface p-1.5 shadow-card" : "border-b border-border",
+        variant === "card" ? "rounded-[var(--radius-card)] border border-border bg-surface p-1 shadow-card" : "border-b border-border",
         className
       )}
     >
@@ -79,17 +79,18 @@ export function PageTabs<T extends string>({
             }}
             onKeyDown={(event) => onKeyDown(event, index)}
             className={cn(
-              "relative inline-flex h-11 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
+              // The bar under the open tab is always there and grows from its middle (2026-11-23: it appeared at once, a jerk).
+              "relative inline-flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap px-3 text-sm font-semibold transition-colors after:absolute after:rounded-full after:transition-transform after:duration-200 motion-reduce:after:transition-none focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
               variant === "card"
                 ? cn(
-                    "min-w-fit flex-1 justify-center rounded-xl",
+                    "h-10 min-w-fit flex-1 justify-center rounded-lg",
                     open
-                      ? "bg-primary-soft/60 text-primary-deep after:absolute after:inset-x-4 after:bottom-0 after:h-[3px] after:rounded-full after:bg-primary"
-                      : "text-foreground-muted hover:bg-background hover:text-foreground"
+                      ? "bg-primary-soft/60 text-primary-deep after:inset-x-4 after:bottom-0.5 after:h-[2.5px] after:scale-x-100 after:bg-primary"
+                      : "text-foreground-muted after:inset-x-4 after:bottom-0.5 after:h-[2.5px] after:scale-x-0 after:bg-primary hover:bg-background hover:text-foreground"
                   )
                 : cn(
-                    "rounded-t-lg",
-                    open ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-full after:bg-orange" : "text-foreground-muted hover:text-foreground"
+                    "h-11 rounded-t-lg",
+                    open ? "text-foreground after:inset-x-2 after:bottom-0 after:h-[3px] after:scale-x-100 after:bg-orange" : "text-foreground-muted after:inset-x-2 after:bottom-0 after:h-[3px] after:scale-x-0 after:bg-orange hover:text-foreground"
                   ),
             )}
           >

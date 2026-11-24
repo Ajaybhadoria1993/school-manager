@@ -46,3 +46,20 @@ itKeepsSchoolsApart("staff attendance", {
   lists: [{ name: "the staff's sheet", path: `${api}/staff?from=${DAY}&to=${DAY}`, showsRecords: (body) => (body.data?.staff?.length ?? 0) > 0 }],
   probes: [],
 });
+
+// The leave of the staff and the teachers (2026-11-24) is the school's own too: school B sees none of school A's applications and cannot answer one.
+itKeepsSchoolsApart("staff leave", {
+  seed: async (a) => {
+    await request(app).post("/api/v1/academics/academic-years/initial").set(auth(a.token)).send({ name: "2026-2027", startDate: "2026-04-01", endDate: "2027-03-31" });
+    await request(app)
+      .post("/api/v1/staff/members")
+      .set(auth(a.token))
+      .send({ name: "Asha Rao", role: "receptionist", mobile: "9876543210", login: { username: "iso.leave_42", password: "Recep@Desk1" } });
+    const login = await request(app).post("/api/v1/auth/login").send({ identifier: "iso.leave_42", password: "Recep@Desk1" });
+    const applied = await request(app).post(`${api}/leaves/mine`).set(auth(login.body.data.accessToken)).send({ fromDate: "2026-11-10", reason: "Family function" });
+    return { leaveId: applied.body.data.id as string };
+  },
+  snapshot: async (a) => (await request(app).get(`${api}/leaves?status=all`).set(auth(a.token))).body.data,
+  lists: [{ name: "the leave applications", path: `${api}/leaves?status=all`, showsRecords: (body) => (body.data?.items?.length ?? 0) > 0 }],
+  probes: [{ name: "answering its leave application", method: "post", path: (c) => `${api}/leaves/${c.leaveId}/decide`, body: () => ({ status: "approved" }) }],
+});

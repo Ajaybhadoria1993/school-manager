@@ -22,7 +22,10 @@ export type NotificationKind =
   | "class.assigned"
   | "subject.assigned"
   | "timetable.special_day"
-  | "timetable.substitute";
+  | "timetable.substitute"
+  | "staff_leave.applied"
+  | "staff_leave.decided"
+  | "staff_leave.cancelled";
 
 /** One line of the signed-in person's bell. `link` is the page it opens; `childId` the child it is about (for a parent). */
 export interface NotificationItem {

@@ -785,3 +785,49 @@ describe("School timings: special days", () => {
     expect(calls.find((c) => c.method === "PATCH")?.body).toMatchObject({ date: tomorrow, endDate: addDays(tomorrow, 3), title: "Sports week" });
   });
 });
+
+/**
+ * Assembly, Lunch and Short break in one line (2026-11-23, user: "assembly lunch aur short break ko ek hi line mein rakho"): the three rows are one group
+ * that is a grid of three columns when its box is wide (a container query), and one under the other when it is narrow. Each row keeps its switch and boxes.
+ */
+describe("School timings: assembly, lunch and short break side by side", () => {
+  it("the three rows are one group laid out in three columns in a wide box, and each row is across (switch and name on top, boxes under)", async () => {
+    openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    const group = screen.getByRole("group", { name: "Usual day: assembly, lunch and short break" });
+    expect(group).toHaveClass("grid", "@4xl:grid-cols-3");
+    for (const name of ["Usual day: assembly", "Usual day: lunch break", "Usual day: short break"]) {
+      const row = box(name).closest("div.rounded-xl");
+      expect(row).not.toBeNull();
+      expect(group).toContainElement(row as HTMLElement);
+      expect(row).toHaveClass("@4xl:flex-col");
+    }
+    // Same order as before: assembly, lunch, short break.
+    const switches = within(group).getAllByRole("checkbox").map((c) => c.getAttribute("aria-label"));
+    expect(switches).toEqual(["Usual day: assembly", "Usual day: lunch break", "Usual day: short break"]);
+  });
+
+  // 2026-11-23, user: "20 min right end par dikhao, nahi to section ki height badhti hai".
+  it("the length of the lunch and of the short break sits at the row's top right in a wide box (not after the boxes, where it made the row taller)", async () => {
+    openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    fireEvent.click(box("Usual day: short break"));
+    const group = screen.getByRole("group", { name: "Usual day: assembly, lunch and short break" });
+    const lunch = within(group).getByText("30 min");
+    expect(lunch).toHaveClass("@4xl:absolute", "@4xl:right-4");
+    // The row it is in is the one the badge is placed against.
+    expect(lunch.closest("div.rounded-xl")).toHaveClass("relative");
+    const rest = within(group).getByText("10 min");
+    expect(rest).toHaveClass("@4xl:absolute", "@4xl:right-4");
+    expect(rest.closest("div.rounded-xl")).not.toBe(lunch.closest("div.rounded-xl"));
+  });
+
+  it("each row still works from inside the group: the assembly switch and the lunch boxes", async () => {
+    openPage([REGULAR]);
+    await screen.findByLabelText("Usual day: school starts");
+    expect(box("Usual day: lunch from")).toHaveValue("10:30");
+    expect(screen.getByText("No assembly")).toBeInTheDocument();
+    fireEvent.click(box("Usual day: assembly"));
+    expect(box("Usual day: assembly minutes")).toHaveValue(15);
+  });
+});

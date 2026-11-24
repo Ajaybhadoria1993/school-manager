@@ -81,7 +81,7 @@ export default function MainLayout() {
         {/* Full width, like Infinity Medisetu: no empty bands at the left and right of a wide screen. */}
         <FormBarSlotContext.Provider value={barSlot}>
           <FooterSlotContext.Provider value={footerSlot}>
-          <main ref={mainRef} className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto p-4 lg:px-8 lg:py-5 print:block print:overflow-visible print:p-0">
+          <main ref={mainRef} className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto p-4 [scrollbar-gutter:stable] lg:px-8 lg:py-5 print:block print:overflow-visible print:p-0">
             {/* A new key on every page, so each page eases in instead of snapping. */}
             <div key={pathname} className="rise-in shrink-0">
               <Outlet />

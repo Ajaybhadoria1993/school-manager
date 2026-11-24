@@ -159,11 +159,35 @@ absent: ... Family function") and in this page. The teacher's page (`AttendanceP
 * The Teacher page opens on **This month** like the Student page; **Today** is one click away and shows the times.
 * Staff (non-teaching) attendance is not built.
 
+## Leave of the teachers and the staff (2026-11-24)
+
+User: "teacher kal ki chhutti aaj nahi bata sakta; teacher login karega to leave daal sake, aur admin side par reason ke saath application jaisi aa jaye, with status". A
+teacher or a staff member applies from their own login; the school answers. Model `StaffLeave` (`attendance/models/StaffLeave.ts`: `kind` teacher|staff, `userId`,
+`fromDate`/`toDate`, `reason` up to 300, `status` pending|approved|declined|cancelled, the school's `note`, `decidedBy`; year-bound, tenant-scoped), service
+`StaffLeaveService`.
+
+* **The person** (sidebar **My leave**, `/my-leave`; roles teacher, principal, accountant, receptionist, management, staff): `GET/POST /attendance/leaves/mine`,
+  `POST /attendance/leaves/mine/:id/cancel`. From today or a day to come (never a day that is over), up to 60 days, a reason; 409 `LEAVE_OVERLAP` with their own
+  waiting or approved leave (a declined or taken-back one does not stop a new one). They can take back a waiting leave any time and an approved one until
+  it begins (409 `LEAVE_BEGUN` after: ask the school).
+* **The school** (Leave & arrangements > Leave requests; school admin and principal): `GET /attendance/leaves?status=pending|all&who=all|teacher|staff` (waiting: the oldest day
+  first; all: newest first; `waiting` = how many are waiting) and `POST /attendance/leaves/:id/decide` (`approved` | `declined` + a note). Approve is one click, Decline asks for a note
+  (optional). 403 `OWN_LEAVE` (nobody answers their own leave: the principal's is for the school admin), 409 `LEAVE_ANSWERED`, 409 `LEAVE_OVER` (its days are over).
+* **Attendance reads it**: a working day inside an approved leave is **Leave**, not Absent, with no mark needed (`dayStatus(... onLeave)`; sheets, "my day" with the reason
+  "On approved leave", the month). A Sunday or a holiday inside it stays a day off. A waiting or declined leave changes nothing. A mark the school puts on the day wins.
+* **Arrangements read it**: see `docs/timetable.md` (the days to come of an approved leave, the free lists, taking it back).
+* **Bells**: `staff_leave.applied` (to the people who run the school, opens `/school/arrangements?view=leave`), `staff_leave.decided` (to the person, opens `/my-leave`),
+  `staff_leave.cancelled` (to the school), and `timetable.substitute` for the substitute put in or taken off.
+* Tests: backend `attendance/__tests__/staffLeaves.test.ts`, `attendance.isolation.test.ts` ("staff leave"); frontend `pages/leaves/__tests__/MyLeave.test.tsx`,
+  `pages/school/__tests__/Arrangements.test.tsx` (Leave requests tab), `components/layout/__tests__/navConfig.test.ts`.
+* Not built: a leave for a part of a day; leave types or balances (sick / casual), a leave of a teacher who has no login (nobody can apply), a limit on how many
+  teachers may be off the same day, a reminder when a leave has waited long.
+
 ## Not built (ask when wanted)
 
 * A grace time, half days, check-out time, location or school-WiFi checks (a teacher could mark from home), how early a teacher may mark, an alert to the principal when teachers
   have not marked by a time (needs a background job; none exists), substitutes.
-* Leave **requests** for teachers (the school sets Leave by hand for now).
+* Leave **requests** for teachers and staff are built (see above); leave balances / types are not.
 * A quick-pick list of reasons for an absence (it is free text).
 * Staff attendance (its page says so); export of a range to Excel / printing.
 

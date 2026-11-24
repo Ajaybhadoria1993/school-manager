@@ -5,6 +5,9 @@ import { validate } from "../../../../middleware/validate";
 import { yearView } from "../../../../middleware/yearView";
 import { ATTENDANCE_READERS } from "../../constants";
 import {
+  applyMyLeave,
+  cancelMyLeave,
+  decideStaffLeave,
   getMyDay,
   getMyMonth,
   getMyStaffDay,
@@ -13,17 +16,24 @@ import {
   getStudentsAttendance,
   getStudentsDay,
   getStudentsToday,
+  getMyLeaves,
   getTeachersAttendance,
+  leaveExists,
+  listStaffLeaves,
   markMePresent,
   markStaffPresent,
   setTeacherDay,
   teacherExists,
 } from "../../controllers/attendance.controller";
 import {
+  applyStaffLeaveSchema,
   dayQuerySchema,
+  decideStaffLeaveSchema,
+  leaveIdParamSchema,
   monthQuerySchema,
   myDayQuerySchema,
   setTeacherDaySchema,
+  staffLeaveQuerySchema,
   staffSheetQuerySchema,
   studentsQuerySchema,
   teacherIdParamSchema,
@@ -67,5 +77,14 @@ router.get("/staff", staffSheets, validate(staffSheetQuerySchema, "query"), getS
 router.get("/staff/me", staffLogins, validate(myDayQuerySchema, "query"), getMyStaffDay);
 router.post("/staff/me/present", staffLogins, markStaffPresent);
 router.get("/staff/me/month", staffLogins, validate(monthQuerySchema, "query"), getMyStaffMonth);
+
+// Leave of the teachers and the staff (2026-11-24): a person applies from their own login, sees their own applications and takes one back; the school (admin
+// or principal) sees every application, with its reason and status, and answers it. "/leaves/mine" is declared before "/leaves/:id".
+const leaveLogins = requireRole("teacher", "principal", "accountant", "receptionist", "management", "staff");
+router.get("/leaves/mine", leaveLogins, getMyLeaves);
+router.post("/leaves/mine", leaveLogins, validate(applyStaffLeaveSchema), applyMyLeave);
+router.post("/leaves/mine/:id/cancel", leaveLogins, validate(leaveIdParamSchema, "params"), cancelMyLeave);
+router.get("/leaves", staffSheets, validate(staffLeaveQuerySchema, "query"), listStaffLeaves);
+router.post("/leaves/:id/decide", staffSheets, validate(leaveIdParamSchema, "params"), leaveExists, validate(decideStaffLeaveSchema), decideStaffLeave);
 
 export default router;

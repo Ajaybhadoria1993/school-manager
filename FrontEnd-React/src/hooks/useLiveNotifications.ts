@@ -51,6 +51,16 @@ function staleBy(n: NotificationItem) {
     case "class.assigned":
     case "subject.assigned":
       return [classroomApi.util.invalidateTags(["MyClasses"])];
+    case "staff_leave.applied":
+    case "staff_leave.cancelled":
+      // An application came or was taken back: the school's list (the Leave requests tab) reads again, and so does the arrangement (a leave days ahead).
+      return [attendanceApi.util.invalidateTags(["StaffLeaves"]), timetableApi.util.invalidateTags(["Arrangement"])];
+    case "staff_leave.decided":
+      // The school answered: the person's own list and day read again.
+      return [attendanceApi.util.invalidateTags(["MyLeaves", "MyAttendance", "MyStaffAttendance"])];
+    case "timetable.substitute":
+      // A teacher was put in (or taken off) for a lesson: the arrangement page reads again when it is open.
+      return [timetableApi.util.invalidateTags(["Arrangement"])];
     case "timetable.special_day":
       // A special day was set, changed or taken off: the School timings page reads its list again (when it is open).
       return [timetableApi.util.invalidateTags(["SpecialDays"])];

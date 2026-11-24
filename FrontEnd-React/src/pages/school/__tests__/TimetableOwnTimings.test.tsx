@@ -367,6 +367,10 @@ describe("School timings: the day drawn as a timeline, and the Save bar", () => 
     const tabs = within(screen.getByRole("tablist", { name: "Which timings" }));
     expect(tabs.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Usual Timings", "Class Timings", "Department Timings", "Special Day Timings"]);
     expect(tabs.getByRole("tab", { name: "Usual Timings" })).toHaveAttribute("aria-selected", "true");
+    // The line tabs of the Students page and of Class timetables (2026-11-23, user: "tab ka UI Class Timetable wala"), not a card of buttons.
+    const list = screen.getByRole("tablist", { name: "Which timings" });
+    expect(list).toHaveClass("border-b");
+    expect(list).not.toHaveClass("shadow-card");
     // Quick actions and Other timings were taken away (2026-11-23: "full width rakho").
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
     expect(screen.queryByText("Quick actions")).not.toBeInTheDocument();

@@ -81,7 +81,7 @@ describe("the menu of the people who run a school", () => {
       ["Staff", "/attendance/staff"],
       ["School timings", "/school/timings"],
       ["Class timetables", "/school/timetable"],
-      ["Arrangements", "/school/arrangements"],
+      ["Leave & arrangements", "/school/arrangements"],
       ["Staff", "/staff"],
       ["Vehicles", "/transport/vehicles"],
       ["Drivers", "/transport/drivers"],
@@ -102,13 +102,13 @@ describe("the menu of the people who run a school", () => {
   });
 
   it("gives teachers the Calendar and the leave requests, parents the Calendar (2026-11-04), and nothing of the school's setup, until the school says otherwise", () => {
-    expect(labelsOf(person("teacher"))).toEqual(["Dashboard", "Calendar", "Leave requests", "Settings"]);
+    expect(labelsOf(person("teacher"))).toEqual(["Dashboard", "My leave", "Calendar", "Leave requests", "Settings"]);
     expect(labelsOf(person("parent"))).toEqual(["Dashboard", "Calendar", "Settings"]);
   });
 
   it("gives the staff who work for the school without teaching (2026-11-07) the Dashboard and the Calendar, and nothing of the school's setup; Staff and Permissions are for the people who run the school", () => {
     for (const role of ["receptionist", "management", "staff"] as const) {
-      expect(labelsOf(person(role))).toEqual(["Dashboard", "Calendar", "Settings"]);
+      expect(labelsOf(person(role))).toEqual(["Dashboard", "My leave", "Calendar", "Settings"]);
     }
     expect(NAV_ITEMS.find((i) => i.href === "/staff")?.roles).toEqual(["school_admin", "principal"]);
     expect(NAV_ITEMS.find((i) => i.href === "/permissions")?.roles).toEqual(["school_admin"]);
@@ -121,12 +121,13 @@ describe("the menu of the people who run a school", () => {
       ["", "Dashboard", "/dashboard"],
       ["", "Students", "/school/students"],
       ["Attendance", "Student", "/attendance/students"],
+      ["", "My leave", "/my-leave"],
       ["", "Calendar", "/calendar"],
       ["", "Leave requests", "/leaves"],
       ["", "Settings", "/settings"],
     ]);
     // Teachers' attendance is its own permission; the platform's pages and the school's set-up are never given by a box.
-    expect(labelsOf(person("receptionist", ["attendance.teachers"]))).toEqual(["Dashboard", "Teacher", "Settings"]);
+    expect(labelsOf(person("receptionist", ["attendance.teachers"]))).toEqual(["Dashboard", "Teacher", "My leave", "Settings"]);
     expect(labelsOf(person("receptionist", ["students.view", "attendance.view"]))).not.toContain("Manage Students");
     expect(labelsOf(person("receptionist", ["students.view", "attendance.view"]))).not.toContain("Inactive students");
     // The inactive students are a tab of the Students page (the tab asks for students.status), not a menu entry.
@@ -134,7 +135,7 @@ describe("the menu of the people who run a school", () => {
     expect(labelsOf(person("receptionist", ["students.view", "students.status"]))).not.toContain("Inactive students");
     expect(labelsOf(person("receptionist", ["students.view"]))).not.toContain("Permissions");
     // Settings are available to everyone; without permissions the dashboard is the only work area.
-    expect(labelsOf(person("receptionist", []))).toEqual(["Dashboard", "Settings"]);
+    expect(labelsOf(person("receptionist", []))).toEqual(["Dashboard", "My leave", "Settings"]);
     expect(labelsOf(person("school_admin", []))).toContain("Permissions");
     // The platform team sees the platform's pages only, whatever list a session carries.
     expect(labelsOf(person("super_admin", ["students.view"]))).toEqual(["Dashboard", "Schools", "Settings"]);
@@ -148,7 +149,8 @@ describe("the menu of the people who run a school", () => {
       "Teachers",
       "School timings",
       "Class timetables",
-      "Arrangements",
+      "Leave & arrangements",
+      "My leave",
       "Staff",
       "Academic years",
       "Promotion",
@@ -156,13 +158,13 @@ describe("the menu of the people who run a school", () => {
       "Settings",
     ]);
     // One key, one Teachers row (active / inactive are its tabs); view and setup share the single Classes entry.
-    expect(labelsOf(person("receptionist", ["teachers.view"]))).toEqual(["Dashboard", "Teachers", "Settings"]);
-    expect(labelsOf(person("receptionist", ["classes.view"]))).toEqual(["Dashboard", "Classes", "Settings"]);
-    expect(labelsOf(person("receptionist", ["timetable.edit"]))).toEqual(["Dashboard", "School timings", "Class timetables", "Arrangements", "Settings"]);
+    expect(labelsOf(person("receptionist", ["teachers.view"]))).toEqual(["Dashboard", "Teachers", "My leave", "Settings"]);
+    expect(labelsOf(person("receptionist", ["classes.view"]))).toEqual(["Dashboard", "Classes", "My leave", "Settings"]);
+    expect(labelsOf(person("receptionist", ["timetable.edit"]))).toEqual(["Dashboard", "School timings", "Class timetables", "Leave & arrangements", "My leave", "Settings"]);
     // Permissions is admin-only; the separate Manage Teacher entry has joined Teacher.
     for (const label of ["Manage Students", "Manage Teacher", "Permissions"]) expect(labelsOf(person("receptionist", [...keys, "students.view"]))).not.toContain(label);
     // A teacher (own classes) and a parent are not given the school's pages by these keys.
-    expect(labelsOf(person("teacher", [...keys, "calendar.view"]))).toEqual(["Dashboard", "Calendar", "Settings"]);
+    expect(labelsOf(person("teacher", [...keys, "calendar.view"]))).toEqual(["Dashboard", "My leave", "Calendar", "Settings"]);
     expect(labelsOf(person("parent", keys))).toEqual(["Dashboard", "Settings"]);
   });
 
@@ -176,9 +178,9 @@ describe("the menu of the people who run a school", () => {
     ]);
     expect(SUBMENUS.Transport).toBeDefined();
     expect(NAV_ITEMS.some((i) => i.label === "Transport")).toBe(false);
-    expect(labelsOf(person("receptionist", ["transport.view"]))).toEqual(["Dashboard", "Vehicles", "Drivers", "Routes", "Live tracking", "Settings"]);
+    expect(labelsOf(person("receptionist", ["transport.view"]))).toEqual(["Dashboard", "My leave", "Vehicles", "Drivers", "Routes", "Live tracking", "Settings"]);
     expect(labelsOf(person("receptionist", ["calendar.view"]))).not.toContain("Vehicles");
-    expect(labelsOf(person("teacher", ["transport.view", "calendar.view"]))).toEqual(["Dashboard", "Calendar", "Settings"]);
+    expect(labelsOf(person("teacher", ["transport.view", "calendar.view"]))).toEqual(["Dashboard", "My leave", "Calendar", "Settings"]);
     expect(labelsOf(person("parent", ["transport.view"]))).toEqual(["Dashboard", "Settings"]);
     expect(activeNavItem("/transport/routes", menuOf(person("school_admin")))?.label).toBe("Routes");
   });
@@ -196,12 +198,12 @@ describe("the menu of the people who run a school", () => {
     ]);
     expect(SUBMENUS.Fees).toBeDefined();
     expect(NAV_ITEMS.some((i) => i.label === "Fees")).toBe(false);
-    expect(labelsOf(person("accountant", ["fees.view", "fees.collect"]))).toEqual(["Dashboard", "Collect fees", "Dues", "Receipts", "Fee structure", "Fee heads", "Concessions", "Fee rules", "Settings"]);
+    expect(labelsOf(person("accountant", ["fees.view", "fees.collect"]))).toEqual(["Dashboard", "My leave", "Collect fees", "Dues", "Receipts", "Fee structure", "Fee heads", "Concessions", "Fee rules", "Settings"]);
     // A cashier who only collects sees the collecting pages and not the set-up.
-    expect(labelsOf(person("receptionist", ["fees.collect"]))).toEqual(["Dashboard", "Collect fees", "Dues", "Receipts", "Settings"]);
-    expect(labelsOf(person("accountant", ["fees.view"]))).toEqual(["Dashboard", "Fee structure", "Fee heads", "Concessions", "Fee rules", "Settings"]);
+    expect(labelsOf(person("receptionist", ["fees.collect"]))).toEqual(["Dashboard", "My leave", "Collect fees", "Dues", "Receipts", "Settings"]);
+    expect(labelsOf(person("accountant", ["fees.view"]))).toEqual(["Dashboard", "My leave", "Fee structure", "Fee heads", "Concessions", "Fee rules", "Settings"]);
     expect(labelsOf(person("receptionist", ["calendar.view"]))).not.toContain("Fee structure");
-    expect(labelsOf(person("teacher", ["fees.view", "fees.collect", "calendar.view"]))).toEqual(["Dashboard", "Calendar", "Settings"]);
+    expect(labelsOf(person("teacher", ["fees.view", "fees.collect", "calendar.view"]))).toEqual(["Dashboard", "My leave", "Calendar", "Settings"]);
     expect(labelsOf(person("parent", ["fees.view", "fees.collect"]))).toEqual(["Dashboard", "Settings"]);
     expect(activeNavItem("/fees/heads", menuOf(person("school_admin")))?.label).toBe("Fee heads");
     expect(activeNavItem("/fees/collect", menuOf(person("school_admin")))?.label).toBe("Collect fees");
@@ -209,7 +211,7 @@ describe("the menu of the people who run a school", () => {
 
   it("Documents (2026-11-19) is in Manage school, for the people allowed documents.view; not for teachers or parents", () => {
     expect(forAdmin.find((i) => i.label === "Documents")).toMatchObject({ href: "/documents", group: "Manage school" });
-    expect(labelsOf(person("receptionist", ["documents.view"]))).toEqual(["Dashboard", "Documents", "Settings"]);
+    expect(labelsOf(person("receptionist", ["documents.view"]))).toEqual(["Dashboard", "My leave", "Documents", "Settings"]);
     expect(labelsOf(person("receptionist", ["calendar.view"]))).not.toContain("Documents");
     expect(labelsOf(person("teacher", ["documents.view", "calendar.view"]))).not.toContain("Documents");
     expect(labelsOf(person("parent", ["documents.view"]))).toEqual(["Dashboard", "Settings"]);
@@ -218,7 +220,15 @@ describe("the menu of the people who run a school", () => {
 
   it("a parent's Calendar and a teacher's pages go when the school takes the boxes away", () => {
     expect(labelsOf(person("parent", []))).toEqual(["Dashboard", "Settings"]);
-    expect(labelsOf(person("teacher", ["calendar.view"]))).toEqual(["Dashboard", "Calendar", "Settings"]);
+    expect(labelsOf(person("teacher", ["calendar.view"]))).toEqual(["Dashboard", "My leave", "Calendar", "Settings"]);
+  });
+
+  it("My leave (2026-11-24) is for the people who work for the school and can ask for leave from their own login: not parents or the school admin, who answer it on Leave & arrangements", () => {
+    for (const role of ["teacher", "principal", "accountant", "receptionist", "management", "staff"] as const) expect(labelsOf(person(role))).toContain("My leave");
+    for (const role of ["school_admin", "parent", "student", "super_admin"] as const) expect(labelsOf(person(role))).not.toContain("My leave");
+    expect(NAV_ITEMS.find((i) => i.label === "My leave")).toMatchObject({ href: "/my-leave", group: "Overview" });
+    expect(NAV_ITEMS.find((i) => i.label === "Leave & arrangements")?.submenu).toBeUndefined();
+    expect(activeNavItem("/my-leave", menuOf(person("teacher")))?.label).toBe("My leave");
   });
 
   it("keeps students and teachers each on one sidebar row (their active / inactive lists are tabs, not menu entries)", () => {

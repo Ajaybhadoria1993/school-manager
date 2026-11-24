@@ -9,6 +9,7 @@ import {
   Building2,
   CalendarCheck2,
   CalendarClock,
+  CalendarMinus,
   Clock3,
   CalendarDays,
   Bus,
@@ -172,15 +173,23 @@ export const NAV_ITEMS: NavItem[] = [
     submenu: "Timetable",
   },
   {
-    // The day's arrangement (2026-11-22): who is away today, their periods, and a free teacher put in for each.
-    label: "Arrangements",
+    // The day's arrangement (2026-11-22) and, since 2026-11-24, the leave of the teachers and the staff: who is away, their periods, a free teacher put
+    // in for each, and the applications sent from their own logins. Out of the Timetable submenu so it is one click from the side (user, 2026-11-24).
+    label: "Leave & arrangements",
     href: "/school/arrangements",
     icon: ArrowLeftRight,
     roles: ["school_admin", "principal"],
     permission: ["timetable.edit"],
     schoolWide: true,
     group: "Overview",
-    submenu: "Timetable",
+  },
+  {
+    // A teacher's or a staff member's own leave (2026-11-24): they ask the school from their login and see its answer. The school answers on Leave & arrangements.
+    label: "My leave",
+    href: "/my-leave",
+    icon: CalendarMinus,
+    roles: ["teacher", "principal", "accountant", "receptionist", "management", "staff"],
+    group: "Overview",
   },
   {
     // The people who work for the school without teaching (a receptionist, an accountant, the management): added with a role and an email,

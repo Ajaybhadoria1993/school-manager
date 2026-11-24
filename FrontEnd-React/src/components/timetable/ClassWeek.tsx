@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useBlocker, Link } from "react-router";
-import { BookOpen, Check, CircleAlert, Clock3, Copy, ListOrdered, Printer, Save, Send, Sparkles, TriangleAlert, Undo2, UserPlus } from "lucide-react";
+import { useBlocker } from "react-router";
+import { BookOpen, CircleAlert, CircleCheck, Clock3, Copy, ListOrdered, RotateCcw, Save, Send, Sparkles, TriangleAlert, Undo2, UserRound } from "lucide-react";
 import { DAY_NAMES, SUBJECT_PRESETS } from "../../constants/timetable";
 import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import {
@@ -11,12 +11,10 @@ import {
   useQuickAddSubjectsMutation,
   useSaveGridMutation,
 } from "../../redux/api/timetableApi";
-import { useCan } from "../../hooks/useCan";
 import { getApiError } from "../../utils/apiErrors";
 import { PRESET_PREFIX, applyMotherTeacher, buildModel, cellAt, cellKey, changeLesson, choiceOf, clearCell, isPrePrimaryName, localProblems, placeAcrossWeek, placeHalfDay, placeWholeDay, placedCounts, sameGrid, subjectAccents, subjectChoices, subjectColors, teacherChoices, teacherOf, teacherOnRange, teacherTrouble, type Spread, type SubjectChoice } from "../../utils/timetable";
-import { cn } from "../../utils/helpers";
 import { Badge } from "../ui/Badge";
-import type { AutofillAnswer, ClassWeekStatus, GridAllotment, GridCell, GridView, Issue, Lesson, UnitRef } from "../../types";
+import type { AutofillAnswer, ClassWeekStatus, ClassWeekTab, GridAllotment, GridCell, GridView, Issue, Lesson, UnitRef } from "../../types";
 import { ConfirmModal } from "../classes/ConfirmModal";
 import { ClassTeacherButton } from "../schoolClass/ClassTeacherButton";
 import { Button } from "../ui/Button";
@@ -29,6 +27,31 @@ import { CopyDialog, LessonDialog } from "./GridDialogs";
 import { GridTable } from "./GridTable";
 import { PeriodPicker } from "./PeriodPicker";
 
+/** An address's search part without the open tab: another tab of the class is not leaving it. */
+const withoutTab = (search: string) => {
+  const p = new URLSearchParams(search);
+  p.delete("tab");
+  return p.toString();
+};
+
+/** One setting of the class (the Class Settings tab): an icon, what it is with a line under it, and its button at the right. */
+function SettingRow({ icon: Icon, title, text, children }: { icon: typeof Clock3; title: string; text: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+          <Icon className="size-5" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-foreground">{title}</p>
+          <p className="truncate text-xs text-foreground-muted">{text}</p>
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 /** Where an issue is, in words: "Monday period 3", or nothing for one about the whole week. */
 const placeOf = (i: Issue) => (i.day && i.period ? `${DAY_NAMES[i.day]} period ${i.period}` : i.day ? DAY_NAMES[i.day] : "");
 
@@ -40,7 +63,23 @@ interface Fill {
 }
 
 /** The grid of one class, with its tools. Mounted again for every class (`key`), so nothing of one class is ever shown under another. */
-function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { view: GridView; unit: UnitRef; onReload: () => void; onGoTimings: () => void; onStatus?: (status: ClassWeekStatus | null) => void }) {
+function Workspace({
+  view: saved,
+  unit,
+  tab,
+  onTab,
+  onReload,
+  onGoTimings,
+  onStatus,
+}: {
+  view: GridView;
+  unit: UnitRef;
+  tab: ClassWeekTab;
+  onTab: (tab: ClassWeekTab) => void;
+  onReload: () => void;
+  onGoTimings: () => void;
+  onStatus?: (status: ClassWeekStatus | null) => void;
+}) {
   const { push } = useToast();
   const structure = useGetStructureQuery().data?.data;
   const allSubjects = useGetSubjectsQuery("all").data?.data.items;
@@ -98,7 +137,6 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
   const motherName = mother ? (model.teachers.get(mother)?.name ?? head?.name ?? null) : null;
   // A small class has one thing a day (or two): the whole day is what a picked subject fills, until the toolbar says otherwise.
   const [spread, setSpread] = useState<Spread>("day");
-  const can = useCan();
   const activeTeachers = view.teachers.filter((t) => t.isActive);
   const colors = useMemo(() => subjectColors(view), [view]);
   const accents = useMemo(() => subjectAccents(view), [view]);
@@ -121,8 +159,9 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
   const errors = issues.filter((i) => i.level === "error");
   const warnings = issues.filter((i) => i.level === "warning");
 
-  // Leaving with changes that were not saved asks first: another page, another class, the other tab.
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search));
+  // Leaving with changes that were not saved asks first: another page, another class. Another tab of the class (only `tab` changes, 2026-11-23) keeps
+  // them on the screen, so it asks nothing.
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && (currentLocation.pathname !== nextLocation.pathname || withoutTab(currentLocation.search) !== withoutTab(nextLocation.search)));
   useEffect(() => {
     if (!dirty) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -234,6 +273,8 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
     const changed = applyMotherTeacher(model, cells, teacher?.id ?? null, before);
     if (!sameGrid(changed, cells)) {
       edit(changed);
+      // The week changed: it is shown (the button is on the Class Settings tab).
+      onTab("timetable");
       setNote(
         teacher
           ? `${teacher.name} is put on the periods that had no teacher. Press Save the timetable to keep them.`
@@ -313,20 +354,45 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
   // No teacher in the school at all: said under the count of periods.
   const noTeacher = activeTeachers.length === 0 && !mother;
   // The subjects of "Subjects this week": those given periods a week, and any other that has a lesson in the week.
-  const subjectRows = view.allotments.filter((a) => a.periodsPerWeek > 0 || (counts.get(a.subjectId) ?? 0) > 0);
+  // The subjects of the week on screen: the class's list and any put in (not saved yet); one nobody teaches has no teacher of its own nor on any lesson.
+  const subjectIds = [...new Set([...view.allotments.map((a) => a.subjectId), ...cells.flatMap((c) => c.lessons.map((l) => l.subjectId))])];
+  const withoutTeacher = subjectIds.filter((id) => !view.allotments.find((a) => a.subjectId === id)?.teacherId && !cells.some((c) => c.lessons.some((l) => l.subjectId === id && teacherOf(model, l)))).length;
   useEffect(() => {
-    onStatus?.({ dirty, filled, total, noTeacher });
-  }, [onStatus, dirty, filled, total, noTeacher]);
+    onStatus?.({ dirty, filled, total, noTeacher, subjects: subjectIds.length, withoutTeacher });
+  }, [onStatus, dirty, filled, total, noTeacher, subjectIds.length, withoutTeacher]);
   useEffect(() => () => onStatus?.(null), [onStatus]);
 
   return (
     <div className="space-y-4">
-      {/* The class's name, its year and where its timetable stands are the page's title (ClassTimetables); its buttons are in the line of the toolbar below. */}
+      {/* The class's name, its year and where its timetable stands are the page's header card (ClassTimetables); the tabs choose what is shown here. */}
       <p className="hidden text-lg font-bold print:block">
         {view.unit.label} · {view.unit.academicYear.name}
       </p>
 
-      {noTiming ? (
+      {tab === "settings" ? (
+        // Class Settings (2026-11-23, the reference's tab): the class's periods and time, its class teacher, and a copy to its other sections.
+        <Card className="divide-y divide-border">
+          <SettingRow icon={Clock3} title="Periods & time" text="When this class comes and goes, and its periods">
+            <Button variant="outline" onClick={() => setEditingPeriods(true)} disabled={dirty} title={dirty ? "Save the timetable first" : undefined}>
+              <Clock3 className="size-4" aria-hidden />
+              Periods & time
+            </Button>
+          </SettingRow>
+          {/* Who the class teacher is (2026-11-17): with none it says Add class teacher, with one it says who, and a click changes them. In a
+              Pre-Primary class they also take the periods that have no teacher. */}
+          <SettingRow icon={UserRound} title="Class teacher" text={head ? head.name : "No class teacher yet"}>
+            <ClassTeacherButton classId={unit.classId} sectionId={unit.sectionId} label={view.unit.label} current={head} look="button" onAssigned={headAssigned} />
+          </SettingRow>
+          {siblings.length > 0 && (
+            <SettingRow icon={Copy} title="Copy to other sections" text={siblings.map((x) => x.name).join(", ")}>
+              <Button variant="outline" onClick={() => setCopying(true)} disabled={dirty || !view.exists || view.cells.length === 0} title={dirty ? "Save first" : undefined}>
+                <Copy className="size-4" aria-hidden />
+                Copy to other sections
+              </Button>
+            </SettingRow>
+          )}
+        </Card>
+      ) : noTiming ? (
         <Card className="flex flex-col items-center gap-3 p-8 text-center">
           <span aria-hidden className="flex size-11 items-center justify-center rounded-2xl bg-warning-soft text-warning">
             <Clock3 className="size-5" />
@@ -343,30 +409,7 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
           </div>
         </Card>
       ) : editingSubjects ? (
-        <>
-          <div className="flex flex-wrap items-center justify-end gap-2 print:hidden">
-      <Button variant="outline" onClick={() => window.print()}>
-        <Printer className="size-4" aria-hidden />
-        Print
-      </Button>
-      {/* The teachers of the school are the ones the box of a period lists: this is the way to add one (2026-11-13). */}
-      {can("teachers.add") && (
-        <Link
-          to="/teachers/new"
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:border-primary/30 hover:bg-background focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20"
-        >
-          <UserPlus className="size-4" aria-hidden />
-          Add a teacher
-        </Link>
-      )}
-      {siblings.length > 0 && (
-        <Button variant="outline" onClick={() => setCopying(true)} disabled={dirty || !view.exists || view.cells.length === 0} title={dirty ? "Save first" : undefined}>
-          <Copy className="size-4" aria-hidden />
-          Copy to other sections
-        </Button>
-      )}
-
-          </div>
+        // Fill needs each subject's periods a week: they are asked here, in place of the week, then the week comes back.
         <Card className="space-y-3 p-5">
           <div className="flex items-start gap-3">
             <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
@@ -386,84 +429,8 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
             }}
           />
         </Card>
-        </>
       ) : (
         <div className="min-w-0 space-y-4">
-          {/* The week's progress and its tools (2026-11-22, the reference pictures): how many periods have a lesson (a bar), Not saved, then Fill, Periods &
-              time, the class teacher and Copy. Save is under the week, with Empty the whole week. */}
-          <Card className="flex flex-wrap items-center gap-x-5 gap-y-3 p-4 print:hidden">
-            <div className="min-w-[14rem] flex-1 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <span className="flex flex-wrap items-center gap-2">
-                  <span role="status" aria-label="Periods with a lesson" className="font-bold text-foreground">
-                    {filled} of {total} periods filled
-                  </span>
-                  {dirty && <Badge tone="warning">Not saved</Badge>}
-                </span>
-                <span className="text-xs font-semibold text-foreground-muted">{Math.max(0, total - filled)} empty</span>
-              </div>
-              <div aria-hidden className="h-2 overflow-hidden rounded-full bg-surface-muted">
-                <div className="h-full rounded-full bg-orange transition-[width]" style={{ width: `${total > 0 ? Math.min(100, Math.round((filled / total) * 100)) : 0}%` }} />
-              </div>
-              {noTeacher && <p className="text-xs font-medium text-warning">No teacher available in your school</p>}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={fillOrAsk} loading={filling} variant="outline">
-                <Sparkles className="size-4" aria-hidden />
-                {fill ? "Try another arrangement" : "Fill the empty periods"}
-              </Button>
-              {fill && (
-                <Button variant="ghost" onClick={() => edit(fill.base)}>
-                  <Undo2 className="size-4" aria-hidden />
-                  Undo the fill
-                </Button>
-              )}
-              <Button variant="outline" onClick={() => setEditingPeriods(true)} disabled={dirty} title={dirty ? "Save the timetable first" : undefined}>
-                <Clock3 className="size-4" aria-hidden />
-                Periods & time
-              </Button>
-              {/* Who the class teacher is (2026-11-17, in place of Add a teacher): with none it says Add class teacher, with one it says who, and a click
-                  changes them (the list, then a window that asks first). In a Pre-Primary class they also take the periods that have no teacher. */}
-              <ClassTeacherButton classId={unit.classId} sectionId={unit.sectionId} label={view.unit.label} current={head} look="button" onAssigned={headAssigned} />
-              {prePrimary && mother && motherName && untaught > 0 && (
-                <Button variant="ghost" onClick={() => edit(applyMotherTeacher(model, cells, mother, null))}>
-                  Put {motherName} on {untaught} period{untaught === 1 ? "" : "s"} with no teacher
-                </Button>
-              )}
-              {siblings.length > 0 && (
-                <Button variant="outline" onClick={() => setCopying(true)} disabled={dirty || !view.exists || view.cells.length === 0} title={dirty ? "Save first" : undefined}>
-                  <Copy className="size-4" aria-hidden />
-                  Copy to other sections
-                </Button>
-              )}
-            </div>
-          </Card>
-
-          {/* Subjects this week: each subject the class has with how many periods it has in the week and how many it was given. */}
-          {subjectRows.length > 0 && (
-            <Card className="p-4 print:hidden">
-              <p className="mb-2.5 flex items-baseline gap-2 text-sm font-bold text-foreground">
-                Subjects this week <span className="text-xs font-normal text-foreground-muted">placed / needed</span>
-              </p>
-              <ul aria-label="Subjects this week" className="flex flex-wrap gap-2">
-                {subjectRows.map((a) => {
-                  const placed = counts.get(a.subjectId) ?? 0;
-                  const need = a.periodsPerWeek;
-                  const tone = need === 0 ? "text-foreground-muted" : placed === need ? "text-success" : placed > need ? "text-danger" : "text-warning";
-                  return (
-                    <li key={a.subjectId} aria-label={`${a.subjectName}: ${placed} placed of ${need || "no"} needed`} className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-sm font-semibold text-foreground">
-                      <span aria-hidden className={cn("size-2 rounded-full", accents.get(a.subjectId)?.dot ?? "bg-primary")} />
-                      {a.subjectName}
-                      <span aria-hidden className={cn("text-xs font-bold tabular-nums", tone)}>
-                        {placed}/{need || "–"}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </Card>
-          )}
-
           {fill && (
             <div role="status" aria-label="The fill" className="rounded-xl border border-primary/25 bg-primary-soft/60 px-4 py-3 text-sm text-foreground print:hidden">
               <p className="font-semibold">The empty periods are filled. Look at it, change what you like, then press Save.</p>
@@ -492,19 +459,40 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
 
           <GridTable view={view} model={model} cells={cells} colors={colors} accents={accents} problems={problems} looks={looks} openKey={picking ? cellKey(picking.day, picking.period) : null} onCell={openPeriod} />
 
-          {/* Under the week: who sees it, Empty the whole week, and the one Save (it publishes a draft too: user, 2026-11-13). */}
+          {/* Under the week: who sees it, the fill, Empty the whole week, Not saved and the one Save (it publishes a draft too: user, 2026-11-13). The
+              line over the week was taken away (2026-11-23): its fill is here, its count is the first card on top. */}
           <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-            <p className="flex items-center gap-1.5 text-xs text-foreground-muted">
-              <Check className="size-3.5 shrink-0 text-success" aria-hidden />
-              {view.status === "published" ? "Published: students and teachers see a change once you save it." : "Students and teachers see the timetable once you save it."}
-            </p>
+            <div className="min-w-0 space-y-1">
+              <p className="flex items-center gap-1.5 text-sm font-medium text-success">
+                <CircleCheck className="size-4 shrink-0" aria-hidden />
+                {view.status === "published" ? "Published: students and teachers see a change once you save it." : "Students and teachers see the timetable once you save it."}
+              </p>
+              {noTeacher && <p className="text-xs font-medium text-warning">No teacher available in your school</p>}
+            </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
+              {prePrimary && mother && motherName && untaught > 0 && (
+                <Button variant="ghost" onClick={() => edit(applyMotherTeacher(model, cells, mother, null))}>
+                  Put {motherName} on {untaught} period{untaught === 1 ? "" : "s"} with no teacher
+                </Button>
+              )}
+              {fill && (
+                <Button variant="ghost" onClick={() => edit(fill.base)}>
+                  <Undo2 className="size-4" aria-hidden />
+                  Undo the fill
+                </Button>
+              )}
+              <Button onClick={fillOrAsk} loading={filling} variant="outline">
+                <Sparkles className="size-4" aria-hidden />
+                {fill ? "Try another arrangement" : "Fill the empty periods"}
+              </Button>
               {cells.length > 0 && (
-                <Button variant="ghost" onClick={() => setClearing(true)}>
+                <Button variant="outline" onClick={() => setClearing(true)}>
+                  <RotateCcw className="size-4" aria-hidden />
                   Empty the whole week
                 </Button>
               )}
-              <Button variant="accent" onClick={() => void submit()} loading={saving || publishing} disabled={!dirty && !publishSaved} title={!dirty && !publishSaved ? "Everything is saved" : undefined}>
+              {dirty && <Badge tone="warning">Not saved</Badge>}
+              <Button onClick={() => void submit()} loading={saving || publishing} disabled={!dirty && !publishSaved} title={!dirty && !publishSaved ? "Everything is saved" : undefined}>
                 {!(saving || publishing) && (publishSaved ? <Send className="size-4" aria-hidden /> : <Save className="size-4" aria-hidden />)}
                 {saveLabel}
               </Button>
@@ -614,7 +602,10 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
           className={view.unit.className}
           allSections={unit.sectionId !== null}
           onClose={() => setEditingPeriods(false)}
-          onSaved={onReload}
+          onSaved={() => {
+            onReload();
+            onTab("timetable");
+          }}
           onGoTimings={() => {
             setEditingPeriods(false);
             onGoTimings();
@@ -641,7 +632,20 @@ function Workspace({ view: saved, unit, onReload, onGoTimings, onStatus }: { vie
  * subjects to put in it, the program's help in filling it, the checks, Save (which publishes a draft too, one button at the top). Everything done in the grid stays on the screen
  * until "Save the timetable" (one request); the server checks it again and refuses a clash.
  */
-export function ClassWeek({ unit, onGoTimings, onStatus }: { unit: UnitRef; onGoTimings: () => void; onStatus?: (status: ClassWeekStatus | null) => void }) {
+export function ClassWeek({
+  unit,
+  tab = "timetable",
+  onTab = () => undefined,
+  onGoTimings,
+  onStatus,
+}: {
+  unit: UnitRef;
+  /** Which tab of the page is open (2026-11-23): the week, the subjects and teachers, or the class's settings. */
+  tab?: ClassWeekTab;
+  onTab?: (tab: ClassWeekTab) => void;
+  onGoTimings: () => void;
+  onStatus?: (status: ClassWeekStatus | null) => void;
+}) {
   const res = useGetGridQuery(unit);
   const view = res.currentData?.data;
 
@@ -663,5 +667,5 @@ export function ClassWeek({ unit, onGoTimings, onStatus }: { unit: UnitRef; onGo
       </div>
     );
   }
-  return <Workspace view={view} unit={unit} onReload={() => void res.refetch()} onGoTimings={onGoTimings} onStatus={onStatus} />;
+  return <Workspace view={view} unit={unit} tab={tab} onTab={onTab} onReload={() => void res.refetch()} onGoTimings={onGoTimings} onStatus={onStatus} />;
 }

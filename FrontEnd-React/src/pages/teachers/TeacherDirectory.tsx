@@ -22,6 +22,7 @@ import { Input } from "../../components/ui/Input";
 import { FilterBar, FilterSearch, FilterSelect } from "../../components/ui/FilterBar";
 import { PageTabs, type PageTab } from "../../components/ui/PageTabs";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { TabPanel } from "../../components/ui/TabPanel";
 import { cameFrom } from "../../components/layout/nav-config";
 
 /** The words of the address for each filter, in the order of the dropdowns (the user kept these three on 2026-11-03). */
@@ -272,6 +273,7 @@ export default function TeacherDirectoryPage() {
       {/* Under the counts, above the filters (2026-11-22): the teachers who are here, and the ones who left. */}
       {showTabs && <PageTabs label="Which teachers to show" tabs={tabItems} value={status === "inactive" ? "inactive" : "active"} onChange={(next) => change({ status: next })} />}
 
+      <TabPanel tab={status === "inactive" ? "inactive" : "active"} className="space-y-6">
       {/* The search and three filters stay together on a wide screen and wrap cleanly on narrower screens. */}
       <FilterBar label="Find teachers">
         <FilterSearch>
@@ -365,6 +367,7 @@ export default function TeacherDirectoryPage() {
           </div>
         </div>
       )}
+      </TabPanel>
     </div>
   );
 }

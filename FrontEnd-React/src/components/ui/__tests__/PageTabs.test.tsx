@@ -41,8 +41,11 @@ describe("PageTabs (2026-11-22: the tabs of a page, side by side, like the refer
   it("the open tab has the orange bar under it and the others do not", () => {
     show("active");
     const [open, other] = screen.getAllByRole("tab");
+    // The orange bar is under every tab and shown only under the open one (2026-11-23: it slides in instead of appearing).
     expect(open.className).toContain("after:bg-orange");
-    expect(other.className).not.toContain("after:bg-orange");
+    expect(open.className).toContain("after:scale-x-100");
+    expect(other.className).toContain("after:scale-x-0");
+    expect(other.className).not.toContain("after:scale-x-100");
   });
 
   it("a click opens that tab (one call, with its id); a click on the open tab calls nothing", async () => {

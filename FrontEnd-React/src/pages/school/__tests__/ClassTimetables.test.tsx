@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { RouterProvider, createMemoryRouter } from "react-router";
@@ -49,17 +49,29 @@ afterEach(() => {
 
 const overviewCalls = (calls: Call[]) => calls.filter((c) => c.path === "/timetable/overview");
 const withState = (over: Partial<TimetableOverview>): TimetableOverview => ({ ...OVERVIEW, ...over });
-const classList = async () => within(await screen.findByRole("list", { name: "Classes" }));
+/** The list of classes, in the box on top that opens it (2026-11-23, the second reference picture: no list beside the week). */
+async function openPicker() {
+  if (!screen.queryByRole("dialog", { name: "Choose the class" })) fireEvent.click(await screen.findByRole("button", { name: "Choose the class" }));
+  return screen.findByRole("dialog", { name: "Choose the class" });
+}
+const classList = async () => {
+  await openPicker();
+  return within(await screen.findByRole("list", { name: "Classes" }));
+};
+/** Closes the box of classes (Escape): while it is open, the rest of the page is hidden from a screen reader. */
+async function closePicker() {
+  fireEvent.keyDown(await screen.findByRole("dialog", { name: "Choose the class" }), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Choose the class" })).not.toBeInTheDocument());
+}
 const noUnits = { units: 0, withSubjects: 0, withTiming: 0, none: 0, draft: 0, published: 0 };
 
 describe("Class timetables: a page of its own (2026-11-09: it was a tab of the Timetable page)", () => {
-  it("has its own title, and no tabs: School timings is another entry of the menu, not a tab here", async () => {
+  it("has its own title, and the tabs of the class (not School timings: that is another entry of the menu)", async () => {
     openPage();
-    // The title is the class picked once it is read (2026-11-13); the way back still says where the page is.
-    expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 1 })).toBeInTheDocument();
-    expect(within(screen.getByRole("navigation", { name: "Breadcrumb" })).getByText("Class timetables")).toBeInTheDocument();
-    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
-    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    // 2026-11-23, the reference picture: the page is Class timetables, the class picked is the card on top.
+    expect(await screen.findByRole("heading", { name: "Class timetables", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 2 })).toBeInTheDocument();
+    expect(within(screen.getByRole("tablist", { name: "What to manage" })).getAllByRole("tab").map((t) => t.textContent)).toEqual(["Class Timetable", "Class Settings"]);
     expect(screen.queryByRole("link", { name: "School timings" })).not.toBeInTheDocument();
     // No Subjects and Teachers buttons (subjects are added where they are used), and no line of help under the title.
     expect(screen.queryByRole("link", { name: /^Subjects/ })).not.toBeInTheDocument();
@@ -106,9 +118,13 @@ describe("Class timetables: the list and the week", () => {
   it("lists every class or section with where its timetable stands, and opens the first one", async () => {
     openPage();
     const list = await classList();
-    expect(list.getAllByRole("button").map((b) => b.textContent)).toEqual(["Class 5 - ADraft · 7 of 40", "Class 5 - BPublished", "Class 1No subjects yet"]);
+    // Active once every subject has a teacher (2026-11-23, user: "subject aur teacher assign hai to Active, nahi to Inactive").
+    expect(list.getAllByRole("button").map((b) => b.textContent)).toEqual(["Class 5 - AInactive", "Class 5 - BActive", "Class 1Inactive"]);
+    expect(within(list.getByRole("button", { name: /Class 5 - A/ })).getByText("Inactive")).toHaveAttribute("title", "1 subject has no teacher");
+    expect(within(list.getByRole("button", { name: /Class 1/ })).getByText("Inactive")).toHaveAttribute("title", "No subjects yet");
     expect(list.getByRole("button", { name: /Class 5 - A/ })).toHaveAttribute("aria-current", "true");
-    expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 1 })).toBeInTheDocument();
+    await closePicker();
+    expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 2 })).toBeInTheDocument();
     expect(await screen.findByRole("table", { name: "Weekly timetable" })).toBeInTheDocument();
   });
 
@@ -116,17 +132,17 @@ describe("Class timetables: the list and the week", () => {
     const { router, user } = openPage();
     await screen.findByRole("table", { name: "Weekly timetable" });
     await user.click((await classList()).getByRole("button", { name: /Class 5 - B/ }));
-    expect(await screen.findByRole("heading", { name: "Class 5 - B", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Class 5 - B", level: 2 })).toBeInTheDocument();
     expect(router.state.location.search).toBe("?class=c5&section=c5-B");
   });
 
   it("opens the class named in the address", async () => {
     openPage(OVERVIEW, "/school/timetable?class=c5&section=c5-B");
-    expect(await screen.findByRole("heading", { name: "Class 5 - B", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Class 5 - B", level: 2 })).toBeInTheDocument();
     expect((await classList()).getByRole("button", { name: /Class 5 - B/ })).toHaveAttribute("aria-current", "true");
   });
 
-  it("asks the server for the typed name once the typing stops, and for the timetables picked", async () => {
+  it("asks the server for the typed name once the typing stops", async () => {
     const { calls, user } = openPage((query) => ({
       ...OVERVIEW,
       units: OVERVIEW.units.filter((u) => (query.get("status") === "published" ? u.status === "published" : true) && u.label.toLowerCase().includes((query.get("search") ?? "").toLowerCase())),
@@ -139,17 +155,19 @@ describe("Class timetables: the list and the week", () => {
     await waitFor(async () => expect((await classList()).getAllByRole("button")).toHaveLength(1));
 
     await user.clear(screen.getByLabelText("Search classes"));
-    const filter = screen.getByRole("radiogroup", { name: "Which timetables to show" });
-    expect(within(filter).getAllByRole("radio").map((r) => r.textContent)).toEqual(["All classes · 3", "Not started · 1", "Draft · 1", "Published · 1"]);
-    await user.click(within(filter).getByRole("radio", { name: "Published · 1" }));
-    await waitFor(() => expect(overviewCalls(calls).at(-1)!.query).toBe("?status=published"));
+    // The class shown stays the one first opened while the list is searched.
+    await closePicker();
+    expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 2 })).toBeInTheDocument();
   });
 
   it("says when nothing matches", async () => {
     const { user } = openPage((query) => ({ ...OVERVIEW, units: query.get("search") ? [] : OVERVIEW.units }));
     await classList();
     await user.type(screen.getByLabelText("Search classes"), "zzz");
-    expect(await screen.findByText("No class matches.")).toBeInTheDocument();
+    expect(await within(screen.getByRole("dialog", { name: "Choose the class" })).findByText("No class matches.")).toBeInTheDocument();
+    // The week shown stays.
+    await closePicker();
+    expect(await screen.findByRole("table", { name: "Weekly timetable" })).toBeInTheDocument();
   });
 });
 
@@ -179,7 +197,7 @@ describe("Class timetables: when there is nothing to show yet", () => {
     expect(await screen.findByText("The server is busy")).toBeInTheDocument();
     fail = false;
     await user.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByRole("list", { name: "Classes" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Choose the class" })).toBeInTheDocument();
     expect(overviewCalls(calls).length).toBeGreaterThanOrEqual(2);
   });
 });
@@ -200,42 +218,92 @@ describe("Timetable: the old addresses", () => {
   });
 });
 
-describe("Class timetables: the class is the title, the filter is beside it (2026-11-13)", () => {
-  const headerOf = async () => (await screen.findByRole("heading", { name: "Class 5 - A", level: 1 })).closest("header")!;
+/** 2026-11-23, the second reference picture: the class is chosen in a box on top beside three cards of its week; the filter is at the right of the tabs. */
+describe("Class timetables: the class's box on top, the filter beside the tabs", () => {
+  const headerOf = async () => screen.findByRole("region", { name: "The class" });
 
-  it("the title of the page is the class picked, with its year and where its timetable stands beside it", async () => {
+  // 2026-11-23, user: "Students jaise tabs; status hatao; dropdown neeche Class Settings ki line mein; upar 4 normal cards, zyada data".
+  it("four cards of the class's week on top, each with a line more; no status there; the class's box is in the line of the tabs", async () => {
     openPage();
     const header = await headerOf();
-    expect(await within(header).findByText("2026-2027")).toBeInTheDocument();
-    expect(within(header).getByText("Draft")).toBeInTheDocument();
-    // The workspace under it does not say it again.
-    expect(screen.queryByRole("heading", { name: "Class 5 - A", level: 2 })).not.toBeInTheDocument();
+    expect(await within(header).findByRole("heading", { name: "Class 5 - A", level: 2 })).toBeInTheDocument();
+    expect(header).toHaveTextContent("Total periods40");
+    // How many have a lesson, from the week on screen (the line over the week was taken away, 2026-11-23).
+    expect(header).toHaveTextContent("Total periods400 filled · 40 empty");
+    expect(header).toHaveTextContent("Subjects21 without a teacher");
+    expect(header).toHaveTextContent("School time08:30 – 14:20Mon to Fri");
+    // Class time takes the place of Lunch break (2026-11-23, user: "lunch break hata do, yahan class time rakho"); with no arrival or assembly it starts with school.
+    expect(header).toHaveTextContent("Class time08:30 – 14:20From when school starts");
+    expect(header).not.toHaveTextContent("Lunch break");
+    for (const word of ["Not started", "Draft", "Published", "2026-2027"]) expect(within(header).queryByText(word)).not.toBeInTheDocument();
+    // The box that chooses the class, in the line of the tabs (the Students page's tabs).
+    const box = screen.getByRole("button", { name: "Choose the class" });
+    expect(box).toHaveTextContent("Class 5 - A");
+    expect(header).not.toContainElement(box);
+    expect(screen.getByRole("tablist", { name: "What to manage" }).parentElement).toContainElement(box);
+    // Said once.
+    expect(screen.getAllByRole("heading", { name: "Class 5 - A" })).toHaveLength(1);
   });
 
-  it("the title follows the class picked from the list", async () => {
+  // 2026-11-23, user: "class change karte hi page load jaisa lagta hai, smooth karo".
+  it("while another class's week is read, the one shown stays (no empty page in between), then the new one takes its place", async () => {
+    let answer: (() => void) | null = null;
+    const slow = (_body: unknown, query: URLSearchParams) => {
+      const view = { ...GRID, unit: { ...GRID.unit, sectionId: query.get("sectionId"), label: query.get("sectionId") === "c5-B" ? "Class 5 - B" : "Class 5 - A" } };
+      if (query.get("sectionId") !== "c5-B") return view;
+      return new Promise((done) => {
+        answer = () => done(view);
+      });
+    };
+    const { user } = openPage(OVERVIEW, "/school/timetable", { "GET /timetable/grid": slow });
+    await screen.findByRole("table", { name: "Weekly timetable" });
+    await user.click((await classList()).getByRole("button", { name: /Class 5 - B/ }));
+    // The box closes; the week of Class 5 - A stays, faded, while Class 5 - B's is read.
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Choose the class" })).not.toBeInTheDocument());
+    expect(screen.getByRole("table", { name: "Weekly timetable" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Class 5 - A", level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Weekly timetable" }).closest("[aria-busy]")).toHaveAttribute("aria-busy", "true");
+    await waitFor(() => expect(answer).not.toBeNull());
+    answer!();
+    expect(await screen.findByRole("heading", { name: "Class 5 - B", level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole("table", { name: "Weekly timetable" }).closest("[aria-busy]")).toBeNull();
+    expect((await classList()).getByRole("button", { name: /Class 5 - B/ })).toHaveAttribute("aria-current", "true");
+  });
+
+  // 2026-11-23, user: "Class time jaise School timings mein dikhta hai": the time to come in and the assembly come before the first period.
+  it("Class time says what comes before the first period (Arrival, Assembly), and School time starts with it", async () => {
+    const early = (_body: unknown, query: URLSearchParams) => ({
+      ...GRID,
+      unit: { ...GRID.unit, sectionId: query.get("sectionId"), label: "Class 5 - A" },
+      days: GRID.days.map((d) => ({
+        ...d,
+        slots: [{ kind: "break" as const, label: "Arrival", start: "08:10", end: "08:15", period: null }, { kind: "break" as const, label: "Assembly", start: "08:15", end: "08:30", period: null }, ...d.slots],
+      })),
+    });
+    openPage(OVERVIEW, "/school/timetable", { "GET /timetable/grid": early });
+    const header = await headerOf();
+    await within(header).findByRole("heading", { name: "Class 5 - A", level: 2 });
+    expect(header).toHaveTextContent("School time08:10 – 14:20Mon to Fri");
+    expect(header).toHaveTextContent("Class time08:30 – 14:20Arrival 08:10–08:15 · Assembly 08:15–08:30");
+  });
+
+  it("the card follows the class picked from the list", async () => {
     const { user } = openPage();
     await headerOf();
     await user.click((await classList()).getByRole("button", { name: /Class 5 - B/ }));
-    expect(await screen.findByRole("heading", { name: "Class 5 - B", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Class 5 - B", level: 2 })).toBeInTheDocument();
   });
 
-  it("the filter is buttons in one line at the right of the title (not a dropdown in the list), All classes picked", async () => {
-    openPage();
-    const header = await headerOf();
-    const filter = within(header).getByRole("radiogroup", { name: "Which timetables to show" });
-    expect(within(filter).getAllByRole("radio").map((r) => r.textContent)).toEqual(["All classes · 3", "Not started · 1", "Draft · 1", "Published · 1"]);
-    expect(within(filter).getByRole("radio", { name: "All classes · 3" })).toBeChecked();
-    expect(screen.queryByRole("button", { name: /Which timetables to show/ })).not.toBeInTheDocument();
-    // The list keeps only its search box.
-    expect(screen.getByLabelText("Search classes")).toBeInTheDocument();
-  });
-
-  it("a filter button asks the server for those timetables and is the one picked", async () => {
-    const { calls, user } = openPage();
-    const header = await headerOf();
-    await user.click(within(header).getByRole("radio", { name: "Draft · 1" }));
-    await waitFor(() => expect(overviewCalls(calls).at(-1)!.query).toBe("?status=draft"));
-    expect(within(header).getByRole("radio", { name: "Draft · 1" })).toBeChecked();
+  // 2026-11-23, user: "All classes / Not started / Draft / Published hatao".
+  it("has no filter of the classes: the box at the right of the tabs is the one way to another class", async () => {
+    const { calls } = openPage();
+    await headerOf();
+    expect(screen.queryByRole("radiogroup", { name: "Which timetables to show" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+    const tabs = screen.getByRole("tablist", { name: "What to manage" });
+    const box = screen.getByRole("button", { name: "Choose the class" });
+    expect(tabs.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(overviewCalls(calls).every((c) => c.query === "?status=all")).toBe(true);
   });
 });
 

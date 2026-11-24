@@ -38,6 +38,7 @@ import { Card } from "../../components/ui/Card";
 import { InfoTip, WithTip } from "../../components/ui/Hint";
 import { PageTabs, type PageTab } from "../../components/ui/PageTabs";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { TabPanel } from "../../components/ui/TabPanel";
 import { admitLink, importLink } from "../../utils/students";
 import { DeactivateDialog } from "../../components/students/status/DeactivateDialog";
 
@@ -355,6 +356,7 @@ export default function StudentsPage() {
 
           {showTabs && <PageTabs label="Which students to show" tabs={tabItems} value={tab} onChange={(next) => change({ tab: next })} />}
 
+          <TabPanel tab={tab}>
           {tab === "inactive" ? (
             <InactiveStudentsList />
           ) : tab === "fees" ? (
@@ -452,6 +454,7 @@ export default function StudentsPage() {
           )}
             </>
           )}
+          </TabPanel>
         </>
       )}
 

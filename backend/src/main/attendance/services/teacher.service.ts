@@ -15,6 +15,7 @@ import type { TeacherDayStatus } from "../constants";
 import { TeacherAttendance, type ITeacherAttendance } from "../models/TeacherAttendance";
 import type { MonthQuery, MyDayQuery, RangeQuery, SetTeacherDayInput, TeacherSheetQuery } from "../schemas/attendance.schemas";
 import { schoolDays, type SchoolDay } from "./schoolDays";
+import { StaffLeaveService } from "./staffLeave.service";
 
 const asId = (id: string | Types.ObjectId) => new Types.ObjectId(String(id));
 const dayOf = (d: Date) => d.toISOString().slice(0, 10);
@@ -100,16 +101,18 @@ const logOf = (record: DayRecord): LogLineDto[] =>
 /**
  * What a teacher's day is: a mark wins (Present, Late when it was after school started, Absent or Leave as the school put it); otherwise a
  * day before they joined (or were added to the app, or the day they were added once school was over) does not count, a holiday and a day off are not absences, nor is a working day of a teacher with no login (they
- * cannot mark), a day that has passed is Absent, and today is Absent once school has ended (Not yet until then).
+ * cannot mark), a day that has passed is Absent, and today is Absent once school has ended (Not yet until then). A working day inside an approved
+ * leave (`onLeave`, 2026-11-24) is Leave, not Absent, with no mark needed: the person asked and the school said yes.
  */
-export function dayStatus(args: { date: string; today: string; nowMinutes: number; school: SchoolDay; teacher: TeacherLike; record?: Pick<ITeacherAttendance, "lateByMinutes" | "mark"> | null }): TeacherDayStatus {
-  const { date, today, nowMinutes, school, teacher, record } = args;
+export function dayStatus(args: { date: string; today: string; nowMinutes: number; school: SchoolDay; teacher: TeacherLike; record?: Pick<ITeacherAttendance, "lateByMinutes" | "mark"> | null; onLeave?: boolean }): TeacherDayStatus {
+  const { date, today, nowMinutes, school, teacher, record, onLeave } = args;
   if (record) return record.mark === "absent" ? "absent" : record.mark === "leave" ? "leave" : (record.lateByMinutes ?? 0) > 0 ? "late" : "present";
   if (date < startOf(teacher)) return "before";
   // The day they were added to the app, but after school was over: nobody could take it either.
   if (date === indianDay(teacher.createdAt) && date === startOf(teacher) && school.end !== null && indiaMinutes(teacher.createdAt) >= school.end) return "before";
   if (school.holiday) return "holiday";
   if (!school.working || (teacher.offDays ?? []).includes(school.weekday)) return "off";
+  if (onLeave) return "leave";
   if (!teacher.userId) return "no_login";
   if (date < today) return "absent";
   if (date === today) return school.end !== null && nowMinutes >= school.end ? "absent" : "pending";
@@ -138,10 +141,18 @@ export function dayDto(date: string, status: TeacherDayStatus, record: DayRecord
 }
 
 /** One teacher's (or staff member's) row of a sheet: every day of the range, and the counts. `byKey` is keyed "<person id>:<day>". */
-export function rowFor(teacher: TeacherLike & { _id: Types.ObjectId; name: string; employeeCode?: string | null; designation?: string | null }, days: SchoolDay[], byKey: Map<string, DayRecord>, now: { date: string; minutes: number }) {
+export function rowFor(
+  teacher: TeacherLike & { _id: Types.ObjectId; name: string; employeeCode?: string | null; designation?: string | null },
+  days: SchoolDay[],
+  byKey: Map<string, DayRecord>,
+  now: { date: string; minutes: number },
+  /** The days each person is on an approved leave (`StaffLeaveService.leaveDays`): person id -> days. */
+  leaves?: Map<string, Set<string>>
+) {
   const records = days.map((school) => {
     const record = byKey.get(`${teacher._id.toString()}:${school.date}`) ?? null;
-    return dayDto(school.date, dayStatus({ date: school.date, today: now.date, nowMinutes: now.minutes, school, teacher, record }), record);
+    const onLeave = leaves?.get(teacher._id.toString())?.has(school.date) ?? false;
+    return dayDto(school.date, dayStatus({ date: school.date, today: now.date, nowMinutes: now.minutes, school, teacher, record, onLeave }), record);
   });
   return { id: teacher._id.toString(), name: teacher.name, employeeCode: teacher.employeeCode ?? null, designation: teacher.designation ?? null, records, tally: tallyOf(records.map((r) => r.status)) };
 }
@@ -170,7 +181,8 @@ export class TeacherAttendanceService {
     const date = query.date ?? now.date;
     const [school] = await schoolDays(tenantId, date, date);
     const record = await TeacherAttendanceService.recordOf(tenantId, teacher._id, date);
-    const status = dayStatus({ date, today: now.date, nowMinutes: now.minutes, school, teacher, record });
+    const onLeave = (await StaffLeaveService.leaveDays(tenantId, "teacher", [teacher._id], date, date)).get(teacher._id.toString())?.has(date) ?? false;
+    const status = dayStatus({ date, today: now.date, nowMinutes: now.minutes, school, teacher, record, onLeave });
     const isToday = date === now.date;
     const marked = record ? (record.note ? `: ${record.note}` : "") : "";
     const why =
@@ -180,7 +192,9 @@ export class TeacherAttendanceService {
           ? `Marked absent by the school${marked}`
           : !isToday || record
             ? null
-            : status === "holiday"
+            : status === "leave"
+              ? "On approved leave"
+              : status === "holiday"
               ? `Holiday: ${school.holiday}`
               : status === "off"
                 ? "Not a working day"
@@ -299,7 +313,8 @@ export class TeacherAttendanceService {
     const days = query.from > to ? [] : await schoolDays(tenantId, query.from, to);
     const teachers = (await Teacher.find({ tenantId: asId(tenantId), isActive: true }).lean()).filter((t) => !ofClass || ofClass.has(t._id.toString()));
     const byKey = days.length === 0 ? new Map<string, ITeacherAttendance>() : await TeacherAttendanceService.recordsBetween(tenantId, query.from, to);
-    const rows = teachers.sort((a, b) => a.name.localeCompare(b.name)).map((t) => rowFor(t, days, byKey, now));
+    const leaves = await StaffLeaveService.leaveDays(tenantId, "teacher", teachers.map((t) => t._id), query.from, to);
+    const rows = teachers.sort((a, b) => a.name.localeCompare(b.name)).map((t) => rowFor(t, days, byKey, now, leaves));
     const word = searchWords(query.search);
     return {
       from: query.from,
@@ -325,6 +340,7 @@ export class TeacherAttendanceService {
     const to = last > now.date ? now.date : last;
     const days = from > to ? [] : await schoolDays(tenantId, from, to);
     const byKey = days.length === 0 ? new Map<string, ITeacherAttendance>() : await TeacherAttendanceService.recordsBetween(tenantId, from, to, [teacher._id]);
-    return { month, from, to, row: rowFor(teacher, days, byKey, now) };
+    const leaves = await StaffLeaveService.leaveDays(tenantId, "teacher", [teacher._id], from, to);
+    return { month, from, to, row: rowFor(teacher, days, byKey, now, leaves) };
   }
 }

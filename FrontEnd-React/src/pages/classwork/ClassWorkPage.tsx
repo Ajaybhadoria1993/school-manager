@@ -12,6 +12,7 @@ import { TestsPanel } from "../../components/classwork/TestsPanel";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { Card } from "../../components/ui/Card";
 import { PageTabs, type PageTab } from "../../components/ui/PageTabs";
+import { TabPanel } from "../../components/ui/TabPanel";
 import { Skeleton } from "../../components/ui/Skeleton";
 
 type Tab = "attendance" | "diary" | "tests" | "exams";
@@ -78,7 +79,7 @@ export default function ClassWorkPage() {
           )
         }
       />
-      <div role="tabpanel" aria-label={tabs.find((t) => t.id === tab)?.label}>
+      <TabPanel tab={tab ?? tabs[0].id} role="tabpanel" aria-label={tabs.find((t) => t.id === tab)?.label}>
         {tab === "attendance" && (
           <div className="space-y-8">
             {/* The class teacher's week: Not taken, and a click on a cell marks one child on one day. */}
@@ -90,7 +91,7 @@ export default function ClassWorkPage() {
         {tab === "diary" && <DiaryPanel classId={classId} sectionId={sectionId} />}
         {tab === "tests" && <TestsPanel classId={classId} sectionId={sectionId} subjects={testSubjects} />}
         {tab === "exams" && <ExamsPanel classId={classId} sectionId={sectionId} />}
-      </div>
+      </TabPanel>
     </div>
   );
 }

@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
-import { CalendarOff, Check, Clock3, PartyPopper, UserRoundX } from "lucide-react";
+import { ArrowLeftRight, CalendarOff, Check, Clock3, MailCheck, PartyPopper, UserRoundX } from "lucide-react";
+import { useGetStaffLeavesQuery } from "../../redux/api/attendanceApi";
 import { useGetArrangementQuery, useSaveArrangementMutation } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
+import { addDays } from "../../utils/calendar";
 import { todayInIndia } from "../../utils/students";
 import type { ArrangementDay, ArrangementLesson, AwayStatus, FreeTeacher } from "../../types";
+import { StaffLeaveRequests } from "../leaves/StaffLeaveRequests";
 import { StudentFormHeader } from "../students/StudentFormHeader";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -12,11 +15,16 @@ import { Card } from "../ui/Card";
 import { DayStepper } from "../ui/DayStepper";
 import { Field } from "../ui/Field";
 import { PageTabs } from "../ui/PageTabs";
+import { TabPanel } from "../ui/TabPanel";
 import { Select } from "../ui/Select";
 import { Skeleton } from "../ui/Skeleton";
 import { useToast } from "../ui/toast-context";
 
 type Tab = "away" | "not_in";
+type View = "arrangements" | "leave";
+
+/** How many days ahead the arrangement can be looked at and made (a leave is at most 60 days long, asked for from today). */
+const DAYS_AHEAD = 60;
 
 const STATUS: Record<AwayStatus, { label: string; tone: "danger" | "warning" | "neutral" }> = {
   absent: { label: "Absent", tone: "danger" },
@@ -33,15 +41,57 @@ function freeLabel(t: FreeTeacher): string {
 }
 
 /**
- * Timetable > Arrangements (2026-11-22, user: "teacher absent ho to arrangement: alag tab mein kaun nahi aaya, fir kaun kaun se teacher free hain, to
- * us period mein us teacher ko assign kar paye"). One day (today to begin with; the arrows go back to see an earlier day): the teachers marked Absent
- * or On leave (one tab) and, today, the ones with periods who have not checked in yet (another tab). Each teacher's periods of the day, and for each a
- * list of the teachers free then (the ones with the fewest periods first) and **Assign**: the teacher put in is told. Only today's can be changed.
+ * Leave & arrangements (`/school/arrangements`, 2026-11-24, user: "teacher aur staff ki leave yahin aaye, naam related rakho, aur Timetable ke nested
+ * tabs se bahar sidebar mein rakho"): one page of the teachers' and the staff's days away, in two tabs. **Arrangements** is who is away on a day and
+ * who takes their periods; **Leave requests** is what the teachers and the staff sent from their own login (reason, days, status), answered here.
+ * The tab is in the address (`?view=leave`: the bell's link opens it), and the waiting count sits on the tab.
  */
 export function Arrangements() {
-  const today = todayInIndia();
   const [params, setParams] = useSearchParams();
-  const date = params.get("date") && params.get("date")! <= today ? params.get("date")! : today;
+  const view: View = params.get("view") === "leave" ? "leave" : "arrangements";
+  // The same question as the Leave requests tab's first look (Waiting, everyone): asked once, the tab opens from it.
+  const waiting = useGetStaffLeavesQuery({ status: "pending", who: "all" });
+
+  const changeView = (next: View) =>
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      if (next === "leave") p.set("view", "leave");
+      else p.delete("view");
+      return p;
+    });
+
+  return (
+    <div className="space-y-5">
+      <StudentFormHeader title="Leave & arrangements" crumbs={[{ label: "Dashboard", to: "/dashboard" }]} />
+
+      <PageTabs
+        variant="card"
+        label="Leave and arrangements"
+        value={view}
+        onChange={changeView}
+        tabs={[
+          { id: "arrangements", label: "Arrangements", icon: ArrowLeftRight },
+          { id: "leave", label: "Leave requests", icon: MailCheck, count: waiting.currentData?.data.waiting },
+        ]}
+      />
+
+      <TabPanel tab={view}>{view === "leave" ? <StaffLeaveRequests /> : <ArrangementDays />}</TabPanel>
+    </div>
+  );
+}
+
+/**
+ * The Arrangements tab (2026-11-22, user: "teacher absent ho to arrangement: alag tab mein kaun nahi aaya, fir kaun kaun se teacher free hain, to
+ * us period mein us teacher ko assign kar paye"). One day (today to begin with; the arrows go back to see an earlier day, and ahead to a day of an approved
+ * leave): the teachers marked Absent or On leave (one tab) and, today, the ones with periods who have not checked in yet (another tab). Each teacher's
+ * periods of the day, and for each a list of the teachers free then (the ones with the fewest periods first) and **Assign**: the teacher put in is told.
+ * Today and the days to come can be changed; a day that is over is only read.
+ */
+function ArrangementDays() {
+  const today = todayInIndia();
+  const lastDay = addDays(today, DAYS_AHEAD);
+  const [params, setParams] = useSearchParams();
+  const date = params.get("date") && params.get("date")! <= lastDay ? params.get("date")! : today;
   const tab: Tab = params.get("tab") === "not_in" ? "not_in" : "away";
   const res = useGetArrangementQuery(date);
   const day = res.currentData?.data;
@@ -66,11 +116,9 @@ export function Arrangements() {
 
   return (
     <div className="space-y-5">
-      <StudentFormHeader title="Arrangements" crumbs={[{ label: "Dashboard", to: "/dashboard" }]} />
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Field id="arrangement-date" label="Date" quiet hideLabel className="w-full sm:w-auto">
-          <DayStepper id="arrangement-date" label="Date" value={date} max={today} onChange={(d) => change({ date: d })} jump={{ label: "Today", value: today }} />
+          <DayStepper id="arrangement-date" label="Date" value={date} max={lastDay} onChange={(d) => change({ date: d })} jump={{ label: "Today", value: today }} />
         </Field>
         {day && !day.holiday && <CoverCount day={day} />}
       </div>
@@ -85,6 +133,7 @@ export function Arrangements() {
         ]}
       />
 
+      <TabPanel tab={tab}>
       {res.error && !day ? (
         <Card className="flex flex-col items-center gap-3 py-12 text-center">
           <p className="text-sm text-danger">{getApiError(res.error)?.message ?? "Could not load the day."}</p>
@@ -123,7 +172,7 @@ export function Arrangements() {
                 {a.lessons.length > 0 && (
                   <ul aria-label={`Periods of ${a.teacher.name}`} className="divide-y divide-border/70">
                     {a.lessons.map((l) => (
-                      <LessonRow key={`${l.classId}:${l.sectionId}:${l.period}`} date={day.date} canChange={day.today} absentId={a.teacher.id} lesson={l} />
+                      <LessonRow key={`${l.classId}:${l.sectionId}:${l.period}`} date={day.date} canChange={day.editable} absentId={a.teacher.id} lesson={l} />
                     ))}
                   </ul>
                 )}
@@ -132,6 +181,7 @@ export function Arrangements() {
           ))}
         </ul>
       )}
+      </TabPanel>
     </div>
   );
 }
@@ -160,8 +210,8 @@ function Notice({ icon: Icon, text }: { icon: typeof CalendarOff; text: string }
 }
 
 /**
- * One period of an away teacher: when, which class and subject, and who takes it. Today: a list of the free teachers and **Assign** (a teacher already
- * put in shows with **Change** and **Remove**). Another day: only who took it.
+ * One period of an away teacher: when, which class and subject, and who takes it. Today or a day to come: a list of the free teachers and **Assign** (a
+ * teacher already put in shows with **Change** and **Remove**). A day that is over: only who took it.
  */
 function LessonRow({ date, canChange, absentId, lesson }: { date: string; canChange: boolean; absentId: string; lesson: ArrangementLesson }) {
   const { push } = useToast();
