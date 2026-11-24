@@ -8,8 +8,8 @@ import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
 import { todayInIndia } from "../../../utils/students";
-import { addDays } from "../../../utils/calendar";
-import type { ArrangementDay, ArrangementInput, ArrangementLesson, StaffLeave } from "../../../types";
+import { addDays, shortDay } from "../../../utils/calendar";
+import type { ArrangementAttendance, ArrangementDay, ArrangementInput, ArrangementLesson, AttendanceCoverInput, HandBackInput, StaffLeave } from "../../../types";
 import ArrangementsPage from "../Arrangements";
 
 /**
@@ -281,5 +281,189 @@ describe("Leave & arrangements: the leave of the teachers and the staff, on the 
   it("says when no leave is waiting", async () => {
     openPage(DAY, { "GET /attendance/leaves": () => ({ items: [], waiting: 0 }) }, "/school/arrangements?view=leave");
     expect(await screen.findByText("No leave is waiting")).toBeInTheDocument();
+  });
+});
+
+describe("Leave & arrangements: the student attendance of a class whose class teacher is away (2026-11-24)", () => {
+  const unit = (over: Partial<ArrangementAttendance> = {}): ArrangementAttendance => ({
+    classId: "c5",
+    sectionId: null,
+    label: "Class 5",
+    cover: null,
+    options: [
+      { id: "t2", name: "Dev Patel", period: 1 },
+      { id: "t3", name: "Asha Rao", period: 2 },
+    ],
+    ...over,
+  });
+  const withUnit = (u: ArrangementAttendance, over: Partial<ArrangementDay> = {}): ArrangementDay => ({
+    ...DAY,
+    ...over,
+    away: [{ teacher: { id: "t1", name: "Meena Singh" }, status: "absent", lessons: [lesson(1, "08:30", "09:10")], attendance: [u] }],
+  });
+  const coverPuts = (calls: Call[]) => calls.filter((c) => c.method === "PUT" && c.path === "/timetable/arrangements/attendance").map((c) => c.body as AttendanceCoverInput);
+  const answer = (body: unknown): ArrangementDay => {
+    const input = body as AttendanceCoverInput;
+    return withUnit(unit({ cover: input.coverTeacherId ? { id: input.coverTeacherId, name: input.coverTeacherId === "t2" ? "Dev Patel" : "Asha Rao" } : null }));
+  };
+  const attendanceRow = () => screen.getByRole("listitem", { name: "Attendance of Class 5" });
+
+  it("each class the away teacher is class teacher of has a row: the teachers with a period in it that day, the earliest first, and Assign", async () => {
+    const { user } = openPage(withUnit(unit()));
+    await screen.findByRole("region", { name: "Meena Singh" });
+    expect(within(attendanceRow()).getByText("Student attendance")).toBeInTheDocument();
+    expect(within(attendanceRow()).getByText("Class teacher is away")).toBeInTheDocument();
+    expect(within(attendanceRow()).getByRole("button", { name: "Assign" })).toBeDisabled();
+    await user.click(within(attendanceRow()).getByRole("button", { name: /Teacher for the attendance of Class 5$/ }));
+    const options = await screen.findAllByRole("option");
+    expect(options.map((o) => o.textContent)).toEqual(["Dev Patel · Period 1", "Asha Rao · Period 2"]);
+  });
+
+  it("Assign gives the class's attendance of that day to the chosen teacher; it then shows with Change and Remove", async () => {
+    const { calls, user } = openPage(withUnit(unit()), { "PUT /timetable/arrangements/attendance": answer });
+    await screen.findByRole("region", { name: "Meena Singh" });
+    await user.click(within(attendanceRow()).getByRole("button", { name: /Teacher for the attendance of Class 5$/ }));
+    await user.click(await screen.findByRole("option", { name: "Dev Patel · Period 1" }));
+    await user.click(within(attendanceRow()).getByRole("button", { name: "Assign" }));
+    await waitFor(() => expect(coverPuts(calls)).toHaveLength(1));
+    expect(coverPuts(calls)[0]).toEqual({ date: TODAY, classId: "c5", sectionId: null, absentTeacherId: "t1", coverTeacherId: "t2" });
+    expect(await within(attendanceRow()).findByText("Dev Patel")).toBeInTheDocument();
+    expect(within(attendanceRow()).getByRole("button", { name: "Change" })).toBeInTheDocument();
+    expect(within(attendanceRow()).getByRole("button", { name: "Remove" })).toBeInTheDocument();
+  });
+
+  it("Remove takes the cover away", async () => {
+    const { calls, user } = openPage(withUnit(unit({ cover: { id: "t2", name: "Dev Patel" } })), { "PUT /timetable/arrangements/attendance": answer });
+    await screen.findByRole("region", { name: "Meena Singh" });
+    await user.click(within(attendanceRow()).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(coverPuts(calls)).toHaveLength(1));
+    expect(coverPuts(calls)[0]).toMatchObject({ absentTeacherId: "t1", coverTeacherId: null });
+  });
+
+  it("says so when no other teacher has a period in the class that day", async () => {
+    openPage(withUnit(unit({ options: [] })));
+    await screen.findByRole("region", { name: "Meena Singh" });
+    expect(within(attendanceRow()).getByText("No other teacher has a period in this class that day")).toBeInTheDocument();
+    expect(within(attendanceRow()).queryByRole("button", { name: "Assign" })).not.toBeInTheDocument();
+  });
+
+  it("says why the server refused, in the row", async () => {
+    const refuse = () => new Response(JSON.stringify({ success: false, message: "Dev Patel does not take a period of Class 5 that day, or cannot sign in.", code: "TEACHER_NOT_AVAILABLE" }), { status: 409, headers: { "Content-Type": "application/json" } });
+    const { user } = openPage(withUnit(unit()), { "PUT /timetable/arrangements/attendance": refuse });
+    await screen.findByRole("region", { name: "Meena Singh" });
+    await user.click(within(attendanceRow()).getByRole("button", { name: /Teacher for the attendance of Class 5$/ }));
+    await user.click(await screen.findByRole("option", { name: "Dev Patel · Period 1" }));
+    await user.click(within(attendanceRow()).getByRole("button", { name: "Assign" }));
+    expect(await within(attendanceRow()).findByRole("alert")).toHaveTextContent("Dev Patel does not take a period of Class 5 that day, or cannot sign in.");
+  });
+
+  it("a day that is over is only read: who was given it, or that no one was; nothing to change", async () => {
+    const over = { date: "2026-11-02", today: false, editable: false };
+    openPage(withUnit(unit(), over), {}, "/school/arrangements?date=2026-11-02");
+    await screen.findByRole("region", { name: "Meena Singh" });
+    expect(within(attendanceRow()).getByText("No one was given it")).toBeInTheDocument();
+    expect(within(attendanceRow()).queryByRole("button", { name: "Assign" })).not.toBeInTheDocument();
+  });
+
+  it("a teacher who is not a class teacher has no attendance row", async () => {
+    openPage(DAY);
+    await screen.findByRole("region", { name: "Meena Singh" });
+    expect(screen.queryByText("Student attendance")).not.toBeInTheDocument();
+  });
+});
+
+describe("Leave & arrangements: a class teacher on leave for days (2026-11-24)", () => {
+  const unit = (over: Partial<ArrangementAttendance> = {}): ArrangementAttendance => ({
+    classId: "c5",
+    sectionId: null,
+    label: "Class 5",
+    cover: null,
+    leaveUntil: addDays(TODAY, 2),
+    options: [{ id: "t2", name: "Dev Patel", period: 1 }],
+    ...over,
+  });
+  const dayOf = (u: ArrangementAttendance): ArrangementDay => ({ ...DAY, away: [{ teacher: { id: "t1", name: "Meena Singh" }, status: "leave", lessons: [], attendance: [u] }] });
+  const row = () => screen.getByRole("listitem", { name: "Attendance of Class 5" });
+
+  it("says until when her leave runs, so an Assign is known to cover it", async () => {
+    openPage(dayOf(unit()));
+    await screen.findByRole("region", { name: "Meena Singh" });
+    expect(within(row()).getByText(`Class teacher is on leave till ${shortDay(addDays(TODAY, 2))}`)).toBeInTheDocument();
+  });
+
+  it("a cover that runs on shows the last day on its chip", async () => {
+    openPage(dayOf(unit({ cover: { id: "t2", name: "Dev Patel", until: addDays(TODAY, 2) } })));
+    await screen.findByRole("region", { name: "Meena Singh" });
+    expect(within(row()).getByText("Dev Patel")).toBeInTheDocument();
+    expect(within(row()).getByText(`· till ${shortDay(addDays(TODAY, 2))}`)).toBeInTheDocument();
+  });
+
+  it("a one-day absence says the class teacher is away, with no end day", async () => {
+    openPage(dayOf(unit({ leaveUntil: null })));
+    await screen.findByRole("region", { name: "Meena Singh" });
+    expect(within(row()).getByText("Class teacher is away")).toBeInTheDocument();
+  });
+
+  it("the toast says the teacher takes it till the last day of the leave", async () => {
+    const answer = (body: unknown): ArrangementDay => dayOf(unit({ cover: { id: (body as AttendanceCoverInput).coverTeacherId!, name: "Dev Patel", until: addDays(TODAY, 2) } }));
+    const { user } = openPage(dayOf(unit()), { "PUT /timetable/arrangements/attendance": answer });
+    await screen.findByRole("region", { name: "Meena Singh" });
+    await user.click(within(row()).getByRole("button", { name: /Teacher for the attendance of Class 5$/ }));
+    await user.click(await screen.findByRole("option", { name: "Dev Patel · Period 1" }));
+    await user.click(within(row()).getByRole("button", { name: "Assign" }));
+    expect(await screen.findByText(`Dev Patel takes the attendance of Class 5 till ${shortDay(addDays(TODAY, 2))}`)).toBeInTheDocument();
+  });
+});
+
+describe("Leave & arrangements: a teacher who was away has come (2026-11-24)", () => {
+  const KIRAN = { id: "t5", name: "Kiran Rao" };
+  const arrivedDay = (over: Partial<ArrangementLesson> = {}): ArrangementDay => ({
+    ...DAY,
+    away: [{ teacher: { id: "t1", name: "Meena Singh" }, status: "arrived", arrivedAt: "09:00", lessons: [lesson(1, "08:30", "09:10", { substitute: KIRAN, free: [], taken: [], canTakeBack: true, ...over })], attendance: [] }],
+  });
+  const handPosts = (calls: Call[]) => calls.filter((c) => c.method === "POST" && c.path === "/timetable/arrangements/hand-back").map((c) => c.body as HandBackInput);
+  const handedBack = (): ArrangementDay =>
+    arrivedDay({
+      canTakeBack: false,
+      taken: [
+        { name: "Kiran Rao", minutes: 30 },
+        { name: "Meena Singh", minutes: 10 },
+      ],
+    });
+
+  it("her card stays with the period that had a substitute: Arrived, the time she came, and nothing to change but the rest of the period", async () => {
+    openPage(arrivedDay());
+    const meena = await screen.findByRole("region", { name: "Meena Singh" });
+    expect(within(meena).getByText("Arrived 09:00")).toBeInTheDocument();
+    expect(within(row("Class 5, Period 1")).getByText("Kiran Rao")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Assign" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Change" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
+    expect(within(row("Class 5, Period 1")).getByRole("button", { name: "Meena Singh takes the rest" })).toBeInTheDocument();
+  });
+
+  it("Meena takes the rest asks the server once and then shows how long each had the class", async () => {
+    const { calls, user } = openPage(arrivedDay(), { "POST /timetable/arrangements/hand-back": () => handedBack() });
+    await screen.findByRole("region", { name: "Meena Singh" });
+    await user.click(within(row("Class 5, Period 1")).getByRole("button", { name: "Meena Singh takes the rest" }));
+    await waitFor(() => expect(handPosts(calls)).toHaveLength(1));
+    expect(handPosts(calls)[0]).toEqual({ date: TODAY, classId: "c5", sectionId: null, period: 1, absentTeacherId: "t1" });
+    expect(await within(row("Class 5, Period 1")).findByText("Kiran Rao 30 min · Meena Singh 10 min")).toBeInTheDocument();
+    expect(within(row("Class 5, Period 1")).queryByRole("button", { name: "Meena Singh takes the rest" })).not.toBeInTheDocument();
+  });
+
+  it("a period that is over shows who took all of it and has no button", async () => {
+    openPage(arrivedDay({ canTakeBack: false, taken: [{ name: "Kiran Rao", minutes: 40 }] }));
+    await screen.findByRole("region", { name: "Meena Singh" });
+    expect(within(row("Class 5, Period 1")).getByText("Kiran Rao 40 min")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /takes the rest/ })).not.toBeInTheDocument();
+  });
+
+  it("says why the server refused, in the period's row", async () => {
+    const refuse = () => new Response(JSON.stringify({ success: false, message: "This period is over, not begun, or already handed back.", code: "NOT_IN_PROGRESS" }), { status: 409, headers: { "Content-Type": "application/json" } });
+    const { user } = openPage(arrivedDay(), { "POST /timetable/arrangements/hand-back": refuse });
+    await screen.findByRole("region", { name: "Meena Singh" });
+    await user.click(within(row("Class 5, Period 1")).getByRole("button", { name: "Meena Singh takes the rest" }));
+    expect(await within(row("Class 5, Period 1")).findByRole("alert")).toHaveTextContent("This period is over, not begun, or already handed back.");
   });
 });

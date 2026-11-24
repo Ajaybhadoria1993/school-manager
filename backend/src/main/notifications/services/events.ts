@@ -417,11 +417,47 @@ export const Notify = {
   },
 
   /** A teacher was put in for an absent teacher's lesson on a day, or taken off it: that teacher hears it. */
-  substitute(tenantId: string, actorId: string, change: "added" | "removed", facts: { teacherId: string; date: string; today: boolean; label: string; period: number; hours: string; subjectName: string; absentName: string }) {
+  substitute(tenantId: string, actorId: string, change: "added" | "removed", facts: { teacherId: string; date: string; today: boolean; label: string; period: number; hours: string; subjectName: string; absentName: string; /** The teacher who was away has come (2026-11-24). */ back?: boolean }) {
     NotificationService.later(tenantId, actorId, async () => {
       const when = facts.today ? "today" : `on ${shortDay(facts.date)}`;
       const title = change === "added" ? `Arrangement ${when}: ${facts.label}, Period ${facts.period}` : `Arrangement taken off ${when}: ${facts.label}, Period ${facts.period}`;
-      return [{ kind: "timetable.substitute" as const, title, body: joined(facts.hours, facts.subjectName, `in place of ${facts.absentName}`), link: "/dashboard", to: await Audience.teacherLogins(tenantId, [facts.teacherId]) }];
+      return [{ kind: "timetable.substitute" as const, title, body: joined(facts.hours, facts.subjectName, facts.back ? `${facts.absentName} is back` : `in place of ${facts.absentName}`), link: "/dashboard", to: await Audience.teacherLogins(tenantId, [facts.teacherId]) }];
+    });
+  },
+
+  /**
+   * The teacher who was away came while the substitute was taking a period and took the rest of it (2026-11-24, user: "dikhe bhi ki kis teacher ne kitne min class li"):
+   * the substitute hears who took over and how long they had the class.
+   */
+  substituteHandedBack(tenantId: string, actorId: string, facts: { teacherId: string; label: string; period: number; absentName: string; tookMinutes: number; ofMinutes: number }) {
+    NotificationService.later(tenantId, actorId, async () => [
+      {
+        kind: "timetable.substitute" as const,
+        title: `${facts.absentName} took over ${facts.label}, Period ${facts.period}`,
+        body: joined(`You had the class for ${facts.tookMinutes} of ${facts.ofMinutes} min`),
+        link: "/dashboard",
+        to: await Audience.teacherLogins(tenantId, [facts.teacherId]),
+      },
+    ]);
+  },
+
+  /**
+   * A teacher was given the student attendance of a class on a day its class teacher is away (2026-11-24), or had it taken off: that teacher hears it.
+   * The bell opens the class's Attendance tab (a cover can take that day's attendance there and nothing else of the class).
+   */
+  attendanceCover(tenantId: string, actorId: string, change: "added" | "removed", facts: { teacherId: string; date: string; /** The last day, when it runs on through a leave (2026-11-24: "jab tak leave par hai"). */ till: string | null; today: boolean; unit: Unit; absentName: string; /** The class teacher has come (2026-11-24). */ back?: boolean }) {
+    NotificationService.later(tenantId, actorId, async () => {
+      const when = facts.till ? `from ${shortDay(facts.date)} to ${shortDay(facts.till)}` : facts.today ? "today" : `on ${shortDay(facts.date)}`;
+      const title = change === "added" ? `You take the attendance of ${facts.unit.label} ${when}` : `Attendance of ${facts.unit.label} taken off ${when}`;
+      return [
+        {
+          kind: "timetable.substitute" as const,
+          title,
+          body: joined(facts.back ? `${facts.absentName}, the class teacher, is back` : `in place of ${facts.absentName}, the class teacher`),
+          link: change === "added" ? classWorkLink(facts.unit, "attendance") : "/dashboard",
+          to: await Audience.teacherLogins(tenantId, [facts.teacherId]),
+        },
+      ];
     });
   },
 

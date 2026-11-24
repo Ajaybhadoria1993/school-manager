@@ -363,7 +363,7 @@ export interface SpecialDayInput {
 }
 
 /** Why a teacher is on the arrangement page: marked Absent or Leave, or (today) not checked in yet. */
-export type AwayStatus = "absent" | "leave" | "not_in";
+export type AwayStatus = "absent" | "leave" | "not_in" | "arrived";
 
 export interface FreeTeacher {
   id: string;
@@ -387,6 +387,22 @@ export interface ArrangementLesson {
   subjectName: string;
   substitute: { id: string; name: string } | null;
   free: FreeTeacher[];
+  /** When the teacher who was away has come (2026-11-24): who had the class and for how many minutes; empty while the period is going on. Missing from an older server. */
+  taken?: { name: string; minutes: number }[];
+  /** The teacher has come while the substitute is taking this period: the school may let her take the rest. Missing from an older server. */
+  canTakeBack?: boolean;
+}
+
+/** A class the away teacher is the class teacher of (2026-11-24): who takes its student attendance that day, and who can (a teacher with a period in it that day, the earliest first). */
+export interface ArrangementAttendance {
+  classId: string;
+  sectionId: string | null;
+  label: string;
+  /** Who takes it; `until` is the last day when it runs on through the class teacher's leave (2026-11-24); null or missing: that day only. */
+  cover: { id: string; name: string; until?: string | null } | null;
+  /** The last day of her approved leave, when it goes on beyond this day (an Assign here covers up to it); null or missing otherwise. */
+  leaveUntil?: string | null;
+  options: { id: string; name: string; period: number }[];
 }
 
 export interface ArrangementDay {
@@ -396,7 +412,27 @@ export interface ArrangementDay {
   /** Today or a day to come: the arrangement can be made; a day that is over is only read. */
   editable: boolean;
   holiday: string | null;
-  away: { teacher: { id: string; name: string }; status: AwayStatus; lessons: ArrangementLesson[] }[];
+  /** `attendance`: the classes the teacher is the class teacher of; missing from an older server. */
+  /** `arrived` (2026-11-24): she came after a substitute was put in; `arrivedAt` is when ("09:35"). */
+  away: { teacher: { id: string; name: string }; status: AwayStatus; arrivedAt?: string | null; lessons: ArrangementLesson[]; attendance?: ArrangementAttendance[] }[];
+}
+
+/** The teacher who was away takes the rest of a period back from the substitute (2026-11-24). */
+export interface HandBackInput {
+  date: string;
+  classId: string;
+  sectionId: string | null;
+  period: number;
+  absentTeacherId: string;
+}
+
+/** Who takes a class's student attendance on a day its class teacher is away (`coverTeacherId` null takes it away). */
+export interface AttendanceCoverInput {
+  date: string;
+  classId: string;
+  sectionId: string | null;
+  absentTeacherId: string;
+  coverTeacherId: string | null;
 }
 
 export interface ArrangementInput {

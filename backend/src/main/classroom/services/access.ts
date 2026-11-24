@@ -1,6 +1,8 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
+import { indiaNow } from "../../../utils/clock";
+import { AttendanceCover } from "../../timetable/models/AttendanceCover";
 import { resolveUnit } from "../../timetable/services/unit";
 import { ClassTeacher } from "../../staff/models/ClassTeacher";
 import { Teacher } from "../../staff/models/Teacher";
@@ -69,19 +71,31 @@ export async function teachingUnits(tenantId: string, teacherId: Types.ObjectId)
   return rows.map((r) => ({ classId: r.classId, sectionId: r.sectionId ?? null, subjectId: r.subjectId }));
 }
 
+/** The classes whose attendance this teacher was given for today (its class teacher is away; 2026-11-24). */
+export async function coveredToday(tenantId: string, teacherId: Types.ObjectId): Promise<Unit[]> {
+  const rows = await AttendanceCover.find({ tenantId: new Types.ObjectId(tenantId), coverTeacherId: teacherId, date: indiaNow().date }).select("classId sectionId").lean();
+  return rows.map((r) => ({ classId: r.classId, sectionId: r.sectionId ?? null }));
+}
+
 /**
  * A teacher's own classes (their home, docs/parent-teacher-flow.md): the ones they are the class teacher of and the ones they teach a
- * subject in, each with those subjects, in the school's class order.
+ * subject in, each with those subjects, in the school's class order. A class whose attendance they were given for today (its class teacher is
+ * away) is there too, with `coversToday`.
  */
 export async function myClasses(tenantId: string, teacherId: Types.ObjectId) {
-  const [heads, teaching] = await Promise.all([classTeacherUnits(tenantId, teacherId), teachingUnits(tenantId, teacherId)]);
+  const [heads, teaching, covers] = await Promise.all([classTeacherUnits(tenantId, teacherId), teachingUnits(tenantId, teacherId), coveredToday(tenantId, teacherId)]);
   const keyOf = (u: Unit) => `${u.classId.toString()}:${u.sectionId?.toString() ?? ""}`;
-  const units = new Map<string, { unit: Unit; isClassTeacher: boolean; subjectIds: Types.ObjectId[] }>();
-  for (const u of heads) units.set(keyOf(u), { unit: u, isClassTeacher: true, subjectIds: [] });
+  const units = new Map<string, { unit: Unit; isClassTeacher: boolean; coversToday: boolean; subjectIds: Types.ObjectId[] }>();
+  for (const u of heads) units.set(keyOf(u), { unit: u, isClassTeacher: true, coversToday: false, subjectIds: [] });
   for (const t of teaching) {
-    const entry = units.get(keyOf(t)) ?? { unit: { classId: t.classId, sectionId: t.sectionId }, isClassTeacher: false, subjectIds: [] };
+    const entry = units.get(keyOf(t)) ?? { unit: { classId: t.classId, sectionId: t.sectionId }, isClassTeacher: false, coversToday: false, subjectIds: [] };
     entry.subjectIds.push(t.subjectId);
     units.set(keyOf(t), entry);
+  }
+  for (const c of covers) {
+    const entry = units.get(keyOf(c)) ?? { unit: c, isClassTeacher: false, coversToday: false, subjectIds: [] };
+    entry.coversToday = true;
+    units.set(keyOf(c), entry);
   }
   if (units.size === 0) return [];
   const school = new Types.ObjectId(tenantId);
@@ -97,6 +111,7 @@ export async function myClasses(tenantId: string, teacherId: Types.ObjectId) {
     sectionId: d.ref.sectionId,
     label: d.ref.label,
     isClassTeacher: d.entry.isClassTeacher,
+    coversToday: d.entry.coversToday,
     subjects: d.entry.subjectIds.map((id) => ({ id: id.toString(), name: subjectName.get(id.toString()) ?? "A subject" })).sort((a, b) => a.name.localeCompare(b.name)),
   }));
 }

@@ -9,6 +9,7 @@ import { Notify } from "../../notifications/services/events";
 import { ClassTeacher } from "../../staff/models/ClassTeacher";
 import { Teacher } from "../../staff/models/Teacher";
 import { Allotment } from "../../subjects/models/Allotment";
+import { ArrangementService } from "../../timetable/services/arrangement.service";
 import { clockToMinutes, minutesToClock } from "../../timetable/time";
 import { User } from "../../users/models/User";
 import type { TeacherDayStatus } from "../constants";
@@ -228,7 +229,10 @@ export class TeacherAttendanceService {
     );
     // Two taps at the same moment: the one that did not make the mark is told it was already there.
     const alreadyMarked = made.lastErrorObject?.updatedExisting === true;
-    if (!alreadyMarked) void TeacherAttendanceService.tellTheSchool(tenantId, now.date, teacher._id.toString(), userId);
+    if (!alreadyMarked) {
+      void TeacherAttendanceService.tellTheSchool(tenantId, now.date, teacher._id.toString(), userId);
+      await TeacherAttendanceService.cancelWhatWasArranged(tenantId, userId, teacher._id.toString(), now.date, now.minutes);
+    }
     return { ...(await TeacherAttendanceService.myDay(tenantId, userId, {})), alreadyMarked };
   }
 
@@ -268,7 +272,22 @@ export class TeacherAttendanceService {
     const dto = dayDto(input.date, dayStatus({ date: input.date, today: now.date, nowMinutes: now.minutes, school, teacher, record: saved }), saved as ITeacherAttendance);
     Notify.teacherAttendanceChanged(tenantId, actor.userId, { teacherId: teacher._id.toString(), date: input.date, status: input.status, note, by: by.name });
     void TeacherAttendanceService.tellTheSchool(tenantId, input.date, teacher._id.toString(), actor.userId);
+    if (input.status === "present") {
+      await TeacherAttendanceService.cancelWhatWasArranged(tenantId, actor.userId, teacher._id.toString(), input.date, checkedInAt ? indiaMinutes(checkedInAt) : now.minutes);
+    }
     return dto;
+  }
+
+  /**
+   * A teacher is present: what the school arranged for her today (a substitute for a period that has not begun, her class's attendance given to someone else) is
+   * taken off and the people told (2026-11-24). The mark is made either way: a failure here is only a page the school corrects by hand.
+   */
+  private static async cancelWhatWasArranged(tenantId: string, actorId: string, teacherId: string, date: string, minutes: number): Promise<void> {
+    try {
+      await ArrangementService.teacherArrived(tenantId, actorId, teacherId, date, minutes);
+    } catch {
+      // See above.
+    }
   }
 
   /** The people who run the school have the sheet open: it reads again (a quiet push, not a bell line: fifty teachers a day would flood it). */

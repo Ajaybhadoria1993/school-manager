@@ -59,8 +59,8 @@ function staleBy(n: NotificationItem) {
       // The school answered: the person's own list and day read again.
       return [attendanceApi.util.invalidateTags(["MyLeaves", "MyAttendance", "MyStaffAttendance"])];
     case "timetable.substitute":
-      // A teacher was put in (or taken off) for a lesson: the arrangement page reads again when it is open.
-      return [timetableApi.util.invalidateTags(["Arrangement"])];
+      // A teacher was put in (or taken off) for a lesson, or given a class's attendance for the day: the arrangement page and the teacher's classes read again when open.
+      return [timetableApi.util.invalidateTags(["Arrangement"]), classroomApi.util.invalidateTags(["MyClasses"])];
     case "timetable.special_day":
       // A special day was set, changed or taken off: the School timings page reads its list again (when it is open).
       return [timetableApi.util.invalidateTags(["SpecialDays"])];
@@ -93,7 +93,11 @@ export function useLiveNotifications() {
       onUnread: (unread, readId) => dispatch(setUnread(unread, readId)),
       onReconnect: () => dispatch(notificationsApi.util.invalidateTags(["Notifications"])),
       // A teacher marked themselves present: the school's sheet of the teachers (if it is open) reads again.
-      onTeacherAttendance: () => dispatch(attendanceApi.util.invalidateTags(["TeacherAttendance"])),
+      // (A teacher who checked in may have had a substitute taken off: the arrangement page reads again too.)
+      onTeacherAttendance: () => {
+        dispatch(attendanceApi.util.invalidateTags(["TeacherAttendance"]));
+        dispatch(timetableApi.util.invalidateTags(["Arrangement"]));
+      },
       onStaffAttendance: () => dispatch(attendanceApi.util.invalidateTags(["StaffAttendance"])),
     });
   }, [userId, dispatch, push]);

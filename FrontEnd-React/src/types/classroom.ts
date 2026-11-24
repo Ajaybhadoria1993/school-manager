@@ -69,6 +69,8 @@ export interface MyClass {
   sectionId: string | null;
   label: string;
   isClassTeacher: boolean;
+  /** Its class teacher is away today and the school gave this teacher the class's attendance for today (2026-11-24); missing from an older server. */
+  coversToday?: boolean;
   subjects: { id: string; name: string }[];
 }
 

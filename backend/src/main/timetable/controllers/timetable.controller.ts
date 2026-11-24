@@ -3,7 +3,7 @@ import { ApiError } from "../../../utils/ApiError";
 import { asyncHandler } from "../../../utils/asyncHandler";
 import { sendCreated, sendOk } from "../../../utils/response";
 import type { UnitQuery } from "../../subjects/schemas/subjects.schemas";
-import type { ArrangementInput, ArrangementQuery, AutofillBody, ClassDayInput, CopyBody, CreateScheduleInput, OverviewQuery, ReplaceTeacherBody, SaveGridInput, SchoolDayInput, SpecialDayInput, TeacherPeriodsInput, UnitBody, UpdateScheduleInput } from "../schemas/timetable.schemas";
+import type { ArrangementInput, ArrangementQuery, AttendanceCoverInput, HandBackInput, AutofillBody, ClassDayInput, CopyBody, CreateScheduleInput, OverviewQuery, ReplaceTeacherBody, SaveGridInput, SchoolDayInput, SpecialDayInput, TeacherPeriodsInput, UnitBody, UpdateScheduleInput } from "../schemas/timetable.schemas";
 import { ArrangementService } from "../services/arrangement.service";
 import { GridService } from "../services/grid.service";
 import { OverviewService } from "../services/overview.service";
@@ -140,4 +140,12 @@ export const getArrangement = asyncHandler(async (req: Request, res: Response) =
 
 export const saveArrangement = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, await ArrangementService.set(tenantOf(req), req.user!.userId, body<ArrangementInput>(req)), "Arrangement saved");
+});
+
+export const handBackPeriod = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await ArrangementService.handBack(tenantOf(req), req.user!.userId, body<HandBackInput>(req)), "Period handed back");
+});
+
+export const saveAttendanceCover = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await ArrangementService.setAttendanceCover(tenantOf(req), req.user!.userId, body<AttendanceCoverInput>(req)), "Attendance arrangement saved");
 });

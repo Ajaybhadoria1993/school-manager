@@ -3,6 +3,8 @@ import type { TeacherMedium,
   ApiResponse,
   ArrangementDay,
   ArrangementInput,
+  AttendanceCoverInput,
+  HandBackInput,
   AllotmentView,
   AssignTeacherInput,
   AutofillAnswer,
@@ -388,6 +390,30 @@ export const timetableApi = createApi({
         }
       },
     }),
+    /** The teacher who was away has come and takes the rest of a period the substitute is taking; the answer is the day as it is now. */
+    handBackPeriod: build.mutation<ApiResponse<ArrangementDay>, HandBackInput>({
+      query: (body) => ({ url: "/timetable/arrangements/hand-back", method: "POST", body }),
+      async onQueryStarted(input, { dispatch, queryFulfilled }) {
+        try {
+          const { data } = await queryFulfilled;
+          dispatch(timetableApi.util.updateQueryData("getArrangement", input.date, () => data));
+        } catch {
+          // The page shows the reason.
+        }
+      },
+    }),
+    /** The teacher who takes a class's student attendance on a day its class teacher is away (or none); the answer is the day as it is now. */
+    saveAttendanceCover: build.mutation<ApiResponse<ArrangementDay>, AttendanceCoverInput>({
+      query: (body) => ({ url: "/timetable/arrangements/attendance", method: "PUT", body }),
+      async onQueryStarted(input, { dispatch, queryFulfilled }) {
+        try {
+          const { data } = await queryFulfilled;
+          dispatch(timetableApi.util.updateQueryData("getArrangement", input.date, () => data));
+        } catch {
+          // The page shows the reason.
+        }
+      },
+    }),
     /** The set-up at a glance; the class list is filtered by the server (by name, by where the timetable stands). */
     getOverview: build.query<ApiResponse<TimetableOverview>, OverviewQuery>({
       query: (params) => ({ url: "/timetable/overview", params }),
@@ -451,6 +477,8 @@ export const {
   useRemoveSpecialDayMutation,
   useGetArrangementQuery,
   useSaveArrangementMutation,
+  useSaveAttendanceCoverMutation,
+  useHandBackPeriodMutation,
 } = timetableApi;
 
 /** After a bulk upload of teachers: the teacher lists and numbers, and the subjects a file may have added, are read again (the ones on screen only). */

@@ -4,6 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { useCan } from "../../hooks/useCan";
 import { useGetMyClassesQuery } from "../../redux/api/classroomApi";
 import { useGetClassOverviewQuery } from "../../redux/api/studentsApi";
+import { todayInIndia } from "../../utils/students";
 import { StudentAttendance } from "../../components/attendance/StudentAttendance";
 import { AttendancePanel } from "../../components/classwork/AttendancePanel";
 import { DiaryPanel } from "../../components/classwork/DiaryPanel";
@@ -39,14 +40,18 @@ export default function ClassWorkPage() {
   const label = myClass?.label ?? (klass ? (section ? `${klass.name} - ${section.name}` : klass.name) : "Class work");
   // Only the class teacher TAKES attendance (2026-11-17); the school sees it. A teacher who is not the class teacher has no Attendance tab.
   const isClassTeacher = !!myClass?.isClassTeacher;
-  const takesAttendance = runsSchool || isClassTeacher;
+  // A teacher who was given today's attendance of a class whose class teacher is away (2026-11-24) takes that day's sheet: not the week's register, not another day.
+  const coversToday = !isClassTeacher && !!myClass?.coversToday;
+  const takesAttendance = runsSchool || isClassTeacher || coversToday;
+  // Given only today's attendance (they teach nothing in the class): the diary, the tests and the exams of the class are not theirs, so they have no tab.
+  const attendanceOnly = coversToday && (myClass?.subjects.length ?? 0) === 0;
   // The subjects a test may be added for: the teacher's own (every one for the class teacher and the school: the server says which).
   const testSubjects = myClass?.subjects ?? [];
   // Each tab is what the school allowed this person (Permissions): the people who run the school have them all.
   const tabs: PageTab<Tab>[] = [
     ...(takesAttendance && can("attendance.view") ? [{ id: "attendance" as const, label: "Attendance", icon: CalendarCheck2 }] : []),
-    ...(can("classwork.view") ? [{ id: "diary" as const, label: "Diary", icon: BookOpenText }, { id: "tests" as const, label: "Tests", icon: ClipboardList }] : []),
-    ...(can("exams.view") ? [{ id: "exams" as const, label: "Exams", icon: GraduationCap }] : []),
+    ...(!attendanceOnly && can("classwork.view") ? [{ id: "diary" as const, label: "Diary", icon: BookOpenText }, { id: "tests" as const, label: "Tests", icon: ClipboardList }] : []),
+    ...(!attendanceOnly && can("exams.view") ? [{ id: "exams" as const, label: "Exams", icon: GraduationCap }] : []),
   ];
   const asked = params.get("tab") as Tab | null;
   const tab: Tab | undefined = asked && tabs.some((t) => t.id === asked) ? asked : tabs[0]?.id;
@@ -84,8 +89,8 @@ export default function ClassWorkPage() {
           <div className="space-y-8">
             {/* The class teacher's week: Not taken, and a click on a cell marks one child on one day. */}
             {isClassTeacher && <StudentAttendance unit={{ classId, sectionId }} canMark />}
-            {/* The whole day in one Save (the class teacher), or only to look at (the school). */}
-            <AttendancePanel classId={classId} sectionId={sectionId} canMark={isClassTeacher} />
+            {/* The whole day in one Save (the class teacher, or the teacher given today), or only to look at (the school). */}
+            <AttendancePanel classId={classId} sectionId={sectionId} canMark={isClassTeacher || coversToday} {...(coversToday ? { date: todayInIndia() } : {})} />
           </div>
         )}
         {tab === "diary" && <DiaryPanel classId={classId} sectionId={sectionId} />}

@@ -320,6 +320,29 @@ they study and their timetables can be copied as drafts); print; draft and publi
   on every working day of it and is left out of the free lists, so the arrangement is made ahead; one marked present anyway (they came) is not away.
   Taking the leave back deletes the substitutes put in for those days and tells each ("Arrangement taken off: X is back"). The timetable itself is not changed.
   Leave requests (what teachers and staff send): see `docs/attendance.md` > "Leave of the teachers and the staff".
+* **A teacher who was away comes** (2026-11-24, user: "arrangement ke baad absent teacher aa gaya to wo screen se gayab ho jata hai, substitute ko cancel ka bell nahi jata,
+  wo busy gina jata hai. Teacher aate hi arrangement apne aap cancel ho aur substitute ko bell jaye ... meena beech mein aa jaye to baaki time wo class le, dev free ho, ye
+  optional rahe ... dikhe ki kis teacher ne kitne min class li"). The class waits for a late teacher: nobody is put in on their own. When she checks in, or the school marks her
+  Present (`TeacherAttendanceService` -> `ArrangementService.teacherArrived`): what was arranged for her **today** and **has not begun** (period start later than both her
+  arrival and the clock) is taken off, each substitute gets "Arrangement taken off today: ..., X is back", and the substitute is no longer counted busy then; her class's attendance
+  given to someone else is taken off too unless it was already taken (the cover teacher is told). A period **over** stays (the substitute took it). A period **going on** stays
+  until the school presses **"Meena takes the rest"** (optional; `POST /timetable/arrangements/hand-back`, `Substitution.handedBackAt` = now): from then the substitute is free, gets "Meena
+  took over ..., you had the class for 30 of 40 min", and the lesson shows "Kiran Rao 30 min · Meena Singh 10 min". Left alone, the substitute keeps the period and it shows
+  "Kiran Rao 40 min" once over. Her card stays on the page (status **Arrived**, "Arrived 09:00") with only the periods that had a substitute; nothing more can be arranged for her
+  (409 `ALREADY_ARRIVED`). A correction of a day that is over changes nothing.
+* **A class teacher who is away: her class's student attendance** (2026-11-24, user: "class teacher absent ho to us class ki student attendance koi nahi le sakta ...
+  kisi aur teacher ko assign kar do jo pehla period le"). Only the class teacher takes a class's attendance, so on a day she is away nobody could. Each away teacher who
+  is the class teacher of a class (or section) has, under her periods, a **Student attendance** row for it: a list of the teachers who take a period of that class that day
+  (their own lesson there, or one they were put in for; the earliest period first, so the one with the class when the day begins comes first; they must be there that
+  day and have a login) and **Assign** (Change / Remove once given). The teacher chosen takes that class's attendance **on that day**, and when she is on an approved leave of several days (user: "jab tak teacher leave par hai tab tak dusra teacher hi attendance lega")
+  **on every day of it**: one Assign gives it from that day to the leave's last day (a record for each day; the row says "Class teacher is on leave till 26 Nov" and the chip
+  "Dev Patel · till 26 Nov"; Change and Remove act **from that day on**, the days before stay as they were; the teacher gets one bell for the days). A teacher marked
+  absent for a day (no leave) is covered for that day only. The cover has the day's sheet and its save
+  (`AttendanceCover`, `PUT /timetable/arrangements/attendance`, 409 `TEACHER_NOT_AVAILABLE` / `NOT_AWAY`, 400 for a day that is over). Nothing else of the class is theirs: no
+  register of the week, no other day, no diary or tests (unless they teach a subject there). Their home lists the class with "Takes attendance today" (`coversToday` on
+  `GET /classroom/my-classes`), the class page shows the Attendance tab only, and a bell (`timetable.substitute`) opens it. A class teacher on an approved leave is
+  away on every working day of it even with no period of her own that day. Taking her leave back takes the covers away and tells each teacher. The school still only looks:
+  it never takes a class's attendance.
 * **A year that is over**: Class timetables shows the class's week read only (`ClassWeekView`, "Read only"), no editor; School timings sends
   the person to Class timetables; Arrangements says the year is over (`RunningYearRoute`). The server refuses every change then anyway (`YEAR_READ_ONLY`).
 
@@ -338,7 +361,7 @@ teachers signing in to see or propose changes; parents' and students' views (the
   timing at a time); a new subject from the grid: `gridNewSubject.test.ts`.
 * Backend, the week in one save: `timetable/__tests__/schoolDay.test.ts` (days grouped, replaced not added, the usual name kept, timings of
   some classes left alone, a lesson left without its period refused with nothing changed, boxes named by day, a clash, who may, one school only).
-* Backend, special days and arrangements (2026-11-22): `timetable/__tests__/specialDays.test.ts`, `arrangements.test.ts` (also: the days to come of an approved leave, 2026-11-24), `shiftOthers.test.ts` (`shiftOnly`).
+* Backend, special days and arrangements (2026-11-22): `timetable/__tests__/specialDays.test.ts`, `arrangements.test.ts` (also: the days to come of an approved leave, 2026-11-24), `attendanceCover.test.ts` (the class attendance of an away class teacher, 2026-11-24), `arrival.test.ts` (a teacher who was away comes, take the rest), `shiftOthers.test.ts` (`shiftOnly`).
 * Frontend (`npm test`): `utils/__tests__/timings.test.ts`, `schoolWeek.test.ts`, `timetable.test.ts`; `pages/school/__tests__/Timetable*.test.tsx`, `Arrangements.test.tsx`, `ClassTimetables.test.tsx` (a year that is over);
   `components/timetable/__tests__/ClassSubjectsEditor.test.tsx`.
 * A browser journey (real Chrome, throwaway backend 5001 / app 5174 / database `school_erp_md`) walks the whole flow: timings, subjects,

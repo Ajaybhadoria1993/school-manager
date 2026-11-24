@@ -271,3 +271,23 @@ export const arrangementSchema = z.object({
   substituteTeacherId: objectId.nullable(),
 });
 export type ArrangementInput = z.infer<typeof arrangementSchema>;
+
+/** The teacher who was away has come and takes the rest of a period back from the substitute (2026-11-24). */
+export const handBackSchema = z.object({
+  date: dateText,
+  classId: objectId,
+  sectionId: objectId.nullable().default(null),
+  period: z.number({ invalid_type_error: "Choose the period" }).int().min(1, "Choose the period").max(MAX_PERIODS, "Choose the period"),
+  absentTeacherId: objectId,
+});
+export type HandBackInput = z.infer<typeof handBackSchema>;
+
+/** Who takes a class's student attendance on a day when its class teacher is away (`coverTeacherId` null takes the cover away; 2026-11-24). */
+export const attendanceCoverSchema = z.object({
+  date: dateText,
+  classId: objectId,
+  sectionId: objectId.nullable().default(null),
+  absentTeacherId: objectId,
+  coverTeacherId: objectId.nullable(),
+});
+export type AttendanceCoverInput = z.infer<typeof attendanceCoverSchema>;

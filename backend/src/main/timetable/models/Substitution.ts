@@ -20,6 +20,11 @@ export interface ISubstitution {
   /** The teacher of the lesson, who is away. */
   absentTeacherId: Types.ObjectId;
   substituteTeacherId: Types.ObjectId;
+  /**
+   * Minutes after midnight (India) when the teacher who was away came and took the rest of this period back (2026-11-24, user: "meena beech mein aa jaye to baaki
+   * time wo class le, dev free ho"); null: the substitute had the whole period. The substitute counts as busy only until then.
+   */
+  handedBackAt: number | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,6 +39,7 @@ const substitutionSchema = new Schema<ISubstitution>(
     subjectId: { type: Schema.Types.ObjectId, ref: "Subject", required: true },
     absentTeacherId: { type: Schema.Types.ObjectId, ref: "Teacher", required: true },
     substituteTeacherId: { type: Schema.Types.ObjectId, ref: "Teacher", required: true },
+    handedBackAt: { type: Number, default: null, min: 0, max: 24 * 60 },
   },
   { timestamps: true }
 );

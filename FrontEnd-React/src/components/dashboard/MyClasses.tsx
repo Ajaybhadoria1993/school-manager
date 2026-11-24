@@ -39,6 +39,12 @@ export function MyClasses() {
                         Class teacher
                       </Badge>
                     )}
+                    {c.coversToday && !c.isClassTeacher && (
+                      <Badge tone="warning" className="gap-1">
+                        <UserRoundCheck className="size-3" aria-hidden />
+                        Takes attendance today
+                      </Badge>
+                    )}
                     {c.subjects.map((s) => (
                       <Badge key={s.id}>{s.name}</Badge>
                     ))}

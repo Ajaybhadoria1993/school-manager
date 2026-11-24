@@ -23,6 +23,8 @@ import {
   publishGrid,
   removeDepartmentDay,
   saveArrangement,
+  saveAttendanceCover,
+  handBackPeriod,
   saveClassDay,
   replaceTeacher,
   saveGrid,
@@ -37,6 +39,8 @@ import { TIMETABLE_READERS, TIMETABLE_WRITERS } from "../../constants";
 import {
   arrangementQuerySchema,
   arrangementSchema,
+  attendanceCoverSchema,
+  handBackSchema,
   autofillSchema,
   classDaySchema,
   copySchema,
@@ -96,6 +100,10 @@ router.delete("/special-days/:id", validate(idParamSchema, "params"), specialDay
 // The day's arrangement: who is away, their lessons and the teachers free then; a substitute for a lesson, for that day only (2026-11-22).
 router.get("/arrangements", validate(arrangementQuerySchema, "query"), getArrangement);
 router.put("/arrangements", validate(arrangementSchema), saveArrangement);
+// Who takes a class's student attendance on a day its class teacher is away (2026-11-24).
+router.put("/arrangements/attendance", validate(attendanceCoverSchema), saveAttendanceCover);
+// The teacher who was away has come and takes the rest of a period the substitute is taking (2026-11-24).
+router.post("/arrangements/hand-back", validate(handBackSchema), handBackPeriod);
 
 // A teacher who has left: their classes and lessons go to another teacher.
 router.post("/teachers/:id/replace", validate(idParamSchema, "params"), teacherExists, validate(replaceTeacherSchema), replaceTeacher);

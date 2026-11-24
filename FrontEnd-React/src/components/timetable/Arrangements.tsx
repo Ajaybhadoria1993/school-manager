@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
-import { ArrowLeftRight, CalendarOff, Check, Clock3, MailCheck, PartyPopper, UserRoundX } from "lucide-react";
+import { ArrowLeftRight, CalendarOff, Check, ClipboardCheck, Clock3, MailCheck, PartyPopper, UserRoundCheck, UserRoundX } from "lucide-react";
 import { useGetStaffLeavesQuery } from "../../redux/api/attendanceApi";
-import { useGetArrangementQuery, useSaveArrangementMutation } from "../../redux/api/timetableApi";
+import { useGetArrangementQuery, useHandBackPeriodMutation, useSaveArrangementMutation, useSaveAttendanceCoverMutation } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
-import { addDays } from "../../utils/calendar";
+import { addDays, shortDay } from "../../utils/calendar";
 import { todayInIndia } from "../../utils/students";
-import type { ArrangementDay, ArrangementLesson, AwayStatus, FreeTeacher } from "../../types";
+import type { ArrangementAttendance, ArrangementDay, ArrangementLesson, AwayStatus, FreeTeacher } from "../../types";
 import { StaffLeaveRequests } from "../leaves/StaffLeaveRequests";
 import { StudentFormHeader } from "../students/StudentFormHeader";
 import { Badge } from "../ui/Badge";
@@ -26,7 +26,8 @@ type View = "arrangements" | "leave";
 /** How many days ahead the arrangement can be looked at and made (a leave is at most 60 days long, asked for from today). */
 const DAYS_AHEAD = 60;
 
-const STATUS: Record<AwayStatus, { label: string; tone: "danger" | "warning" | "neutral" }> = {
+const STATUS: Record<AwayStatus, { label: string; tone: "danger" | "warning" | "neutral" | "success" }> = {
+  arrived: { label: "Arrived", tone: "success" },
   absent: { label: "Absent", tone: "danger" },
   leave: { label: "On leave", tone: "warning" },
   not_in: { label: "Not checked in", tone: "neutral" },
@@ -157,22 +158,34 @@ function ArrangementDays() {
               <Card role="region" aria-label={a.teacher.name} className="overflow-hidden">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <span aria-hidden className="flex size-9 items-center justify-center rounded-full bg-danger-soft text-danger">
-                      <UserRoundX className="size-4.5" />
+                    <span aria-hidden className={a.status === "arrived" ? "flex size-9 items-center justify-center rounded-full bg-success-soft text-success" : "flex size-9 items-center justify-center rounded-full bg-danger-soft text-danger"}>
+                      {a.status === "arrived" ? <UserRoundCheck className="size-4.5" /> : <UserRoundX className="size-4.5" />}
                     </span>
                     <div>
                       <p className="text-sm font-bold text-foreground">{a.teacher.name}</p>
                       <p className="text-xs text-foreground-muted">
-                        {a.lessons.length === 0 ? "No periods this day" : `${a.lessons.filter((l) => l.substitute).length} of ${a.lessons.length} ${a.lessons.length === 1 ? "period" : "periods"} arranged`}
+                        {a.status === "arrived"
+                          ? "Came after a substitute was put in"
+                          : a.lessons.length === 0
+                            ? "No periods this day"
+                            : `${a.lessons.filter((l) => l.substitute).length} of ${a.lessons.length} ${a.lessons.length === 1 ? "period" : "periods"} arranged`}
                       </p>
                     </div>
                   </div>
-                  <Badge tone={STATUS[a.status].tone}>{STATUS[a.status].label}</Badge>
+                  <Badge tone={STATUS[a.status].tone}>{a.status === "arrived" && a.arrivedAt ? `Arrived ${a.arrivedAt}` : STATUS[a.status].label}</Badge>
                 </div>
                 {a.lessons.length > 0 && (
                   <ul aria-label={`Periods of ${a.teacher.name}`} className="divide-y divide-border/70">
                     {a.lessons.map((l) => (
-                      <LessonRow key={`${l.classId}:${l.sectionId}:${l.period}`} date={day.date} canChange={day.editable} absentId={a.teacher.id} lesson={l} />
+                      <LessonRow key={`${l.classId}:${l.sectionId}:${l.period}`} date={day.date} canChange={day.editable && a.status !== "arrived"} absentId={a.teacher.id} absentName={a.teacher.name} lesson={l} />
+                    ))}
+                  </ul>
+                )}
+                {/* A class teacher's class has its student attendance to give to someone else that day (2026-11-24). */}
+                {(a.attendance ?? []).length > 0 && (
+                  <ul aria-label={`Student attendance of ${a.teacher.name}`} className="divide-y divide-border/70 border-t border-border bg-surface-muted/40">
+                    {(a.attendance ?? []).map((u) => (
+                      <AttendanceRow key={`${u.classId}:${u.sectionId}`} date={day.date} canChange={day.editable} absentId={a.teacher.id} unit={u} />
                     ))}
                   </ul>
                 )}
@@ -213,9 +226,10 @@ function Notice({ icon: Icon, text }: { icon: typeof CalendarOff; text: string }
  * One period of an away teacher: when, which class and subject, and who takes it. Today or a day to come: a list of the free teachers and **Assign** (a
  * teacher already put in shows with **Change** and **Remove**). A day that is over: only who took it.
  */
-function LessonRow({ date, canChange, absentId, lesson }: { date: string; canChange: boolean; absentId: string; lesson: ArrangementLesson }) {
+function LessonRow({ date, canChange, absentId, absentName, lesson }: { date: string; canChange: boolean; absentId: string; absentName: string; lesson: ArrangementLesson }) {
   const { push } = useToast();
   const [save, { isLoading }] = useSaveArrangementMutation();
+  const [handBack, { isLoading: handingBack }] = useHandBackPeriodMutation();
   const [choosing, setChoosing] = useState(false);
   const [choice, setChoice] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -233,7 +247,19 @@ function LessonRow({ date, canChange, absentId, lesson }: { date: string; canCha
     }
   }
 
+  /** The teacher who was away has come while the substitute is taking the period, and takes the rest of it: the substitute is free from now. */
+  async function takeRest() {
+    setError(null);
+    try {
+      await handBack({ date, classId: lesson.classId, sectionId: lesson.sectionId, period: lesson.period, absentTeacherId: absentId }).unwrap();
+      push("success", `${absentName} takes the rest of ${name}`);
+    } catch (err) {
+      setError(getApiError(err)?.message ?? "Could not save. Please try again.");
+    }
+  }
+
   const picking = canChange && (!lesson.substitute || choosing);
+  const taken = lesson.taken ?? [];
   return (
     <li aria-label={name} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
       <div className="flex min-w-[9rem] items-center gap-2">
@@ -253,6 +279,12 @@ function LessonRow({ date, canChange, absentId, lesson }: { date: string; canCha
             <Check className="size-3.5" aria-hidden />
             {lesson.substitute.name}
           </span>
+        )}
+        {taken.length > 0 && <span className="text-xs font-semibold text-foreground-muted">{taken.map((t) => `${t.name} ${t.minutes} min`).join(" · ")}</span>}
+        {lesson.canTakeBack && (
+          <Button size="sm" variant="outline" onClick={() => void takeRest()} disabled={handingBack}>
+            {absentName} takes the rest
+          </Button>
         )}
         {!canChange && !lesson.substitute && <span className="text-xs text-foreground-muted">No one was put in</span>}
         {canChange && lesson.substitute && !choosing && (
@@ -277,6 +309,102 @@ function LessonRow({ date, canChange, absentId, lesson }: { date: string; canCha
                 value={choice}
                 onChange={setChoice}
                 options={lesson.free.map((t) => ({ value: t.id, label: freeLabel(t) }))}
+              />
+              <Button size="sm" onClick={() => void send(choice)} disabled={!choice || isLoading}>
+                Assign
+              </Button>
+              {choosing && (
+                <Button size="sm" variant="ghost" onClick={() => setChoosing(false)} disabled={isLoading}>
+                  Cancel
+                </Button>
+              )}
+            </>
+          ))}
+      </div>
+      {error && (
+        <p role="alert" className="basis-full text-xs font-medium text-danger">
+          {error}
+        </p>
+      )}
+    </li>
+  );
+}
+
+/**
+ * The student attendance of a class whose class teacher is away (2026-11-24, user: "class teacher absent ho to attendance kisi aur teacher ko assign kar do jo
+ * pehla period le"): who takes it that day, or a list of the teachers who take a period of that class that day (the earliest period first) and **Assign**;
+ * once given it shows with **Change** and **Remove**. The teacher chosen takes that class's attendance on that day, and when the class teacher is on a leave of
+ * several days (2026-11-24: "jab tak leave par hai") on every day of it, from this day to its last ("Class teacher is on leave till 26 Nov", "Dev Patel · till 26 Nov");
+ * Change and Remove act from this day on. The teacher is told.
+ */
+function AttendanceRow({ date, canChange, absentId, unit }: { date: string; canChange: boolean; absentId: string; unit: ArrangementAttendance }) {
+  const { push } = useToast();
+  const [save, { isLoading }] = useSaveAttendanceCoverMutation();
+  const [choosing, setChoosing] = useState(false);
+  const [choice, setChoice] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function send(coverTeacherId: string | null) {
+    setError(null);
+    try {
+      await save({ date, classId: unit.classId, sectionId: unit.sectionId, absentTeacherId: absentId, coverTeacherId }).unwrap();
+      push(
+        "success",
+        coverTeacherId
+          ? `${unit.options.find((o) => o.id === coverTeacherId)?.name ?? "The teacher"} takes the attendance of ${unit.label}${unit.leaveUntil ? ` till ${shortDay(unit.leaveUntil)}` : ""}`
+          : `${unit.label}: attendance taken off`
+      );
+      setChoosing(false);
+      setChoice("");
+    } catch (err) {
+      setError(getApiError(err)?.message ?? "Could not save. Please try again.");
+    }
+  }
+
+  const picking = canChange && (!unit.cover || choosing);
+  return (
+    <li aria-label={`Attendance of ${unit.label}`} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+      <div className="flex min-w-[9rem] items-center gap-2">
+        <span className="flex size-7 items-center justify-center rounded-lg bg-primary-soft text-primary-deep">
+          <ClipboardCheck className="size-4" aria-hidden />
+        </span>
+        <span className="text-xs font-bold text-foreground">Student attendance</span>
+      </div>
+      <div className="min-w-[10rem] flex-1">
+        <p className="text-sm font-semibold text-foreground">{unit.label}</p>
+        <p className="text-xs text-foreground-muted">{unit.leaveUntil ? `Class teacher is on leave till ${shortDay(unit.leaveUntil)}` : "Class teacher is away"}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {unit.cover && !choosing && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-3 py-1 text-xs font-bold text-success ring-1 ring-inset ring-success/30">
+            <Check className="size-3.5" aria-hidden />
+            {unit.cover.name}
+            {unit.cover.until && <span className="font-semibold opacity-80">· till {shortDay(unit.cover.until)}</span>}
+          </span>
+        )}
+        {!canChange && !unit.cover && <span className="text-xs text-foreground-muted">No one was given it</span>}
+        {canChange && unit.cover && !choosing && (
+          <>
+            <Button size="sm" variant="outline" onClick={() => setChoosing(true)} disabled={isLoading}>
+              Change
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => void send(null)} disabled={isLoading}>
+              Remove
+            </Button>
+          </>
+        )}
+        {picking &&
+          (unit.options.length === 0 ? (
+            <span className="text-xs font-medium text-warning">No other teacher has a period in this class that day</span>
+          ) : (
+            <>
+              <Select
+                aria-label={`Teacher for the attendance of ${unit.label}`}
+                className="w-64"
+                placeholder="Choose a teacher"
+                value={choice}
+                onChange={setChoice}
+                options={unit.options.map((o) => ({ value: o.id, label: `${o.name} · Period ${o.period}` }))}
               />
               <Button size="sm" onClick={() => void send(choice)} disabled={!choice || isLoading}>
                 Assign

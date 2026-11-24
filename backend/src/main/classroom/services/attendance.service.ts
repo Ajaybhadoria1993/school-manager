@@ -9,6 +9,7 @@ import { Enrolment } from "../../students/models/Enrolment";
 import { Student } from "../../students/models/Student";
 import { todayInIndia } from "../../students/schemas/students.schemas";
 import { fullName } from "../../students/services/shared";
+import { AttendanceCover } from "../../timetable/models/AttendanceCover";
 import { resolveUnit } from "../../timetable/services/unit";
 import { Notify } from "../../notifications/services/events";
 import { User } from "../../users/models/User";
@@ -61,18 +62,44 @@ async function isClassTeacherOf(tenantId: string, caller: Caller, unit: { classI
   return units.some((u) => sameUnit(u, unit));
 }
 
-/** Who may LOOK at a class's attendance: its class teacher, and the people who run the school (and any staff the school allowed to see it). */
-async function assertSees(tenantId: string, caller: Caller, unit: { classId: string; sectionId: string | null }) {
-  if (worksOnAllClasses(caller.role)) return;
-  if (!(await isClassTeacherOf(tenantId, caller, unit))) throw ApiError.forbidden("Only the class teacher of this class or the school sees its attendance.", "NOT_CLASS_TEACHER");
+/**
+ * Whether this teacher was given the class's attendance for that day (2026-11-24: its class teacher is away and the school named them in Leave & arrangements).
+ * It is that day only, and only the day's sheet: nothing else of the class.
+ */
+async function coversOn(tenantId: string, caller: Caller, unit: { classId: string; sectionId: string | null }, date: string | undefined) {
+  if (caller.role !== "teacher" || !date) return false;
+  const teacher = await teacherOfUser(tenantId, caller.userId);
+  if (!teacher) return false;
+  const found = await AttendanceCover.exists({
+    tenantId: new Types.ObjectId(tenantId),
+    date,
+    classId: new Types.ObjectId(unit.classId),
+    sectionId: unit.sectionId ? new Types.ObjectId(unit.sectionId) : null,
+    coverTeacherId: teacher._id,
+  });
+  return !!found;
 }
 
 /**
- * Who TAKES a class's attendance (2026-11-17): only its class teacher. The school (admin, principal, any staff) looks and never marks, whatever
- * permission it was given; a teacher who teaches only a subject there does not mark either.
+ * Who may LOOK at a class's attendance: its class teacher, the teacher who was given that `date` (when its class teacher is away), and the people who run the
+ * school (and any staff the school allowed to see it).
  */
-async function assertMarks(tenantId: string, caller: Caller, unit: { classId: string; sectionId: string | null }) {
-  if (!(await isClassTeacherOf(tenantId, caller, unit))) throw ApiError.forbidden("Only the class teacher of this class takes its attendance.", "NOT_CLASS_TEACHER");
+async function assertSees(tenantId: string, caller: Caller, unit: { classId: string; sectionId: string | null }, date?: string) {
+  if (worksOnAllClasses(caller.role)) return;
+  if (await isClassTeacherOf(tenantId, caller, unit)) return;
+  if (await coversOn(tenantId, caller, unit, date)) return;
+  throw ApiError.forbidden("Only the class teacher of this class or the school sees its attendance.", "NOT_CLASS_TEACHER");
+}
+
+/**
+ * Who TAKES a class's attendance (2026-11-17): only its class teacher, and on a day she is away the one teacher the school gave that day to (2026-11-24). The
+ * school (admin, principal, any staff) looks and never marks, whatever permission it was given; a teacher who teaches only a subject there does not mark either.
+ */
+async function assertMarks(tenantId: string, caller: Caller, unit: { classId: string; sectionId: string | null }, date: string) {
+  if (await isClassTeacherOf(tenantId, caller, unit)) return;
+  // Its class teacher is away that day and the school gave the day to this teacher (2026-11-24).
+  if (await coversOn(tenantId, caller, unit, date)) return;
+  throw ApiError.forbidden("Only the class teacher of this class takes its attendance.", "NOT_CLASS_TEACHER");
 }
 
 /**
@@ -82,7 +109,7 @@ async function assertMarks(tenantId: string, caller: Caller, unit: { classId: st
 export class AttendanceService {
   static async sheet(tenantId: string, caller: Caller, query: AttendanceQuery): Promise<AttendanceSheetDto> {
     const unit = await resolveUnit(tenantId, query.classId, query.sectionId === "none" ? null : query.sectionId);
-    await assertSees(tenantId, caller, unit);
+    await assertSees(tenantId, caller, unit, query.date);
     const school = new Types.ObjectId(tenantId);
     const day = fromDay(query.date);
     const [children, holidays, saved, post] = await Promise.all([
@@ -139,7 +166,7 @@ export class AttendanceService {
 
   static async save(tenantId: string, caller: Caller, input: SaveAttendanceInput): Promise<AttendanceSheetDto> {
     const unit = await resolveUnit(tenantId, input.classId, input.sectionId ?? null);
-    await assertMarks(tenantId, caller, unit);
+    await assertMarks(tenantId, caller, unit, input.date);
     if (input.date > todayInIndia()) {
       throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "date", message: "Attendance cannot be taken for a day still to come" }]);
     }
@@ -192,7 +219,7 @@ export class AttendanceService {
     const seat = yearId ? await Enrolment.findOne({ tenantId: school, studentId, academicYearId: yearId, status: "active" }).select("classId sectionId").lean() : null;
     if (!seat) throw ApiError.notFound("That child is not in one of your classes.", "STUDENT_NOT_FOUND");
     const unit = await resolveUnit(tenantId, seat.classId.toString(), seat.sectionId ? seat.sectionId.toString() : null);
-    await assertMarks(tenantId, caller, unit);
+    await assertMarks(tenantId, caller, unit, input.date);
     if (input.date > todayInIndia()) {
       throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "date", message: "Attendance cannot be taken for a day still to come" }]);
     }

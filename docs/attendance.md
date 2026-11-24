@@ -175,7 +175,8 @@ teacher or a staff member applies from their own login; the school answers. Mode
   (optional). 403 `OWN_LEAVE` (nobody answers their own leave: the principal's is for the school admin), 409 `LEAVE_ANSWERED`, 409 `LEAVE_OVER` (its days are over).
 * **Attendance reads it**: a working day inside an approved leave is **Leave**, not Absent, with no mark needed (`dayStatus(... onLeave)`; sheets, "my day" with the reason
   "On approved leave", the month). A Sunday or a holiday inside it stays a day off. A waiting or declined leave changes nothing. A mark the school puts on the day wins.
-* **Arrangements read it**: see `docs/timetable.md` (the days to come of an approved leave, the free lists, taking it back).
+* **Arrangements read it**: see `docs/timetable.md` (the days to come of an approved leave, the free lists, taking it back). A class teacher's leave also asks who takes her
+  class's **student attendance** that day (given to a teacher with a period in that class; `docs/timetable.md`, "A class teacher who is away").
 * **Bells**: `staff_leave.applied` (to the people who run the school, opens `/school/arrangements?view=leave`), `staff_leave.decided` (to the person, opens `/my-leave`),
   `staff_leave.cancelled` (to the school), and `timetable.substitute` for the substitute put in or taken off.
 * Tests: backend `attendance/__tests__/staffLeaves.test.ts`, `attendance.isolation.test.ts` ("staff leave"); frontend `pages/leaves/__tests__/MyLeave.test.tsx`,

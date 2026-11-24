@@ -6,6 +6,7 @@ import { Notify, dayRange } from "../../notifications/services/events";
 import { StaffMember } from "../../staff/models/StaffMember";
 import { Teacher } from "../../staff/models/Teacher";
 import { staffRoleLabel } from "../../staff/constants";
+import { AttendanceCover } from "../../timetable/models/AttendanceCover";
 import { Substitution } from "../../timetable/models/Substitution";
 import { User } from "../../users/models/User";
 import { StaffLeave, type IStaffLeave, type StaffLeaveKind, type StaffLeaveStatus } from "../models/StaffLeave";
@@ -149,11 +150,16 @@ export class StaffLeaveService {
     if (leave.kind !== "teacher" || !leave.teacherId) return;
     const school = asId(tenantId);
     const where = { tenantId: school, absentTeacherId: leave.teacherId, date: { $gte: leave.fromDate, $lte: leave.toDate } };
-    const made = await Substitution.find(where).select("substituteTeacherId date").lean();
-    if (made.length === 0) return;
-    await Substitution.deleteMany(where);
+    const [made, covers] = await Promise.all([
+      Substitution.find(where).select("substituteTeacherId date").lean(),
+      // The class's student attendance given to someone else for those days (2026-11-24) goes back to its class teacher too.
+      AttendanceCover.find({ tenantId: school, absentTeacherId: leave.teacherId, date: { $gte: leave.fromDate, $lte: leave.toDate } }).select("coverTeacherId date").lean(),
+    ]);
+    if (made.length === 0 && covers.length === 0) return;
+    await Promise.all([Substitution.deleteMany(where), AttendanceCover.deleteMany({ tenantId: school, absentTeacherId: leave.teacherId, date: { $gte: leave.fromDate, $lte: leave.toDate } })]);
     const byTeacher = new Map<string, Set<string>>();
     for (const s of made) byTeacher.set(s.substituteTeacherId.toString(), (byTeacher.get(s.substituteTeacherId.toString()) ?? new Set()).add(s.date));
+    for (const c of covers) byTeacher.set(c.coverTeacherId.toString(), (byTeacher.get(c.coverTeacherId.toString()) ?? new Set()).add(c.date));
     for (const [teacherId, days] of byTeacher) Notify.substituteReleased(tenantId, actorId, { teacherId, absentName: leave.personName, days: [...days].sort() });
   }
 
@@ -212,6 +218,14 @@ export class StaffLeaveService {
       found.set(id, days);
     }
     return found;
+  }
+
+  /** The teachers (or staff) on an approved leave on this day, each with the last day of that leave ("2026-11-26"). */
+  static async endsOn(tenantId: string, kind: StaffLeaveKind, day: string): Promise<Map<string, string>> {
+    const leaves = await StaffLeave.find({ tenantId: asId(tenantId), kind, status: "approved", fromDate: { $lte: day }, toDate: { $gte: day } })
+      .select("teacherId staffMemberId toDate")
+      .lean();
+    return new Map(leaves.map((l) => [(kind === "teacher" ? l.teacherId : l.staffMemberId)!.toString(), l.toDate]));
   }
 
   /** The teachers (or staff) on an approved leave on this day. */

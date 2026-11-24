@@ -188,10 +188,10 @@ describe("a teacher's own classes", () => {
     const s = await classroomSchool();
     const mine = (token: string) => request(app).get("/api/v1/classroom/my-classes").set(auth(token));
     expect((await mine(s.tokens.meena)).body.data.items).toEqual([
-      { classId: s.a.classId, sectionId: s.a.sectionId, label: "Class 5 - A", isClassTeacher: true, subjects: [{ id: s.maths, name: "Mathematics" }] },
+      { classId: s.a.classId, sectionId: s.a.sectionId, label: "Class 5 - A", isClassTeacher: true, coversToday: false, subjects: [{ id: s.maths, name: "Mathematics" }] },
     ]);
     expect((await mine(s.tokens.dev)).body.data.items).toEqual([
-      { classId: s.a.classId, sectionId: s.a.sectionId, label: "Class 5 - A", isClassTeacher: false, subjects: [{ id: s.english, name: "English" }] },
+      { classId: s.a.classId, sectionId: s.a.sectionId, label: "Class 5 - A", isClassTeacher: false, coversToday: false, subjects: [{ id: s.english, name: "English" }] },
     ]);
     expect((await mine(s.tokens.kiran)).body.data.items).toEqual([]);
     expect((await mine(s.tokens.ravi)).status).toBe(403);

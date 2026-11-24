@@ -329,3 +329,43 @@ describe("the marking sheet in the look of the reference pictures (2026-11-22)",
     expect(screen.getByRole("tab", { name: "Diary" }).className).not.toContain("after:scale-x-100");
   });
 });
+
+// A class whose class teacher is away: the school gave today's attendance to another teacher (2026-11-24, Leave & arrangements).
+describe("the teacher given today's attendance of a class (2026-11-24)", () => {
+  const COVER: MyClass = { classId: "c5", sectionId: "c5-A", label: "Class 5 - A", isClassTeacher: false, coversToday: true, subjects: [] };
+  const asCover = (items: MyClass[] = [COVER]): Record<string, Handler> => ({ "GET /classroom/my-classes": () => ({ items }) });
+
+  it("their home lists the class with Takes attendance today, and it is not marked as theirs", async () => {
+    openPage("/dashboard", "teacher", asCover());
+    const item = within(await screen.findByRole("list", { name: "My classes" })).getByRole("link", { name: /Class 5 - A/ });
+    expect(item).toHaveTextContent("Takes attendance today");
+    expect(item).not.toHaveTextContent("Class teacher");
+  });
+
+  it("the class page has the Attendance tab only: today's sheet to take and save, no week register", async () => {
+    const { calls, user } = openPage("/class-work/c5?section=c5-A", "teacher", asCover());
+    expect(await screen.findByRole("heading", { name: "Class 5 - A", level: 1 })).toBeInTheDocument();
+    const list = await screen.findByRole("list", { name: "Attendance" });
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Attendance"]);
+    expect(screen.queryByRole("table", { name: /Attendance of/ })).not.toBeInTheDocument();
+    expect(calls.some((c) => c.path === "/classroom/attendance/register")).toBe(false);
+    // Today's sheet is the day given: no Day box to go to another day.
+    expect(calls.find((c) => c.path === "/classroom/attendance")?.query).toBe(`?classId=c5&sectionId=c5-A&date=${today}`);
+    await user.click(within(within(list).getByRole("listitem", { name: "Asha Verma" })).getByRole("radio", { name: "Absent" }));
+    await user.click(screen.getByRole("button", { name: "Save attendance" }));
+    await waitFor(() => expect(puts(calls)).toHaveLength(1));
+    expect(puts(calls)[0].body).toMatchObject({ classId: "c5", sectionId: "c5-A", date: today });
+  });
+
+  it("a teacher who also teaches a subject in the class keeps its Diary and Tests tabs", async () => {
+    openPage("/class-work/c5?section=c5-A", "teacher", asCover([{ ...COVER, subjects: [{ id: "maths", name: "Mathematics" }] }]));
+    await screen.findByRole("heading", { name: "Class 5 - A", level: 1 });
+    expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(expect.arrayContaining(["Attendance", "Diary", "Tests"]));
+  });
+
+  it("a class they were not given has no attendance tab (coversToday false)", async () => {
+    openPage("/class-work/c5?section=c5-A", "teacher", asCover([{ ...COVER, coversToday: false, subjects: [{ id: "maths", name: "Mathematics" }] }]));
+    await screen.findByRole("heading", { name: "Class 5 - A", level: 1 });
+    expect(screen.queryByRole("tab", { name: "Attendance" })).not.toBeInTheDocument();
+  });
+});
