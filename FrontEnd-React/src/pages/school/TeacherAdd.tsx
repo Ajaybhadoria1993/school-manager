@@ -2,17 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ArrowLeft, ArrowRight, CircleCheck, UserPlus } from "lucide-react";
 import { DEFAULT_TEACHER_RULES } from "../../constants/teacherFields";
-import { teacherFieldId, useTeacherForm } from "../../hooks/useTeacherForm";
-import { useFreeUsername, useUsernameCheck } from "../../hooks/useUsernameCheck";
+import { useTeacherForm } from "../../hooks/useTeacherForm";
 import { useTeacherBase } from "../../hooks/useTeacherBase";
+import { useNewPhoto } from "../../hooks/useNewPhoto";
+import { useNewResume } from "../../hooks/useNewResume";
+import { ResumePicker } from "../../components/profile/ResumePicker";
+import { PhotoPicker } from "../../components/profile/PhotoPicker";
 import { useCreateTeacherMutation, useGetTeacherSettingsQuery } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
-import { TEACHER_STEPS, emptyTeacherForm, generatePassword, jobAsked, problemKeysOf, stepOfKey, toTeacherInput, usernameFor, type TeacherFormKey } from "../../utils/teachers";
+import { TEACHER_STEPS, emptyTeacherForm, jobAsked, problemKeysOf, stepOfKey, toTeacherInput, type TeacherFormKey } from "../../utils/teachers";
 import { askedFields, ownAnswersOf, ownFieldId, ownProblems, refusedOwn, type OwnValues } from "../../utils/teacherOwn";
 import type { Teacher } from "../../types";
-import { CredentialsCard } from "../../components/teachers/CredentialsCard";
+import { InviteSentCard } from "../../components/logins/InviteSentCard";
 import { OwnFieldsCard } from "../../components/teachers/OwnFieldsCard";
-import { JobFields, LoginFields, PersonalFields, TeachingFields } from "../../components/teachers/TeacherFields";
+import { JobFields, PersonalFields, TeachingFields } from "../../components/teachers/TeacherFields";
 import { FormActionBar } from "../../components/students/form/FormActionBar";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { ModalError } from "../../components/ui/AppModal";
@@ -20,16 +23,17 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { Steps } from "../../components/ui/Steps";
 
-/** Every teacher added here gets a login, so the form always asks for one. (Stable, so the form does not check itself again each time.) */
+/** A teacher added here needs the details of Add teacher, and the email when login access is ticked. (Stable, so the form does not check itself again each time.) */
 const WITH_LOGIN = { login: true } as const;
 const outlineLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:border-[#cbd5e1] hover:bg-background focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 
 /**
- * Add teacher (`/school/teachers/new` from Manage Teacher, `/teachers/new` from Teacher): the teacher in four steps, like onboarding and Add student: Personal info, Job
- * details, Teaching (what they can teach, their limits and days off) and Login (a username, the name with a number, checked free on
- * the whole platform as it is typed, and a first password the school can have made). Next checks its own step; the last step makes
- * the teacher and the login in one request. The password is shown once, afterwards, to give to the teacher: only a hash of it is kept.
+ * Add teacher (`/school/teachers/new` from Manage Teacher, `/teachers/new` from Teacher): the teacher in steps, like onboarding and Add student:
+ * Personal info (with "Give login access": ticked, the email is needed), Job details and Teaching (what they can teach, their limits and days
+ * off). Next checks its own step; the last step makes the teacher in one request. With login access their email is the login and an
+ * invitation goes to it: the login is Pending until they choose a password from the link (2026-11-26: the school makes no username or
+ * password any more).
  */
 export default function TeacherAddPage() {
   // Opened from Teacher (`/teachers/new`) or from Manage Teacher: the breadcrumb and View teacher stay there.
@@ -55,27 +59,18 @@ export default function TeacherAddPage() {
   const [passed, setPassed] = useState<number[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [focusKeys, setFocusKeys] = useState<TeacherFormKey[] | null>(null);
-  const [added, setAdded] = useState<{ teacher: Teacher; password: string } | null>(null);
+  const [added, setAdded] = useState<Teacher | null>(null);
+  // Optional: kept until the teacher is made, then saved for them.
+  const photo = useNewPhoto();
+  const resume = useNewResume();
 
   const step = steps[Math.min(position, steps.length - 1)];
   const last = position === steps.length - 1;
-  const usernameCheck = useUsernameCheck(form.values.username, step.key === "login");
-  // The username made from the name is swapped for a free one when somebody (any school) already has it.
-  useFreeUsername(usernameCheck, form.wasTyped("username"), (free) => form.set("username", free));
 
-  const openStep = useCallback(
-    (index: number) => {
-      // Arriving at the Login step: a username from the name (with a number; the same one again for the same name) and a password
-      // already made, unless the person has typed their own. (Not when it is already open: a refused username must stay as it is.)
-      if (steps[index].key === "login" && index !== position) {
-        if (!form.wasTyped("username")) form.set("username", usernameFor(form.values.username, form.values.name));
-        if (form.values.password === "") form.set("password", generatePassword());
-      }
-      setPosition(index);
-      setFurthest((f) => Math.max(f, index));
-    },
-    [form, position, steps]
-  );
+  const openStep = useCallback((index: number) => {
+    setPosition(index);
+    setFurthest((f) => Math.max(f, index));
+  }, []);
 
   // A new step starts at the top of the page; a refused box gets the cursor once its step is on the screen.
   useEffect(() => {
@@ -117,7 +112,9 @@ export default function TeacherAddPage() {
     setFormError(null);
     try {
       const res = await create({ ...toTeacherInput(form.values, WITH_LOGIN), ...(own.length > 0 ? { custom: ownAnswersOf(own, ownValues, "add") } : {}) }).unwrap();
-      setAdded({ teacher: res.data, password: form.values.password });
+      await photo.saveFor({ kind: "teacher", id: res.data.id });
+      await resume.saveFor(res.data.id);
+      setAdded(res.data);
     } catch (err) {
       const error = getApiError(err);
       const keys = form.showServerErrors(error?.details);
@@ -161,11 +158,6 @@ export default function TeacherAddPage() {
       if (step.key !== "job") openStep(steps.findIndex((s) => s.key === "job"));
       return;
     }
-    // Taken, as the box already says (with free ones under it): nothing is sent.
-    if (usernameCheck.state === "taken") {
-      document.getElementById(teacherFieldId("username"))?.focus();
-      return;
-    }
     void send();
   }
 
@@ -179,6 +171,8 @@ export default function TeacherAddPage() {
     setPassed([]);
     setFormError(null);
     setAdded(null);
+    photo.clear();
+    resume.clear();
   }
 
   if (added) {
@@ -187,11 +181,13 @@ export default function TeacherAddPage() {
         <StudentFormHeader title="Add teacher" crumbs={crumbs} />
         <Card className="flex items-center gap-3 border-success-line bg-success-soft/40 px-5 py-4">
           <CircleCheck className="size-6 shrink-0 text-success" aria-hidden />
-          <h2 className="text-section-heading">{added.teacher.name} is added</h2>
+          <h2 className="text-section-heading">{added.name} is added</h2>
         </Card>
-        <CredentialsCard teacher={added.teacher.name} username={added.teacher.login?.username ?? form.values.username} password={added.password} />
+        {photo.problem && <ModalError message={photo.problem} />}
+        {resume.problem && <ModalError message={resume.problem} />}
+        {added.invite && <InviteSentCard invite={added.invite} />}
         <div className="flex flex-wrap items-center gap-2.5">
-          <Link to={`${base}/${added.teacher.id}`} className={outlineLink}>
+          <Link to={`${base}/${added.id}`} className={outlineLink}>
             View teacher
           </Link>
           <Button type="button" onClick={startAgain}>
@@ -215,7 +211,19 @@ export default function TeacherAddPage() {
 
       {/* `key` gives each step a fresh start; the values are the form's, so nothing typed is lost by moving. */}
       <div key={step.key} className="rise-in min-w-0 space-y-6">
-        {step.key === "personal" && <PersonalFields form={form} needed />}
+        {step.key === "personal" && (
+          <PersonalFields
+            form={form}
+            needed
+            loginAccess
+            uploads={
+              <>
+                <PhotoPicker label="Photo" optional name={form.values.name} photo={photo.preview} onPick={photo.pick} onRemove={photo.clear} />
+                <ResumePicker optional file={resume.file} onPick={resume.pick} onRemove={resume.clear} />
+              </>
+            }
+          />
+        )}
         {step.key === "job" && (
           <>
             <JobFields form={form} />
@@ -234,7 +242,6 @@ export default function TeacherAddPage() {
           </>
         )}
         {step.key === "teaching" && <TeachingFields form={form} />}
-        {step.key === "login" && <LoginFields form={form} check={usernameCheck} />}
       </div>
 
       <FormActionBar>

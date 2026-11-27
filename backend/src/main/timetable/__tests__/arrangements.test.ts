@@ -158,7 +158,7 @@ describe("the day's arrangement: who is away and who is free", () => {
 
   it("is for the people who make the timetable: a teacher cannot read or change it", async () => {
     const r = await ready();
-    const login = await request(app).post("/api/v1/auth/login").send({ identifier: "arr.dev", password: LOGIN_PASSWORD });
+    const login = await request(app).post("/api/v1/auth/login").send({ identifier: "arr.dev@mail.test", password: LOGIN_PASSWORD });
     const token = login.body.data.accessToken as string;
     expect((await day(token)).status).toBe(403);
     expect((await put(token, { date: TODAY, classId: r.five, sectionId: null, period: 3, absentTeacherId: r.meena, substituteTeacherId: r.dev })).status).toBe(403);
@@ -174,7 +174,7 @@ describe("a teacher on an approved leave: the arrangement is made for the days t
   const signIn = async (identifier: string) => (await request(app).post("/api/v1/auth/login").send({ identifier, password: LOGIN_PASSWORD })).body.data.accessToken as string;
   const leaveOf = async (r: Awaited<ReturnType<typeof ready>>, answer: "approved" | "declined" | null) => {
     const kiran = await addTeacher(r.token, "Kiran Das", { mobile: "9110000009", login: { username: "arr.kiran", password: LOGIN_PASSWORD } });
-    const dev = await signIn("arr.dev");
+    const dev = await signIn("arr.dev@mail.test");
     const applied = await request(app).post("/api/v1/attendance/leaves/mine").set(auth(dev)).send({ fromDate: NEXT_TUESDAY, reason: "Sister's wedding" });
     expect(applied.status, JSON.stringify(applied.body)).toBe(201);
     if (answer) expect((await request(app).post(`/api/v1/attendance/leaves/${applied.body.data.id}/decide`).set(auth(r.token)).send({ status: answer })).status).toBe(200);
@@ -213,7 +213,7 @@ describe("a teacher on an approved leave: the arrangement is made for the days t
     // It is for that day only: today shows nothing of it.
     expect(JSON.stringify((await day(r.token)).body.data)).not.toContain('"substitute":{');
     await NotificationService.idle();
-    const heard = (await request(app).get("/api/v1/notifications").set(auth(await signIn("arr.kiran")))).body.data.items as { kind: string; title: string }[];
+    const heard = (await request(app).get("/api/v1/notifications").set(auth(await signIn("arr.kiran@mail.test")))).body.data.items as { kind: string; title: string }[];
     expect(heard.filter((n) => n.kind === "timetable.substitute").map((n) => n.title)).toHaveLength(1);
   });
 
@@ -225,7 +225,7 @@ describe("a teacher on an approved leave: the arrangement is made for the days t
     expect(out.status, JSON.stringify(out.body)).toBe(200);
     expect(await away(r.token, NEXT_TUESDAY)).toEqual([]);
     await NotificationService.idle();
-    const heard = (await request(app).get("/api/v1/notifications").set(auth(await signIn("arr.kiran")))).body.data.items as { kind: string; title: string; body: string }[];
+    const heard = (await request(app).get("/api/v1/notifications").set(auth(await signIn("arr.kiran@mail.test")))).body.data.items as { kind: string; title: string; body: string }[];
     const released = heard.find((n) => n.title === "Arrangement taken off: Dev Patel is back");
     expect(released?.body).toBe("17 Nov");
   });

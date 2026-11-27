@@ -9,6 +9,7 @@ import { addColleague, createSchool } from "../../../test/schools";
 import { addClass, addTiming, auth, timetableSchool } from "../../../test/timetable";
 import { Teacher } from "../../staff/models/Teacher";
 import { Student } from "../../students/models/Student";
+import { postStaff } from "../../../test/logins";
 
 /**
  * The school's home page in ONE answer (2026-11-09): how many students and teachers it has, who came today, what is waiting for the head,
@@ -79,30 +80,21 @@ describe("students", () => {
 describe("teachers and staff", () => {
   it("counts the teachers who teach here, and the staff who do not teach, apart", async () => {
     const s = await setUp();
-    const staff = await request(app)
-      .post("/api/v1/staff/members")
-      .set(auth(s.token))
-      .send({ name: "Asha Rao", role: "receptionist", mobile: "9876543210", login: { username: "asha.rao_41", password: "Recep@Desk1" } });
+    const staff = await postStaff(s.token, { name: "Asha Rao", role: "receptionist", mobile: "9876543210", login: { username: "asha.rao_41", password: "Recep@Desk1" } });
     expect(staff.status, JSON.stringify(staff.body)).toBe(201);
     expect((await home(s.token)).body.data.people).toEqual({ teachers: 3, staff: 1 });
   });
 
   it("a staff member who also teaches is one of the teachers, not counted twice", async () => {
     const s = await setUp();
-    const staff = await request(app)
-      .post("/api/v1/staff/members")
-      .set(auth(s.token))
-      .send({ name: "Neha Joshi", role: "vice_principal", alsoTeacher: true, mobile: "9876543211", login: { username: "neha.joshi_42", password: "Recep@Desk1" } });
+    const staff = await postStaff(s.token, { name: "Neha Joshi", role: "vice_principal", alsoTeacher: true, mobile: "9876543211", login: { username: "neha.joshi_42", password: "Recep@Desk1" } });
     expect(staff.status, JSON.stringify(staff.body)).toBe(201);
     expect((await home(s.token)).body.data.people).toEqual({ teachers: 4, staff: 0 });
   });
 
   it("a staff member the school switched off is not counted", async () => {
     const s = await setUp();
-    const made = await request(app)
-      .post("/api/v1/staff/members")
-      .set(auth(s.token))
-      .send({ name: "Asha Rao", role: "receptionist", mobile: "9876543210", login: { username: "asha.rao_41", password: "Recep@Desk1" } });
+    const made = await postStaff(s.token, { name: "Asha Rao", role: "receptionist", mobile: "9876543210", login: { username: "asha.rao_41", password: "Recep@Desk1" } });
     await request(app).patch(`/api/v1/staff/members/${made.body.data.id}`).set(auth(s.token)).send({ isActive: false });
     expect((await home(s.token)).body.data.people.staff).toBe(0);
   });

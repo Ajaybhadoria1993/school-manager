@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { clockToMinutes } from "../../timetable/time";
-import { EXAM_TYPES, MAX_DURATION, MAX_EXAM_NAME, MAX_NOTE, MAX_PAPERS_AT_ONCE, MAX_TOPIC, MIN_DURATION } from "../constants";
+import { MAX_ROLL_NUMBER } from "../../students/constants";
+import { EXAM_SCOPES, EXAM_TYPES, MAX_DURATION, MAX_DUTY_TEACHERS, MAX_EXAM_NAME, MAX_NOTE, MAX_PAPERS_AT_ONCE, MAX_ROLLS_AT_ONCE, MAX_ROOM, MAX_TOPIC, MIN_DURATION } from "../constants";
 
 /** The request shapes of Test & Exam. The rules that need the school's records (inside the year, clashes) are the service's, in the same words. */
 
@@ -38,6 +39,16 @@ const lastDayAfterFirst = (v: { startDate?: string; endDate?: string | null }, c
   if (v.startDate && v.endDate && v.endDate < v.startDate) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: "The last day cannot be before the first day" });
 };
 
+/** Whom the exam is for (2026-11-26): the whole school, or the departments or the classes it names (at least one). */
+const scope = z.enum(EXAM_SCOPES, { errorMap: () => ({ message: "Choose whom the exam is for" }) });
+const idList = (message: string) => z.array(z.string().regex(OBJECT_ID, message), { invalid_type_error: message }).max(200, message).transform((ids) => [...new Set(ids)]);
+const departmentIds = idList("Choose departments of this school");
+const examClassIds = idList("Choose classes of this school");
+const namesWhom = (v: { scope?: string; departmentIds?: string[]; classIds?: string[] }, ctx: z.RefinementCtx) => {
+  if (v.scope === "departments" && (v.departmentIds ?? []).length === 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["departmentIds"], message: "Choose the departments" });
+  if (v.scope === "classes" && (v.classIds ?? []).length === 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["classIds"], message: "Choose the classes" });
+};
+
 export const createExamSchema = z
   .object({
     name,
@@ -46,11 +57,16 @@ export const createExamSchema = z
     endDate: day("Choose the last day").nullable().optional(),
     schoolStart: clock("Enter the time school starts").nullable().optional(),
     schoolEnd: clock("Enter the time school ends").nullable().optional(),
+    scope: scope.optional().default("school"),
+    departmentIds: departmentIds.optional().default([]),
+    classIds: examClassIds.optional().default([]),
     note: optionalText(MAX_NOTE, `The note is up to ${MAX_NOTE} letters`),
   })
-  .superRefine(lastDayAfterFirst);
+  .superRefine(lastDayAfterFirst)
+  .superRefine(namesWhom);
 export type CreateExamInput = z.infer<typeof createExamSchema>;
 
+/** A change of whom it is for sends the scope with its list (the list alone keeps the scope). */
 export const updateExamSchema = z
   .object({
     name: name.optional(),
@@ -59,9 +75,13 @@ export const updateExamSchema = z
     endDate: day("Choose the last day").optional(),
     schoolStart: clock("Enter the time school starts").nullable().optional(),
     schoolEnd: clock("Enter the time school ends").nullable().optional(),
+    scope: scope.optional(),
+    departmentIds: departmentIds.optional(),
+    classIds: examClassIds.optional(),
     note: optionalText(MAX_NOTE, `The note is up to ${MAX_NOTE} letters`),
   })
-  .superRefine(lastDayAfterFirst);
+  .superRefine(lastDayAfterFirst)
+  .superRefine(namesWhom);
 export type UpdateExamInput = z.infer<typeof updateExamSchema>;
 
 export const listExamsQuerySchema = z.object({ status: z.enum(["upcoming", "running", "over"]).optional() });
@@ -102,6 +122,51 @@ export const updatePaperSchema = z.object({
   topic,
 });
 export type UpdatePaperInput = z.infer<typeof updatePaperSchema>;
+
+// ---- The children of an exam, their roll numbers and rooms (2026-11-27) ---------------------------------------------------------------
+/** A class of the exam, and one of its sections (left out: every section). */
+export const rosterQuerySchema = z.object({
+  classId: z.string({ required_error: "Choose a class" }).regex(OBJECT_ID, "Choose a class"),
+  sectionId: z.string().regex(OBJECT_ID, "Choose a section").optional(),
+});
+export type RosterQuery = z.infer<typeof rosterQuerySchema>;
+
+const ROLL = `A roll number is 1 to ${MAX_ROLL_NUMBER}`;
+const rollNumber = z.number({ invalid_type_error: ROLL }).int(ROLL).min(1, ROLL).max(MAX_ROLL_NUMBER, ROLL);
+
+/** Roll numbers of some children at once (null clears one): each child's own in their class or section. */
+export const rollNumbersSchema = z.object({
+  rows: z
+    .array(z.object({ studentId: z.string().regex(OBJECT_ID, "Invalid child"), rollNumber: rollNumber.nullable() }), { required_error: "Give at least one roll number" })
+    .min(1, "Give at least one roll number")
+    .max(MAX_ROLLS_AT_ONCE, `Up to ${MAX_ROLLS_AT_ONCE} roll numbers at a time`),
+});
+export type RollNumbersInput = z.infer<typeof rollNumbersSchema>;
+
+/** A room and the run of roll numbers of a class (or one of its sections) that sit in it. */
+export const roomSchema = z
+  .object({
+    room: z.string({ required_error: "Enter the room" }).trim().min(1, "Enter the room").max(MAX_ROOM, `The room is up to ${MAX_ROOM} letters`),
+    classId: z.string({ required_error: "Choose the class" }).regex(OBJECT_ID, "Choose the class"),
+    sectionId: z.string().regex(OBJECT_ID, "Choose the section").nullable().optional().default(null),
+    fromRoll: rollNumber,
+    toRoll: rollNumber,
+  })
+  .superRefine((v, ctx) => {
+    if (v.toRoll < v.fromRoll) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["toRoll"], message: "The last roll number cannot be before the first" });
+  });
+export type RoomInput = z.infer<typeof roomSchema>;
+export const roomParamsSchema = z.object({ id: z.string().regex(OBJECT_ID, "Invalid id"), roomId: z.string().regex(OBJECT_ID, "Invalid id") });
+
+/** The teachers on duty in a room for the whole exam (2026-11-27): one or two; none leaves the room with nobody. */
+export const dutySchema = z.object({
+  room: z.string({ required_error: "Choose the room" }).trim().min(1, "Choose the room").max(MAX_ROOM, "Choose the room"),
+  teacherIds: z
+    .array(z.string().regex(OBJECT_ID, "Choose teachers of this school"), { required_error: "Choose the teachers", invalid_type_error: "Choose the teachers" })
+    .transform((ids) => [...new Set(ids)])
+    .refine((ids) => ids.length <= MAX_DUTY_TEACHERS, `Up to ${MAX_DUTY_TEACHERS} teachers in a room`),
+});
+export type DutyInput = z.infer<typeof dutySchema>;
 
 // ---- What a class's teachers and the school see, and the marks -------------------------------------------------------------------------
 /** A class, and one of its sections ("none" for a class that is not split), and a day whose week is wanted (today's when left out). */

@@ -76,6 +76,17 @@ describe("a child's exams", () => {
     expect(calls.filter((c) => c.path === "/parent/children/k1/exams")).toHaveLength(1);
   });
 
+  it("where the child sits (2026-11-27): their roll number and room; nothing when the school has given neither", async () => {
+    show({
+      "GET /parent/children/k1/exams": () =>
+        EXAMS([exam({ seat: { rollNumber: 12, room: "Room 101" } }), exam({ id: "e2", name: "Unit Test 1", seat: { rollNumber: null, room: null } })]),
+    });
+    const card = await screen.findByRole("article", { name: "Half-Yearly Exam" });
+    expect(within(card).getByText("Roll no. 12")).toBeInTheDocument();
+    expect(within(card).getByText("Room 101")).toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "Unit Test 1" })).not.toHaveTextContent("Roll no.");
+  });
+
   it("the papers in date order: subject, topic, day, time, what each is out of", async () => {
     show();
     const card = await screen.findByRole("article", { name: "Half-Yearly Exam" });

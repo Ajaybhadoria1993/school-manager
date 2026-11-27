@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
@@ -7,6 +7,7 @@ import { ToastProvider } from "../../../components/ui/toast-context";
 import { allApiSlices } from "../../../redux/api/apiRoot";
 import store from "../../../redux/store";
 import { fakeApi, type Call, type Handler } from "../../../test/fakeApi";
+import { signInAs, signOut } from "../../../test/session";
 import { todayInIndia } from "../../../utils/students";
 import { addDays, shortDay } from "../../../utils/calendar";
 import type { ArrangementAttendance, ArrangementDay, ArrangementInput, ArrangementLesson, AttendanceCoverInput, HandBackInput, StaffLeave } from "../../../types";
@@ -105,9 +106,13 @@ function openPage(day: ArrangementDay = DAY, extra: Record<string, Handler> = {}
   return { calls, user: userEvent.setup() };
 }
 
+// The school admin opens the page; a test of a kind of staff signs that person in instead.
+beforeEach(() => signInAs("school_admin"));
+
 afterEach(() => {
   cleanup();
   for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
+  signOut();
   vi.unstubAllGlobals();
 });
 
@@ -281,6 +286,34 @@ describe("Leave & arrangements: the leave of the teachers and the staff, on the 
   it("says when no leave is waiting", async () => {
     openPage(DAY, { "GET /attendance/leaves": () => ({ items: [], waiting: 0 }) }, "/school/arrangements?view=leave");
     expect(await screen.findByText("No leave is waiting")).toBeInTheDocument();
+  });
+});
+
+describe("Leave & arrangements for a kind of staff the school allowed part of it (2026-11-26)", () => {
+  it("only the leave (staffleaves.view): the page opens on Leave requests, there is no Arrangements tab and the day is never asked for", async () => {
+    signInAs("receptionist", ["staffleaves.view"]);
+    const { calls } = openPage();
+    expect(await screen.findByRole("article", { name: "Meena Singh" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Arrangements" })).not.toBeInTheDocument();
+    expect(calls.some((c) => c.path === "/timetable/arrangements")).toBe(false);
+    // Seeing is not answering: no Approve or Decline without staffleaves.decide.
+    expect(within(screen.getByRole("article", { name: "Meena Singh" })).queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
+
+  it("seeing and answering: Approve and Decline are there", async () => {
+    signInAs("receptionist", ["staffleaves.view", "staffleaves.decide"]);
+    openPage();
+    const meena = await screen.findByRole("article", { name: "Meena Singh" });
+    expect(within(meena).getByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(within(meena).getByRole("button", { name: "Decline" })).toBeInTheDocument();
+  });
+
+  it("only the arrangements (timetable.edit): no Leave requests tab, and the leaves are never asked for", async () => {
+    signInAs("receptionist", ["timetable.edit"]);
+    const { calls } = openPage();
+    expect(await screen.findByRole("region", { name: "Meena Singh" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Leave requests/ })).not.toBeInTheDocument();
+    expect(calls.some((c) => c.path === "/attendance/leaves")).toBe(false);
   });
 });
 

@@ -7,10 +7,12 @@ import { useTeacherForm } from "../../hooks/useTeacherForm";
 import type { CustomFieldDef } from "../../constants/studentFields";
 import { useGetTeacherQuery, useGetTeacherSettingsQuery, useUpdateTeacherMutation } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
-import { formFromTeacher, stepOfKey, toTeacherInput, type TeacherFormKey } from "../../utils/teachers";
+import { formFromTeacher, toTeacherInput, type TeacherFormKey } from "../../utils/teachers";
 import { askedFields, ownAnswersOf, ownFieldId, ownProblems, ownValuesOf, refusedOwn, type OwnValues } from "../../utils/teacherOwn";
 import type { Teacher } from "../../types";
 import { OwnFieldsCard } from "../../components/teachers/OwnFieldsCard";
+import { PersonPhotoField } from "../../components/profile/PersonPhotoField";
+import { ResumeField } from "../../components/profile/ResumeField";
 import { JobFields, PersonalFields, TeachingFields } from "../../components/teachers/TeacherFields";
 import { FormActionBar } from "../../components/students/form/FormActionBar";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
@@ -85,8 +87,7 @@ function EditForm({ teacher, fields, rules }: { teacher: Teacher; fields: Custom
   const ownChanged = JSON.stringify(ownValues) !== JSON.stringify(initialOwn);
   const ownErrors = { ...(ownShown ? ownProblems(fields, ownValues) : {}), ...ownServer };
 
-  // The login's own boxes are not on this form: they are not asked here, whatever they hold.
-  const problemKeys = (Object.keys(form.problems) as TeacherFormKey[]).filter((k) => stepOfKey(k) !== "login");
+  const problemKeys = Object.keys(form.problems) as TeacherFormKey[];
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -125,7 +126,12 @@ function EditForm({ teacher, fields, rules }: { teacher: Teacher; fields: Custom
 
       {formError && <ModalError message={formError} />}
 
-      <PersonalFields form={form} needed={hasLogin} genderNeeded={false} />
+      <PersonalFields form={form} needed={hasLogin} genderNeeded={false} uploads={
+        <>
+          <PersonPhotoField kind="teacher" id={teacher.id} name={teacher.name} canChange label="Photo" />
+          <ResumeField teacherId={teacher.id} canChange />
+        </>
+      } />
       <JobFields form={form} index={2} />
       {fields.length > 0 && (
         <OwnFieldsCard

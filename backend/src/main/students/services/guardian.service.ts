@@ -33,7 +33,7 @@ export class GuardianService {
         .select("firstName lastName admissionNumber guardians")
         .sort({ admissionNumber: 1 })
         .lean(),
-      TeacherLogin.byIds(guardian.userId ? [guardian.userId] : []),
+      TeacherLogin.usernamesByIds(guardian.userId ? [guardian.userId] : []),
     ]);
     const places = await placesOf(school, academicYearId, children.map((c) => c._id));
     return {

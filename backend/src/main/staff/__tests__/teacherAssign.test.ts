@@ -3,6 +3,7 @@ import request from "supertest";
 import app from "../../../app";
 import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { addClass, addSubject, addTeacher, addTiming, auth, saveAllotments, timetableSchool } from "../../../test/timetable";
+import { postTeacher } from "../../../test/logins";
 
 /**
  * Giving teachers their classes, from wherever the school is: a teacher's page ("give this teacher Class 5 - A's Maths"), a class's page
@@ -159,7 +160,7 @@ describe("the class teacher", () => {
     const r = await ready();
     const teacherLogin = await addTeacher(r.token, "Signs In", { mobile: "9000000001", login: { username: "signs.in", password: "Sch00l@Teach1" } });
     expect(teacherLogin).toBeTruthy();
-    const session = await request(app).post("/api/v1/auth/login").send({ identifier: "signs.in", password: "Sch00l@Teach1" });
+    const session = await request(app).post("/api/v1/auth/login").send({ identifier: "signs.in@mail.test", password: "Sch00l@Teach1" });
     expect((await setClassTeacher(session.body.data.accessToken, { ...r.a, teacherId: r.meena })).status).toBe(403);
   });
 });
@@ -265,7 +266,7 @@ describe("giving a teacher a subject of a class", () => {
 describe("finding a teacher", () => {
   async function staffRoom() {
     const r = await ready();
-    const post = (body: object) => request(app).post("/api/v1/staff/teachers").set(auth(r.token)).send(body);
+    const post = (body: object) => postTeacher(r.token, body);
     const asha = (await post({ name: "Asha Rao", mobile: "9000000011", email: "asha@school.example", gender: "Female", designation: "PGT (Post graduate teacher)", employmentType: "full_time", subjectIds: [r.maths], login: { username: "asha.rao_12", password: "Sch00l@Teach1" } })).body.data.id;
     const ravi = (await post({ name: "Ravi Kumar", mobile: "9000000012", gender: "Male", designation: "TGT (Trained graduate teacher)", employmentType: "part_time", subjectIds: [r.english] })).body.data.id;
     await setClassTeacher(r.token, { ...r.b, teacherId: ravi });
@@ -301,10 +302,9 @@ describe("finding a teacher", () => {
     expect(names(await list(r.token, "?classTeacher=no"))).toEqual(["Asha Rao", "Dev Patel", "Meena Singh"]);
   });
 
-  it("by name, mobile, code, email or username in the search box", async () => {
+  it("by name, mobile, code or email in the search box", async () => {
     const r = await staffRoom();
     expect(names(await list(r.token, "?search=asha@school"))).toEqual(["Asha Rao"]);
-    expect(names(await list(r.token, "?search=asha.rao_1"))).toEqual(["Asha Rao"]);
     expect(names(await list(r.token, "?search=9000000012"))).toEqual(["Ravi Kumar"]);
     expect(names(await list(r.token, "?search=kumar"))).toEqual(["Ravi Kumar"]);
   });
@@ -318,7 +318,7 @@ describe("finding a teacher", () => {
     // Teaching: Meena, Dev, Asha (Maths of 5-A) and Ravi (class teacher of 5-B). Given nothing: Meena and Dev. Left: Gone Teacher.
     expect(res.body.data).toEqual({ teaching: 4, classTeachers: 1, withoutClasses: 2, left: 1 });
     // A teacher signed in does not get the counts.
-    const session = await request(app).post("/api/v1/auth/login").send({ identifier: "asha.rao_12", password: "Sch00l@Teach1" });
+    const session = await request(app).post("/api/v1/auth/login").send({ identifier: "asha@school.example", password: "Sch00l@Teach1" });
     expect((await request(app).get("/api/v1/staff/teachers/summary").set(auth(session.body.data.accessToken))).status).toBe(403);
   });
 
@@ -327,42 +327,5 @@ describe("finding a teacher", () => {
     expect((await list(r.token, "?login=maybe")).status).toBe(400);
     expect((await list(r.token, "?subjectId=nope")).status).toBe(400);
     expect((await list(r.token, "?gender=x")).status).toBe(400);
-  });
-});
-
-describe("changing a teacher's username", () => {
-  const PASSWORD = "Sch00l@Teach1";
-  const changeUsername = (token: string, id: string, username: string) => request(app).patch(`/api/v1/staff/teachers/${id}/login`).set(auth(token)).send({ username });
-  const signIn = (identifier: string) => request(app).post("/api/v1/auth/login").send({ identifier, password: PASSWORD });
-
-  it("changes it: the new one signs in, the old one does not, the password stays", async () => {
-    const r = await ready();
-    const id = await addTeacher(r.token, "Asha Rao", { mobile: "9000000011", login: { username: "asha.rao_12", password: PASSWORD } });
-    const res = await changeUsername(r.token, id, "Asha.Rao");
-    expect(res.status).toBe(200);
-    expect(res.body.data.login).toEqual({ username: "asha.rao", isActive: true });
-    expect((await signIn("asha.rao")).status).toBe(200);
-    expect((await signIn("asha.rao_12")).status).toBe(401);
-  });
-
-  it("refuses one that is someone else's (any school), with free ones; its own is fine", async () => {
-    const r = await ready();
-    const other = await timetableSchool("Moonrise Public School");
-    await addTeacher(other.token, "Asha Other", { mobile: "9000000099", login: { username: "asha.rao", password: PASSWORD } });
-    const id = await addTeacher(r.token, "Asha Rao", { mobile: "9000000011", login: { username: "asha.rao_12", password: PASSWORD } });
-    const taken = await changeUsername(r.token, id, "asha.rao");
-    expect(taken.status).toBe(409);
-    expect(taken.body.code).toBe("USERNAME_TAKEN");
-    expect(details(taken)).toEqual([{ path: "username", message: expect.stringMatching(/asha\.rao_\d{2,3}/) }]);
-    expect((await changeUsername(r.token, id, "asha.rao_12")).status).toBe(200);
-  });
-
-  it("needs a login to change, and a username that could be one", async () => {
-    const r = await ready();
-    const none = await changeUsername(r.token, r.meena, "meena.singh");
-    expect(none.status).toBe(409);
-    expect(none.body.code).toBe("TEACHER_HAS_NO_LOGIN");
-    const id = await addTeacher(r.token, "Asha Rao", { mobile: "9000000011", login: { username: "asha.rao_12", password: PASSWORD } });
-    expect(details(await changeUsername(r.token, id, "9x"))).toEqual([expect.objectContaining({ path: "username" })]);
   });
 });

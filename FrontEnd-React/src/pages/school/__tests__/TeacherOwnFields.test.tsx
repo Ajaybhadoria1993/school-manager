@@ -54,7 +54,7 @@ describe("Add teacher: the school's own fields", () => {
     const calls = fakeApi(
       base({
         "GET /staff/usernames/check": () => ({ available: true, suggestions: [] }),
-        "POST /staff/teachers": (body) => ({ ...MEENA, id: "new-teacher", ...(body as object), login: { username: "meena.singh", isActive: true } }),
+        "POST /staff/teachers": (body) => ({ ...MEENA, id: "new-teacher", ...(body as object), login: { username: "meena.singh", email: null, isActive: true, pending: false } }),
         ...extra,
       })
     );
@@ -98,7 +98,6 @@ describe("Add teacher: the school's own fields", () => {
     await user.click(screen.getByRole("button", { name: /House Duty/ }));
     await user.click(await screen.findByRole("option", { name: "Yes" }));
     await next(user);
-    await next(user);
     await user.click(await screen.findByRole("button", { name: "Add teacher" }));
     await screen.findByText("Meena Singh is added");
     expect(writes(calls)).toHaveLength(1);
@@ -113,7 +112,6 @@ describe("Add teacher: the school's own fields", () => {
     await toJob(user);
     await user.type(screen.getByLabelText(/^PAN Number/), "ABCDE1234F");
     await next(user);
-    await next(user);
     await user.click(await screen.findByRole("button", { name: "Add teacher" }));
     expect(await screen.findByText("Keep the PAN Number under 200 characters")).toBeInTheDocument();
     expect(document.querySelector('[aria-current="step"]')?.textContent).toContain("Job");
@@ -121,7 +119,7 @@ describe("Add teacher: the school's own fields", () => {
 });
 
 describe("Change teacher: the school's own fields", () => {
-  const TEACHER: Teacher = { ...MEENA, login: { username: "meena.singh", isActive: true }, custom: { c_pan00001: "ABCDE1234F", c_blood001: "O+", c_house001: false, c_since001: "2015-06-01" } };
+  const TEACHER: Teacher = { ...MEENA, login: { username: "meena.singh", email: null, isActive: true, pending: false }, custom: { c_pan00001: "ABCDE1234F", c_blood001: "O+", c_house001: false, c_since001: "2015-06-01" } };
   function open(teacher: Teacher = TEACHER, extra: Record<string, Handler> = {}) {
     const calls = fakeApi(base({ [`GET /staff/teachers/${teacher.id}`]: () => teacher, [`PATCH /staff/teachers/${teacher.id}`]: (body) => ({ ...teacher, ...(body as object) }), ...extra }));
     return { calls, ...mount([{ path: "/school/teachers/:id/edit", element: <TeacherEditPage /> }, { path: "/school/teachers/:id", element: <p>One teacher</p> }], `/school/teachers/${teacher.id}/edit`) };

@@ -22,13 +22,25 @@ import {
   saveAttendance,
   saveDiary,
   saveMarks,
+  saveSyllabus,
+  syllabusSources,
+  teachingFile,
+  getReminder,
+  saveReminder,
   setStandardHoliday,
+  teachingLog,
+  teachingProgress,
   updateEvent,
 } from "../../controllers/classroom.controller";
 import {
   addTestSchema,
   saveDiarySchema,
   saveMarksSchema,
+  saveSyllabusSchema,
+  progressLogQuerySchema,
+  progressQuerySchema,
+  syllabusSourcesQuerySchema,
+  reminderSchema,
   unitDayQuerySchema,
   unitQuerySchema,
   attendanceQuerySchema,
@@ -85,6 +97,20 @@ router.put("/attendance/student", requirePermission("attendance.mark"), validate
 // ---- Diary: what was taught and the homework, per subject and day (the subject's teacher, the class teacher, the school) --------------
 router.get("/diary", requirePermission("classwork.view"), validate(unitDayQuerySchema, "query"), diaryDay);
 router.put("/diary", requirePermission("classwork.manage"), validate(saveDiarySchema), saveDiary);
+
+// ---- Chapters of a subject, and teaching progress (docs/teaching-progress.md) ---------------------------------------------------------
+router.put("/syllabus", requirePermission("classwork.manage"), validate(saveSyllabusSchema), saveSyllabus);
+// The lists a subject's chapters can be copied from (another section, an earlier year).
+router.get("/syllabus/sources", requirePermission("classwork.manage"), validate(syllabusSourcesQuerySchema, "query"), syllabusSources);
+// The school (and staff it allows) every class; a teacher their classes as class teacher and the subjects they teach (the service decides).
+const SEE_PROGRESS = requirePermission("classwork.view", "progress.view");
+router.get("/progress", SEE_PROGRESS, validate(progressQuerySchema, "query"), teachingProgress);
+router.get("/progress/log", SEE_PROGRESS, validate(progressLogQuerySchema, "query"), teachingLog);
+router.get("/progress/export", SEE_PROGRESS, validate(progressQuerySchema, "query"), teachingFile);
+// Whether and when teachers who have not written the diary are reminded: the people who run the school choose.
+const RUNS_SCHOOL = requireRole("school_admin", "principal");
+router.get("/reminder", RUNS_SCHOOL, getReminder);
+router.put("/reminder", RUNS_SCHOOL, validate(reminderSchema), saveReminder);
 
 // ---- Tests and marks ------------------------------------------------------------------------------------------------------------------
 router.get("/tests", requirePermission("classwork.view"), validate(unitQuerySchema, "query"), listTests);

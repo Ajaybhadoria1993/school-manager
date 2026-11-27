@@ -13,7 +13,7 @@ import { Exam } from "../models/Exam";
 import { ExamMark } from "../models/ExamMark";
 import { ExamPaper, type IExamPaper } from "../models/ExamPaper";
 import type { MarksSheetQuery, SaveExamMarksInput } from "../schemas/exams.schemas";
-import { PAPER_NOT_FOUND, asId, toDay } from "./dto";
+import { EXAMS_SCHOOL_WIDE, PAPER_NOT_FOUND, asId, toDay } from "./dto";
 
 const NOT_THEIRS = () => ApiError.forbidden("Only this subject's teacher, the class teacher or the school enters these marks.", "NOT_THEIR_SUBJECT");
 
@@ -51,7 +51,7 @@ export class MarksService {
   static async sheet(tenantId: string, caller: Caller, paperId: string, query: MarksSheetQuery): Promise<MarksSheetDto> {
     const paper = await MarksService.paperFor(tenantId, paperId, query.classId);
     const unit = await resolveUnit(tenantId, query.classId, query.sectionId === "none" ? null : query.sectionId);
-    const access = await accessTo(tenantId, caller, unit);
+    const access = await accessTo(tenantId, caller, unit, EXAMS_SCHOOL_WIDE);
     const school = asId(tenantId);
     const [children, exam, subject, rows] = await Promise.all([
       childrenOf(tenantId, unit),
@@ -85,7 +85,7 @@ export class MarksService {
   static async save(tenantId: string, caller: Caller, paperId: string, input: SaveExamMarksInput): Promise<MarksSheetDto> {
     const paper = await MarksService.paperFor(tenantId, paperId, input.classId);
     const unit = await resolveUnit(tenantId, input.classId, input.sectionId ?? null);
-    const access = await accessTo(tenantId, caller, unit);
+    const access = await accessTo(tenantId, caller, unit, EXAMS_SCHOOL_WIDE);
     if (!(access.all || access.subjects.has(paper.subjectId.toString()))) throw NOT_THEIRS();
     if (paper.maxMarks === null || paper.maxMarks === undefined) throw ApiError.conflict("Set the marks this paper is out of first (change the paper), then enter the marks.", "NO_MAX_MARKS");
     if (toDay(paper.date) > todayInIndia()) throw ApiError.conflict("The marks are entered once the paper is held.", "PAPER_NOT_HELD");

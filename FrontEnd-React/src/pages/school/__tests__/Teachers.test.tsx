@@ -55,7 +55,7 @@ const pick = async (user: ReturnType<typeof userEvent.setup>, id: string, option
   await user.click(await screen.findByRole("option", { name: option }));
 };
 
-const WITH_LOGIN: Teacher = { ...MEENA, login: { username: "meena.singh", isActive: true } };
+const WITH_LOGIN: Teacher = { ...MEENA, login: { username: "meena.singh", email: null, isActive: true, pending: false } };
 
 describe("Teachers: the list", () => {
   it("shows each teacher with their code and mobile, what they can teach, what they were given and the days they do not come", async () => {
@@ -177,7 +177,7 @@ describe("Teachers: the list", () => {
   });
 
   it("brings back a teacher who had left", async () => {
-    const left = { ...MEENA, isActive: false, load: { sections: 0, periodsAllotted: 0 }, login: { username: "meena.singh", isActive: false } };
+    const left = { ...MEENA, isActive: false, load: { sections: 0, periodsAllotted: 0 }, login: { username: "meena.singh", email: null, isActive: false, pending: false } };
     const { calls, user } = openPage([left], { "PATCH /staff/teachers/meena": () => ({ ...left, isActive: true }) });
     await user.click(await screen.findByRole("tab", { name: "Left" }));
     expect((await screen.findByText("Meena Singh")).closest("tr")).toHaveTextContent("meena.singh");
@@ -189,7 +189,7 @@ describe("Teachers: the list", () => {
 
 describe("Teachers: one who leaves", () => {
   it("a teacher with no classes is marked as left after a question that says the login closes", async () => {
-    const { calls, user } = openPage([{ ...DEV, login: { username: "dev.patel", isActive: true } }], { "PATCH /staff/teachers/dev": () => ({ ...DEV, isActive: false }) });
+    const { calls, user } = openPage([{ ...DEV, login: { username: "dev.patel", email: null, isActive: true, pending: false } }], { "PATCH /staff/teachers/dev": () => ({ ...DEV, isActive: false }) });
     await user.click(await screen.findByRole("button", { name: "Dev Patel has left" }));
     const d = await screen.findByRole("dialog", { name: "Dev Patel has left?" });
     expect(d).toHaveTextContent("cannot sign in");

@@ -23,7 +23,7 @@ const ASHA: Teacher = {
   employeeCode: "T-7",
   designation: "PGT (Post graduate teacher)",
   classTeacherOf: ["Class 5 - A"],
-  login: { username: "asha.rao_12", isActive: true },
+  login: { username: "asha.rao_12", email: null, isActive: true, pending: false },
 };
 
 function openPage(path = "/teachers", extra: Record<string, Handler> = {}, who: { role?: UserRole; permissions?: string[] } = {}) {
@@ -182,7 +182,7 @@ describe("Teacher (the menu entry on top)", () => {
   });
 
   it("has no pencil on a teacher who has left: the teacher's page brings them back", async () => {
-    openPage("/teachers/inactive", { "GET /staff/teachers": () => ({ items: [{ ...ASHA, isActive: false, login: { username: "asha.rao_12", isActive: false } }] }) });
+    openPage("/teachers/inactive", { "GET /staff/teachers": () => ({ items: [{ ...ASHA, isActive: false, login: { username: "asha.rao_12", email: null, isActive: false, pending: false } }] }) });
     const table = await screen.findByRole("table", { name: "Teachers" });
     expect(within(table).queryByRole("link", { name: "Edit Asha Rao" })).not.toBeInTheDocument();
     expect(within(table).queryByRole("button", { name: /Bring back/ })).not.toBeInTheDocument();

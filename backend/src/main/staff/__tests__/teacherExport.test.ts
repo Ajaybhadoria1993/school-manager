@@ -56,7 +56,7 @@ describe("exporting the teachers", () => {
       joiningDate: "2015-06-01",
       employmentType: "full_time",
       subjectIds: [maths, hindi],
-      login: { username: "meena.singh_41", password: "Sch00l@Teach1" },
+      giveLogin: true,
     });
     await add(s.token, { name: "Dev Patel", mobile: "9876500000" });
 
@@ -69,7 +69,7 @@ describe("exporting the teachers", () => {
     // The first columns are those of the sample file, so the file can be uploaded back; a password is never in it (only a hash is kept).
     expect(titles).toEqual([
       "Name", "Mobile", "Gender", "Date of Birth", "Email", "Address", "City", "State", "PIN Code", "Employee Code", "Designation", "Qualification",
-      "Experience (years)", "Joining Date", "Employment Type", "Subjects", "Username", "Status", "Class teacher of", "Classes given",
+      "Experience (years)", "Joining Date", "Employment Type", "Subjects", "Login", "Status", "Class teacher of", "Classes given",
     ]);
     expect(titles).not.toContain("Password");
     expect(rows.map((r) => r.Name)).toEqual(["Dev Patel", "Meena Singh"]);
@@ -89,11 +89,11 @@ describe("exporting the teachers", () => {
       "Joining Date": "01-06-2015",
       "Employment Type": "Full time",
       Subjects: "Hindi, Mathematics",
-      Username: "meena.singh_41",
+      Login: "meena@school.example (invitation pending)",
       Status: "Teaching",
     });
     // A teacher with nothing but a name and a mobile number: the boxes are empty, not "null".
-    expect(rows[0]).toMatchObject({ Name: "Dev Patel", Gender: "", "Date of Birth": "", Subjects: "", Username: "", "Employment Type": "" });
+    expect(rows[0]).toMatchObject({ Name: "Dev Patel", Gender: "", "Date of Birth": "", Subjects: "", Login: "", "Employment Type": "" });
   });
 
   it("keeps a mobile number, a PIN code and a code as text (their digits and zeros stay)", async () => {

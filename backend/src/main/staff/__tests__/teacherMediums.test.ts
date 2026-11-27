@@ -13,6 +13,7 @@ import { ReviewService } from "../../tenants/services/review.service";
 import { createTenant } from "../../tenants/services/tenantFactory";
 import { User } from "../../users/models/User";
 import { Teacher } from "../models/Teacher";
+import { acceptLoginInvite, emailOf } from "../../../test/logins";
 
 /**
  * A teacher who teaches in English Medium and Hindi Medium is one person with one login. They have a record on each side (their classes,
@@ -56,11 +57,14 @@ function person(over: object = {}) {
   return { name: "Meena Singh", mobile: String(mobile), login: { username: `meena_${serial}`, password: TEACHER_PASSWORD }, ...over };
 }
 
+/** A teacher with login access (the email `<username>@mail.test` unless one is given), the invitation opened with TEACHER_PASSWORD. */
 async function addTeacher(s: { token: string }, over: object = {}, medium?: string) {
-  const input = person(over) as ReturnType<typeof person>;
-  const res = await request(app).post(api).set(auth(s.token, medium)).send(input);
+  const { login, ...input } = person(over) as ReturnType<typeof person> & { email?: string };
+  const email = login ? (input.email ?? emailOf(login.username)) : undefined;
+  const res = await request(app).post(api).set(auth(s.token, medium)).send(login ? { ...input, email, giveLogin: true } : input);
   expect(res.status).toBe(201);
-  return { id: res.body.data.id as string, username: input.login?.username, mobile: input.mobile };
+  if (login) expect((await acceptLoginInvite(res.body.data.invite.devInviteLink, login.password)).status).toBe(200);
+  return { id: res.body.data.id as string, email: email as string, mobile: input.mobile };
 }
 
 const addTo = (token: string, id: string, mediumId: string) => request(app).post(`${api}/${id}/mediums`).set(auth(token)).send({ mediumId });
@@ -71,7 +75,7 @@ async function teacherInBoth() {
   const s = await school();
   const t = await addTeacher(s);
   expect((await addTo(s.token, t.id, s.hindi)).status).toBe(201);
-  const login = await signIn(t.username);
+  const login = await signIn(t.email);
   return { ...s, teacher: t, login, teacherToken: login.body.data.accessToken as string };
 }
 
@@ -79,7 +83,7 @@ describe("adding a teacher to another medium", () => {
   it("makes their record on that side with the same login, and no second login", async () => {
     const s = await school();
     const t = await addTeacher(s, { email: "meena@tm.example", qualification: "M.Sc.", designation: "TGT" });
-    const logins = await User.countDocuments({ username: t.username });
+    const logins = await User.countDocuments({ email: t.email });
 
     expect((await addTo(s.token, t.id, s.hindi)).status).toBe(201);
 
@@ -87,7 +91,7 @@ describe("adding a teacher to another medium", () => {
     const there = await Teacher.findOne({ tenantId: s.hindi, mobile: t.mobile }).lean();
     expect(there).toMatchObject({ name: "Meena Singh", email: "meena@tm.example", qualification: "M.Sc.", designation: "TGT", isActive: true });
     expect(there?.userId?.toString()).toBe(here?.userId?.toString());
-    expect(await User.countDocuments({ username: t.username })).toBe(logins);
+    expect(await User.countDocuments({ email: t.email })).toBe(logins);
   });
 
   it("does not carry over what belongs to one side: subjects, limits, days off", async () => {
@@ -213,7 +217,7 @@ describe("one login, two mediums", () => {
   it("a teacher of one medium has nothing to switch", async () => {
     const s = await school();
     const t = await addTeacher(s);
-    expect((await signIn(t.username)).body.data.tenant.mediums).toEqual([]);
+    expect((await signIn(t.email)).body.data.tenant.mediums).toEqual([]);
   });
 
   it("answers for the medium the teacher opens: their own record on each side", async () => {
@@ -228,7 +232,7 @@ describe("one login, two mediums", () => {
   it("refuses a medium they do not teach in", async () => {
     const s = await school();
     const t = await addTeacher(s);
-    const token = (await signIn(t.username)).body.data.accessToken;
+    const token = (await signIn(t.email)).body.data.accessToken;
     const res = await request(app).get(`${api}/me`).set(auth(token, s.hindi));
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("MEDIUM_NOT_FOUND");
@@ -248,14 +252,14 @@ describe("one login, two mediums", () => {
     expect((await request(app).get(`${api}/me`).set(auth(teacherToken, "nonsense"))).status).toBe(403);
   });
 
-  it("a new username or password is the one login's, wherever it is changed", async () => {
+  it("a password link sent from either side is the one login's", async () => {
     const { token, teacher, hindi } = await teacherInBoth();
     const there = await Teacher.findOne({ tenantId: hindi, mobile: teacher.mobile }).lean();
-    serial += 1;
-    const username = `meena_new_${serial}`;
-    expect((await request(app).patch(`${api}/${there!._id}/login`).set(auth(token, hindi)).send({ username })).status).toBe(200);
-    expect((await signIn(username)).status).toBe(200);
-    expect((await request(app).get(`${api}/${teacher.id}`).set(auth(token))).body.data.login.username).toBe(username);
+    const res = await request(app).post(`${api}/${there!._id}/login`).set(auth(token, hindi)).send({});
+    expect(res.status).toBe(200);
+    expect((await acceptLoginInvite(res.body.data.invite.devInviteLink, "N3w@Medium1")).status).toBe(200);
+    expect((await request(app).post("/api/v1/auth/login").send({ identifier: teacher.email, password: "N3w@Medium1" })).status).toBe(200);
+    expect(await User.countDocuments({ email: teacher.email })).toBe(1);
   });
 
   it("the name, mobile and email changed on one side change on the other", async () => {
@@ -264,9 +268,9 @@ describe("one login, two mediums", () => {
     expect(await Teacher.findOne({ tenantId: hindi, userId: { $ne: null } }).lean()).toMatchObject({ name: "Meena Rao", nameKey: "meena rao", mobile: "9222222222", email: "rao@tm.example" });
   });
 
-  it("the school can find them by username on either side", async () => {
+  it("the school can find them by their login's email on either side", async () => {
     const { token, teacher, hindi } = await teacherInBoth();
-    const res = await request(app).get(api).query({ search: teacher.username }).set(auth(token, hindi));
+    const res = await request(app).get(api).query({ search: teacher.email }).set(auth(token, hindi));
     expect(res.body.data.items).toHaveLength(1);
   });
 });
@@ -276,7 +280,7 @@ describe("leaving one medium", () => {
     const { token, teacher, hindi } = await teacherInBoth();
     const there = await Teacher.findOne({ tenantId: hindi, mobile: teacher.mobile }).lean();
     await patch(token, there!._id.toString(), { isActive: false }, hindi);
-    const again = await signIn(teacher.username);
+    const again = await signIn(teacher.email);
     expect(again.status).toBe(200);
     expect(again.body.data.tenant.mediums).toEqual([]);
   });
@@ -284,7 +288,7 @@ describe("leaving one medium", () => {
   it("leaving the side the login belongs to moves the login to the other side", async () => {
     const { token, teacher, hindi, tenantId } = await teacherInBoth();
     await patch(token, teacher.id, { isActive: false });
-    const again = await signIn(teacher.username);
+    const again = await signIn(teacher.email);
     expect(again.status).toBe(200);
     expect(again.body.data.user.tenantId).toBe(hindi);
     expect(again.body.data.user.tenantId).not.toBe(tenantId);
@@ -297,7 +301,7 @@ describe("leaving one medium", () => {
     const there = await Teacher.findOne({ tenantId: hindi, mobile: teacher.mobile }).lean();
     await patch(token, there!._id.toString(), { isActive: false }, hindi);
     await patch(token, teacher.id, { isActive: false });
-    expect((await signIn(teacher.username)).status).not.toBe(200);
+    expect((await signIn(teacher.email)).status).not.toBe(200);
   });
 
   it("coming back opens the login again", async () => {
@@ -305,14 +309,14 @@ describe("leaving one medium", () => {
     const t = await addTeacher(s);
     await patch(s.token, t.id, { isActive: false });
     await patch(s.token, t.id, { isActive: true });
-    expect((await signIn(t.username)).status).toBe(200);
+    expect((await signIn(t.email)).status).toBe(200);
   });
 
   it("in a school with one medium, leaving closes the login as it always did", async () => {
     const s = await school(["English"]);
     const t = await addTeacher(s);
     await patch(s.token, t.id, { isActive: false });
-    expect((await signIn(t.username)).status).not.toBe(200);
+    expect((await signIn(t.email)).status).not.toBe(200);
   });
 });
 
@@ -320,7 +324,8 @@ describe("no second login for the same person", () => {
   it("Add teacher on the other medium with their mobile is refused, under the mobile box", async () => {
     const s = await school();
     const t = await addTeacher(s);
-    const res = await request(app).post(api).set(auth(s.token, s.hindi)).send(person({ mobile: t.mobile }));
+    const { login: _shorthand, ...other } = person({ mobile: t.mobile });
+    const res = await request(app).post(api).set(auth(s.token, s.hindi)).send({ ...other, email: "meena.other@mail.test", giveLogin: true });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe("TEACHER_LOGIN_IN_OTHER_MEDIUM");
     expect(res.body.details[0]).toMatchObject({ path: "mobile" });
@@ -328,12 +333,12 @@ describe("no second login for the same person", () => {
     expect(await Teacher.countDocuments({ tenantId: s.hindi, mobile: t.mobile })).toBe(0);
   });
 
-  it("Make a login for a record whose mobile already has a login on the other side is refused", async () => {
+  it("Give login access for a record whose mobile already has a login on the other side is refused", async () => {
     const s = await school();
     const t = await addTeacher(s);
     const noLogin = await request(app).post(api).set(auth(s.token, s.hindi)).send({ name: "Meena S", mobile: t.mobile });
     serial += 1;
-    const res = await request(app).post(`${api}/${noLogin.body.data.id}/login`).set(auth(s.token, s.hindi)).send({ username: `second_${serial}`, password: TEACHER_PASSWORD });
+    const res = await request(app).post(`${api}/${noLogin.body.data.id}/login`).set(auth(s.token, s.hindi)).send({ email: `second_${serial}@mail.test` });
     expect(res.status).toBe(409);
     expect(res.body.code).toBe("TEACHER_LOGIN_IN_OTHER_MEDIUM");
   });

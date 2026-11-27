@@ -2,7 +2,7 @@ import { DEFAULT_TEACHER_RULES, type TeacherDetailKey, type TeacherFieldRules } 
 import { TEACHER_LIMITS } from "../constants/teachers";
 import type { EmploymentType, Teacher, TeacherGender, TeacherInput } from "../types";
 import { ageOn, todayInIndia } from "./students";
-import { isEmail, isIndianMobile, isPasswordValid, isUsername } from "./validators";
+import { isEmail, isIndianMobile, isUsername } from "./validators";
 
 export { isUsername };
 
@@ -11,13 +11,16 @@ export { isUsername };
  * these are the same words so a box is marked before anything is sent.
  */
 
-export type TeacherStepKey = "personal" | "job" | "teaching" | "login";
+export type TeacherStepKey = "personal" | "job" | "teaching";
 
+/**
+ * The steps of Add teacher. There is no Login step since 2026-11-26: the school ticks "Give login access" next to the email in the first
+ * step (the email is then needed), and the teacher gets an invitation to choose their own password. The school makes no username or password.
+ */
 export const TEACHER_STEPS: { key: TeacherStepKey; label: string }[] = [
   { key: "personal", label: "Personal info" },
   { key: "job", label: "Job details" },
   { key: "teaching", label: "Teaching" },
-  { key: "login", label: "Login" },
 ];
 
 /** Every box of the form, flat. A box the server points at by a path (`address.pincode`) is found by `formKeyOfPath`. */
@@ -41,8 +44,8 @@ export interface TeacherFormValues {
   maxPeriodsPerDay: string;
   maxPeriodsPerWeek: string;
   offDays: number[];
-  username: string;
-  password: string;
+  /** Add teacher: give the teacher a login (their email), with an invitation to choose a password. */
+  giveLogin: boolean;
 }
 export type TeacherFormKey = keyof TeacherFormValues;
 export type TeacherProblems = Partial<Record<TeacherFormKey, string>>;
@@ -67,8 +70,7 @@ export const emptyTeacherForm = (): TeacherFormValues => ({
   maxPeriodsPerDay: "",
   maxPeriodsPerWeek: "",
   offDays: [],
-  username: "",
-  password: "",
+  giveLogin: false,
 });
 
 const STEP_OF: Record<TeacherFormKey, TeacherStepKey> = {
@@ -91,8 +93,7 @@ const STEP_OF: Record<TeacherFormKey, TeacherStepKey> = {
   maxPeriodsPerDay: "teaching",
   maxPeriodsPerWeek: "teaching",
   offDays: "teaching",
-  username: "login",
-  password: "login",
+  giveLogin: "personal",
 };
 const ORDER = Object.keys(STEP_OF) as TeacherFormKey[];
 
@@ -109,8 +110,6 @@ export function formKeyOfPath(path: string): TeacherFormKey | null {
     "address.city": "city",
     "address.state": "state",
     "address.pincode": "pincode",
-    "login.username": "username",
-    "login.password": "password",
   };
   if (named[path]) return named[path];
   return head in STEP_OF ? (head as TeacherFormKey) : null;
@@ -130,8 +129,11 @@ export const MESSAGES = {
   experienceYears: `Experience is 0 to ${TEACHER_LIMITS.maxExperience} whole years`,
   maxPeriodsPerDay: `A teacher can take 1 to ${TEACHER_LIMITS.maxPeriodsPerDay} periods a day`,
   maxPeriodsPerWeek: `A teacher can take 1 to ${TEACHER_LIMITS.maxPeriodsPerWeek} periods a week`,
+  /** A parent's login (the school makes its username and password: components/logins/LoginDialogs.tsx). */
   username: "A username is 3 to 30 letters, digits, dots or underscores, starting with a letter",
   password: "Password must be 8-72 characters with an uppercase letter, a lowercase letter, a number and a special character",
+  /** The server's words when login access is ticked and the email is empty. */
+  loginEmail: "Enter the email: the login invitation is sent to it",
 } as const;
 
 
@@ -189,8 +191,9 @@ const isRealDay = (value: string) => {
 const daysFromNow = (days: number) => new Date(new Date(`${todayInIndia()}T00:00:00.000Z`).getTime() + days * 86400000).toISOString().slice(0, 10);
 
 /**
- * What is wrong with the form. `login`: the teacher gets a login now, so the mobile number, the gender and the username and password
- * are needed; for a teacher who is only changed, the name is all that is needed (the older teachers were added with nothing else).
+ * What is wrong with the form. `login`: the teacher is being added (Add teacher), so the mobile number and the gender are needed, and the email
+ * when "Give login access" is ticked; for a teacher who is only changed, the name is all that is needed (the older teachers were added with
+ * nothing else).
  * `requireGender: false` (the change form) leaves the gender optional: an older teacher who was given a login later has none.
  * `rules`: what the school needs of the usual details (Teacher > Manage fields): a needed one must be answered, and a detail the school does
  * not ask is not looked at (its box is not on the form, so a wrong old value in it must not stop a save).
@@ -206,7 +209,10 @@ export function teacherProblems(v: TeacherFormValues, options: { login: boolean;
   } else if (v.mobile.trim() !== "" && !isIndianMobile(nationalNumber(v.mobile))) {
     problems.mobile = MESSAGES.mobile;
   }
-  if (shown("email") && v.email.trim() !== "" && (!isEmail(v.email) || v.email.trim().length > 254)) problems.email = MESSAGES.email;
+  // Login access shows the email box whatever the school's fields say: the invitation goes to it.
+  const loginEmail = options.login && v.giveLogin;
+  if ((shown("email") || loginEmail) && v.email.trim() !== "" && (!isEmail(v.email) || v.email.trim().length > 254)) problems.email = MESSAGES.email;
+  if (loginEmail && v.email.trim() === "") problems.email = MESSAGES.loginEmail;
   if (shown("dateOfBirth") && v.dateOfBirth !== "") {
     if (!isRealDay(v.dateOfBirth)) problems.dateOfBirth = MESSAGES.dateInvalid("date of birth");
     else {
@@ -235,10 +241,6 @@ export function teacherProblems(v: TeacherFormValues, options: { login: boolean;
     const given = key === "subjectIds" ? v.subjectIds.length > 0 : String(v[key]).trim() !== "";
     if (!given && problems[key] === undefined) problems[key] = NEEDED_MESSAGES[detail];
   }
-  if (options.login) {
-    if (!isUsername(v.username)) problems.username = MESSAGES.username;
-    if (!isPasswordValid(v.password)) problems.password = MESSAGES.password;
-  }
   return problems;
 }
 
@@ -246,7 +248,7 @@ export function teacherProblems(v: TeacherFormValues, options: { login: boolean;
 
 const orNull = (text: string) => (text.trim() === "" ? null : text.trim());
 
-/** What is sent: an empty box is `null` (the server clears it), numbers are numbers; the login only when one is being made. */
+/** What is sent: an empty box is `null` (the server clears it), numbers are numbers; login access only from Add teacher. */
 export function toTeacherInput(v: TeacherFormValues, options: { login: boolean }): TeacherInput {
   const body: TeacherInput = {
     name: v.name.trim(),
@@ -266,7 +268,7 @@ export function toTeacherInput(v: TeacherFormValues, options: { login: boolean }
     maxPeriodsPerWeek: v.maxPeriodsPerWeek.trim() === "" ? null : Number(v.maxPeriodsPerWeek),
     offDays: v.offDays,
   };
-  if (options.login) body.login = { username: v.username.trim().toLowerCase(), password: v.password };
+  if (options.login && v.giveLogin) body.giveLogin = true;
   return body;
 }
 

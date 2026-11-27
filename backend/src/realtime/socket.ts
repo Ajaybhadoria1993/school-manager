@@ -26,14 +26,14 @@ let io: Server | null = null;
 const roomOf = (userId: string) => `user:${userId}`;
 const trackingRoomOf = (tenantId: string) => `tenant:${tenantId}:tracking`;
 
-/** A teacher, a parent or a student never watches the vehicles of the whole school (the same rule as requireSchoolPermission). */
-const OWN_ONLY_ROLES: readonly string[] = ["teacher", "parent", "student"];
-
-/** Who may watch the school's vehicles live: whoever may see Transport (transport.view), the school admin and the principal always. */
+/**
+ * Who may watch the school's vehicles live: whoever may see Transport on the whole school (transport.view: the same rule as
+ * requireSchoolPermission; a teacher or a parent only through a staff role), the school admin and the principal always.
+ */
 async function mayWatchVehicles(user: { userId: string; role: string; tenantId: string | null }): Promise<boolean> {
-  if (!user.tenantId || OWN_ONLY_ROLES.includes(user.role)) return false;
+  if (!user.tenantId) return false;
   if (FULL_ACCESS_ROLES.includes(user.role)) return true;
-  return (await PermissionService.grantedTo(user)).includes("transport.view");
+  return (await PermissionService.accessOf(user)).schoolPermissions.includes("transport.view");
 }
 
 export function startRealtime(httpServer: HttpServer): Server {

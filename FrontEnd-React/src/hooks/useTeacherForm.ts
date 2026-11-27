@@ -38,7 +38,7 @@ export function useTeacherForm(initial: TeacherFormValues, options: { login: boo
    * A text box: its value, its change, and showing its message once it is left. `keep` cleans what is typed or pasted before it is
    * kept (only the digits of a mobile number or a PIN code), so a box never holds what it cannot take.
    */
-  const bind = (key: Exclude<TeacherFormKey, "subjectIds" | "offDays" | "gender" | "employmentType">, keep?: (typed: string) => string) => ({
+  const bind = (key: Exclude<TeacherFormKey, "subjectIds" | "offDays" | "gender" | "employmentType" | "giveLogin">, keep?: (typed: string) => string) => ({
     id: teacherFieldId(key),
     value: values[key],
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => {

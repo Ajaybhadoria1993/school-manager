@@ -23,7 +23,7 @@ const FULL: Teacher = {
   employmentType: "full_time",
   maxPeriodsPerDay: 6,
   offDays: [6],
-  login: { username: "meena.singh", isActive: true },
+  login: { username: "meena.singh", email: null, isActive: true, pending: false },
 };
 
 function openPage(teacher: Teacher, extra: Record<string, Handler> = {}) {
@@ -127,7 +127,7 @@ describe("Change teacher", () => {
   });
 
   it("does not ask for a gender, even of a teacher who has a login (an older teacher was given a login without one)", async () => {
-    const older = { ...MEENA, gender: null, login: { username: "meena.singh", isActive: true } };
+    const older = { ...MEENA, gender: null, login: { username: "meena.singh", email: null, isActive: true, pending: false } };
     const { calls, user } = openPage(older, { "PATCH /staff/teachers/meena": () => older });
     await user.type(await screen.findByLabelText(/^Name/), " Rathore");
     expect(screen.getByText("Gender").closest("label")).not.toHaveTextContent("*");

@@ -1,16 +1,24 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
-import { hashPassword } from "../../../utils/authUtils";
+import { generateToken, hashPassword } from "../../../utils/authUtils";
+import { logger } from "../../../utils/logger";
 import { isDuplicateKey } from "../../academics/services/shared";
+import { LoginInviteService } from "../../auth/services/loginInvite.service";
 import { TokenService } from "../../auth/services/token.service";
 import { User, type UserRole } from "../../users/models/User";
 import type { LoginAccountInput } from "../schemas/staff.schemas";
 import { suggestUsernames } from "./usernames.service";
 
-/** A teacher's login as the list and the teacher's page show it. The password is never part of it. */
+/**
+ * A teacher's (or staff member's) login as the list and their page show it. The password is never part of it. Since 2026-11-26 a new login is
+ * the person's email (`username` null) and is `pending` until they open the invitation and choose a password; a login made before that has a
+ * username (and may have an email too). `isActive` false: closed (they have left).
+ */
 export interface TeacherLoginDto {
-  username: string;
+  username: string | null;
+  email: string | null;
   isActive: boolean;
+  pending: boolean;
 }
 
 /** The details of a teacher that a login repeats (the login's name, phone and email follow the teacher's). */
@@ -62,7 +70,36 @@ export class TeacherLogin {
     if (email && (await User.exists({ email, ...other }))) throw emailTaken();
   }
 
-  /** Makes the login and returns its id. */
+  /**
+   * The login of a teacher or a staff member (2026-11-26): their email, and no password yet. It is `invitePending` until they open the
+   * invitation (LoginInviteService.send, called by whoever made it) and choose their password; until then it cannot sign in. Returns its id.
+   */
+  static async createInvited(
+    tenantId: string,
+    person: { name: string; mobile: string | null; email: string; isActive: boolean },
+    { role = "teacher", roleLabel }: Omit<LoginOptions, "path"> = {}
+  ): Promise<Types.ObjectId> {
+    // A random password nobody knows stands in until they choose theirs (the field is required, and the login refuses a pending invite anyway).
+    const passwordHash = await hashPassword(generateToken());
+    try {
+      const user = await User.create({
+        name: person.name,
+        email: person.email,
+        ...(person.mobile ? { phone: person.mobile } : {}),
+        passwordHash,
+        role,
+        ...(roleLabel ? { roleLabel } : {}),
+        tenantId,
+        isActive: person.isActive,
+        invitePending: true,
+      });
+      return user._id;
+    } catch (err) {
+      throw await explain(err, "");
+    }
+  }
+
+  /** Makes the login and returns its id (a parent's login, which the school makes with a username and a password). */
   static async create(
     tenantId: string,
     person: { name: string; mobile: string | null; email: string | null; isActive: boolean },
@@ -110,6 +147,13 @@ export class TeacherLogin {
   /** The login of each of these users, by id. */
   static async byIds(ids: Types.ObjectId[]): Promise<Map<string, TeacherLoginDto>> {
     if (ids.length === 0) return new Map();
+    const users = await User.find({ _id: { $in: ids } }).select("username email isActive invitePending").lean();
+    return new Map(users.map((u) => [u._id.toString(), { username: u.username ?? null, email: u.email ?? null, isActive: u.isActive, pending: u.invitePending === true }]));
+  }
+
+  /** A parent's login of each of these users, by id: the username it signs in with (a parent's login always has one). */
+  static async usernamesByIds(ids: Types.ObjectId[]): Promise<Map<string, { username: string; isActive: boolean }>> {
+    if (ids.length === 0) return new Map();
     const users = await User.find({ _id: { $in: ids } }).select("username isActive").lean();
     return new Map(users.filter((u) => u.username).map((u) => [u._id.toString(), { username: u.username as string, isActive: u.isActive }]));
   }
@@ -128,8 +172,32 @@ export class TeacherLogin {
     if (!isActive) await TokenService.revokeAllForUser(userId);
   }
 
-  /** The login repeats the teacher's name, phone and email. An empty email takes the email away: the username still opens it. */
-  static async sync(userId: Types.ObjectId, details: LoginDetails): Promise<void> {
+  /**
+   * The email of a login may be taken away only when a username still opens it (an older login): a login that is its email needs one. Checked
+   * before the teacher or the staff member is changed.
+   */
+  static async assertKeepsEmail(userId: Types.ObjectId | null | undefined, email: string | null | undefined): Promise<void> {
+    if (!userId || email !== null) return;
+    if (await User.exists({ _id: userId, username: { $type: "string" } })) return;
+    const message = "Their login is this email: it cannot be left empty";
+    throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "email", message }]);
+  }
+
+  /**
+   * The login repeats the person's name, phone and email. An empty email takes the email away (only for an older login a username still opens).
+   * A changed email ends every link sent to the old one; a login still pending gets its invitation again, at the new address.
+   */
+  static async sync(userId: Types.ObjectId, details: LoginDetails, { resend = true }: { resend?: boolean } = {}): Promise<void> {
+    const before = details.email !== undefined ? await User.findById(userId).select("email invitePending").lean() : null;
+    await TeacherLogin.write(userId, details);
+    if (!before || (before.email ?? null) === (details.email ?? null)) return;
+    await LoginInviteService.cancel(userId);
+    if (resend && before.invitePending && details.email) {
+      await LoginInviteService.send(userId).catch((err) => logger.error("Failed to send a login invitation again after an email change", err));
+    }
+  }
+
+  private static async write(userId: Types.ObjectId, details: LoginDetails): Promise<void> {
     const set: Record<string, unknown> = {};
     const unset: Record<string, ""> = {};
     if (details.name !== undefined) set.name = details.name;

@@ -85,7 +85,7 @@ describe("one child, one day", () => {
     const s = await classroomSchool();
     const anita = await addTeacher(s.token, "Anita Rao", { mobile: "9876500001", login: { username: "sun.anita", password: "Sch00l@Login1" } });
     await request(app).put("/api/v1/staff/class-teachers").set(auth(s.token)).send({ ...s.one, teacherId: anita });
-    const anitaToken = (await request(app).post("/api/v1/auth/login").send({ identifier: "sun.anita", password: "Sch00l@Login1" })).body.data.accessToken as string;
+    const anitaToken = (await request(app).post("/api/v1/auth/login").send({ identifier: "sun.anita@mail.test", password: "Sch00l@Login1" })).body.data.accessToken as string;
     const res = await mark(anitaToken, yesterday, s.mira.id, "present");
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(recordsOf(await range(s.token, s.one, yesterday))["Mira Shah"][0].status).toBe("present");

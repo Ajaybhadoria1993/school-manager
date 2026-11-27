@@ -1,14 +1,14 @@
-import { Briefcase, Hash, Home, KeyRound, Mail, Phone, User, UserRound } from "lucide-react";
+import { useState } from "react";
+import { Briefcase, Hash, Home, Mail, Phone, UserRound } from "lucide-react";
+import { useGetRoleChoicesQuery } from "../../redux/api/permissionsApi";
 import { MAX_ROLE_OTHER, ROLES_KEEPING_THEIR_LOGIN, STAFF_ROLES } from "../../constants/staffMembers";
 import { STATES } from "../../constants/schoolOptions";
 import { TEACHER_LIMITS } from "../../constants/teachers";
-import type { UsernameStatus } from "../../hooks/useUsernameCheck";
-import { staffFieldId, type StaffFormKey, type StaffFormValues, type StaffProblems } from "../../utils/staffMembers";
-import { birthDateRange, generatePassword, joiningShortcuts, latestJoiningDate, onlyDigits } from "../../utils/teachers";
+import { namedRoleKey, staffFieldId, type StaffFormKey, type StaffFormValues, type StaffProblems } from "../../utils/staffMembers";
+import { birthDateRange, joiningShortcuts, latestJoiningDate, onlyDigits } from "../../utils/teachers";
 import { ageOn, ageText, mobileDigits, todayInIndia } from "../../utils/students";
-import { PasswordBox } from "../teachers/PasswordBox";
+import { LoginAccessBox } from "../logins/LoginAccessBox";
 import { SubjectChips } from "../teachers/SubjectChips";
-import { UsernameState } from "../teachers/UsernameState";
 import { FormCard } from "../students/form/FormCard";
 import { ChipPicker } from "../ui/ChipPicker";
 import { DateBox } from "../ui/DateBox";
@@ -21,16 +21,15 @@ import { Switch } from "../ui/Switch";
 const GRID = "grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-3";
 const GENDERS = ["Male", "Female", "Other"] as const;
 
-type TextKey = Exclude<StaffFormKey, "gender" | "role" | "state" | "dateOfBirth" | "joiningDate" | "alsoTeacher" | "subjectIds">;
+type TextKey = Exclude<StaffFormKey, "gender" | "role" | "state" | "dateOfBirth" | "joiningDate" | "alsoTeacher" | "subjectIds" | "giveLogin">;
 
 /**
  * The boxes of a staff member in cards, in the order the school asked for (2026-11-08): the person (name, date of birth with the age it
- * makes, gender, mobile, and an email that is only a contact), the address, the role (the role, the name of a role of the school's own for
- * Other, whether they also teach and what, the designation, the employee code and the joining date) and, when a person is added, their
- * **Login**: the username and the password the school makes for them (there is no invitation email for staff). `editing`: no Login card
- * (the Staff list changes the username and the password). `check`: whether the username is free on the platform. `teachingLocked`: the
- * person already teaches here, so *Also a teacher* stays on (they stop as a teacher on the Teacher page). A box says what is wrong under it
- * once `errors` has a message for it; nothing is sent from here.
+ * makes, gender, mobile, the email and, when a person is added, **Give login access** (2026-11-26: ticked, the email is needed and becomes
+ * their login, with an invitation to choose a password; the school makes no username or password)), the address, the role (the role, the
+ * name of a role of the school's own for Other, whether they also teach and what, the designation, the employee code and the joining date).
+ * `editing`: no login access box (the Staff list gives it). `teachingLocked`: the person already teaches here, so *Also a teacher* stays on
+ * (they stop as a teacher on the Teacher page). A box says what is wrong under it once `errors` has a message for it; nothing is sent from here.
  */
 export function StaffForm({
   values,
@@ -39,7 +38,7 @@ export function StaffForm({
   onReveal,
   editing = false,
   teachingLocked = false,
-  check = { state: "idle" },
+  photo,
 }: {
   values: StaffFormValues;
   errors: StaffProblems;
@@ -48,9 +47,33 @@ export function StaffForm({
   onReveal: (key: StaffFormKey) => void;
   editing?: boolean;
   teachingLocked?: boolean;
-  check?: UsernameStatus;
+  /** The person's photo, at the top of the first card. */
+  photo?: React.ReactNode;
 }) {
-  const role = STAFF_ROLES.find((r) => r.key === values.role);
+  // The roles the school named (made on Permissions > New role, or typed under Other before), offered before Other (2026-11-26). Chosen, it is sent
+  // as Other with its name. Choosing Other itself opens the Role name box to write a new one (and keeps it open while a name is typed).
+  const named = useGetRoleChoicesQuery().data?.data.items ?? [];
+  const [writing, setWriting] = useState(false);
+  const pickedNamed = values.role === "other" && !writing ? named.find((r) => r.key === namedRoleKey(values.roleOther)) : undefined;
+  const role = pickedNamed ? undefined : STAFF_ROLES.find((r) => r.key === values.role);
+  const usual = STAFF_ROLES.filter((r) => r.key !== "other").map((r) => ({ value: r.key, label: r.label }));
+  const otherRole = STAFF_ROLES.find((r) => r.key === "other")!;
+  const roleOptions = [...usual, ...named.map((r) => ({ value: r.key, label: r.label })), { value: otherRole.key, label: otherRole.label }];
+  const chooseRole = (next: string) => {
+    const choice = named.find((r) => r.key === next);
+    if (choice) {
+      setWriting(false);
+      onChange("role", "other");
+      onChange("roleOther", choice.label);
+      return;
+    }
+    // Other: a new name is written (one of the school's own roles is in the list).
+    if (next === "other") {
+      setWriting(true);
+      if (pickedNamed) onChange("roleOther", "");
+    }
+    onChange("role", next);
+  };
   const born = birthDateRange(todayInIndia());
   const age = /^\d{4}-\d{2}-\d{2}$/.test(values.dateOfBirth) ? ageOn(values.dateOfBirth, todayInIndia()) : null;
   const text = (key: TextKey, keep?: (typed: string) => string) => ({
@@ -65,6 +88,7 @@ export function StaffForm({
   return (
     <>
       <FormCard index={0} icon={UserRound} tone="primary" title="Staff member">
+        {photo && <div className="mb-5">{photo}</div>}
         <div className={GRID}>
           <Field id={staffFieldId("name")} label="Name" error={errors.name}>
             <Input {...text("name")} maxLength={TEACHER_LIMITS.name} autoComplete="off" placeholder="For example Asha Rao" />
@@ -88,10 +112,11 @@ export function StaffForm({
           <Field id={staffFieldId("mobile")} label="Mobile number" optional error={errors.mobile}>
             <Input {...text("mobile", mobileDigits)} icon={Phone} prefix="+91" type="tel" inputMode="numeric" autoComplete="off" placeholder="98765 43210" />
           </Field>
-          <Field id={staffFieldId("email")} label="Email" optional error={errors.email}>
+          <Field id={staffFieldId("email")} label="Email" optional={editing || !values.giveLogin} error={errors.email}>
             <Input {...text("email")} icon={Mail} type="email" autoComplete="off" placeholder="asha@school.example" />
           </Field>
         </div>
+        {!editing && <LoginAccessBox id={staffFieldId("giveLogin")} className="mt-5 w-fit" checked={values.giveLogin} onChange={(on) => onChange("giveLogin", on)} />}
       </FormCard>
 
       <FormCard index={1} icon={Home} tone="success" title="Address">
@@ -116,14 +141,14 @@ export function StaffForm({
           <Field id={staffFieldId("role")} label="Role" error={errors.role}>
             <Select
               id={staffFieldId("role")}
-              value={values.role}
+              value={pickedNamed ? pickedNamed.key : values.role}
               placeholder="Choose the role"
               invalid={errors.role !== undefined}
-              options={STAFF_ROLES.map((r) => ({ value: r.key, label: r.label }))}
-              onChange={(next) => onChange("role", next)}
+              options={roleOptions}
+              onChange={chooseRole}
             />
           </Field>
-          {values.role === "other" && (
+          {values.role === "other" && !pickedNamed && (
             <Field id={staffFieldId("roleOther")} label="Role name" error={errors.roleOther}>
               <Input {...text("roleOther")} maxLength={MAX_ROLE_OTHER + 10} autoComplete="off" placeholder="For example Lab technician" />
             </Field>
@@ -177,29 +202,6 @@ export function StaffForm({
           </Field>
         </div>
       </FormCard>
-
-      {!editing && (
-        <FormCard index={3} icon={KeyRound} tone="warning" title="Login">
-          <div className={GRID}>
-            <Field id={staffFieldId("username")} label="Username" error={errors.username}>
-              <Input
-                {...text("username")}
-                aria-invalid={errors.username !== undefined || (!errors.username && check.state === "taken") ? true : undefined}
-                aria-describedby={errors.username ? `${staffFieldId("username")}-error` : check.state === "taken" ? "staff-username-taken" : undefined}
-                icon={User}
-                maxLength={30}
-                autoComplete="off"
-                autoCapitalize="none"
-                spellCheck={false}
-              />
-              {!errors.username && <UsernameState check={check} takenId="staff-username-taken" onPick={(name) => onChange("username", name)} />}
-            </Field>
-            <Field id={staffFieldId("password")} label="Password" error={errors.password}>
-              <PasswordBox {...text("password")} onMakeAnother={() => onChange("password", generatePassword())} />
-            </Field>
-          </div>
-        </FormCard>
-      )}
     </>
   );
 }

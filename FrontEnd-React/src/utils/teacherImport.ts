@@ -3,8 +3,7 @@ import { TEACHER_IMPORT, TEACHER_LIMITS } from "../constants/teachers";
 import type { EmploymentType, TeacherGender, TeacherImportRowInput } from "../types";
 import { MAX_CUSTOM_LABEL, MAX_CUSTOM_TEXT, type CustomFieldDef } from "../constants/studentFields";
 import { headerKey, maskDayInput, normaliseDay, normaliseGender, normaliseMobile, normaliseState, normaliseYesNo, tidy } from "./studentImport";
-import { MESSAGES, emptyTeacherForm, isUsername, teacherProblems, type TeacherFormKey } from "./teachers";
-import { isPasswordValid } from "./validators";
+import { MESSAGES, emptyTeacherForm, teacherProblems, type TeacherFormKey } from "./teachers";
 
 export { maskDayInput };
 
@@ -29,9 +28,7 @@ export type TeacherImportField =
   | "experienceYears"
   | "joiningDate"
   | "employmentType"
-  | "subjects"
-  | "username"
-  | "password";
+  | "subjects";
 
 /** What kind of box the table shows for a column: free text, a day, or a list it suggests from. */
 export type TeacherCellInput = "text" | "date" | "gender" | "state" | "employment" | "designation";
@@ -64,8 +61,6 @@ export const TEACHER_IMPORT_FIELDS: readonly TeacherFieldDef[] = [
   { key: "joiningDate", label: "Joining Date", input: "date", synonyms: ["dateofjoining", "doj", "joined", "joindate", "dateofjoin"] },
   { key: "employmentType", label: "Employment Type", input: "employment", synonyms: ["jobtype", "type", "stafftype", "employmentstatus", "natureofjob"] },
   { key: "subjects", label: "Subjects", input: "text", synonyms: ["subject", "subjectstaught", "teachingsubjects", "subjectsteaching", "canteach"] },
-  { key: "username", label: "Username", input: "text", synonyms: ["userid", "user", "loginid", "login", "loginname"] },
-  { key: "password", label: "Password", input: "text", synonyms: ["pass", "pwd", "initialpassword"] },
 ];
 
 export const teacherFieldDef = (key: TeacherImportField) => TEACHER_IMPORT_FIELDS.find((f) => f.key === key)!;
@@ -104,9 +99,14 @@ export function teacherFieldsByColumn(mapping: TeacherMapping, columns: number, 
 }
 
 /** The columns the export adds that a file cannot give back (they are read from the school, not uploaded). */
-const EXPORT_ONLY = ["Status", "Class teacher of", "Classes given"] as const;
-/** The names the usual details have (and the extras of the export): a field of the school's own may not take one. */
-const RESERVED_NAMES = new Map<string, string>([...TEACHER_IMPORT_FIELDS.map((f) => f.label), ...EXPORT_ONLY].map((n) => [n.toLowerCase(), n] as [string, string]));
+const EXPORT_ONLY = ["Login", "Status", "Class teacher of", "Classes given"] as const;
+/**
+ * The login columns an older sample file had (2026-11-26: a bulk upload makes no login; the school gives login access from a teacher's page,
+ * by email). A file that still has them is read without them, and they are never offered as a field of the school's own.
+ */
+const LOGIN_COLUMNS = ["Username", "Password"] as const;
+/** The names the usual details have (and the extras of the export, and the old login columns): a field of the school's own may not take one. */
+const RESERVED_NAMES = new Map<string, string>([...TEACHER_IMPORT_FIELDS.map((f) => f.label), ...EXPORT_ONLY, ...LOGIN_COLUMNS].map((n) => [n.toLowerCase(), n] as [string, string]));
 /** The usual detail called `name` (as the list writes it), whatever the case or the spaces; nothing when none has that name. */
 export const teacherFieldNamed = (name: string): string | undefined => RESERVED_NAMES.get(tidy(name).toLowerCase());
 
@@ -118,6 +118,9 @@ export function takenTeacherFieldNote(word: string, own: readonly CustomFieldDef
   const name = tidy(word);
   if (!name) return null;
   const reserved = teacherFieldNamed(name);
+  if (reserved && (LOGIN_COLUMNS as readonly string[]).includes(reserved)) {
+    return `“${reserved}” is not uploaded: a teacher gets a login from their page (Give login access).`;
+  }
   if (reserved && (EXPORT_ONLY as readonly string[]).includes(reserved)) {
     return `“${reserved}” is a column the export adds, so it cannot be uploaded as it is. Add it under another name, for example “${reserved === "Class teacher of" ? "Class teacher" : `${reserved} (file)`}”.`;
   }
@@ -229,12 +232,8 @@ export function normaliseTeacherCell(field: TeacherImportField, raw: string): st
       return employmentOf(raw)?.label ?? tidy(raw);
     case "subjects":
       return splitSubjects(raw).join(", ");
-    case "username":
-      return raw.trim().toLowerCase();
     case "pincode":
       return tidy(raw).replace(/\.0+$/, "");
-    case "password":
-      return raw;
     default:
       return tidy(raw);
   }
@@ -320,7 +319,6 @@ export interface PreparedTeacher {
   /** The 10 digits, as far as the box could be read. */
   mobile: string;
   employeeCode: string;
-  username: string;
   email: string;
   problems: TeacherRowProblem[];
   /** Things to know that do not stop the row (a subject that is new to the school). */
@@ -330,8 +328,8 @@ export interface PreparedTeacher {
   input: TeacherImportRowInput;
 }
 
-/** The mobile number of a teacher whose login needs it: what the server says too. */
-export const NEEDS_MOBILE = "Enter the teacher's mobile number: their login needs it";
+/** Every row needs the mobile number: it is how a teacher of the file is known again (what the server says too). */
+export const NEEDS_MOBILE = "Enter the teacher's mobile number";
 const CODE_MESSAGE = `The employee code is letters, digits and - only, up to ${TEACHER_LIMITS.employeeCode}`;
 
 const LABELS: Record<TeacherImportField, string> = {
@@ -351,8 +349,6 @@ const LABELS: Record<TeacherImportField, string> = {
   joiningDate: "Joining date",
   employmentType: "Employment type",
   subjects: "Subjects",
-  username: "Username",
-  password: "Password",
 };
 
 /** The form's key for a detail, to ask `teacherProblems` about it. */
@@ -394,8 +390,6 @@ export function prepareTeacherRow(row: { row: number; cells: string[] }, mapping
   const state = value("state");
   const employment = employmentOf(text("employmentType"));
   const subjects = splitSubjects(text("subjects"));
-  const username = value("username");
-  const password = text("password");
   const email = tidy(text("email")).toLowerCase();
   const experience = value("experienceYears");
 
@@ -430,8 +424,6 @@ export function prepareTeacherRow(row: { row: number; cells: string[] }, mapping
   if (subjects.length > TEACHER_IMPORT.maxSubjects) found.set("subjects", problem("subjects", `Up to ${TEACHER_IMPORT.maxSubjects} subjects`));
   else if (subjects.some((s) => s.length > 40)) found.set("subjects", problem("subjects", "Keep the subject name under 40 characters"));
   else if (subjects.some((s) => /[<>]/.test(s))) found.set("subjects", problem("subjects", "The subject name cannot contain < or >"));
-  if (username !== "" && !isUsername(username)) found.set("username", problem("username", MESSAGES.username));
-  if (password !== "" && !isPasswordValid(password)) found.set("password", problem("password", MESSAGES.password));
 
   const problems: TeacherRowProblem[] = TEACHER_IMPORT_FIELDS.flatMap((f) => (found.has(f.key) ? [found.get(f.key)!] : []));
   // The answers to the school's own fields: what the file gives is read by the kind of the field and checked; what it lacks is never a problem.
@@ -471,24 +463,22 @@ export function prepareTeacherRow(row: { row: number; cells: string[] }, mapping
     name,
     mobile,
     employeeCode: code,
-    username,
     email,
     problems,
     warnings,
     subjects,
-    input: { row: row.row, teacher, subjectNames: subjects, ...(username !== "" ? { username } : {}), ...(password !== "" ? { password } : {}) },
+    input: { row: row.row, teacher, subjectNames: subjects },
   };
 }
 
 /**
- * The same teacher twice in the file: a mobile number, employee code, username or email that an earlier row has. The later row is the one
+ * The same teacher twice in the file: a mobile number, employee code or email that an earlier row has. The later row is the one
  * marked (the rows already uploaded from the file come first in `rows`, so a row left that repeats one of them is marked too).
  */
 export function crossCheckTeachers(rows: readonly PreparedTeacher[]): Map<number, TeacherRowProblem[]> {
   const checks: { field: TeacherImportField; what: string; keyOf: (p: PreparedTeacher) => string }[] = [
     { field: "mobile", what: "mobile number", keyOf: (p) => p.mobile },
     { field: "employeeCode", what: "employee code", keyOf: (p) => p.employeeCode },
-    { field: "username", what: "username", keyOf: (p) => p.username },
     { field: "email", what: "email", keyOf: (p) => p.email },
   ];
   const first = checks.map(() => new Map<string, number>());
@@ -522,8 +512,6 @@ const SERVER_BOX: Record<string, TeacherImportField> = {
   joiningDate: "joiningDate",
   employmentType: "employmentType",
   subjects: "subjects",
-  username: "username",
-  password: "password",
 };
 
 /** What the server said about a box, put in the box it names (a refusal of the row as a whole belongs to no box). */
@@ -536,23 +524,7 @@ export function serverTeacherProblem(path: string, message: string, ownFields: r
 
 // ---- Files and parts ---------------------------------------------------------------------------------------------------------------------------
 
-const csvField = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-
-/** One teacher's login, to hand over. */
-export interface TeacherLoginLine {
-  name: string;
-  mobile: string;
-  username: string;
-  password: string;
-}
-
-/** The logins just made, as a CSV (with a byte-order mark, so Excel reads it as UTF-8): who, how to sign in, with what. */
-export function loginsCsv(rows: readonly TeacherLoginLine[], signInAt: string): Blob {
-  const lines = [["Name", "Mobile", "Username", "Password", "Sign in at"], ...rows.map((r) => [r.name, r.mobile, r.username, r.password, signInAt])].map((line) => line.map(csvField).join(","));
-  return new Blob([String.fromCharCode(0xfeff), lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
-}
-
-/** A file's rows in the parts the server takes (each request makes a login, and so a password's hash, for every row). */
+/** A file's rows in the parts the server takes. */
 export function inTeacherParts<T>(items: readonly T[]): T[][] {
   const parts: T[][] = [];
   for (let i = 0; i < items.length; i += TEACHER_IMPORT.rowsPerRequest) parts.push(items.slice(i, i + TEACHER_IMPORT.rowsPerRequest));

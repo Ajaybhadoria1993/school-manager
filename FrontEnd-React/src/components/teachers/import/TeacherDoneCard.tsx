@@ -1,18 +1,16 @@
 import { Link } from "react-router";
-import { Download, KeyRound, PartyPopper, PencilLine, TriangleAlert, Upload } from "lucide-react";
+import { Download, PartyPopper, PencilLine, TriangleAlert, Upload } from "lucide-react";
 import { TONES } from "../../../constants/tones";
 import { cn } from "../../../utils/helpers";
 import { Button } from "../../ui/Button";
 import { Card } from "../../ui/Card";
 
-/** A teacher who was made, and the login to hand over. */
+/** A teacher who was made (a bulk upload makes no login: the school gives it from the teacher's page). */
 export interface AddedTeacher {
   row: number;
   id: string;
   name: string;
   mobile: string;
-  username: string;
-  password: string;
 }
 
 /**
@@ -86,60 +84,6 @@ export function TeacherDoneCard({
         >
           Go to teachers
         </Link>
-      </div>
-    </Card>
-  );
-}
-
-/**
- * The logins just made, to hand over: the username and the password of each teacher added in this visit. The passwords are shown only
- * now (only their hash is kept), so the list can be downloaded here; the school can still set a new password for anyone later.
- */
-export function TeacherLogins({ added, onDownload }: { added: AddedTeacher[]; onDownload: () => void }) {
-  return (
-    <Card className="fade-in space-y-4 p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-section-heading flex items-center gap-2">
-            <KeyRound className="size-5 text-primary" aria-hidden />
-            Login details
-          </h2>
-          <p className="mt-0.5 text-sm text-foreground-muted">The passwords are shown only now. Download the list before you leave this page.</p>
-        </div>
-        <Button onClick={onDownload}>
-          <Download className="size-4" aria-hidden />
-          Download login details
-        </Button>
-      </div>
-      <div className="max-h-96 overflow-auto rounded-xl border border-border">
-        <table aria-label="Logins to hand out" className="min-w-full text-sm">
-          <thead className="sticky top-0 bg-background text-left text-xs font-bold uppercase tracking-wider text-foreground-muted">
-            <tr>
-              <th scope="col" className="px-4 py-2.5">
-                Name
-              </th>
-              <th scope="col" className="px-4 py-2.5">
-                Mobile
-              </th>
-              <th scope="col" className="px-4 py-2.5">
-                Username
-              </th>
-              <th scope="col" className="px-4 py-2.5">
-                Password
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {added.map((a) => (
-              <tr key={a.id} className="border-t border-border/70">
-                <td className="px-4 py-2 font-semibold text-foreground">{a.name}</td>
-                <td className="px-4 py-2 text-foreground-muted">{a.mobile}</td>
-                <td className="px-4 py-2 font-mono text-foreground">{a.username}</td>
-                <td className="px-4 py-2 font-mono text-foreground">{a.password}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </Card>
   );

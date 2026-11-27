@@ -16,7 +16,7 @@ import TeacherDetailPage from "../TeacherDetail";
 
 /** A teacher's page opened from Teacher (the menu entry on top): the classes they are given, and their username. */
 
-const FULL: Teacher = { ...MEENA, login: { username: "meena.singh", isActive: true }, classTeacherOf: ["Class 5 - A"] };
+const FULL: Teacher = { ...MEENA, login: { username: "meena.singh", email: null, isActive: true, pending: false }, classTeacherOf: ["Class 5 - A"] };
 
 const year = { id: "y1", name: "2026-2027" };
 const CLASSES = {
@@ -221,34 +221,5 @@ describe("A teacher opened from Teacher", () => {
     await pickSubject(user, d, "Mathematics");
     await user.click(within(d).getByRole("button", { name: "Assign" }));
     expect(await within(d).findByText(message)).toBeInTheDocument();
-  });
-
-  it("changes the username, checked free while it is typed", async () => {
-    const { calls, user } = openPage(FULL, {
-      "PATCH /staff/teachers/meena/login": (body) => ({ ...FULL, login: { username: (body as { username: string }).username, isActive: true } }),
-    });
-    await user.click(await screen.findByRole("button", { name: "Change username" }));
-    const d = await screen.findByRole("dialog", { name: "Change the username of Meena Singh" });
-    const box = within(d).getByLabelText(/^Username/);
-    expect(box).toHaveValue("meena.singh");
-    await user.clear(box);
-    await user.type(box, "meena.s");
-    expect(await within(d).findByText("Available")).toBeInTheDocument();
-    await user.click(within(d).getByRole("button", { name: "Save username" }));
-    await waitFor(() => expect(writes(calls)).toHaveLength(1));
-    expect(writes(calls)[0]).toMatchObject({ method: "PATCH", path: "/staff/teachers/meena/login", body: { username: "meena.s" } });
-  });
-
-  it("will not save a username that is taken, and offers free ones", async () => {
-    const { calls, user } = openPage(FULL, { "GET /staff/usernames/check": () => ({ available: false, suggestions: ["meena.s_41", "meena.s_73"] }) });
-    await user.click(await screen.findByRole("button", { name: "Change username" }));
-    const d = await screen.findByRole("dialog", { name: "Change the username of Meena Singh" });
-    await user.clear(within(d).getByLabelText(/^Username/));
-    await user.type(within(d).getByLabelText(/^Username/), "meena.s");
-    expect(await within(d).findByText("This username is taken. Try another")).toBeInTheDocument();
-    await user.click(within(d).getByRole("button", { name: "Save username" }));
-    expect(writes(calls)).toHaveLength(0);
-    await user.click(within(d).getByRole("button", { name: "meena.s_41" }));
-    expect(within(d).getByLabelText(/^Username/)).toHaveValue("meena.s_41");
   });
 });

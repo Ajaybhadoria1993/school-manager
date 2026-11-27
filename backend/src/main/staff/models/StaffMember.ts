@@ -4,9 +4,9 @@ import { MAX_DESIGNATION, MAX_EMPLOYEE_CODE, MAX_ROLE_OTHER, MAX_TEACHER_NAME, S
 
 /**
  * A person who works for the school without teaching (a receptionist, an accountant, a member of the management). The school adds them
- * with their details, a role and a **username and password it makes itself** (2026-11-08, like a teacher's or a parent's login): the User is
- * made with them and `userId` points at it (`active`); the school can switch them off (`inactive`: their login closes) and back on. Never
- * deleted once they have a login. `invited` is only what a person added before that is, until the school makes their login: they have none.
+ * with their details and a role (`active`), and gives them login access when it wants (2026-11-26: their email is the login, with an
+ * invitation; `userId` points at it); the school can switch them off (`inactive`: a login closes) and back on. Never deleted once they have a
+ * login. `invited` is only a person added before 2026-11-08 who has no login (giving one makes them `active`).
  */
 export interface IStaffMember {
   _id: Types.ObjectId;

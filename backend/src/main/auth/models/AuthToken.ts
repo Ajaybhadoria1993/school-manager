@@ -1,10 +1,10 @@
 import { Schema, model, Types } from "mongoose";
 
 /**
- * One-time tokens that are emailed as links (password reset, school invite, school sign-up; staff invites later).
- * Only the sha256 hash is stored, the raw value exists only in the email.
+ * One-time tokens that are emailed as links (password reset, school invite, school sign-up, and the invitation a teacher or a staff member
+ * gets with their login: `login_invite`, for their User, to choose a password). Only the sha256 hash is stored, the raw value exists only in the email.
  */
-export const AUTH_TOKEN_TYPES = ["password_reset", "school_invite", "school_signup"] as const;
+export const AUTH_TOKEN_TYPES = ["password_reset", "school_invite", "school_signup", "login_invite"] as const;
 export type AuthTokenType = (typeof AUTH_TOKEN_TYPES)[number];
 
 export interface IAuthToken {

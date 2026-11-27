@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import request from "supertest";
 import app from "../../../app";
 import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
+import { giveLoginAndAccept, postStaff } from "../../../test/logins";
 import { createSchool } from "../../../test/schools";
 import { addClass, addSubject, addTeacher, auth, saveAllotments, timetableSchool } from "../../../test/timetable";
 import { AuthToken } from "../../auth/models/AuthToken";
@@ -13,23 +14,24 @@ import { Teacher } from "../models/Teacher";
 
 /**
  * The kinds of staff a school has besides teachers (2026-11-08): many roles, **Other** with a name of the school's own, what each signs
- * in as, and a staff member who **also teaches** (a vice principal who takes Maths): they are a Teacher too, from the moment the school
- * makes their login (the school gives the username and the password: there is no invitation for staff).
+ * in as, and a staff member who **also teaches** (a vice principal who takes Maths): they are a Teacher too, from the moment they are added
+ * (2026-11-26: with or without a login). A login is the person's email with an invitation (test/logins.ts accepts it for these tests).
  */
 
 const api = "/api/v1/staff/members";
 const PASSWORD = "Staff@Desk1";
 let counter = 0;
-/** A username and the password every person here is given (the school makes both). */
+/** Every person here gets login access (the email `staffN_10@mail.test` unless the body has one) and opens the invitation with PASSWORD. */
 const nextLogin = () => ({ username: `staff${++counter}_10`, password: PASSWORD });
-const add = (token: string, body: object) => request(app).post(api).set(auth(token)).send({ login: nextLogin(), ...body });
+const add = (token: string, body: object) => postStaff(token, { login: nextLogin(), ...body });
 const list = (token: string, query = "") => request(app).get(`${api}${query}`).set(auth(token));
 const patch = (token: string, id: string, body: object) => request(app).patch(`${api}/${id}`).set(auth(token)).send(body);
 const details = (res: request.Response) => res.body.details as { path: string; message: string }[];
 const login = (identifier: string, password = PASSWORD) => request(app).post("/api/v1/auth/login").send({ identifier, password });
-const usernameOf = (res: request.Response) => res.body.data.login.username as string;
+/** What the person signs in with: their email. */
+const signInOf = (res: request.Response) => res.body.data.login.email as string;
 // Every teacher, the ones who have left too (the list shows only the active ones unless asked).
-const teachers = async (token: string) => ((await request(app).get("/api/v1/staff/teachers?status=all").set(auth(token))).body.data.items as { id: string; name: string; isActive: boolean; login: { username: string } | null }[]);
+const teachers = async (token: string) => ((await request(app).get("/api/v1/staff/teachers?status=all").set(auth(token))).body.data.items as { id: string; name: string; isActive: boolean; login: { email: string | null } | null }[]);
 
 const PERSON = { name: "Asha Rao", email: "asha.rao@school.example", mobile: "9876543210" };
 
@@ -78,7 +80,7 @@ describe("the kinds of staff", () => {
     const made = await add(s.token, { ...PERSON, role: "other", roleOther: "  Lab   technician " });
     expect(made.status).toBe(201);
     expect(made.body.data).toMatchObject({ role: "other", roleOther: "Lab technician", roleLabel: "Lab technician" });
-    expect((await login(usernameOf(made))).body.data.user.roleLabel).toBe("Lab technician");
+    expect((await login(signInOf(made))).body.data.user.roleLabel).toBe("Lab technician");
     expect((await list(s.token, "?role=other")).body.data.items.map((m: { name: string }) => m.name)).toEqual(["Asha Rao"]);
   });
 
@@ -93,7 +95,7 @@ describe("the kinds of staff", () => {
     const named = await patch(s.token, id, { role: "other", roleOther: "Sports coach" });
     expect(named.body.data).toMatchObject({ role: "other", roleLabel: "Sports coach" });
     // The title the person is shown follows.
-    expect((await login(usernameOf(librarian))).body.data.user.roleLabel).toBe("Sports coach");
+    expect((await login(signInOf(librarian))).body.data.user.roleLabel).toBe("Sports coach");
     const back = await patch(s.token, id, { role: "clerk" });
     expect(back.body.data).toMatchObject({ role: "clerk", roleLabel: "Clerk / office staff", roleOther: null });
   });
@@ -115,24 +117,23 @@ describe("what each kind of staff signs in as", () => {
     for (const [role, extra, loginRole, label] of expected) {
       const made = await add(s.token, { name: `Kind ${++n}`, role, ...extra });
       expect(made.status, role).toBe(201);
-      const signed = await login(usernameOf(made));
+      const signed = await login(signInOf(made));
       expect(signed.body.data.user, role).toMatchObject({ role: loginRole, roleLabel: label });
-      expect((await User.findOne({ username: usernameOf(made) }).lean())?.role, role).toBe(loginRole);
+      expect((await User.findOne({ email: signInOf(made) }).lean())?.role, role).toBe(loginRole);
     }
   });
 
   it("plain staff reaches the calendar and nothing of the people who run the school", async () => {
     const s = await createSchool("Sunrise Public School");
     const made = await add(s.token, { ...PERSON, role: "librarian" });
-    const token = (await login(usernameOf(made))).body.data.accessToken as string;
+    const token = (await login(signInOf(made))).body.data.accessToken as string;
     expect((await request(app).get("/api/v1/classroom/calendar?year=2026").set(auth(token))).status).not.toBe(403);
     expect((await list(token)).status).toBe(403);
     expect((await request(app).get("/api/v1/staff/teachers").set(auth(token))).status).toBe(403);
     expect((await request(app).get("/api/v1/academics/structure").set(auth(token))).status).toBe(403);
   });
 
-  it("no staff login can ask for a reset link: the school sets their passwords, whatever their role", async () => {
-    // The forgot-password email is for nobody the school made a login for (teachers and parents before, now staff).
+  it("every staff login can ask for a reset link (2026-11-26: they sign in with their email, like the school admin), whatever their role", async () => {
     const s = await createSchool("Sunrise Public School");
     for (const [role, email] of [["principal", "p@school.example"], ["accountant", "a@school.example"], ["management", "m@school.example"], ["librarian", "l@school.example"]] as const) {
       await add(s.token, { name: `Who ${role}`, role, email });
@@ -141,7 +142,7 @@ describe("what each kind of staff signs in as", () => {
       expect((await request(app).post("/api/v1/auth/forgot-password").send({ email })).status).toBe(200);
     }
     await PasswordService.idle();
-    expect(await AuthToken.countDocuments({ type: "password_reset" })).toBe(0);
+    expect(await AuthToken.countDocuments({ type: "password_reset" })).toBe(4);
   });
 });
 
@@ -159,14 +160,14 @@ describe("a staff member who also teaches", () => {
     expect(teacher).toMatchObject({ mobile: "9876500001", email: "meera@school.example", employeeCode: "ST-07", designation: "Coordinator", gender: "Female", isActive: true });
     expect(teacher?.subjectIds.map(String)).toEqual([maths]);
     expect(teacher?.address).toMatchObject({ city: "Bhopal" });
-    const user = await User.findOne({ username: usernameOf(res) }).lean();
+    const user = await User.findOne({ email: signInOf(res) }).lean();
     expect(user).toMatchObject({ role: "teacher", roleLabel: "Management" });
     expect(String(teacher?.userId)).toBe(String(user?._id));
     // The Teacher page shows them with the same login.
-    expect((await teachers(s.token)).map((t) => [t.name, t.login?.username])).toEqual([["Meera Iyer", usernameOf(res)]]);
+    expect((await teachers(s.token)).map((t) => [t.name, t.login?.email])).toEqual([["Meera Iyer", signInOf(res)]]);
 
     // Their own pages are a teacher's.
-    const signed = await login(usernameOf(res));
+    const signed = await login(signInOf(res));
     expect(signed.body.data.user).toMatchObject({ role: "teacher", roleLabel: "Management" });
     const token = signed.body.data.accessToken as string;
     expect((await request(app).get("/api/v1/staff/teachers/me").set(auth(token))).body.data.name).toBe("Meera Iyer");
@@ -174,16 +175,17 @@ describe("a staff member who also teaches", () => {
     expect((await list(token)).status).toBe(403);
   });
 
-  it("a Principal or an Accountant who also teaches keeps their own login, and is a teacher of the school without a teacher login", async () => {
+  // An Accountant who also teaches signs in as a teacher now, with the accountant's list on top (2026-11-26: permissions/__tests__/teachingStaff.test.ts).
+  it("a Principal who also teaches keeps their own login, and is a teacher of the school without a teacher login", async () => {
     const s = await createSchool("Sunrise Public School");
     const made = await add(s.token, { ...TEACHING, role: "principal", alsoTeacher: true });
     expect(made.body.data).toMatchObject({ role: "principal", alsoTeacher: true, isTeacher: true });
-    expect((await login(usernameOf(made))).body.data.user).toMatchObject({ role: "principal" });
+    expect((await login(signInOf(made))).body.data.user).toMatchObject({ role: "principal" });
     const teacher = await Teacher.findOne({ tenantId: s.tenantId, name: "Meera Iyer" }).lean();
     expect(teacher).toMatchObject({ userId: null, email: null, isActive: true });
     expect((await teachers(s.token)).map((t) => t.name)).toEqual(["Meera Iyer"]);
     // Still the principal: the staff pages are theirs.
-    const token = (await login(usernameOf(made))).body.data.accessToken as string;
+    const token = (await login(signInOf(made))).body.data.accessToken as string;
     expect((await list(token)).status).toBe(200);
   });
 
@@ -209,13 +211,14 @@ describe("a staff member who also teaches", () => {
     expect((await add(s.token, TEACHING)).status).toBe(201);
   });
 
-  it("a username that is taken leaves no staff member, no teacher and no login behind", async () => {
+  it("an email that is a login already leaves no staff member, no teacher and no login behind", async () => {
     const s = await createSchool("Sunrise Public School");
-    expect((await add(s.token, { name: "Plain Person", role: "librarian", login: { username: "taken_10", password: PASSWORD } })).status).toBe(201);
-    const again = await add(s.token, { ...TEACHING, alsoTeacher: true, login: { username: "taken_10", password: PASSWORD } });
+    const other = await createSchool("Moonrise Public School");
+    expect((await add(other.token, { name: "Plain Person", role: "librarian", email: TEACHING.email })).status).toBe(201);
+    const again = await add(s.token, { ...TEACHING, alsoTeacher: true });
     expect(again.status).toBe(409);
-    expect(again.body.code).toBe("USERNAME_TAKEN");
-    expect(await StaffMember.countDocuments({ tenantId: s.tenantId })).toBe(1);
+    expect(again.body.code).toBe("LOGIN_EMAIL_TAKEN");
+    expect(await StaffMember.countDocuments({ tenantId: s.tenantId })).toBe(0);
     expect(await Teacher.countDocuments({ tenantId: s.tenantId })).toBe(0);
     expect(await User.countDocuments({ tenantId: s.tenantId, role: "teacher" })).toBe(0);
   });
@@ -226,11 +229,11 @@ describe("a staff member who also teaches", () => {
     const off = await patch(s.token, made.body.data.id, { isActive: false });
     expect(off.body.data.status).toBe("inactive");
     expect((await teachers(s.token))[0].isActive).toBe(false);
-    expect((await login(usernameOf(made))).status).toBe(403);
+    expect((await login(signInOf(made))).status).toBe(403);
     const on = await patch(s.token, made.body.data.id, { isActive: true });
     expect(on.body.data.status).toBe("active");
     expect((await teachers(s.token))[0].isActive).toBe(true);
-    expect((await login(usernameOf(made))).status).toBe(200);
+    expect((await login(signInOf(made))).status).toBe(200);
   });
 
   it("cannot be made inactive while they still have classes: nothing changes, and the school is told to give them to someone else", async () => {
@@ -244,7 +247,7 @@ describe("a staff member who also teaches", () => {
     expect(off.status).toBe(409);
     expect(off.body.code).toBe("TEACHER_HAS_CLASSES");
     expect((await request(app).get(`${api}/${made.body.data.id}`).set(auth(s.token))).body.data.status).toBe("active");
-    expect((await login(usernameOf(made))).status).toBe(200);
+    expect((await login(signInOf(made))).status).toBe(200);
   });
 
   it("made inactive on the Teacher page, they show as inactive in Staff too", async () => {
@@ -260,32 +263,30 @@ describe("changing who also teaches", () => {
   async function receptionist() {
     const s = await createSchool("Sunrise Public School");
     const made = await add(s.token, { ...PERSON, role: "receptionist" });
-    return { s, id: made.body.data.id as string, username: usernameOf(made) };
+    return { s, id: made.body.data.id as string, email: signInOf(made) };
   }
 
-  it("for a person with no login yet it can be switched on and off freely; the login makes them a teacher", async () => {
+  it("for a person with no login it makes them a teacher at once (2026-11-26: a login is optional now); the login given later is a teacher's", async () => {
     const s = await createSchool("Sunrise Public School");
     const made = await StaffMember.create({ tenantId: s.tenantId, name: "Ravi Menon", nameKey: nameKeyOf("Ravi Menon"), email: "ravi@school.example", role: "receptionist", status: "invited" });
     const id = made._id.toString();
-    expect((await patch(s.token, id, { alsoTeacher: true })).body.data).toMatchObject({ alsoTeacher: true, isTeacher: false });
-    expect((await patch(s.token, id, { alsoTeacher: false })).body.data).toMatchObject({ alsoTeacher: false });
-    await patch(s.token, id, { alsoTeacher: true });
-    expect(await Teacher.countDocuments({ tenantId: s.tenantId })).toBe(0);
-    const given = await request(app).post(`${api}/${id}/login`).set(auth(s.token)).send({ username: "ravi.menon_52", password: PASSWORD });
-    expect(given.status).toBe(201);
-    expect(given.body.data).toMatchObject({ isTeacher: true, status: "active" });
-    expect((await login("ravi.menon_52")).body.data.user.role).toBe("teacher");
-    expect((await teachers(s.token)).map((t) => t.name)).toEqual(["Ravi Menon"]);
+    expect((await patch(s.token, id, { alsoTeacher: true })).body.data).toMatchObject({ alsoTeacher: true, isTeacher: true });
+    expect((await teachers(s.token)).map((t) => [t.name, t.login])).toEqual([["Ravi Menon", null]]);
+    expect((await patch(s.token, id, { alsoTeacher: false })).body.code).toBe("STILL_A_TEACHER");
+    await giveLoginAndAccept(s.token, `${api}/${id}`, PASSWORD);
+    expect((await request(app).get(`${api}/${id}`).set(auth(s.token))).body.data).toMatchObject({ isTeacher: true, status: "active" });
+    expect((await login("ravi@school.example")).body.data.user.role).toBe("teacher");
+    expect((await teachers(s.token)).map((t) => [t.name, t.login?.email])).toEqual([["Ravi Menon", "ravi@school.example"]]);
   });
 
   it("for a person who has a login it can be switched on (they become a teacher at once and sign in as one), but not off: they are made inactive as a teacher instead", async () => {
-    const { s, id, username } = await receptionist();
+    const { s, id, email } = await receptionist();
     const maths = await addSubject(s.token, "Mathematics");
     const on = await patch(s.token, id, { alsoTeacher: true, subjectIds: [maths] });
     expect(on.status).toBe(200);
     expect(on.body.data).toMatchObject({ alsoTeacher: true, isTeacher: true });
-    expect((await User.findOne({ username }).lean())?.role).toBe("teacher");
-    expect((await login(username)).body.data.user.role).toBe("teacher");
+    expect((await User.findOne({ email }).lean())?.role).toBe("teacher");
+    expect((await login(email)).body.data.user.role).toBe("teacher");
     expect((await Teacher.findOne({ tenantId: s.tenantId }).lean())?.subjectIds.map(String)).toEqual([maths]);
     const off = await patch(s.token, id, { alsoTeacher: false });
     expect(off.status).toBe(409);
@@ -293,7 +294,7 @@ describe("changing who also teaches", () => {
   });
 
   it("a change of name, mobile, designation or subjects reaches their teacher record too", async () => {
-    const { s, id, username } = await receptionist();
+    const { s, id, email } = await receptionist();
     const maths = await addSubject(s.token, "Mathematics");
     await patch(s.token, id, { alsoTeacher: true });
     const res = await patch(s.token, id, { name: "Asha R. Rao", mobile: "9876511111", designation: "Head of maths", subjectIds: [maths] });
@@ -301,7 +302,7 @@ describe("changing who also teaches", () => {
     const teacher = await Teacher.findOne({ tenantId: s.tenantId }).lean();
     expect(teacher).toMatchObject({ name: "Asha R. Rao", mobile: "9876511111", designation: "Head of maths" });
     expect(teacher?.subjectIds.map(String)).toEqual([maths]);
-    expect((await User.findOne({ username }).lean())?.name).toBe("Asha R. Rao");
+    expect((await User.findOne({ email }).lean())?.name).toBe("Asha R. Rao");
   });
 
   it("a mobile another teacher has is refused on the change, and nothing is changed", async () => {
@@ -315,18 +316,18 @@ describe("changing who also teaches", () => {
   });
 
   it("moving between a role with its own login and one without moves the teacher login with it", async () => {
-    const { s, id, username } = await receptionist();
+    const { s, id, email } = await receptionist();
     await patch(s.token, id, { alsoTeacher: true });
-    const userId = String((await User.findOne({ username }).lean())?._id);
+    const userId = String((await User.findOne({ email }).lean())?._id);
     const teacher = async () => (await Teacher.findOne({ tenantId: s.tenantId }).lean())!;
     expect(String((await teacher()).userId)).toBe(userId);
     // To Principal: the login is the principal's again and the teacher record keeps no login.
     await patch(s.token, id, { role: "principal" });
-    expect((await User.findOne({ username }).lean())?.role).toBe("principal");
+    expect((await User.findOne({ email }).lean())?.role).toBe("principal");
     expect(await teacher()).toMatchObject({ userId: null, email: null });
     // Back to a role without pages of its own: a teacher login again.
     await patch(s.token, id, { role: "management" });
-    expect((await User.findOne({ username }).lean())?.role).toBe("teacher");
+    expect((await User.findOne({ email }).lean())?.role).toBe("teacher");
     expect(String((await teacher()).userId)).toBe(userId);
     expect((await teacher()).email).toBe(PERSON.email);
   });

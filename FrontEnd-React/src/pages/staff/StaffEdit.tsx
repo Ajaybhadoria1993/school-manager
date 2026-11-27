@@ -6,6 +6,7 @@ import type { StaffMember } from "../../types";
 import { getApiError } from "../../utils/apiErrors";
 import { formFromStaff, staffFieldId, staffKeyOfPath, staffProblems, toStaffInput, type StaffFormKey, type StaffFormValues, type StaffProblems } from "../../utils/staffMembers";
 import { StaffForm } from "../../components/staff/StaffForm";
+import { PersonPhotoField } from "../../components/profile/PersonPhotoField";
 import { FormActionBar } from "../../components/students/form/FormActionBar";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { ModalError } from "../../components/ui/AppModal";
@@ -109,7 +110,15 @@ function EditForm({ member }: { member: StaffMember }) {
     <form onSubmit={save} noValidate className="space-y-6">
       <StudentFormHeader title="Change staff" subtitle={member.name} crumbs={[{ label: "Staff", to: "/staff" }]} />
       {formError && <ModalError message={formError} />}
-      <StaffForm values={values} errors={errors} onChange={change} onReveal={(key) => setRevealed((now) => new Set([...now, key]))} editing teachingLocked={member.isTeacher} />
+      <StaffForm
+        values={values}
+        errors={errors}
+        onChange={change}
+        onReveal={(key) => setRevealed((now) => new Set([...now, key]))}
+        editing
+        teachingLocked={member.isTeacher}
+        photo={<PersonPhotoField kind="staff" id={member.id} name={member.name} canChange label="Photo" />}
+      />
       <FormActionBar>
         <span />
         <Button type="submit" size="lg" loading={saving} disabled={!changed}>

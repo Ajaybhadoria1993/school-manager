@@ -7,7 +7,8 @@ import { addColleague, createSchool } from "../../../test/schools";
 import { User } from "../../users/models/User";
 
 /**
- * Add teacher asks "is this username free?" while it is typed. A username is one on the whole platform (the login box has no school), so
+ * A parent's login asks "is this username free?" while it is typed (teachers and staff sign in with their email since 2026-11-26; an older
+ * teacher login may still have a username). A username is one on the whole platform (the login box has no school), so
  * the answer looks across every school; when it is taken the answer comes with free ones, each a number after the name, like
  * meena.singh_41. The answer says nothing else: not whose it is, not which school.
  */
@@ -15,7 +16,6 @@ import { User } from "../../users/models/User";
 const api = "/api/v1/staff/usernames/check";
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 const check = (token: string, username: string) => request(app).get(api).query({ username }).set(auth(token));
-const PASSWORD = "Sch00l@Teach1";
 
 /** Takes these usernames, as logins of some other school, without the cost of a real teacher each. */
 async function take(usernames: string[]) {
@@ -34,12 +34,9 @@ describe("is this username free", () => {
     expect(res.body.data).toEqual({ available: true, suggestions: [] });
   });
 
-  it("says no for a username a teacher of another school has, and gives free ones with a number after the name", async () => {
-    const a = await createSchool("Sunrise Public School");
+  it("says no for a username a login of another school has, and gives free ones with a number after the name", async () => {
     const b = await createSchool("Moonrise Public School");
-    expect(
-      (await request(app).post("/api/v1/staff/teachers").set(auth(a.token)).send({ name: "Meena Singh", mobile: "9876543210", login: { username: "meena.singh", password: PASSWORD } })).status
-    ).toBe(201);
+    await take(["meena.singh"]);
 
     const res = await check(b.token, "meena.singh");
     expect(res.status).toBe(200);
@@ -108,24 +105,5 @@ describe("is this username free", () => {
     const res = await check(token, "meena.singh");
     expect(Object.keys(res.body.data).sort()).toEqual(["available", "suggestions"]);
     expect(JSON.stringify(res.body)).not.toMatch(/Someone|tenant|school|userId|role/i);
-  });
-});
-
-describe("the username that is refused when a teacher is added", () => {
-  it("is taken with the same kind of suggestions, each of them free", async () => {
-    const a = await createSchool("Sunrise Public School");
-    const b = await createSchool("Moonrise Public School");
-    const body = { name: "Meena Singh", mobile: "9876543210", login: { username: "meena.singh", password: PASSWORD } };
-    expect((await request(app).post("/api/v1/staff/teachers").set(auth(a.token)).send(body)).status).toBe(201);
-
-    const res = await request(app).post("/api/v1/staff/teachers").set(auth(b.token)).send({ ...body, name: "Another Meena", mobile: "9876500000" });
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe("USERNAME_TAKEN");
-    const message = res.body.details[0].message as string;
-    expect(message).toMatch(/taken/i);
-    const offered = message.match(/meena\.singh_\d{2,3}/g) ?? [];
-    expect(offered.length).toBeGreaterThanOrEqual(2);
-    expect(await User.countDocuments({ username: { $in: offered } })).toBe(0);
-    expect((await request(app).post("/api/v1/staff/teachers").set(auth(b.token)).send({ ...body, name: "Another Meena", mobile: "9876500000", login: { username: offered[0], password: PASSWORD } })).status).toBe(201);
   });
 });

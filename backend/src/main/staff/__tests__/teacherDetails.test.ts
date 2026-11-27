@@ -142,7 +142,7 @@ describe("the Excel's columns", () => {
     const s = await createSchool("Sunrise Public School");
     // Asked, an own field is in the default Excel (as it was before the list could be arranged).
     const made = await putSettings(s.token, { customFields: [PAN] });
-    expect(keysOf(made).slice(-4)).toEqual(["c_pan00001", "status", "classTeacherOf", "given"]);
+    expect(keysOf(made).slice(-5)).toEqual(["c_pan00001", "username", "status", "classTeacherOf", "given"]);
 
     await putSettings(s.token, { exportColumns: [{ key: "name", heading: "Name" }, { key: "mobile", heading: "Mobile" }, { key: "c_pan00001", heading: "PAN" }] });
     expect(keysOf(await getSettings(s.token))).toEqual(["name", "mobile", "c_pan00001"]);

@@ -9,7 +9,8 @@ import { Card } from "../ui/Card";
 import { Skeleton } from "../ui/Skeleton";
 
 /**
- * A child's exams for their parent (2026-11-06): each exam of the child's class with its days and the school's hours, the papers (the
+ * A child's exams for their parent (2026-11-06): each exam of the child's class with its days and the school's hours, the child's roll number
+ * and room (2026-11-27), the papers (the
  * subject, the topic, the day and time, what it is out of) and, once the marks are in, the child's own marks and percentage in each, with
  * the total. One read for the child (`/parent/children/:id/exams`, which also carries this week's exam days for the timetable).
  */
@@ -41,6 +42,13 @@ export function ChildExamsSection({ childId }: { childId: string }) {
                     {exam.typeLabel} · {examDays(exam.startDate, exam.endDate)}
                     {exam.schoolHours && ` · School ${clock12(exam.schoolHours.start)} to ${clock12(exam.schoolHours.end)}`}
                   </p>
+                  {/* Where the child sits (2026-11-27): their roll number and the room the school put it in. */}
+                  {exam.seat && (exam.seat.rollNumber !== null || exam.seat.room) && (
+                    <p className="mt-1.5 flex flex-wrap gap-1.5 text-sm">
+                      {exam.seat.rollNumber !== null && <span className="rounded-md bg-primary-soft px-2 py-0.5 font-semibold text-primary-deep">Roll no. {exam.seat.rollNumber}</span>}
+                      {exam.seat.room && <span className="rounded-md bg-primary-soft px-2 py-0.5 font-semibold text-primary-deep">{exam.seat.room}</span>}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {exam.summary && <Badge tone="success">{`Total ${exam.summary.marks} / ${exam.summary.outOf} · ${exam.summary.percent}%`}</Badge>}

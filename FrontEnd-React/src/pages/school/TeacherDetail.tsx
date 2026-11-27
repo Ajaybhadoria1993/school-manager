@@ -1,25 +1,28 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { AtSign, BookOpen, Briefcase, CalendarDays, KeyRound, ListPlus, LogOut, Pencil, Repeat2, RotateCcw, UserRound, UserRoundCog } from "lucide-react";
+import { BookOpen, Briefcase, CalendarDays, KeyRound, ListPlus, LogOut, Pencil, Repeat2, RotateCcw, Send, UserRound } from "lucide-react";
 import { employmentLabel } from "../../constants/teachers";
 import { useMedium } from "../../hooks/useMedium";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
 import { useTeacherBase } from "../../hooks/useTeacherBase";
 import { DAY_SHORT } from "../../constants/timetable";
-import { useGetSubjectsQuery, useGetTeacherQuery, useGetTeacherSettingsQuery, useUpdateTeacherMutation } from "../../redux/api/timetableApi";
+import { useGetSubjectsQuery, useGetTeacherQuery, useGetTeacherSettingsQuery, useGiveTeacherLoginMutation, useUpdateTeacherMutation } from "../../redux/api/timetableApi";
 import { formatDay } from "../../utils/academicYear";
 import { getApiError } from "../../utils/apiErrors";
 import { askedFields, ownAnswerText } from "../../utils/teacherOwn";
 import { formatMobile } from "../../utils/students";
 import type { Teacher } from "../../types";
-import { ChangeUsernameDialog } from "../../components/teachers/ChangeUsernameDialog";
 import { Block, None, Row } from "../../components/teachers/DetailBlocks";
 import { LeaveTeacherModal } from "../../components/teachers/LeaveTeacherModal";
 import { TeacherClassesBlock } from "../../components/teachers/TeacherClassesBlock";
 import { useCan } from "../../hooks/useCan";
 import { TeacherMediumsBlock } from "../../components/teachers/TeacherMediumsBlock";
-import { MakeLoginDialog, ResetPasswordDialog } from "../../components/teachers/LoginDialogs";
+import { GiveLoginDialog } from "../../components/logins/GiveLoginDialog";
+import { LOGIN_ACTION_LABELS, loginActionOf } from "../../utils/loginAccess";
+import { LoginStatusBadge } from "../../components/logins/LoginStatusBadge";
 import { ReplaceTeacherDialog } from "../../components/teachers/ReplaceTeacherDialog";
+import { PersonPhotoField } from "../../components/profile/PersonPhotoField";
+import { ResumeField } from "../../components/profile/ResumeField";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -35,8 +38,9 @@ const addressText = (a: Teacher["address"]) => [a.line1, a.city, a.state, a.pinc
 /**
  * One teacher (`/teachers/:id` from Teacher, `/school/teachers/:id` from Manage Teacher): the classes they are given (class teacher of,
  * the subjects they teach, Assign class), then everything the school keeps about them in four cards (personal, job, teaching, login),
- * with Week, Change and the teacher leaving (or coming back) at the top. The login card shows the username (Change username) and
- * whether it works; the password is never shown, only made again (New password, Make a login).
+ * with Week, Change and the teacher leaving (or coming back) at the top. The login card (2026-11-26) shows what they sign in with (their
+ * email; an older login's username) and its status (Pending until the invitation is opened, Active, Closed), with Give login access /
+ * Resend invitation / Send password link. The school never sees or sets a password.
  */
 export default function TeacherDetailPage() {
   // A year that is over is only looked at: no Change, Give classes, Has left, login changes (the server refuses them too).
@@ -51,11 +55,12 @@ export default function TeacherDetailPage() {
   const res = useGetTeacherQuery(id);
   const subjectNames = new Map((useGetSubjectsQuery("all").data?.data.items ?? []).map((s) => [s.id, s.name]));
   const [update] = useUpdateTeacherMutation();
+  const [giveLogin] = useGiveTeacherLoginMutation();
   // The school's own fields the school asks (Teacher > Fields): a card of their answers.
   const own = askedFields(useGetTeacherSettingsQuery().data?.data.customFields);
   const { push } = useToast();
   const navigate = useNavigate();
-  const [dialog, setDialog] = useState<"password" | "login" | "leave" | "replace" | "username" | null>(null);
+  const [dialog, setDialog] = useState<"login" | "leave" | "replace" | null>(null);
   const t = res.data?.data;
   const crumbs = [{ label, to: base }];
 
@@ -141,7 +146,7 @@ export default function TeacherDetailPage() {
       <TeacherClassesBlock teacher={t} onAssign={() => navigate(`${base}/${t.id}/assign-class`)} canChange={mayChange} />
 
       <div className="grid items-start gap-6 md:grid-cols-2">
-        <Block icon={UserRound} tone="primary" title="Personal" index={0}>
+        <Block icon={UserRound} tone="primary" title="Personal" index={0} lead={<PersonPhotoField kind="teacher" id={t.id} name={t.name} canChange={!readOnly && mayChange} />}>
           <Row label="Gender">{t.gender ?? <None />}</Row>
           <Row label="Date of birth">{t.dateOfBirth ? formatDay(t.dateOfBirth) : <None />}</Row>
           <Row label="Mobile">{t.mobile ? formatMobile(t.mobile) : <None />}</Row>
@@ -149,7 +154,7 @@ export default function TeacherDetailPage() {
           <Row label="Address">{addressText(t.address) || <None />}</Row>
         </Block>
 
-        <Block icon={Briefcase} tone="navy" title="Job" index={1}>
+        <Block icon={Briefcase} tone="navy" title="Job" index={1} lead={<ResumeField teacherId={t.id} canChange={!readOnly && mayChange} />}>
           <Row label="Employee code">{t.employeeCode ?? <None />}</Row>
           <Row label="Designation">{t.designation ?? <None />}</Row>
           <Row label="Qualification">{t.qualification ?? <None />}</Row>
@@ -187,32 +192,26 @@ export default function TeacherDetailPage() {
         )}
 
         <Block icon={KeyRound} tone="warning" title="Login" index={3}>
-          {t.login ? (
+          {t.login && (
             <>
-              <Row label="Username">
-                <span className="font-mono">{t.login.username}</span>
-              </Row>
-              <Row label="Status">{t.login.isActive ? <Badge tone="success">Active</Badge> : <Badge tone="warning">Closed</Badge>}</Row>
-              <div hidden={!mayChange} className={readOnly ? "hidden" : "flex flex-wrap gap-2 pt-3"}>
-                <Button variant="outline" onClick={() => setDialog("username")}>
-                  <AtSign className="size-4" aria-hidden />
-                  Change username
-                </Button>
-                <Button variant="outline" onClick={() => setDialog("password")}>
-                  <KeyRound className="size-4" aria-hidden />
-                  New password
-                </Button>
-              </div>
-            </>
-          ) : (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-foreground-muted">No login yet</p>
-              {!readOnly && mayChange && (
-                <Button variant="outline" onClick={() => setDialog("login")}>
-                  <UserRoundCog className="size-4" aria-hidden />
-                  Make a login
-                </Button>
+              {t.login.email && <Row label="Email">{t.login.email}</Row>}
+              {t.login.username && (
+                <Row label="Username">
+                  <span className="font-mono">{t.login.username}</span>
+                </Row>
               )}
+            </>
+          )}
+          <Row label="Status">
+            <LoginStatusBadge login={t.login} />
+          </Row>
+          {/* A teacher who has left gets nothing (their login is closed); they are brought back first. */}
+          {!readOnly && mayChange && t.isActive && (
+            <div className="flex flex-wrap gap-2 pt-3">
+              <Button variant="outline" onClick={() => setDialog("login")}>
+                <Send className="size-4" aria-hidden />
+                {LOGIN_ACTION_LABELS[loginActionOf(t.login)]}
+              </Button>
             </div>
           )}
         </Block>
@@ -220,11 +219,17 @@ export default function TeacherDetailPage() {
         {medium.isAdmin && medium.mediums.length > 1 && <TeacherMediumsBlock teacher={t} readOnly={readOnly} index={5} />}
       </div>
 
-      {dialog === "password" && <ResetPasswordDialog teacher={t} onClose={() => setDialog(null)} />}
-      {dialog === "login" && <MakeLoginDialog teacher={t} onClose={() => setDialog(null)} />}
+      {dialog === "login" && (
+        <GiveLoginDialog
+          name={t.name}
+          email={t.login?.email ?? t.email}
+          action={loginActionOf(t.login)}
+          send={async (email) => (await giveLogin({ id: t.id, email }).unwrap()).data.invite}
+          onClose={() => setDialog(null)}
+        />
+      )}
       {dialog === "leave" && <LeaveTeacherModal teacher={t} onClose={() => setDialog(null)} />}
       {dialog === "replace" && <ReplaceTeacherDialog teacher={t} onClose={() => setDialog(null)} />}
-      {dialog === "username" && <ChangeUsernameDialog teacher={t} onClose={() => setDialog(null)} />}
     </div>
   );
 }

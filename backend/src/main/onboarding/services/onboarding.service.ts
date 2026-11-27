@@ -76,6 +76,10 @@ function missingSteps(tenant: ITenant, admin: IUser, year: IAcademicYear | null)
   return missing;
 }
 
+const mayChangeLogo = (tenant: ITenant) => EDITABLE.includes(tenant.approvalStatus) || tenant.approvalStatus === "approved";
+/** The school's own record and the records of its other mediums, which show the same logo. */
+const wholeSchool = (id: ITenant["_id"]) => ({ $or: [{ _id: id }, { parentTenantId: id }] });
+
 export class OnboardingService {
   static async getState(caller: Caller): Promise<OnboardingState> {
     const { tenant, admin, year } = await load(caller);
@@ -240,23 +244,26 @@ export class OnboardingService {
     return OnboardingService.getState(caller);
   }
 
-  /** The school's logo, while the form can still be edited. Replaces the one before. It does not count as a step of the form. */
+  /**
+   * The school's logo: while the form can still be edited, and afterwards from Settings (not while the platform team is looking at the
+   * application). Replaces the one before, for every medium of the school. It does not count as a step of the form.
+   */
   static async saveLogo(caller: Caller, file: Buffer | undefined): Promise<OnboardingState> {
     const { tenant } = await load(caller);
-    if (!EDITABLE.includes(tenant.approvalStatus)) throw LOCKED();
+    if (!mayChangeLogo(tenant)) throw LOCKED();
     if (!file || file.length === 0) throw ApiError.badRequest("Choose a picture for the logo.", "LOGO_MISSING", [{ path: "logo", message: "Choose a picture for the logo." }]);
     const contentType = pictureType(file);
     if (!contentType) throw ApiError.badRequest("The logo must be a PNG, JPG or WebP picture.", "LOGO_NOT_IMAGE", [{ path: "logo", message: "The logo must be a PNG, JPG or WebP picture." }]);
     await SchoolLogo.findOneAndUpdate({ tenantId: tenant._id }, { $set: { data: file, contentType } }, { upsert: true, setDefaultsOnInsert: true });
-    await Tenant.updateOne({ _id: tenant._id }, { $set: { "profile.logoUpdatedAt": new Date() } });
+    await Tenant.updateMany(wholeSchool(tenant._id), { $set: { "profile.logoUpdatedAt": new Date() } });
     return OnboardingService.getState(caller);
   }
 
   static async removeLogo(caller: Caller): Promise<OnboardingState> {
     const { tenant } = await load(caller);
-    if (!EDITABLE.includes(tenant.approvalStatus)) throw LOCKED();
+    if (!mayChangeLogo(tenant)) throw LOCKED();
     await SchoolLogo.deleteOne({ tenantId: tenant._id });
-    await Tenant.updateOne({ _id: tenant._id }, { $unset: { "profile.logoUpdatedAt": "" } });
+    await Tenant.updateMany(wholeSchool(tenant._id), { $unset: { "profile.logoUpdatedAt": "" } });
     return OnboardingService.getState(caller);
   }
 

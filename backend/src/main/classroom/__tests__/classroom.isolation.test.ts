@@ -45,17 +45,26 @@ itKeepsSchoolsApart("classroom", {
     const subjectId = await addSubject(a.token, "Mathematics");
     await saveAllotments(a.token, unit, [{ subjectId, periodsPerWeek: 5 }]);
     const test = (await request(app).post(`${api}/tests`).set(auth(a.token)).send({ ...unit, subjectId, date: "2026-11-02", topic: "Fractions", maxMarks: 20 })).body.data;
+    // The subject's chapters, and a day of its diary.
+    await request(app).put(`${api}/syllabus`).set(auth(a.token)).send({ ...unit, subjectId, chapters: [{ name: "Numbers" }] });
+    await request(app).put(`${api}/diary`).set(auth(a.token)).send({ ...unit, subjectId, date: "2026-11-02", taught: "Place value" });
+    // And its own choice about the diary reminder.
+    await request(app).put(`${api}/reminder`).set(auth(a.token)).send({ enabled: false, time: "13:00" });
     return { eventId: event.id as string, leaveId: leave.id as string, classId: klass.id, sectionId: klass.sections[0].id, subjectId, testId: test.id as string };
   },
 
   snapshot: async (a) => ({
     calendar: (await request(app).get(`${api}/calendar`).set(auth(a.token))).body.data,
     leaves: (await request(app).get(`${api}/leaves`).set(auth(a.token))).body.data,
+    progress: (await request(app).get(`${api}/progress?from=2026-11-01&to=2026-11-30`).set(auth(a.token))).body.data,
+    reminder: (await request(app).get(`${api}/reminder`).set(auth(a.token))).body.data,
   }),
 
   lists: [
     { name: "the calendar", path: `${api}/calendar`, showsRecords: (body) => body.data.items.length > 0 },
     { name: "the leaves", path: `${api}/leaves`, showsRecords: (body) => body.data.items.length > 0 },
+    { name: "the teaching progress", path: `${api}/progress?from=2026-11-01&to=2026-11-30`, showsRecords: (body) => body.data.rows.length > 0 },
+    { name: "the day by day teaching list", path: `${api}/progress/log?from=2026-11-01&to=2026-11-30`, showsRecords: (body) => body.data.items.length > 0 },
   ],
 
   probes: [
@@ -66,6 +75,11 @@ itKeepsSchoolsApart("classroom", {
     { name: "taking its class's attendance", method: "put", path: () => `${api}/attendance`, body: (c) => ({ classId: c.classId, sectionId: c.sectionId, date: "2026-11-02", marks: [] }) },
     { name: "reading its class's diary", method: "get", path: (c) => `${api}/diary?classId=${c.classId}&sectionId=${c.sectionId}&date=2026-11-02` },
     { name: "writing its class's diary", method: "put", path: () => `${api}/diary`, body: (c) => ({ classId: c.classId, sectionId: c.sectionId, date: "2026-11-02", subjectId: c.subjectId, taught: "Hacked" }) },
+    { name: "writing its subject's chapters", method: "put", path: () => `${api}/syllabus`, body: (c) => ({ classId: c.classId, sectionId: c.sectionId, subjectId: c.subjectId, chapters: [{ name: "Hacked" }] }) },
+    { name: "reading its class's teaching progress", method: "get", path: (c) => `${api}/progress?from=2026-11-01&to=2026-11-30&classId=${c.classId}` },
+    { name: "reading its class's teaching list", method: "get", path: (c) => `${api}/progress/log?from=2026-11-01&to=2026-11-30&classId=${c.classId}` },
+    { name: "copying its subject's chapters", method: "get", path: (c) => `${api}/syllabus/sources?classId=${c.classId}&sectionId=${c.sectionId}&subjectId=${c.subjectId}` },
+    { name: "reading its class's teaching file", method: "get", path: (c) => `${api}/progress/export?from=2026-11-01&to=2026-11-30&classId=${c.classId}` },
     { name: "reading its class's tests", method: "get", path: (c) => `${api}/tests?classId=${c.classId}&sectionId=${c.sectionId}` },
     { name: "reading its test", method: "get", path: (c) => `${api}/tests/${c.testId}` },
     { name: "entering its test's marks", method: "put", path: (c) => `${api}/tests/${c.testId}/marks`, body: () => ({ marks: [] }) },

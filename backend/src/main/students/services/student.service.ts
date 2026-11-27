@@ -120,7 +120,7 @@ export class StudentService {
       Section.find({ tenantId: school, _id: { $in: enrolments.flatMap((e) => (e.sectionId ? [e.sectionId] : [])) } }).select("name").lean(),
       placesOf(school, year?._id ?? null, siblings.map((s) => s._id)),
       // The parents' logins (their usernames), for the Parents card.
-      TeacherLogin.byIds(guardians.flatMap((g) => (g.userId ? [g.userId] : []))),
+      TeacherLogin.usernamesByIds(guardians.flatMap((g) => (g.userId ? [g.userId] : []))),
     ]);
 
     const yearById = new Map(years.map((y) => [y._id.toString(), y]));

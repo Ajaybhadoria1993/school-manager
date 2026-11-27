@@ -18,10 +18,11 @@ const RESEND_COOLDOWN_MS = 60 * 1000;
 const inFlight = new Set<Promise<void>>();
 
 /**
- * The people whose password only their school sets (a new one from the teacher's, the student's or the staff member's page), never by
- * themselves: the logins the school makes. Staff too since 2026-11-08 (the user: the email system stays for the school admin only).
+ * The people whose password only their school sets (a new one from the student's page), never by themselves: a parent's login, which the school
+ * makes with a username. Teachers and staff sign in with their email since 2026-11-26 (the user: "forget bhi kr skte h uss mail s, jesa admin
+ * m hota h"), so they reset it themselves like the school admin. An older teacher login with only a username has no email to send a link to.
  */
-const SCHOOL_SET_PASSWORD: ReadonlySet<string> = new Set(["teacher", "parent", "principal", "accountant", "receptionist", "management", "staff"]);
+const SCHOOL_SET_PASSWORD: ReadonlySet<string> = new Set(["parent"]);
 
 export class PasswordService {
   /**
@@ -89,6 +90,8 @@ export class PasswordService {
 
     user.passwordHash = await hashPassword(newPassword);
     user.passwordChangedAt = new Date();
+    // A login whose invitation was never opened: the reset link proves the email the same way, so it is the login's first password.
+    user.invitePending = undefined;
     await user.save();
 
     // Every existing session dies: refresh tokens are deleted, and access tokens issued

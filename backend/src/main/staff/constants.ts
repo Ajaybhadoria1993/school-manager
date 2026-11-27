@@ -71,8 +71,6 @@ export const TEACHER_SHEET_COLUMNS: readonly TeacherSheetColumn[] = [
   { key: "joiningDate", header: "Joining Date", kind: "optional", width: 14, note: "DD-MM-YYYY." },
   { key: "employmentType", header: "Employment Type", kind: "optional", width: 18, note: "Full time, Part time or Contract." },
   { key: "subjects", header: "Subjects", kind: "optional", width: 30, note: "The subjects the teacher can teach, separated by commas. A subject your school does not have yet is added." },
-  { key: "username", header: "Username", kind: "optional", width: 20, note: "Leave empty to have one made from the name (meena.singh_41). A username is one on the whole platform." },
-  { key: "password", header: "Password", kind: "optional", width: 18, note: "Leave empty to have one made. 8 to 72 characters with an uppercase letter, a lowercase letter, a number and a symbol." },
 ];
 
 /**
@@ -129,7 +127,9 @@ export const TEACHER_EXPORT_COLUMNS: readonly TeacherExportColumn[] = [
   { key: "joiningDate", heading: "Joining Date", group: "Job" },
   { key: "employmentType", heading: "Employment Type", group: "Job" },
   { key: "subjects", heading: "Subjects", group: "Teaching" },
-  { key: "username", heading: "Username", group: "Login" },
+  // The login (2026-11-26: the email it signs in with, or an older login's username, and whether its invitation is still pending). Only says more:
+  // an upload makes no login.
+  { key: "username", heading: "Login", group: "Login", extra: true },
   { key: "status", heading: "Status", group: "About the teacher", extra: true },
   { key: "classTeacherOf", heading: "Class teacher of", group: "About the teacher", extra: true },
   { key: "given", heading: "Classes given", group: "About the teacher", extra: true },
@@ -156,7 +156,7 @@ export const TEACHER_SAMPLE_ROW: Record<string, string | number> = {
   joiningDate: "01-06-2018",
   employmentType: "Full time",
   subjects: "Mathematics, Science",
-  username: "sample.teacher_01",
+  username: "sample.teacher@example.com (invitation pending)",
   status: "Teaching",
   classTeacherOf: "",
   given: "",
@@ -166,7 +166,7 @@ export const TEACHER_SAMPLE_ROW: Record<string, string | number> = {
 export const MAX_TEACHER_EXPORT_PREVIEW_ROWS = 10;
 
 /** The names a school's own field may not take: the columns of the sample file, and the ones of the export that only say more. */
-export const TEACHER_FIELD_NAMES: readonly string[] = [...TEACHER_SHEET_COLUMNS.map((c) => c.header), "Status", "Class teacher of", "Classes given"];
+export const TEACHER_FIELD_NAMES: readonly string[] = [...TEACHER_SHEET_COLUMNS.map((c) => c.header), "Username", "Password", "Login", "Status", "Class teacher of", "Classes given"];
 
 /** The posts of an Indian school, which the sample file's Designation column suggests (the same list as Add teacher; anything else may be typed). */
 export const TEACHER_DESIGNATIONS = [
@@ -223,10 +223,11 @@ export const MAX_ROLE_OTHER = 40;
 /** The role's label; for Other, the name the school wrote (`other`). */
 export const staffRoleLabel = (role: string, other?: string | null) => (role === "other" && other ? other : (STAFF_MEMBER_ROLES.find((r) => r.key === role)?.label ?? role));
 /**
- * A role with pages of its own keeps its login even when the person also teaches: a Principal who takes a class is still the principal.
- * They become a teacher of the school (classes, periods) without a teacher login.
+ * The principal keeps their login even when they also teach (they run the school: everything is theirs). They become a teacher of the school
+ * (classes, periods) without a teacher login. Every other role who also teaches signs in as a teacher and keeps what their role's list gives
+ * on the whole school (2026-11-26: an Accountant who takes a class too; permissions/services/permission.service.ts `accessOf`).
  */
-export const ROLES_KEEPING_THEIR_LOGIN: readonly string[] = ["principal", "accountant"];
+export const ROLES_KEEPING_THEIR_LOGIN: readonly string[] = ["principal"];
 /** The User role a staff member signs in with: their own; or a teacher's when they also teach and their role has no pages of its own. */
 export function loginRoleOf(role: string, alsoTeacher: boolean): UserRole {
   if (alsoTeacher && !ROLES_KEEPING_THEIR_LOGIN.includes(role)) return "teacher";

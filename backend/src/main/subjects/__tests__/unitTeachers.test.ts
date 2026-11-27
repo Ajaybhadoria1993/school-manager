@@ -245,7 +245,7 @@ describe("who is told", () => {
     await NotificationService.idle();
     return ((await request(app).get("/api/v1/notifications").set(auth(token))).body.data.items as { kind: string; title: string }[]).map((i) => i.title);
   }
-  const login = async (name: string) => (await request(app).post("/api/v1/auth/login").send({ identifier: `jr.${name}`, password: "Sch00l@Login1" })).body.data.accessToken as string;
+  const login = async (name: string) => (await request(app).post("/api/v1/auth/login").send({ identifier: `jr.${name}@mail.test`, password: "Sch00l@Login1" })).body.data.accessToken as string;
 
   it("a new main teacher, the one before, the new class teacher and each new backup hear of it; the others hear nothing; the same save again tells nobody", async () => {
     const r = await ready();

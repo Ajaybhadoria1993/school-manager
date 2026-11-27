@@ -43,7 +43,7 @@ export async function assertTenantActive(tenantId: Parameters<typeof loadTenantS
 /** The person as a session shows them: with what they may do. */
 async function sessionUser(user: SessionUser): Promise<PublicUser> {
   const base = toPublicUser(user);
-  return { ...base, permissions: await PermissionService.grantedTo({ userId: base.id, role: base.role, tenantId: base.tenantId }) };
+  return { ...base, ...(await PermissionService.accessOf({ userId: base.id, role: base.role, tenantId: base.tenantId })) };
 }
 
 export async function buildSession(user: SessionUser, meta: SessionMeta): Promise<SessionPayload> {
@@ -61,7 +61,8 @@ export class AuthService {
 
     // Unknown email or username and wrong password must be indistinguishable (same message, similar timing).
     const passwordOk = await comparePassword(password, user ? user.passwordHash : await getDummyHash());
-    if (!user || !passwordOk) {
+    // A login whose invitation is still pending has no password yet (only a random one nobody knows): it never opens, and says no more than a wrong password.
+    if (!user || !passwordOk || user.invitePending) {
       throw ApiError.unauthorized("Invalid email/username or password");
     }
 

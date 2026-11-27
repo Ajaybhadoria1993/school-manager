@@ -2,6 +2,7 @@ import request from "supertest";
 import app from "../app";
 import { Tenant } from "../main/tenants/models/Tenant";
 import { createSchool, type SchoolSession } from "./schools";
+import { postTeacher } from "./logins";
 
 /** What the tests of subjects, teachers and timetables share: a school with a year and classes, and the calls that fill it. */
 
@@ -48,8 +49,9 @@ export async function addSubject(token: string, name: string, over: object = {})
   return (await request(app).post("/api/v1/subjects").set(as(token)).send({ name, ...over })).body.data.id as string;
 }
 
+/** A teacher; `login: { username, password }` gives them a login (their email `<username>@mail.test`, the invitation accepted: test/logins.ts). */
 export async function addTeacher(token: string, name: string, over: object = {}): Promise<string> {
-  const res = await request(app).post("/api/v1/staff/teachers").set(as(token)).send({ name, ...over });
+  const res = await postTeacher(token, { name, ...over });
   return res.body.data.id as string;
 }
 

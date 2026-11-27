@@ -17,7 +17,6 @@ import type { TeacherMedium,
   GridCell,
   GridView,
   ImportSheet,
-  LoginAccount,
   OverviewQuery,
   PublishedUnits,
   QuickAddSubjectsResult,
@@ -119,17 +118,10 @@ export const timetableApi = createApi({
       invalidatesTags: ["Teacher", "Overview", "Allotment", "TeacherWeek"],
     }),
 
-    // A login for a teacher who has none, and a new password for one who has (the school hands it over; nothing on a screen changes).
-    createTeacherLogin: build.mutation<ApiResponse<Teacher>, { id: string } & LoginAccount>({
+    // Give login access (2026-11-26): a login (the teacher's email, or `email` typed now) with an emailed invitation; for a Pending login the
+    // invitation again; for a login that works a link to choose a new password.
+    giveTeacherLogin: build.mutation<ApiResponse<Teacher>, { id: string; email?: string }>({
       query: ({ id, ...body }) => ({ url: `/staff/teachers/${id}/login`, method: "POST", body }),
-      invalidatesTags: ["Teacher"],
-    }),
-    resetTeacherPassword: build.mutation<ApiResponse<Record<string, never>>, { id: string; password: string }>({
-      query: ({ id, ...body }) => ({ url: `/staff/teachers/${id}/reset-password`, method: "POST", body }),
-    }),
-    // Another username for a teacher's login (the password stays).
-    changeTeacherUsername: build.mutation<ApiResponse<Teacher>, { id: string; username: string }>({
-      query: ({ id, ...body }) => ({ url: `/staff/teachers/${id}/login`, method: "PATCH", body }),
       invalidatesTags: ["Teacher"],
     }),
     // Where a teacher teaches, in a school with more than one medium, and adding them to another with the login they have.
@@ -435,12 +427,10 @@ export const {
   useGetTeacherSummaryQuery,
   useGetTeacherQuery,
   useGetMyTeacherQuery,
-  useCreateTeacherLoginMutation,
+  useGiveTeacherLoginMutation,
   useGetTeacherMediumsQuery,
   useAddTeacherToMediumMutation,
-  useResetTeacherPasswordMutation,
   useCheckUsernameQuery,
-  useChangeTeacherUsernameMutation,
   useGetTeacherClassesQuery,
   useSetClassTeacherMutation,
   useAssignTeacherMutation,

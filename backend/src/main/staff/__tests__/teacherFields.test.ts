@@ -199,24 +199,24 @@ describe("the school's own fields in a bulk upload, an export and the sample fil
     const sheet = await sheetOf((await download(s.token, "/export")).body);
     const titles = (sheet.getRow(1).values as unknown[]).slice(1).map(String);
     // After the sample file's columns, before the extras that only say more.
-    expect(titles.slice(16)).toEqual(["Username", "PAN Number", "House Duty", "Member Since", "Children", "Status", "Class teacher of", "Classes given"]);
+    expect(titles.slice(16)).toEqual(["PAN Number", "House Duty", "Member Since", "Children", "Login", "Status", "Class teacher of", "Classes given"]);
     const row = (n: number) => Object.fromEntries(titles.map((t, i) => [t, String(sheet.getRow(n).getCell(i + 1).value ?? "")]));
     expect(row(3)).toMatchObject({ Name: "Meena Singh", "PAN Number": "ABCDE1234F", "House Duty": "Yes", "Member Since": "01-06-2015", Children: "2" });
     expect(row(2)).toMatchObject({ Name: "Dev Patel", "PAN Number": "", "House Duty": "No", "Member Since": "", Children: "" });
   });
 
-  it("the sample file has a yellow column for each field (a dropdown for a list and a yes / no), after Password", async () => {
+  it("the sample file has a yellow column for each field (a dropdown for a list and a yes / no), after Subjects", async () => {
     const s = await createSchool("Sunrise Public School");
     await putSettings(s.token, [BLOOD, HOUSE, SINCE, { ...PAN, mode: "hidden" }]);
     const sheet = await sheetOf((await download(s.token, "/import/template")).body);
     const titles = (sheet.getRow(2).values as unknown[]).slice(1).map(String);
-    expect(titles.slice(18)).toEqual(["Blood Group", "House Duty", "Member Since"]);
-    expect(sheet.getCell("S3").dataValidation).toMatchObject({ type: "list", formulae: ['"A+,B+,O+"'] });
-    expect(sheet.getCell("T3").dataValidation).toMatchObject({ type: "list", formulae: ['"Yes,No"'] });
-    expect(sheet.getColumn("U").numFmt).toBe("@");
+    expect(titles.slice(16)).toEqual(["Blood Group", "House Duty", "Member Since"]);
+    expect(sheet.getCell("Q3").dataValidation).toMatchObject({ type: "list", formulae: ['"A+,B+,O+"'] });
+    expect(sheet.getCell("R3").dataValidation).toMatchObject({ type: "list", formulae: ['"Yes,No"'] });
+    expect(sheet.getColumn("S").numFmt).toBe("@");
     const fill = (cell: string) => (sheet.getCell(cell).fill as ExcelJS.FillPattern).fgColor?.argb;
-    expect(fill("S2")).toBe(fill("R2"));
-    expect(String(sheet.getCell("S2").note)).toContain("Your own field");
+    expect(fill("Q2")).toBe(fill("P2"));
+    expect(String(sheet.getCell("Q2").note)).toContain("Your own field");
   });
 
   it("the sample file's own fields are read back by their titles (a file the school made from it)", async () => {
@@ -225,9 +225,9 @@ describe("the school's own fields in a bulk upload, an export and the sample fil
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load((await download(s.token, "/import/template")).body as unknown as ArrayBuffer);
     workbook.getWorksheet("Teachers")!.getRow(3).values = ["", "Meena Singh", "9876543210"];
-    workbook.getWorksheet("Teachers")!.getCell("S3").value = "ABCDE1234F";
+    workbook.getWorksheet("Teachers")!.getCell("Q3").value = "ABCDE1234F";
     const read = await request(app).post(`${api}/import/read`).set(auth(s.token)).attach("file", Buffer.from(await workbook.xlsx.writeBuffer()), "t.xlsx");
-    expect(read.body.data.headers[18]).toBe("PAN Number");
-    expect(read.body.data.rows[0].cells[18]).toBe("ABCDE1234F");
+    expect(read.body.data.headers[16]).toBe("PAN Number");
+    expect(read.body.data.rows[0].cells[16]).toBe("ABCDE1234F");
   });
 });

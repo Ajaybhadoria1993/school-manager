@@ -12,7 +12,8 @@ import { MAX_TEACHERS, type EmploymentType } from "../constants";
 import { StaffMember } from "../models/StaffMember";
 import { Teacher, type ITeacher } from "../models/Teacher";
 import { User } from "../../users/models/User";
-import { NEEDS_MOBILE_MESSAGE, type CreateTeacherInput, type ListTeachersQuery, type LoginAccountInput, type UpdateTeacherInput } from "../schemas/staff.schemas";
+import { LoginInviteService, type LoginInviteDelivery } from "../../auth/services/loginInvite.service";
+import { NEEDS_EMAIL_MESSAGE, type CreateTeacherInput, type GiveLoginInput, type ListTeachersQuery, type UpdateTeacherInput } from "../schemas/staff.schemas";
 import { ClassTeacherService, describeUnits, type UnitRefDto } from "./classTeacher.service";
 import { TeacherLogin, type TeacherLoginDto } from "./teacherLogin.service";
 import { TeacherSettingsService } from "./teacherSettings.service";
@@ -133,6 +134,9 @@ export const toColleagueDto = (dto: TeacherDto): ColleagueDto => ({
   classTeacherOf: dto.classTeacherOf,
 });
 
+/** A login as the list's Login filter names it. */
+const loginState = (login: TeacherLoginDto): "with" | "pending" | "closed" => (!login.isActive ? "closed" : login.pending ? "pending" : "with");
+
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
 const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -202,7 +206,7 @@ export class TeacherService {
       and.push({ _id: query.classTeacher === "yes" ? { $in: heads } : { $nin: heads } });
     }
     if (!colleague && query.login === "without") filter.userId = null;
-    if (!colleague && (query.login === "with" || query.login === "closed")) filter.userId = { $ne: null };
+    if (!colleague && (query.login === "with" || query.login === "closed" || query.login === "pending")) filter.userId = { $ne: null };
     if (and.length > 0) filter.$and = and;
 
     const [teachers, loads] = await Promise.all([Teacher.find(filter).lean(), teacherLoads(tenantId)]);
@@ -212,8 +216,8 @@ export class TeacherService {
     ]);
     const items = teachers
       .map((t) => toTeacherDto(t, loads.get(t._id.toString()), t.userId ? (logins.get(t.userId.toString()) ?? null) : null, heads.get(t._id.toString()) ?? []))
-      // A login that works, or one that is switched off: told by the login itself.
-      .filter((t) => colleague || !query.login || query.login === "without" || (t.login !== null && t.login.isActive === (query.login === "with")))
+      // A login that works, one whose invitation is still pending, or one that is switched off: told by the login itself.
+      .filter((t) => colleague || !query.login || query.login === "without" || (t.login !== null && loginState(t.login) === query.login))
       .sort(byName);
     return { items: colleague ? items.map(toColleagueDto) : items };
   }
@@ -302,15 +306,6 @@ export class TeacherService {
     };
   }
 
-  /** Another username for a teacher's login; the password and the sessions stay. */
-  static async changeUsername(tenantId: string, id: string, username: string): Promise<TeacherDto> {
-    const teacher = await Teacher.findOne({ _id: id, tenantId }).select("name userId").lean();
-    if (!teacher) throw NOT_FOUND();
-    if (!teacher.userId) throw ApiError.conflict(`${teacher.name} has no login yet.`, "TEACHER_HAS_NO_LOGIN");
-    await TeacherLogin.setUsername(teacher.userId, username);
-    return TeacherService.get(tenantId, id);
-  }
-
   /** The teacher who signed in: their own record (found by their login, never by an id they send). */
   static async mine(tenantId: string, userId: string): Promise<TeacherDto> {
     const teacher = await Teacher.findOne({ tenantId, userId }).select("_id").lean();
@@ -322,16 +317,16 @@ export class TeacherService {
    * `options.custom`: how the answers to the school's own fields are held: `admit` (the default: a needed field must be answered, as in Add
    * teacher) or `format` (a bulk upload row: only what it gives is checked).
    */
-  static async create(tenantId: string, input: CreateTeacherInput, options: { custom?: "admit" | "format" } = {}): Promise<TeacherDto> {
+  static async create(tenantId: string, input: CreateTeacherInput, options: { custom?: "admit" | "format" } = {}): Promise<TeacherDto & { invite?: LoginInviteDelivery }> {
     if ((await Teacher.countDocuments({ tenantId })) >= MAX_TEACHERS) throw LIMIT();
     // The usual details the school needs are held to for a teacher who is added by hand; a bulk upload row is only read.
     if ((options.custom ?? "admit") === "admit") await TeacherSettingsService.checkDetails(tenantId, input, "admit");
     const answers = await TeacherSettingsService.check(tenantId, input.custom, options.custom ?? "admit");
     await TeacherService.assertSubjects(tenantId, input.subjectIds);
-    await TeacherService.assertFree(tenantId, input.mobile ?? null, input.employeeCode ?? null, null);
+    await TeacherService.assertFree(tenantId, input.mobile ?? null, input.employeeCode ?? null, null, input.email ?? null);
     // Everything that can be checked is checked before anything is made: a refusal leaves nothing behind.
-    if (input.login) {
-      await TeacherLogin.assertFree(input.login.username, input.email ?? null);
+    if (input.giveLogin) {
+      await TeacherLogin.assertFree(null, input.email ?? null);
       await TeacherMediumService.assertNoLoginElsewhere(tenantId, input.mobile);
     }
 
@@ -362,22 +357,22 @@ export class TeacherService {
       throw TeacherService.explainDuplicate(err);
     }
 
-    let login: TeacherLoginDto | null = null;
-    if (input.login) {
-      // The unique indexes settle two requests at once: whoever loses undoes the teacher it just made.
-      let userId: Types.ObjectId | null = null;
-      try {
-        userId = await TeacherLogin.create(tenantId, { name: teacher.name, mobile: teacher.mobile, email: teacher.email, isActive: true }, input.login);
-        teacher.userId = userId;
-        await Teacher.updateOne({ _id: teacher._id, tenantId }, { $set: { userId } });
-        login = { username: input.login.username, isActive: true };
-      } catch (err) {
-        await Teacher.deleteOne({ _id: teacher._id, tenantId });
-        if (userId) await TeacherLogin.remove(userId);
-        throw err;
-      }
+    if (!input.giveLogin || !teacher.email) return toTeacherDto(teacher);
+    // The login is the teacher's email, Pending until they open the invitation. The unique indexes settle two requests at once: whoever
+    // loses undoes the teacher it just made.
+    let userId: Types.ObjectId | null = null;
+    try {
+      userId = await TeacherLogin.createInvited(tenantId, { name: teacher.name, mobile: teacher.mobile, email: teacher.email, isActive: true });
+      teacher.userId = userId;
+      await Teacher.updateOne({ _id: teacher._id, tenantId }, { $set: { userId } });
+    } catch (err) {
+      await Teacher.deleteOne({ _id: teacher._id, tenantId });
+      if (userId) await TeacherLogin.remove(userId);
+      throw err;
     }
-    return toTeacherDto(teacher, undefined, login);
+    // The teacher and the login are made: an email that does not go out is told to the school (it sends it again), never undone.
+    const invite = await LoginInviteService.send(userId);
+    return { ...toTeacherDto(teacher, undefined, { username: null, email: teacher.email, isActive: true, pending: true }), invite };
   }
 
   static async update(tenantId: string, id: string, input: UpdateTeacherInput): Promise<TeacherDto> {
@@ -400,9 +395,10 @@ export class TeacherService {
     }
     await TeacherSettingsService.checkDetails(tenantId, input, "change");
     if (input.subjectIds) await TeacherService.assertSubjects(tenantId, input.subjectIds);
-    await TeacherService.assertFree(tenantId, input.mobile ?? null, input.employeeCode ?? null, id);
-    // The login repeats the email: it must be free before the teacher is changed.
+    await TeacherService.assertFree(tenantId, input.mobile ?? null, input.employeeCode ?? null, id, input.email ?? null);
+    // The login repeats the email: it must be free before the teacher is changed, and a login that is the email cannot lose it.
     if (current.userId && input.email) await TeacherLogin.assertFree(null, input.email, current.userId);
+    await TeacherLogin.assertKeepsEmail(current.userId, input.email);
 
     const changes = detailsOf(input);
     if (input.isActive !== undefined) changes.isActive = input.isActive;
@@ -434,30 +430,43 @@ export class TeacherService {
     return TeacherService.get(tenantId, id);
   }
 
-  /** Gives a teacher who has no login one (the same checks as when a teacher is added with one). */
-  static async createLogin(tenantId: string, id: string, login: LoginAccountInput): Promise<TeacherDto> {
+  /**
+   * Give login access (2026-11-26), from the teacher's page or the list: a teacher with no login (one brought in by a bulk upload) gets one, their
+   * email, and the invitation; a login still pending gets the invitation again; a login that works gets a link to choose a new password (an
+   * older login with only a username gets an email this way). `email`: the teacher's email when they have none, or another one (it becomes
+   * their email and the login's). A teacher who has left gets nothing; a staff member who also teaches gets their login from the Staff page.
+   */
+  static async giveLogin(tenantId: string, id: string, input: GiveLoginInput): Promise<TeacherDto & { invite: LoginInviteDelivery }> {
     const teacher = await Teacher.findOne({ _id: id, tenantId }).lean();
     if (!teacher) throw NOT_FOUND();
-    if (teacher.userId) throw ApiError.conflict(`${teacher.name} already has a login.`, "TEACHER_HAS_LOGIN");
-    if (!teacher.mobile) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "mobile", message: NEEDS_MOBILE_MESSAGE }]);
-    await TeacherLogin.assertFree(login.username, teacher.email ?? null);
-    await TeacherMediumService.assertNoLoginElsewhere(tenantId, teacher.mobile);
-
-    const userId = await TeacherLogin.create(tenantId, { name: teacher.name, mobile: teacher.mobile, email: teacher.email ?? null, isActive: teacher.isActive }, login);
-    const linked = await Teacher.updateOne({ _id: id, tenantId, userId: null }, { $set: { userId } });
-    if (linked.modifiedCount === 0) {
-      await TeacherLogin.remove(userId);
-      throw ApiError.conflict(`${teacher.name} already has a login.`, "TEACHER_HAS_LOGIN");
+    if (!teacher.isActive) throw ApiError.conflict(`${teacher.name} has left. Bring them back first.`, "TEACHER_HAS_LEFT");
+    if (!teacher.userId && (await StaffMember.exists({ tenantId, teacherId: teacher._id }))) {
+      throw ApiError.conflict(`${teacher.name} is on the Staff list: give the login from the Staff page.`, "LOGIN_FROM_STAFF");
     }
-    return TeacherService.get(tenantId, id);
-  }
+    const email = input.email ?? teacher.email ?? null;
+    if (!email) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "email", message: NEEDS_EMAIL_MESSAGE }]);
+    const changed = email !== (teacher.email ?? null);
+    if (changed) await TeacherService.assertFree(tenantId, null, null, id, email);
+    if (changed || !teacher.userId) await TeacherLogin.assertFree(null, email, teacher.userId ?? null);
+    if (!teacher.userId) await TeacherMediumService.assertNoLoginElsewhere(tenantId, teacher.mobile);
 
-  /** The school gives the teacher a new password (the teacher cannot ask for one: there may be no email to send it to). */
-  static async resetPassword(tenantId: string, id: string, password: string): Promise<void> {
-    const teacher = await Teacher.findOne({ _id: id, tenantId }).select("name userId").lean();
-    if (!teacher) throw NOT_FOUND();
-    if (!teacher.userId) throw ApiError.conflict(`${teacher.name} has no login yet.`, "TEACHER_HAS_NO_LOGIN");
-    await TeacherLogin.setPassword(teacher.userId, password);
+    let userId = teacher.userId ?? null;
+    if (!userId) {
+      const made = await TeacherLogin.createInvited(tenantId, { name: teacher.name, mobile: teacher.mobile ?? null, email, isActive: true });
+      const linked = await Teacher.updateOne({ _id: id, tenantId, userId: null }, { $set: { userId: made, email } });
+      if (linked.modifiedCount === 0) {
+        await TeacherLogin.remove(made);
+        throw ApiError.conflict(`${teacher.name} already has a login.`, "TEACHER_HAS_LOGIN");
+      }
+      userId = made;
+    } else if (changed) {
+      await Teacher.updateOne({ _id: id, tenantId }, { $set: { email } });
+      // The invitation is sent once, below.
+      await TeacherLogin.sync(userId, { email }, { resend: false });
+      await TeacherMediumService.mirror(tenantId, userId, { email });
+    }
+    const invite = await LoginInviteService.send(userId);
+    return { ...(await TeacherService.get(tenantId, id)), invite };
   }
 
   /** The teacher exists in this school (a 404 before anything about the request body is checked). */
@@ -479,8 +488,12 @@ export class TeacherService {
     if ((await Teacher.countDocuments({ tenantId })) >= MAX_TEACHERS) throw LIMIT();
   }
 
-  /** The mobile number and the employee code are not another teacher's. `except` is the teacher being changed. */
-  static async assertFree(tenantId: string, mobile: string | null, code: string | null, except: string | null): Promise<void> {
+  /**
+   * The mobile number, the employee code and the email are not another teacher's. `except` is the teacher being changed. (The email: before
+   * 2026-11-26 every teacher had a login, which kept one email to one person; a teacher without a login is held to it too, so giving them
+   * one later never meets a colleague with the same email.)
+   */
+  static async assertFree(tenantId: string, mobile: string | null, code: string | null, except: string | null, email: string | null = null): Promise<void> {
     const other = except ? { _id: { $ne: new Types.ObjectId(except) } } : {};
     if (mobile) {
       const clash = await Teacher.findOne({ tenantId, mobile, ...other }).select("name").lean();
@@ -492,6 +505,12 @@ export class TeacherService {
       const clash = await Teacher.findOne({ tenantId, employeeCode: code, ...other }).select("name").lean();
       if (clash) {
         throw ApiError.conflict(`${clash.name} already has this employee code.`, "TEACHER_CODE_EXISTS", [{ path: "employeeCode", message: `${clash.name} already has this employee code` }]);
+      }
+    }
+    if (email) {
+      const clash = await Teacher.findOne({ tenantId, email, ...other }).select("name").lean();
+      if (clash) {
+        throw ApiError.conflict(`${clash.name} already has this email.`, "TEACHER_EMAIL_EXISTS", [{ path: "email", message: `${clash.name} already has this email` }]);
       }
     }
   }

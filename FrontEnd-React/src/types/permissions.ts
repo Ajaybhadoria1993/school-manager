@@ -1,5 +1,6 @@
 /** What the school may allow a person to do (the Permissions page), as the API describes it (backend/src/main/permissions). */
-export type ProfileKind = "staff" | "teacher" | "parent";
+/** `class_teacher` (2026-11-26): what only a class teacher does, in their own class; a teacher's login has it with the Teacher list. */
+export type ProfileKind = "staff" | "teacher" | "class_teacher" | "parent";
 
 export interface PermissionDef {
   key: string;
@@ -24,6 +25,16 @@ export interface PermissionProfile {
   /** What can be given to this kind (the rest is not offered). */
   offered: string[];
   isDefault: boolean;
+  /** A role the school named ("other:sports coach"): made on this page (it can be deleted while nobody has it), or only typed in Add staff > Other. */
+  custom?: boolean;
+  /** A role the school named: how many of the staff (not inactive) have it. */
+  people?: number;
+}
+
+/** A role the school named, for Add staff's Role list (2026-11-26). */
+export interface NamedRoleChoice {
+  key: string;
+  label: string;
 }
 
 export interface PermissionsOverview {

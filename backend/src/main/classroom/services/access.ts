@@ -17,13 +17,24 @@ export interface Unit {
 }
 
 export const RUNNER_ROLES: readonly string[] = ["school_admin", "principal"];
+/** Who calls a service: their login, and (read by requirePermission) which permissions work for them on the whole school. */
+export interface Caller {
+  userId: string;
+  role: string;
+  schoolPermissions?: readonly string[];
+}
+
 /**
  * Whether a caller works on every class of the school: the people who run it, and any staff the school gave the permission (a receptionist
- * who takes attendance). Only a teacher is held to their own classes; a parent never reaches these routes.
+ * who sees attendance). A teacher is held to their own classes, unless they are also on the staff and their role's list has one of `keys`
+ * (a Coordinator who takes a class and may see every class's attendance: 2026-11-26). A parent never reaches these routes.
  */
-export const worksOnAllClasses = (role: string) => role !== "teacher" && role !== "parent" && role !== "student";
+export const worksOnAllClasses = (caller: Pick<Caller, "role" | "schoolPermissions">, ...keys: string[]) =>
+  (caller.role !== "teacher" && caller.role !== "parent" && caller.role !== "student") || (caller.role === "teacher" && keys.some((k) => caller.schoolPermissions?.includes(k)));
 export const sameUnit = (a: { classId: Types.ObjectId | string | null; sectionId: Types.ObjectId | string | null }, b: { classId: Types.ObjectId | string | null; sectionId: Types.ObjectId | string | null }) =>
   String(a.classId) === String(b.classId) && String(a.sectionId ?? "") === String(b.sectionId ?? "");
+
+export const NOT_THEIR_SUBJECT = () => ApiError.forbidden("Only this subject's teacher, the class teacher or the school writes it.", "NOT_THEIR_SUBJECT");
 
 const NO_ACCESS = () => ApiError.forbidden("This is not one of your classes.", "NOT_YOUR_CLASS");
 
@@ -37,11 +48,12 @@ export const unitFilter = (tenantId: string, unit: { classId: string; sectionId:
 /**
  * Who may do what in a class: the people who run the school everything; a teacher reads a class they are the class teacher of or teach a
  * subject in, and writes the subjects they teach there (the class teacher every subject). Used by the diary, the tests and the exam marks.
+ * `schoolKeys`: the permissions that let a teacher who is also on the staff work on every class here (exams.manage for the exams).
  */
-export async function accessTo(tenantId: string, caller: { userId: string; role: string }, unit: Awaited<ReturnType<typeof resolveUnit>>) {
+export async function accessTo(tenantId: string, caller: Caller, unit: Awaited<ReturnType<typeof resolveUnit>>, schoolKeys: readonly string[] = []) {
   const school = new Types.ObjectId(tenantId);
   const allotments = await Allotment.find({ ...unitFilter(tenantId, unit), academicYearId: unit.yearId }).select("subjectId teacherId").lean();
-  if (worksOnAllClasses(caller.role)) return { all: true, subjects: new Set(allotments.map((a) => a.subjectId.toString())), allotments, school };
+  if (worksOnAllClasses(caller, ...schoolKeys)) return { all: true, subjects: new Set(allotments.map((a) => a.subjectId.toString())), allotments, school };
   const teacher = caller.role === "teacher" ? await teacherOfUser(tenantId, caller.userId) : null;
   if (!teacher) throw NO_ACCESS();
   const isClassTeacher = (await classTeacherUnits(tenantId, teacher._id)).some((u) => sameUnit(u, unit));

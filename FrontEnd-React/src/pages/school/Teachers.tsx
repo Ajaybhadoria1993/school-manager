@@ -13,6 +13,7 @@ import { StudentsNotice } from "../../components/students/StudentsNotice";
 import { ExportTeachersButton } from "../../components/teachers/ExportTeachersButton";
 import { LeaveTeacherModal } from "../../components/teachers/LeaveTeacherModal";
 import { ReplaceTeacherDialog } from "../../components/teachers/ReplaceTeacherDialog";
+import { LoginStatusBadge } from "../../components/logins/LoginStatusBadge";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -156,11 +157,8 @@ export default function TeachersPage() {
                   </td>
                   <td className="px-4 py-3">{t.offDays.length === 0 ? <span className="text-foreground-muted">Comes every day</span> : <span className="flex flex-wrap gap-1">{t.offDays.map((d) => <Badge key={d}>{DAY_SHORT[d]}</Badge>)}</span>}</td>
                   <td className="px-4 py-3">
-                    {t.login ? (
-                      <span className={cn("font-mono text-xs", t.login.isActive ? "text-foreground" : "text-foreground-muted line-through")}>{t.login.username}</span>
-                    ) : (
-                      <span className="text-foreground-muted">No login</span>
-                    )}
+                    <LoginStatusBadge login={t.login} />
+                    {t.login && <span className={cn("mt-0.5 block max-w-[14rem] truncate text-xs", t.login.isActive ? "text-foreground-muted" : "text-foreground-muted line-through")}>{t.login.email ?? t.login.username}</span>}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap justify-end gap-2">

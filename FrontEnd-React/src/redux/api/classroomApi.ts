@@ -1,5 +1,5 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type { ApiResponse, AttendanceSheet, AttendanceStatus, CalendarDays, CalendarEvent, CalendarEventInput, ClassTestDetail, ClassTestItem, DateRange, DiaryDay, Leave, MarkStudentInput, MyClass, StudentRange } from "../../types";
+import type { ApiResponse, AttendanceSheet, AttendanceStatus, CalendarDays, CalendarEvent, CalendarEventInput, Chapter, ChapterSource, ClassTestDetail, ClassworkReminder, ClassTestItem, DateRange, DiaryDay, Leave, MarkStudentInput, MyClass, ProgressFilter, StudentRange, TeachingLog, TeachingProgress } from "../../types";
 import { baseQueryWithReauth } from "./baseQueryWithReauth";
 
 /**
@@ -9,7 +9,7 @@ import { baseQueryWithReauth } from "./baseQueryWithReauth";
 export const classroomApi = createApi({
   reducerPath: "classroomApi",
   baseQuery: baseQueryWithReauth,
-  tagTypes: ["Calendar", "Leaves", "MyClasses", "Attendance", "Diary", "Tests"],
+  tagTypes: ["Calendar", "Leaves", "MyClasses", "Attendance", "Diary", "Tests", "Progress", "Reminder"],
   refetchOnMountOrArgChange: 60,
   refetchOnReconnect: true,
   endpoints: (build) => ({
@@ -79,9 +79,43 @@ export const classroomApi = createApi({
       query: ({ classId, sectionId, date }) => ({ url: "/classroom/diary", params: { classId, sectionId: sectionId ?? "none", date } }),
       providesTags: ["Diary"],
     }),
-    saveDiary: build.mutation<ApiResponse<DiaryDay>, { classId: string; sectionId: string | null; date: string; subjectId: string; taught: string; homework: string }>({
+    saveDiary: build.mutation<
+      ApiResponse<DiaryDay>,
+      { classId: string; sectionId: string | null; date: string; subjectId: string; taught: string; homework: string; chapterId?: string | null; chapterDone?: boolean }
+    >({
       query: (body) => ({ url: "/classroom/diary", method: "PUT", body }),
-      invalidatesTags: ["Diary"],
+      invalidatesTags: ["Diary", "Progress"],
+    }),
+    // The chapters of one subject of a class, saved as one list (a chapter without an id is a new one).
+    saveSyllabus: build.mutation<
+      ApiResponse<{ chapters: Chapter[] }>,
+      { classId: string; sectionId: string | null; subjectId: string; chapters: { id?: string; name: string; done: boolean; plannedOn: string | null }[] }
+    >({
+      query: (body) => ({ url: "/classroom/syllabus", method: "PUT", body }),
+      invalidatesTags: ["Diary", "Progress"],
+    }),
+    // The lists a subject's chapters can be copied from, asked when wanted (never kept: another section may have changed).
+    getChapterSources: build.query<ApiResponse<ChapterSource[]>, { classId: string; sectionId: string | null; subjectId: string }>({
+      query: ({ classId, sectionId, subjectId }) => ({ url: "/classroom/syllabus/sources", params: { classId, sectionId: sectionId ?? "none", subjectId } }),
+      keepUnusedDataFor: 0,
+    }),
+    // The school's daily diary reminder to teachers.
+    getReminder: build.query<ApiResponse<ClassworkReminder>, void>({
+      query: () => "/classroom/reminder",
+      providesTags: ["Reminder"],
+    }),
+    saveReminder: build.mutation<ApiResponse<ClassworkReminder>, ClassworkReminder>({
+      query: (body) => ({ url: "/classroom/reminder", method: "PUT", body }),
+      invalidatesTags: ["Reminder"],
+    }),
+    // Teaching progress: each class's subjects, and the day by day list in pages.
+    getTeachingProgress: build.query<ApiResponse<TeachingProgress>, ProgressFilter>({
+      query: (params) => ({ url: "/classroom/progress", params }),
+      providesTags: ["Progress"],
+    }),
+    getTeachingLog: build.query<ApiResponse<TeachingLog>, ProgressFilter & { page: number }>({
+      query: (params) => ({ url: "/classroom/progress/log", params }),
+      providesTags: ["Progress"],
     }),
     getTests: build.query<ApiResponse<{ label: string; items: ClassTestItem[] }>, { classId: string; sectionId: string | null }>({
       query: ({ classId, sectionId }) => ({ url: "/classroom/tests", params: { classId, sectionId: sectionId ?? "none" } }),
@@ -122,6 +156,12 @@ export const {
   useSaveAttendanceMutation,
   useGetDiaryQuery,
   useSaveDiaryMutation,
+  useSaveSyllabusMutation,
+  useLazyGetChapterSourcesQuery,
+  useGetReminderQuery,
+  useSaveReminderMutation,
+  useGetTeachingProgressQuery,
+  useGetTeachingLogQuery,
   useGetTestsQuery,
   useAddTestMutation,
   useGetTestQuery,

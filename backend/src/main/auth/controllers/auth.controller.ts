@@ -4,9 +4,10 @@ import { asyncHandler } from "../../../utils/asyncHandler";
 import { sendCreated, sendOk } from "../../../utils/response";
 import { ApiError } from "../../../utils/ApiError";
 import type { Platform } from "../../../utils/authUtils";
-import type { AcceptInviteInput, LoginInput, ResetPasswordInput, SignupInput } from "../schemas/auth.schemas";
+import type { AcceptInviteInput, AcceptLoginInviteInput, LoginInput, ResetPasswordInput, SignupInput } from "../schemas/auth.schemas";
 import { SignupService } from "../services/signup.service";
 import { AcceptInviteService } from "../services/acceptInvite.service";
+import { LoginInviteService } from "../services/loginInvite.service";
 import { AuthService } from "../services/auth.service";
 import { PasswordService } from "../services/password.service";
 import type { SessionMeta } from "../services/token.service";
@@ -54,6 +55,18 @@ export const acceptInvite = asyncHandler(async (req: Request, res: Response) => 
   const { token, name, password, device } = req.validatedBody as AcceptInviteInput;
   const session = await AcceptInviteService.accept(token, name, password, sessionMeta(req, device));
   return sendCreated(res, session, "Account created");
+});
+
+/** The invitation link of a teacher's or a staff member's login: who it is for, before they choose a password. */
+export const getLoginInvite = asyncHandler(async (req: Request, res: Response) => {
+  const { token } = req.validatedBody as { token: string };
+  return sendOk(res, await LoginInviteService.check(token));
+});
+
+export const acceptLoginInvite = asyncHandler(async (req: Request, res: Response) => {
+  const { token, password, device } = req.validatedBody as AcceptLoginInviteInput;
+  const session = await LoginInviteService.accept(token, password, sessionMeta(req, device));
+  return sendOk(res, session, "Password set");
 });
 
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {

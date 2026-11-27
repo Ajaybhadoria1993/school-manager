@@ -17,6 +17,10 @@ export interface AccessTokenPayload {
   tenantId: string | null;
   /** Filled once per request by requirePermission (it is not in the token): what this login may do, by the school's Permissions. */
   permissions?: string[];
+  /** Filled with `permissions`: which of them work on the whole school's pages (a teacher: only what their staff role gives, if they have one). */
+  schoolPermissions?: string[];
+  /** Set (never in the token) when the request was moved to another medium of the school: the side the login belongs to. */
+  homeTenantId?: string;
 }
 
 export interface RefreshTokenPayload {

@@ -40,6 +40,18 @@ describe("what the person may do is read again when the window is opened", () =>
     expect(calls.filter((c) => c.path === "/auth/me")).toHaveLength(1);
   });
 
+  it("a staff member who also teaches gets what their role was given on the whole school, even when the key was already on their teacher's list (2026-11-26)", async () => {
+    signInAs("teacher", ["attendance.view"]);
+    fakeApi({ "GET /auth/me": () => ({ ...me(["attendance.view"], "teacher"), user: { ...me(["attendance.view"], "teacher").user, schoolPermissions: ["attendance.view"] } }) });
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>
+    );
+    comeBack();
+    await waitFor(() => expect(store.getState().auth.user?.schoolPermissions).toEqual(["attendance.view"]));
+  });
+
   it("looks once, not again for every focus within a few seconds", async () => {
     signInAs("receptionist", ["calendar.view"]);
     const calls = fakeApi({ "GET /auth/me": () => me(["calendar.view"]) });

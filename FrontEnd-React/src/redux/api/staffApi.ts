@@ -1,5 +1,5 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type { ApiResponse, LoginAccount, StaffMember, StaffMemberInput, StaffMemberList, StaffMemberQuery } from "../../types";
+import type { ApiResponse, StaffMember, StaffMemberInput, StaffMemberList, StaffMemberQuery } from "../../types";
 import { baseQueryWithReauth } from "./baseQueryWithReauth";
 
 /**
@@ -22,26 +22,18 @@ export const staffApi = createApi({
       query: (id) => `/staff/members/${id}`,
       providesTags: ["StaffMember"],
     }),
-    /** Adds the person and makes their login (the username and the password in `login`). */
+    /** Adds the person; with `giveLogin` their email becomes their login and the invitation is emailed. */
     createStaffMember: build.mutation<ApiResponse<StaffMember>, StaffMemberInput>({
       query: (body) => ({ url: "/staff/members", method: "POST", body }),
       invalidatesTags: ["StaffMember"],
     }),
-    updateStaffMember: build.mutation<ApiResponse<StaffMember>, { id: string } & Partial<Omit<StaffMemberInput, "login">> & { isActive?: boolean }>({
+    updateStaffMember: build.mutation<ApiResponse<StaffMember>, { id: string } & Partial<Omit<StaffMemberInput, "giveLogin">> & { isActive?: boolean }>({
       query: ({ id, ...body }) => ({ url: `/staff/members/${id}`, method: "PATCH", body }),
       invalidatesTags: ["StaffMember"],
     }),
-    /** A login for a person added before the school made logins itself. */
-    makeStaffLogin: build.mutation<ApiResponse<StaffMember>, { id: string } & LoginAccount>({
+    /** Give login access (as for a teacher): a login with an invitation, the invitation again, or a link to choose a new password. */
+    giveStaffLogin: build.mutation<ApiResponse<StaffMember>, { id: string; email?: string }>({
       query: ({ id, ...body }) => ({ url: `/staff/members/${id}/login`, method: "POST", body }),
-      invalidatesTags: ["StaffMember"],
-    }),
-    /** A new password the school made: the old one stops and their sessions end. */
-    resetStaffPassword: build.mutation<ApiResponse<Record<string, never>>, { id: string; password: string }>({
-      query: ({ id, ...body }) => ({ url: `/staff/members/${id}/reset-password`, method: "POST", body }),
-    }),
-    changeStaffUsername: build.mutation<ApiResponse<StaffMember>, { id: string; username: string }>({
-      query: ({ id, ...body }) => ({ url: `/staff/members/${id}/login`, method: "PATCH", body }),
       invalidatesTags: ["StaffMember"],
     }),
     /** Takes away a person who has no login yet (one with a login is made inactive instead). */
@@ -57,8 +49,6 @@ export const {
   useGetStaffMemberQuery,
   useCreateStaffMemberMutation,
   useUpdateStaffMemberMutation,
-  useMakeStaffLoginMutation,
-  useResetStaffPasswordMutation,
-  useChangeStaffUsernameMutation,
+  useGiveStaffLoginMutation,
   useRemoveStaffMemberMutation,
 } = staffApi;

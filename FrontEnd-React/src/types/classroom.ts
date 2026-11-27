@@ -1,3 +1,4 @@
+import type { DateRange } from "./attendance";
 /** The daily flow of parents and teachers (docs/parent-teacher-flow.md). */
 
 export type CalendarKind = "holiday" | "event";
@@ -103,13 +104,52 @@ export interface ChildAttendance {
   year: AttendanceTally;
 }
 
+/** A chapter of a subject in a class (docs/teaching-progress.md), in the list's order. */
+export interface Chapter {
+  id: string;
+  name: string;
+  done: boolean;
+  /** The day it is to be finished by, or null. Late: that day is gone and it is not finished. */
+  plannedOn: string | null;
+  late: boolean;
+}
+
+/** A chapter as the Chapters window holds it while it is open (`plannedOn` "" for none; no `id` for a new one). */
+export interface ChapterDraft {
+  /** The row's own key while the window is open. */
+  key: number;
+  id?: string;
+  name: string;
+  done: boolean;
+  plannedOn: string;
+}
+
+/** A list a subject's chapters can be copied from: another section, or an earlier year. */
+export interface ChapterSource {
+  id: string;
+  label: string;
+  chapters: { name: string; plannedOn: string | null }[];
+}
+
+/** Whether and when (India, "16:00") teachers who have not written the diary are reminded. */
+export interface ClassworkReminder {
+  enabled: boolean;
+  time: string;
+}
+
 /** A class's diary of a day: every subject of the class, the ones the teacher may write, and what was written. */
 export interface DiaryDay {
   classId: string;
   sectionId: string | null;
   label: string;
   date: string;
-  subjects: { subjectId: string; subjectName: string; canWrite: boolean; entry: { taught: string; homework: string; writtenBy: { name: string; role: string } } | null }[];
+  subjects: {
+    subjectId: string;
+    subjectName: string;
+    canWrite: boolean;
+    chapters: Chapter[];
+    entry: { taught: string; homework: string; chapterId: string | null; writtenBy: { name: string; role: string } } | null;
+  }[];
 }
 
 /** A test of a class: its subject, day, topic and marks out of; how many marks are entered and their average percentage. */
@@ -132,7 +172,75 @@ export interface ClassTestDetail extends ClassTestItem {
 
 export interface ChildDiary {
   date: string;
-  entries: { subjectName: string; taught: string; homework: string; writtenBy: string }[];
+  entries: { subjectName: string; chapter: { number: number; name: string; done: boolean } | null; taught: string; homework: string; writtenBy: string }[];
+  /** How far each subject with chapters is, and the chapter going on. */
+  progress: { subjectName: string; total: number; done: number; current: { number: number; name: string } | null }[];
+}
+
+// ---- Teaching progress (docs/teaching-progress.md) ----------------------------------------------------------------------------------
+
+export interface ProgressChapter extends Chapter {
+  number: number;
+  completedOn: string | null;
+  /** On how many days it was taught, and the first of them. */
+  days: number;
+  startedOn: string | null;
+}
+
+/** One subject of one class (or section). `updates`, `homework` and `last` are of the days asked; the chapters are the year's. */
+export interface ProgressRow {
+  classId: string;
+  sectionId: string | null;
+  classLabel: string;
+  subjectId: string;
+  subjectName: string;
+  teacherId: string | null;
+  teacherName: string | null;
+  chapters: ProgressChapter[];
+  /** How many of its chapters are past their planned day. */
+  late: number;
+  current: { number: number; name: string } | null;
+  updates: number;
+  homework: number;
+  last: { date: string; taught: string; homework: string; chapter: { number: number; name: string } | null } | null;
+}
+
+export interface TeachingProgress {
+  options: {
+    classes: { classId: string; sectionId: string | null; label: string }[];
+    subjects: { id: string; name: string }[];
+    teachers: { id: string; name: string }[];
+  };
+  /** `behind`: class subjects with a chapter past its planned day. */
+  summary: { updates: number; homework: number; chaptersDone: number; chaptersTotal: number; withoutUpdate: number; behind: number };
+  rows: ProgressRow[];
+}
+
+export interface TeachingLog {
+  total: number;
+  page: number;
+  limit: number;
+  items: {
+    id: string;
+    date: string;
+    classId: string;
+    sectionId: string | null;
+    classLabel: string;
+    subjectName: string;
+    teacherName: string | null;
+    writtenBy: string;
+    chapter: { number: number; name: string } | null;
+    taught: string;
+    homework: string;
+  }[];
+}
+
+/** The filters of teaching progress, as the server takes them. */
+export interface ProgressFilter extends DateRange {
+  classId?: string;
+  sectionId?: string;
+  subjectId?: string;
+  teacherId?: string;
 }
 
 export interface ChildTests {

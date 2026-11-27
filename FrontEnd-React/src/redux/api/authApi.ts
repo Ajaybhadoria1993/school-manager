@@ -1,5 +1,5 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type { ApiResponse, InviteInfo, MePayload, SessionPayload } from "../../types";
+import type { ApiResponse, InviteInfo, LoginInviteInfo, MePayload, SessionPayload } from "../../types";
 import { baseQueryWithReauth } from "./baseQueryWithReauth";
 
 // For these, a 401 is the answer to the request (wrong password, bad token), not an expired session.
@@ -50,6 +50,17 @@ export const authApi = createApi({
       query: (body) => ({ url: "/auth/accept-invite", method: "POST", body }),
       extraOptions: ANSWER_ON_401,
     }),
+
+    // The invitation a teacher or a staff member got with their login: who it is for, then the password they choose.
+    checkLoginInvite: build.mutation<ApiResponse<LoginInviteInfo>, { token: string }>({
+      query: (body) => ({ url: "/auth/login-invite/check", method: "POST", body }),
+      extraOptions: ANSWER_ON_401,
+    }),
+
+    acceptLoginInvite: build.mutation<ApiResponse<SessionPayload>, { token: string; password: string }>({
+      query: (body) => ({ url: "/auth/login-invite/accept", method: "POST", body }),
+      extraOptions: ANSWER_ON_401,
+    }),
   }),
 });
 
@@ -59,4 +70,6 @@ export const {
   useResetPasswordMutation,
   useCheckInviteMutation,
   useAcceptInviteMutation,
+  useCheckLoginInviteMutation,
+  useAcceptLoginInviteMutation,
 } = authApi;

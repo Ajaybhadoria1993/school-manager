@@ -9,7 +9,7 @@ import { ToastProvider } from "../../../components/ui/toast-context";
 import { FormBarSlotContext } from "../../../components/layout/FormBarSlot";
 import type { ImportSheet } from "../../../types";
 import { fakeApi as pretendApi, spreadsheet, type Call, type Handler } from "../../../test/fakeApi";
-import { stubDownloads, textOf } from "../../../test/downloads";
+import { stubDownloads } from "../../../test/downloads";
 import { ENGLISH, MATHS } from "../../../test/timetableFixtures";
 import TeacherImportPage from "../TeacherImport";
 
@@ -25,17 +25,20 @@ const SHEET: ImportSheet = {
   ],
 };
 
-type Body = { rows: { row: number; teacher: Record<string, unknown>; subjectNames: string[]; username?: string; password?: string }[] };
-/** The server made every row: a username from the name, and a password for each row whose file gave none. */
+type Body = { rows: { row: number; teacher: Record<string, unknown>; subjectNames: string[] }[] };
+/** The server made every row (2026-11-26: with no login; the school gives login access later from a teacher's page). */
 const madeAll = (body: unknown) => {
-  const results = (body as Body).rows.map((r) => ({
-    row: r.row,
-    ok: true,
-    errors: [],
-    teacher: { id: `t${r.row}`, name: String(r.teacher.name) },
-    login: { username: r.username ?? `${String(r.teacher.name).toLowerCase().replace(/\W+/g, ".")}_41`, password: r.password ? null : `Gen@${r.row}Pw` },
-  }));
+  const results = (body as Body).rows.map((r) => ({ row: r.row, ok: true, errors: [], teacher: { id: `t${r.row}`, name: String(r.teacher.name) } }));
   return { results, ok: results.length, failed: 0 };
+};
+/** Row 4 refused: Dev's email is another teacher's (a detail the file has no column for). */
+const refusedDev = (body: unknown) => {
+  const made = madeAll(body);
+  return {
+    results: [made.results[0], { row: 4, ok: false, code: "TEACHER_EMAIL_EXISTS", errors: [{ path: "email", message: "Meena Singh already has this email" }] }],
+    ok: 1,
+    failed: 1,
+  };
 };
 
 const fakeApi = (extra: Record<string, Handler> = {}) =>
@@ -222,7 +225,7 @@ describe("Bulk upload of teachers: Preview & fix is just the table", () => {
     expect(screen.getByRole("combobox", { name: /What the column "Name \*" is$/ })).toHaveValue("Name");
     expect(screen.getByRole("combobox", { name: /What the column "Mobile \*" is$/ })).toHaveValue("Mobile");
     expect(said("Name *", 2)).toBe("Enter the teacher's name");
-    expect(said("Mobile *", 2)).toBe("Enter the teacher's mobile number: their login needs it");
+    expect(said("Mobile *", 2)).toBe("Enter the teacher's mobile number");
     expect(screen.getByRole("button", { name: "Upload 0 teachers" })).toBeDisabled();
     await user.type(box("Name *", 2), "Asha Verma");
     await user.type(box("Mobile *", 2), "98765 43210");
@@ -400,23 +403,21 @@ describe("Bulk upload of teachers: the upload", () => {
     });
   });
 
-  it("when every row is added it goes straight to the teachers (no Done step), after saving the logins file: the server made up the passwords and tells them only now", async () => {
+  it("when every row is added it goes straight to the teachers (no Done step) and saves no file: a bulk upload makes no login", async () => {
     fakeApi();
-    const { saved, blobs } = stubDownloads();
+    const { saved } = stubDownloads();
     const { router, user } = openPage();
     await openFile(user);
     await user.click(uploadButton());
-    await user.click(await screen.findByRole("button", { name: "Upload and add" }));
+    const ask = await screen.findByRole("dialog", { name: "Upload 2 teachers?" });
+    expect(ask).toHaveTextContent("without a login");
+    await user.click(within(ask).getByRole("button", { name: "Upload and add" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/school/teachers"));
     expect(screen.getByText("The Manage Teacher list")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /teachers? added/ })).not.toBeInTheDocument();
-    // The logins file was saved once, with both teachers' made-up passwords.
-    expect(saved).toEqual(["staff-logins.csv"]);
-    const csv = await textOf(blobs[0]);
-    expect(csv).toContain("Meena Singh,9876543210,meena.singh_41,Gen@3Pw");
-    expect(csv).toContain("Dev Patel,9876500000,dev.patel_41,Gen@4Pw");
-    // And the person is told, on the teachers' page.
-    expect(screen.getByText(/2 teachers added/)).toHaveTextContent("The login details are saved to your downloads");
+    expect(saved).toEqual([]);
+    // The person is told, on the teachers' page.
+    expect(screen.getByText(/2 teachers added/)).not.toHaveTextContent("login");
   });
 
   it("goes to the teachers from /teachers/import too: to the list it came from", async () => {
@@ -442,7 +443,7 @@ describe("Bulk upload of teachers: the upload", () => {
     expect(screen.getByText(/23 teachers added/)).toBeInTheDocument();
   });
 
-  it("keeps the password the file gave and does not ask the server to make one: nothing to save, so no file", async () => {
+  it("does not upload an older file's Username and Password columns (no username or password is ever sent)", async () => {
     const calls = fakeApi({
       "POST /staff/teachers/import/read": () => ({ ...SHEET, headers: ["Name *", "Mobile *", "Username", "Password"], rows: [{ row: 3, cells: ["Meena Singh", "9876543210", "Meena.S", "Sch00l@Teach1"] }] }),
     });
@@ -452,36 +453,13 @@ describe("Bulk upload of teachers: the upload", () => {
     await user.click(uploadButton());
     await user.click(await screen.findByRole("button", { name: "Upload and add" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/school/teachers"));
-    expect(writes(calls)[0].body).toMatchObject({ rows: [{ username: "meena.s", password: "Sch00l@Teach1" }] });
-    // The school wrote that password itself: no file of logins, and nothing said about one.
+    expect(writes(calls)[0].body).toEqual({ rows: [{ row: 3, teacher: { name: "Meena Singh", mobile: "9876543210" }, subjectNames: [] }] });
     expect(saved).toEqual([]);
-    expect(screen.getByText(/1 teacher added/)).not.toHaveTextContent("login details");
   });
 
-  it("stays on the Done step, with the logins on the page, if the logins file could not be saved (the passwords are told only once)", async () => {
-    fakeApi();
-    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => { throw new Error("blocked"); }, revokeObjectURL: () => {} }));
-    const { router, user } = openPage();
-    await openFile(user);
-    await user.click(uploadButton());
-    await user.click(await screen.findByRole("button", { name: "Upload and add" }));
-    await screen.findByRole("heading", { name: "2 teachers added" });
-    expect(router.state.location.pathname).toBe("/school/teachers/import");
-    expect(within(screen.getByRole("table", { name: "Logins to hand out" })).getByText("Gen@3Pw")).toBeInTheDocument();
-  });
-
-  it("stays on the Done step when a row was refused: the others' logins are listed there, to download", async () => {
+  it("stays on the Done step when a row was refused, with no list of logins", async () => {
     const { saved } = stubDownloads();
-    fakeApi({
-      "POST /staff/teachers/import": (body) => {
-        const made = madeAll(body);
-        return {
-          results: [made.results[0], { row: 4, ok: false, code: "USERNAME_TAKEN", errors: [{ path: "username", message: "This username is taken. Try another, for example dev.patel_41" }] }],
-          ok: 1,
-          failed: 1,
-        };
-      },
-    });
+    fakeApi({ "POST /staff/teachers/import": refusedDev });
     const { router, user } = openPage();
     await openFile(user);
     await user.click(uploadButton());
@@ -489,10 +467,8 @@ describe("Bulk upload of teachers: the upload", () => {
     await screen.findByRole("heading", { name: "1 teacher added" });
     expect(router.state.location.pathname).toBe("/school/teachers/import");
     expect(saved).toEqual([]);
-    const cells = within(screen.getByRole("table", { name: "Logins to hand out" })).getAllByRole("row").slice(1).map((r) => within(r).getAllByRole("cell").map((c) => c.textContent));
-    expect(cells).toEqual([["Meena Singh", "9876543210", "meena.singh_41", "Gen@3Pw"]]);
-    await user.click(screen.getByRole("button", { name: "Download login details" }));
-    expect(saved).toEqual(["staff-logins.csv"]);
+    expect(screen.queryByRole("table", { name: "Logins to hand out" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Download login details" })).not.toBeInTheDocument();
   });
 
   it("keeps a refused row in the table with the server's reason, and takes the person to the box (adding its column when the file has none)", async () => {
@@ -503,11 +479,7 @@ describe("Bulk upload of teachers: the upload", () => {
         tries += 1;
         const made = madeAll(body);
         if (tries > 1) return made;
-        return {
-          results: [made.results[0], { row: 4, ok: false, code: "USERNAME_TAKEN", errors: [{ path: "username", message: "This username is taken. Try another, for example dev.patel_41" }] }],
-          ok: 1,
-          failed: 1,
-        };
+        return refusedDev(body);
       },
     });
     const { router, user } = openPage();
@@ -520,18 +492,18 @@ describe("Bulk upload of teachers: the upload", () => {
     await user.click(screen.getByRole("button", { name: "Fix the 1 row" }));
     // Row 3 is in the school now: only the refused row is left, and its detail has no column yet.
     expect(screen.queryByLabelText("Name *, row 3")).not.toBeInTheDocument();
-    await user.click(within(screen.getByRole("list", { name: "Row 4 needs a fix" })).getByRole("button", { name: /^Username/ }));
-    expect(box("Username", 4)).toHaveFocus();
-    expect(said("Username", 4)).toBe("This username is taken. Try another, for example dev.patel_41");
-    await user.type(box("Username", 4), "dev.patel9");
+    await user.click(within(screen.getByRole("list", { name: "Row 4 needs a fix" })).getByRole("button", { name: /^Email/ }));
+    expect(box("Email", 4)).toHaveFocus();
+    expect(said("Email", 4)).toBe("Meena Singh already has this email");
+    await user.type(box("Email", 4), "dev@school.example");
     await user.tab();
     expect(uploadButton()).toHaveTextContent("Upload 1 teacher");
     await user.click(uploadButton());
     await user.click(await screen.findByRole("button", { name: "Upload and add" }));
     // Now every row of the file is in: the person is taken to the teachers.
     await waitFor(() => expect(router.state.location.pathname).toBe("/school/teachers"));
-    expect(writes(calls)[1].body).toMatchObject({ rows: [{ row: 4, username: "dev.patel9" }] });
-    // The logins file has both teachers of this visit (the first upload's, and this one's).
+    expect(writes(calls)[1].body).toMatchObject({ rows: [{ row: 4, teacher: { email: "dev@school.example" } }] });
+    // Both teachers of this visit (the first upload's, and this one's).
     expect(screen.getByText(/2 teachers added/)).toBeInTheDocument();
   });
 
@@ -589,31 +561,14 @@ describe("Bulk upload of teachers: leaving", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/school/teachers"));
   });
 
-  it("does not let the logins go unseen (a part of the file was refused, so the Done step stays): asks until they are downloaded", async () => {
+  it("leaves the Done step without asking: there is nothing to download (a bulk upload makes no login)", async () => {
     stubDownloads();
-    fakeApi({
-      "POST /staff/teachers/import": (body) => {
-        const made = madeAll(body);
-        return {
-          results: [made.results[0], { row: 4, ok: false, code: "USERNAME_TAKEN", errors: [{ path: "username", message: "This username is taken. Try another, for example dev.patel_41" }] }],
-          ok: 1,
-          failed: 1,
-        };
-      },
-    });
+    fakeApi({ "POST /staff/teachers/import": refusedDev });
     const { router, user } = openPage();
     await openFile(user);
     await user.click(uploadButton());
     await user.click(await screen.findByRole("button", { name: "Upload and add" }));
     await screen.findByRole("heading", { name: "1 teacher added" });
-
-    await user.click(screen.getByRole("link", { name: "Manage Teacher" }));
-    const ask = await screen.findByRole("dialog", { name: "Leave without the login details?" });
-    expect(ask).toHaveTextContent("passwords");
-    await user.click(within(ask).getByRole("button", { name: "Cancel" }));
-    expect(router.state.location.pathname).toBe("/school/teachers/import");
-
-    await user.click(screen.getByRole("button", { name: "Download login details" }));
     await user.click(screen.getByRole("link", { name: "Manage Teacher" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/school/teachers"));
   });

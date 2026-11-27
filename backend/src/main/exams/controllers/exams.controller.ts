@@ -3,10 +3,25 @@ import { ApiError } from "../../../utils/ApiError";
 import { asyncHandler } from "../../../utils/asyncHandler";
 import { sendCreated, sendOk } from "../../../utils/response";
 import type { Caller } from "../../classroom/services/leave.service";
-import type { AddPapersInput, ClassExamsQuery, CreateExamInput, ListExamsQuery, MarksSheetQuery, SaveExamMarksInput, UpdateExamInput, UpdatePaperInput } from "../schemas/exams.schemas";
+import type {
+  AddPapersInput,
+  ClassExamsQuery,
+  CreateExamInput,
+  DutyInput,
+  ListExamsQuery,
+  MarksSheetQuery,
+  RollNumbersInput,
+  RoomInput,
+  RosterQuery,
+  SaveExamMarksInput,
+  UpdateExamInput,
+  UpdatePaperInput,
+} from "../schemas/exams.schemas";
+import { DutyService } from "../services/duty.service";
 import { ExamService } from "../services/exam.service";
 import { MarksService } from "../services/marks.service";
 import { PaperService } from "../services/paper.service";
+import { SeatingService } from "../services/seating.service";
 import { ClassExamsService } from "../services/view.service";
 
 function tenantOf(req: Request): string {
@@ -41,10 +56,27 @@ export const deletePaper = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, { id: paperIdOf(req) }, "Paper taken away");
 });
 
+// ---- The children of an exam, their roll numbers and rooms (2026-11-27) ---------------------------------------------------------------
+const roomIdOf = (req: Request) => (req.validatedParams as { roomId: string }).roomId;
+export const getRoster = asyncHandler(async (req: Request, res: Response) => sendOk(res, await SeatingService.roster(tenantOf(req), idOf(req), req.validatedQuery as RosterQuery)));
+export const saveRollNumbers = asyncHandler(async (req: Request, res: Response) => sendOk(res, await SeatingService.setRollNumbers(tenantOf(req), idOf(req), body<RollNumbersInput>(req)), "Roll numbers saved"));
+export const listRooms = asyncHandler(async (req: Request, res: Response) => sendOk(res, await SeatingService.rooms(tenantOf(req), idOf(req))));
+export const addRoom = asyncHandler(async (req: Request, res: Response) => sendCreated(res, await SeatingService.addRoom(tenantOf(req), idOf(req), body<RoomInput>(req)), "Room saved"));
+export const updateRoom = asyncHandler(async (req: Request, res: Response) => sendOk(res, await SeatingService.updateRoom(tenantOf(req), idOf(req), roomIdOf(req), body<RoomInput>(req), actorOf(req)), "Room saved"));
+export const deleteRoom = asyncHandler(async (req: Request, res: Response) => {
+  await SeatingService.removeRoom(tenantOf(req), idOf(req), roomIdOf(req), actorOf(req));
+  return sendOk(res, { id: roomIdOf(req) }, "Room taken away");
+});
+
+// ---- Exam duty: the teachers who watch a room (2026-11-27) ------------------------------------------------------------------------------
+export const listDutyTeachers = asyncHandler(async (req: Request, res: Response) => sendOk(res, await DutyService.teachers(tenantOf(req))));
+export const saveDuty = asyncHandler(async (req: Request, res: Response) => sendOk(res, await DutyService.save(tenantOf(req), idOf(req), body<DutyInput>(req), actorOf(req)), "Duty saved"));
+export const listMyDuties = asyncHandler(async (req: Request, res: Response) => sendOk(res, await DutyService.mine(tenantOf(req), req.user!.userId)));
+
 // ---- A class, its marks, and a child (2026-11-06) --------------------------------------------------------------------------------------
 const callerOf = (req: Request): Caller => {
   if (!req.user) throw ApiError.unauthorized("Please sign in", "UNAUTHORIZED");
-  return { userId: req.user.userId, role: req.user.role };
+  return { userId: req.user.userId, role: req.user.role, schoolPermissions: req.user.schoolPermissions };
 };
 const marksPaperIdOf = (req: Request) => (req.validatedParams as { paperId: string }).paperId;
 

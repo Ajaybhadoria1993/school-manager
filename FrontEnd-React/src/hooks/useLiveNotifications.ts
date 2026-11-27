@@ -27,7 +27,9 @@ function staleBy(n: NotificationItem) {
     case "attendance.saved":
       return ofChild("ChildAttendance");
     case "diary.saved":
-      return [classroomApi.util.invalidateTags(["Diary"]), ...ofChild("ChildDiary")];
+      return [classroomApi.util.invalidateTags(["Diary", "Progress"]), ...ofChild("ChildDiary")];
+    case "syllabus.behind":
+      return [classroomApi.util.invalidateTags(["Progress"])];
     case "test.added":
     case "test.removed":
     case "marks.saved":
@@ -39,8 +41,12 @@ function staleBy(n: NotificationItem) {
     case "exam.paper_changed":
     case "exam.paper_removed":
     case "exam.marks":
-      // The school's exam list and page, a class's exams and marks sheets (a teacher's tab), and the child's exams (a parent's page) that is on screen.
-      return [examsApi.util.invalidateTags(["Exams", "Exam", "ClassExams", "MarksSheet"]), ...(child ? ofChild("ChildExams") : [parentApi.util.invalidateTags(["ChildExams"])])];
+      // The school's exam list and page, a class's exams and marks sheets (a teacher's tab), a teacher's exam duty (its days and papers), and the child's
+      // exams (a parent's page) that is on screen.
+      return [examsApi.util.invalidateTags(["Exams", "Exam", "ClassExams", "MarksSheet", "MyExamDuties"]), ...(child ? ofChild("ChildExams") : [parentApi.util.invalidateTags(["ChildExams"])])];
+    case "exam.duty":
+      // The teacher was put on duty in a room, taken off, or their room was renamed: their home's Exam duty card reads again.
+      return [examsApi.util.invalidateTags(["MyExamDuties"])];
     case "teacher.attendance":
       // The school marked or corrected the teacher's day: their own card reads again.
       return [attendanceApi.util.invalidateTags(["MyAttendance"])];

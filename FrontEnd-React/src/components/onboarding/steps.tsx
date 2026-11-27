@@ -32,6 +32,7 @@ import { PAGE_GRID } from "../students/form/formGrid";
 import { AcademicYearFields } from "./AcademicYearFields";
 import { BoardsField, emptyBoard } from "./BoardsField";
 import { LogoField } from "./LogoField";
+import { MyPhotoField } from "../profile/MyPhotoField";
 import { OnboardSection } from "./OnboardSection";
 import { PlanSections } from "./PlanSections";
 import { useHeaderSlots } from "./stage";
@@ -417,6 +418,8 @@ export function StepProfile({ initial, draft, onSubmit, onBack, saving }: StepPr
   return (
     <form onSubmit={submit} className="space-y-6" noValidate>
       <OnboardSection icon={UserRound} title="About you">
+        {/* Saved as soon as it is chosen, like the school's logo: not a box of the form. */}
+        <MyPhotoField label="Your photo" optional name={v.adminName} />
         <div className={PAGE_GRID}>
           <Field id="adminName" label="Your full name" error={errors.adminName}>
             <Input id="adminName" icon={UserRound} value={v.adminName} onChange={(e) => set("adminName", e.target.value)} autoComplete="name" aria-invalid={!!errors.adminName} />

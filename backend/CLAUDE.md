@@ -19,7 +19,10 @@ runs on its own `school_erp_test` database), `npm run typecheck`.
   or be listed in `YEAR_FREE_MODELS` with the reason.
 - **Sign-in takes an email or a username** (`POST /auth/login` `{ identifier, password }`, `email` still accepted as the old name). `User.email` is optional
   (a teacher may have none); `email` and `username` are unique across the whole platform through partial indexes, and `server.ts` `syncIndexes()` creates them. A person's
-  login is made by `TeacherLogin` (`staff/services/teacherLogin.service.ts`): never write a `User` for a teacher anywhere else. Free usernames
+  login is made by `TeacherLogin` (`staff/services/teacherLogin.service.ts`): never write a `User` for a teacher anywhere else. Since 2026-11-26 a
+  teacher's or a staff member's login is **their email with an invitation** (`TeacherLogin.createInvited`, `User.invitePending` until they choose a
+  password from the link: `auth/services/loginInvite.service.ts`, `/auth/login-invite/*`); the school makes no username or password for them (only a
+  parent's login still has one). Tests give a login with the shorthand of `src/test/logins.ts`. Free usernames
   (the check Add teacher calls while typing, and the suggestions in a `USERNAME_TAKEN` 409) come from `staff/services/usernames.service.ts`. `docs/teachers.md`.
 - Tests build schools with `createSchool` / `addColleague` from `src/test/schools.ts`.
 - **Who may use a module is one named list** in its `constants.ts` (`STUDENT_WRITERS`, `STUDENT_READERS`), spread into `requireRole(...)`, so

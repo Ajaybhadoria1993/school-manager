@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Building2, Check, ChevronDown, LogOut, Menu, Moon, Sun } from "lucide-react";
+import { PROFILE_ROLES } from "../../constants/profile";
 import { useAuth } from "../../hooks/useAuth";
+import { useGetMyPhotoQuery } from "../../redux/api/profileApi";
 import { useDismiss } from "../../hooks/useDismiss";
 import { useAppTheme } from "../../theme/AppThemeProvider";
 import { cn, initials } from "../../utils/helpers";
@@ -18,6 +20,8 @@ function UserMenu() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useDismiss(open, () => setOpen(false));
+  // The photo of someone who works at the school (Settings > Personal details), read once and kept.
+  const photo = useGetMyPhotoQuery(undefined, { skip: !user || !PROFILE_ROLES.includes(user.role) }).data?.data.photo;
   if (!user) return null;
   return (
     <div ref={ref} className="relative">
@@ -28,7 +32,7 @@ function UserMenu() {
         className="flex items-center gap-2.5 rounded-full border border-border bg-surface py-1 pl-1 pr-3 transition-all hover:border-[#cbd5e1] hover:shadow-card"
       >
         <span className="relative flex size-8 items-center justify-center rounded-full bg-primary text-xs font-bold text-white">
-          {initials(user.name)}
+          {photo ? <img src={photo} alt="" className="size-full rounded-full object-cover" /> : initials(user.name)}
           <span
             className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-surface bg-success"
             aria-hidden

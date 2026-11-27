@@ -54,7 +54,7 @@ const OWN = {
   designation: "TGT (Trained graduate teacher)",
   maxPeriodsPerDay: 6,
   offDays: [6],
-  login: { username: "meena.singh", isActive: true },
+  login: { username: "meena.singh", email: null, isActive: true, pending: false },
 };
 
 describe("A teacher's home", () => {
@@ -83,8 +83,8 @@ describe("A teacher's home", () => {
     const calls = openPage("teacher", { "GET /staff/teachers/me": () => OWN, "GET /subjects": () => ({ items: [MATHS] }), "GET /classroom/my-classes": () => ({ items: [] }) });
     await screen.findByRole("region", { name: "About you" });
     await screen.findByText("Mathematics");
-    // My classes (docs/parent-teacher-flow.md, 2026-11-04) and My attendance (2026-11-06) are on the teacher's home too.
-    expect([...paths(calls)].sort()).toEqual(["GET /attendance/teachers/me", "GET /classroom/my-classes", "GET /staff/teachers/me", "GET /subjects"]);
+    // My classes (docs/parent-teacher-flow.md, 2026-11-04), My attendance (2026-11-06) and Exam duty (2026-11-27: the rooms they watch) are on the teacher's home too.
+    expect([...paths(calls)].sort()).toEqual(["GET /attendance/teachers/me", "GET /classroom/my-classes", "GET /exams/my-duties", "GET /staff/teachers/me", "GET /subjects"]);
   });
 
   it("says so when the login is not tied to a teacher record", async () => {
@@ -145,6 +145,24 @@ describe("The school's dashboard", () => {
 
   it("an accountant the school took the dashboard from has the staff home, and asks the server for no numbers", async () => {
     const calls = openPage("accountant", {}, { permissions: ["calendar.view"] });
+    expect(await screen.findByRole("region", { name: "About you" })).toBeInTheDocument();
+    expect(calls.filter((c) => c.path.startsWith("/dashboard"))).toEqual([]);
+  });
+
+  it("a staff member who also teaches, whose role was given the dashboard (2026-11-26), gets the school's dashboard with their own teacher's attendance and classes on it", async () => {
+    const calls = openPage(
+      "teacher",
+      { "GET /dashboard/school": () => SCHOOL_HOME, "GET /dashboard/school/trend": () => SCHOOL_TREND, "GET /classroom/my-classes": () => ({ items: [] }) },
+      { permissions: ["dashboard.view", "calendar.view"], schoolPermissions: ["dashboard.view"] }
+    );
+    expect(await screen.findByRole("heading", { level: 1, name: /Hello Meena/ })).toBeInTheDocument();
+    expect(await screen.findByRole("group", { name: "Students" })).toBeInTheDocument();
+    await waitFor(() => expect(paths(calls)).toEqual(expect.arrayContaining(["GET /attendance/teachers/me", "GET /classroom/my-classes"])));
+    expect(paths(calls)).not.toContain("GET /attendance/staff/me");
+  });
+
+  it("a teacher whose staff role was not given the dashboard keeps the teacher's home", async () => {
+    const calls = openPage("teacher", { "GET /staff/teachers/me": () => OWN, "GET /subjects": () => ({ items: [MATHS] }) }, { permissions: ["calendar.view"], schoolPermissions: [] });
     expect(await screen.findByRole("region", { name: "About you" })).toBeInTheDocument();
     expect(calls.filter((c) => c.path.startsWith("/dashboard"))).toEqual([]);
   });

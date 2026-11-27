@@ -12,41 +12,48 @@ import {
   problemKeysOf,
   suggestUsername,
   usernameFor,
+  isUsername,
   teacherProblems,
   toTeacherInput,
   type TeacherFormValues,
 } from "../teachers";
 import { MEENA } from "../../test/timetableFixtures";
+import { DEFAULT_TEACHER_RULES } from "../../constants/teacherFields";
 
 const filled = (over: Partial<TeacherFormValues> = {}): TeacherFormValues => ({
   ...emptyTeacherForm(),
   name: "Meena Singh",
   gender: "Female",
   mobile: "9876543210",
-  username: "meena.singh",
-  password: "Sch00l@Teach1",
   ...over,
 });
 
 describe("the steps of Add teacher", () => {
-  it("are Personal info, Job details, Teaching and Login, in that order", () => {
-    expect(TEACHER_STEPS.map((s) => s.label)).toEqual(["Personal info", "Job details", "Teaching", "Login"]);
+  it("are Personal info, Job details and Teaching, in that order (no Login step since 2026-11-26: login access is a box in the first step)", () => {
+    expect(TEACHER_STEPS.map((s) => s.label)).toEqual(["Personal info", "Job details", "Teaching"]);
   });
 });
 
 describe("what is wrong with a teacher form", () => {
-  it("asks for the name, the gender and the mobile number of a teacher who gets a login", () => {
-    expect(teacherProblems(emptyTeacherForm(), { login: true })).toMatchObject({
+  it("asks for the name, the gender and the mobile number of a teacher who is added, and no username or password", () => {
+    expect(teacherProblems(emptyTeacherForm(), { login: true })).toEqual({
       name: "Enter the teacher's name",
       gender: "Choose the gender",
       mobile: "Enter a 10-digit mobile number starting with 6, 7, 8 or 9",
-      username: expect.stringContaining("A username is 3 to 30"),
-      password: expect.stringContaining("Password must be 8-72 characters"),
     });
   });
 
+  it("needs the email when Give login access is ticked (the invitation goes to it), even when the school does not ask the email", () => {
+    expect(teacherProblems(filled({ giveLogin: true }), { login: true })).toEqual({ email: "Enter the email: the login invitation is sent to it" });
+    expect(teacherProblems(filled({ giveLogin: true, email: "nope" }), { login: true })).toEqual({ email: "Enter a valid email address" });
+    expect(teacherProblems(filled({ giveLogin: true, email: "meena@school.example" }), { login: true })).toEqual({});
+    expect(teacherProblems(filled({ giveLogin: true }), { login: true, rules: { ...DEFAULT_TEACHER_RULES, email: "hidden" } })).toEqual({ email: "Enter the email: the login invitation is sent to it" });
+    // Unticked, the email may be left empty.
+    expect(teacherProblems(filled({ giveLogin: false }), { login: true })).toEqual({});
+  });
+
   it("leaves the gender out when asked to (a teacher who is changed, not added), but still needs the mobile of one with a login", () => {
-    expect(Object.keys(teacherProblems(emptyTeacherForm(), { login: true, requireGender: false })).sort()).toEqual(["mobile", "name", "password", "username"]);
+    expect(Object.keys(teacherProblems(emptyTeacherForm(), { login: true, requireGender: false })).sort()).toEqual(["mobile", "name"]);
   });
 
   it("asks only for the name of a teacher who is changed and has no login", () => {
@@ -83,26 +90,16 @@ describe("what is wrong with a teacher form", () => {
     expect(teacherProblems(filled({ maxPeriodsPerDay: "5", maxPeriodsPerWeek: "30" }), { login: true })).toEqual({});
   });
 
-  it("does not take a username or password that the server would refuse", () => {
-    for (const username of ["ab", "9meena", "meena singh", "Meena@x"]) {
-      expect(teacherProblems(filled({ username }), { login: true }).username, username).toBeDefined();
-    }
-    // Capital letters do not matter: the server lower-cases them.
-    expect(teacherProblems(filled({ username: "Meena.Singh" }), { login: true }).username).toBeUndefined();
-    expect(teacherProblems(filled({ password: "weakpass" }), { login: true }).password).toBeDefined();
-  });
-
   it("says which step a wrong box is on", () => {
     const problems = teacherProblems(emptyTeacherForm(), { login: true });
     expect(problemKeysOf(problems, "personal")).toEqual(["name", "gender", "mobile"]);
     expect(problemKeysOf(problems, "job")).toEqual([]);
-    expect(problemKeysOf(problems, "login")).toEqual(["username", "password"]);
+    expect(problemKeysOf(teacherProblems(filled({ giveLogin: true }), { login: true }), "personal")).toEqual(["email"]);
   });
 
   it("knows the box the server's path points at", () => {
     expect(formKeyOfPath("address.pincode")).toBe("pincode");
-    expect(formKeyOfPath("login.username")).toBe("username");
-    expect(formKeyOfPath("login.password")).toBe("password");
+    expect(formKeyOfPath("email")).toBe("email");
     expect(formKeyOfPath("offDays")).toBe("offDays");
     expect(formKeyOfPath("subjectIds.0")).toBe("subjectIds");
     expect(formKeyOfPath("somethingElse")).toBeNull();
@@ -132,8 +129,11 @@ describe("what is sent", () => {
     });
   });
 
-  it("adds the login, the username in lower case, when a login is made", () => {
-    expect(toTeacherInput(filled({ username: " Meena.Singh " }), { login: true }).login).toEqual({ username: "meena.singh", password: "Sch00l@Teach1" });
+  it("asks for login access only when it is ticked in Add teacher (no username or password is ever sent)", () => {
+    expect(toTeacherInput(filled({ giveLogin: true, email: "meena@school.example" }), { login: true })).toMatchObject({ giveLogin: true, email: "meena@school.example" });
+    expect(toTeacherInput(filled({ giveLogin: false }), { login: true })).not.toHaveProperty("giveLogin");
+    expect(toTeacherInput(filled({ giveLogin: true }), { login: false })).not.toHaveProperty("giveLogin");
+    expect(toTeacherInput(filled({ giveLogin: true }), { login: true })).not.toHaveProperty("login");
   });
 });
 
@@ -171,13 +171,13 @@ describe("the username suggested from the name", () => {
   it("always passes the username rules when it is not empty, and fits in 30 characters", () => {
     for (const name of ["Meena Singh", "Al", "Zoë O'Neil", "A".repeat(80) + " " + "B".repeat(80)]) {
       const username = suggestUsername(name);
-      expect(teacherProblems(filled({ username }), { login: true }).username, name).toBeUndefined();
+      expect(isUsername(username), name).toBe(true);
       expect(username.length).toBeLessThanOrEqual(30);
     }
   });
 });
 
-describe("the username put in the box on the Login step", () => {
+describe("the username put in a parent's login box", () => {
   it("is the name with a number after it, so it is rarely someone else's on the platform", () => {
     expect(defaultUsername("Meena Singh", () => 31)).toBe("meena.singh_41");
     expect(defaultUsername("Meena Singh", () => 0)).toBe("meena.singh_10");
@@ -189,7 +189,7 @@ describe("the username put in the box on the Login step", () => {
     const long = defaultUsername("A".repeat(80) + " " + "B".repeat(80), () => 5);
     expect(long.length).toBeLessThanOrEqual(30);
     expect(long).toMatch(/_15$/);
-    expect(teacherProblems(filled({ username: long }), { login: true }).username).toBeUndefined();
+    expect(isUsername(long)).toBe(true);
     expect(defaultUsername("राम शर्मा")).toBe("");
     expect(defaultUsername("")).toBe("");
   });

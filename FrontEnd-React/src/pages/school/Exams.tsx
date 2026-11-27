@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router";
-import { CalendarDays, CalendarPlus, ClipboardList, Clock3 } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
+import { CalendarDays, CalendarPlus, ClipboardList, Clock3, UsersRound } from "lucide-react";
 import { useGetExamsQuery } from "../../redux/api/examsApi";
 import type { Exam, ExamStatus } from "../../types";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
@@ -8,12 +8,17 @@ import { getApiError } from "../../utils/apiErrors";
 import { clock12, examDays } from "../../utils/exams";
 import { cn } from "../../utils/helpers";
 import { ExamDialog } from "../../components/exams/ExamDialog";
+import { ExamWorkspace } from "../../components/exams/ExamWorkspace";
 import { STATUS_LOOK, classesText, papersText } from "../../components/exams/look";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
+import { PageTabs } from "../../components/ui/PageTabs";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { TabPanel } from "../../components/ui/TabPanel";
+
+type Tab = "exams" | "timetable" | "students" | "rooms";
 
 type Show = "all" | ExamStatus;
 const SHOWS: { value: Show; label: string }[] = [
@@ -37,7 +42,13 @@ function ExamCard({ exam: e }: { exam: Exam }) {
         </div>
         <Badge tone={look.tone}>{look.label}</Badge>
       </div>
-      <p className="mt-3 flex items-center gap-2 text-sm text-foreground">
+      {e.audience && (
+        <p className="mt-3 flex items-center gap-2 text-sm text-foreground">
+          <UsersRound className="size-4 shrink-0 text-foreground-muted" aria-hidden />
+          <span className="truncate">{e.audience.label}</span>
+        </p>
+      )}
+      <p className={cn("flex items-center gap-2 text-sm text-foreground", e.audience ? "mt-1.5" : "mt-3")}>
         <CalendarDays className="size-4 shrink-0 text-foreground-muted" aria-hidden />
         {examDays(e.startDate, e.endDate)}
       </p>
@@ -56,14 +67,19 @@ function ExamCard({ exam: e }: { exam: Exam }) {
 }
 
 /**
- * Manage school > Test & Exam (`/school/exams`): the year's exams and tests (Half-Yearly, Annual, Unit, Monthly, Class test), the one
- * that is on first, found by whether they have come; a card opens the exam's own page, where its timetable is. One read of the list
- * serves the filter, so choosing a status asks for nothing.
+ * Exam (`/school/exams`; 2026-11-26 its own row at the top of the menu, it was Test & Exam under Manage school) with two tabs, kept in the
+ * address (`?tab=timetable`): **Exams**, the year's exams and tests (Half-Yearly, Annual, Unit, Monthly, Class test), the one that is on first,
+ * found by whether they have come, each for the whole school, some departments or some classes, a card opening the exam's own page; and
+ * **Exam Time Table**, where the school decides which class writes what on which day at which time. One read of the list serves both tabs and
+ * the filter, so choosing a status asks for nothing.
  */
 export default function ExamsPage() {
   // A year that is over is only looked at: no Schedule exam (the server refuses it too).
   const readOnly = useReadOnlyYear();
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const asked = params.get("tab");
+  const tab: Tab = asked === "timetable" || asked === "students" || asked === "rooms" ? asked : "exams";
   const res = useGetExamsQuery();
   const [show, setShow] = useState<Show>("all");
   const [scheduling, setScheduling] = useState(false);
@@ -75,22 +91,65 @@ export default function ExamsPage() {
       Schedule exam
     </Button>
   );
+  const openTab = (next: Tab) =>
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      // The exam (and its class) chosen in one tab stays for the others.
+      if (next !== "exams") p.set("tab", next);
+      else {
+        p.delete("tab");
+        p.delete("exam");
+        p.delete("class");
+        p.delete("section");
+      }
+      return p;
+    });
 
   return (
     <div className="space-y-6">
-      <StudentFormHeader title="Test & Exam" crumbs={[{ label: "Dashboard", to: "/dashboard" }]} actions={items && items.length > 0 && !readOnly ? schedule : undefined} />
+      <StudentFormHeader title="Exam" crumbs={[{ label: "Dashboard", to: "/dashboard" }]} actions={items && items.length > 0 && !readOnly ? schedule : undefined} />
+      {/* Like the Students tabs (2026-11-27, the user's screenshot): side by side over a line, the open one with the orange bar, the exams counted. */}
+      <PageTabs
+        label="Exam"
+        tabs={[
+          { id: "exams", label: "Exams", count: items?.length },
+          { id: "timetable", label: "Exam Time Table" },
+          // 2026-11-27: every child with their roll number, and the rooms they sit in.
+          { id: "students", label: "Students" },
+          { id: "rooms", label: "Rooms" },
+        ]}
+        value={tab}
+        onChange={openTab}
+      />
 
-      {res.isLoading ? (
-        <Skeleton className="h-64 rounded-2xl" />
-      ) : !items ? (
-        <Card className="px-5 py-8 text-center text-sm text-danger">{getApiError(res.error)?.message ?? "Could not load the exams."}</Card>
-      ) : items.length === 0 ? (
+      <TabPanel tab={tab}>
+        {res.isLoading ? (
+          <Skeleton className="h-64 rounded-2xl" />
+        ) : !items ? (
+          <Card className="px-5 py-8 text-center text-sm text-danger">{getApiError(res.error)?.message ?? "Could not load the exams."}</Card>
+        ) : tab !== "exams" ? (
+          <ExamWorkspace items={items} tab={tab} />
+        ) : (
+          <ExamList items={items} shown={shown} show={show} onShow={setShow} schedule={readOnly ? null : schedule} />
+        )}
+      </TabPanel>
+
+      {scheduling && <ExamDialog exam={null} onClose={() => setScheduling(false)} onSaved={(made) => navigate(`/school/exams/${made.id}`)} />}
+    </div>
+  );
+}
+
+/** The Exams tab: the cards, with the status filter; with none, the offer to schedule the first. */
+function ExamList({ items, shown, show, onShow, schedule }: { items: Exam[]; shown: Exam[]; show: Show; onShow: (next: Show) => void; schedule: ReactNode }) {
+  return (
+    <div className="space-y-6">
+      {items.length === 0 ? (
         <Card className="flex flex-col items-center gap-3 px-5 py-14 text-center">
           <span className="flex size-12 items-center justify-center rounded-2xl bg-primary-soft text-primary">
             <ClipboardList className="size-6" aria-hidden />
           </span>
           <p className="text-base font-bold text-foreground">No exams or tests yet</p>
-          {!readOnly && schedule}
+          {schedule}
         </Card>
       ) : (
         <>
@@ -103,7 +162,7 @@ export default function ExamsPage() {
                   show === s.value ? "bg-surface text-primary-deep shadow-sm" : "text-foreground-muted hover:text-foreground"
                 )}
               >
-                <input type="radio" name="exam-show" className="sr-only" checked={show === s.value} onChange={() => setShow(s.value)} />
+                <input type="radio" name="exam-show" className="sr-only" checked={show === s.value} onChange={() => onShow(s.value)} />
                 {s.label}
               </label>
             ))}
@@ -119,8 +178,6 @@ export default function ExamsPage() {
           )}
         </>
       )}
-
-      {scheduling && <ExamDialog exam={null} onClose={() => setScheduling(false)} onSaved={(made) => navigate(`/school/exams/${made.id}`)} />}
     </div>
   );
 }

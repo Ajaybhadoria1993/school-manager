@@ -72,7 +72,8 @@ export class TeacherExportService {
         joiningDate: ddmmyyyy(t.joiningDate),
         employmentType: t.employmentType ? EMPLOYMENT[t.employmentType] : "",
         subjects: t.subjectIds.map((id) => subjectName.get(id) ?? "").filter(Boolean).sort((a, b) => a.localeCompare(b)).join(", "),
-        username: t.login?.username ?? "",
+        // What the login signs in with (the email, or an older login's username), and whether its invitation is still pending.
+        username: t.login ? `${t.login.email ?? t.login.username ?? ""}${t.login.pending ? " (invitation pending)" : ""}` : "",
         status: t.isActive ? "Teaching" : "Left",
         classTeacherOf: t.classTeacherOf.join(", "),
         given,

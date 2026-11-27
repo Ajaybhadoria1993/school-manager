@@ -85,7 +85,7 @@ async function coversOn(tenantId: string, caller: Caller, unit: { classId: strin
  * school (and any staff the school allowed to see it).
  */
 async function assertSees(tenantId: string, caller: Caller, unit: { classId: string; sectionId: string | null }, date?: string) {
-  if (worksOnAllClasses(caller.role)) return;
+  if (worksOnAllClasses(caller, "attendance.view")) return;
   if (await isClassTeacherOf(tenantId, caller, unit)) return;
   if (await coversOn(tenantId, caller, unit, date)) return;
   throw ApiError.forbidden("Only the class teacher of this class or the school sees its attendance.", "NOT_CLASS_TEACHER");

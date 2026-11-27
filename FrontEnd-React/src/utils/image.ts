@@ -2,6 +2,13 @@
 export const MAX_PHOTO_BYTES = 300 * 1024;
 const LONGEST_SIDE = 480;
 
+/** The form a photo is sent in (the server reads the "photo" field). */
+export function photoForm(picture: Blob, fileName: string): FormData {
+  const body = new FormData();
+  body.append("photo", picture, fileName);
+  return body;
+}
+
 /**
  * A picture a person chose, made small for an ID card: no side longer than 480 pixels, as a JPEG. When the browser cannot do it (an old one, a
  * picture it cannot read) the picture goes as it is, and the server's own size check says if it is too big.

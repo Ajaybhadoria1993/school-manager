@@ -1,5 +1,5 @@
 import type { Chip } from "../components/ui/ChipPicker";
-import type { ChildPaper, Exam, ExamClassRef, ExamPaper, ExamType } from "../types";
+import type { ChildPaper, Exam, ExamClassRef, ExamDetail, ExamPaper, ExamType } from "../types";
 import { addDays, shortDay } from "./calendar";
 
 /** The kinds of exam and test the school can schedule. `full` ones take over the school day (they can have school hours). */
@@ -138,6 +138,36 @@ export function nextRowDefaults(
   if (!previous) return { date: exam.startDate, startTime: exam.schoolHours?.start ?? "09:00", durationMinutes: exam.full ? 180 : 40 };
   const next = nextSchoolDay(previous.date);
   return { date: next > exam.endDate ? exam.endDate : next, startTime: previous.startTime, durationMinutes: previous.durationMinutes };
+}
+
+/** The Exam Time Table tab of an exam on the Exam page, opened on a class (2026-11-27: Add timetable and Edit timetable go there). */
+export const timetableTabOf = (examId: string, classId?: string) => `/school/exams?tab=timetable&exam=${examId}${classId ? `&class=${classId}` : ""}`;
+
+/** The classes an exam is for, in the school's order (an exam from an older server, which does not say them: the classes of its papers). */
+export function classesOfExam(exam: Pick<ExamDetail, "audience" | "papers">): ExamClassRef[] {
+  if (exam.audience) return exam.audience.classes;
+  const found = new Map(exam.papers.flatMap((p) => p.classes).map((c) => [c.id, c]));
+  return [...found.values()].sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+}
+
+/** Every day of an exam, its first to its last (one class's timetable has a row for each, 2026-11-27). */
+export function examDates(start: string, end: string): string[] {
+  const days: string[] = [];
+  for (let day = start; day <= end && days.length < 400; day = addDays(day, 1)) days.push(day);
+  return days;
+}
+
+/**
+ * The time a new paper of one class starts with on `date` (2026-11-27, a click on a day of the class's timetable): the time of the class's paper
+ * before that day (else of its first one), so a class's papers keep one time; with none, the school's hours of an older exam or 9:00, for 3 hours
+ * (an exam) or 40 minutes (a test).
+ */
+export function classDayDefaults(exam: Pick<Exam, "full" | "schoolHours">, papers: ExamPaper[], date: string): { startTime: string; endTime: string } {
+  const sorted = [...papers].sort(byTime);
+  const like = [...sorted].reverse().find((p) => p.date < date) ?? sorted[0];
+  if (like) return { startTime: like.startTime, endTime: like.endTime };
+  const startTime = exam.schoolHours?.start ?? "09:00";
+  return { startTime, endTime: endClock(startTime, exam.full ? 180 : 40) };
 }
 
 /** Marks go in whole or half marks ("42", "42.5"; not "33.3"): the server keeps the same rule. */

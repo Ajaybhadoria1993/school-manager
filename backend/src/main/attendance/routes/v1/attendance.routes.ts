@@ -70,8 +70,9 @@ router.get("/teachers/me/month", requireRole("teacher"), validate(monthQuerySche
 router.put("/teachers/:teacherId/day", teacherSheets, validate(teacherIdParamSchema, "params"), teacherExists, validate(setTeacherDaySchema), setTeacherDay);
 
 // The staff's attendance (2026-11-22). A staff member marks themselves present with their own login and reads their own days; the people who
-// run the school only READ the sheet (by department, with a search): they never mark a staff day ("admin nahi lagayenge, bas dekhega").
-const staffSheets = requireRole("school_admin", "principal");
+// run the school only READ the sheet (by department, with a search): they never mark a staff day ("admin nahi lagayenge, bas dekhega"). Since 2026-11-26
+// the sheet can be given to a kind of staff (attendance.staff, Permissions); a teacher is never let in.
+const staffSheets = requireSchoolPermission("attendance.staff");
 const staffLogins = requireRole("principal", "accountant", "receptionist", "management", "staff");
 router.get("/staff", staffSheets, validate(staffSheetQuerySchema, "query"), getStaffAttendance);
 router.get("/staff/me", staffLogins, validate(myDayQuerySchema, "query"), getMyStaffDay);
@@ -79,12 +80,13 @@ router.post("/staff/me/present", staffLogins, markStaffPresent);
 router.get("/staff/me/month", staffLogins, validate(monthQuerySchema, "query"), getMyStaffMonth);
 
 // Leave of the teachers and the staff (2026-11-24): a person applies from their own login, sees their own applications and takes one back; the school (admin
-// or principal) sees every application, with its reason and status, and answers it. "/leaves/mine" is declared before "/leaves/:id".
+// or principal, and since 2026-11-26 a kind of staff given staffleaves.view / .decide) sees every application, with its reason and status, and answers it
+// (never their own: the service refuses). "/leaves/mine" is declared before "/leaves/:id".
 const leaveLogins = requireRole("teacher", "principal", "accountant", "receptionist", "management", "staff");
 router.get("/leaves/mine", leaveLogins, getMyLeaves);
 router.post("/leaves/mine", leaveLogins, validate(applyStaffLeaveSchema), applyMyLeave);
 router.post("/leaves/mine/:id/cancel", leaveLogins, validate(leaveIdParamSchema, "params"), cancelMyLeave);
-router.get("/leaves", staffSheets, validate(staffLeaveQuerySchema, "query"), listStaffLeaves);
-router.post("/leaves/:id/decide", staffSheets, validate(leaveIdParamSchema, "params"), leaveExists, validate(decideStaffLeaveSchema), decideStaffLeave);
+router.get("/leaves", requireSchoolPermission("staffleaves.view"), validate(staffLeaveQuerySchema, "query"), listStaffLeaves);
+router.post("/leaves/:id/decide", requireSchoolPermission("staffleaves.decide"), validate(leaveIdParamSchema, "params"), leaveExists, validate(decideStaffLeaveSchema), decideStaffLeave);
 
 export default router;

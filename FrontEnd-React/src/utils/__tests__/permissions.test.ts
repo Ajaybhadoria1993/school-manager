@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AuthUser, UserRole } from "../../types";
-import { can, sameList, toggled } from "../permissions";
+import { can, canOnSchool, sameList, toggled } from "../permissions";
 
 const person = (role: UserRole, permissions?: string[]): AuthUser => ({ id: "u1", name: "A", email: null, username: null, role, tenantId: "t1", emailVerifiedAt: null, ...(permissions ? { permissions } : {}) });
 
@@ -35,6 +35,22 @@ describe("can: what the school allowed a person", () => {
     expect(can(person("accountant"), "students.view", "dashboard.view")).toBe(true);
     expect(can(person("receptionist"), "calendar.view")).toBe(true);
     expect(can(person("receptionist"), "students.view")).toBe(false);
+  });
+});
+
+describe("canOnSchool: what works on the whole school's pages (2026-11-26)", () => {
+  it("the school admin and the principal always; a staff login by its list", () => {
+    expect(canOnSchool(person("principal", []), "students.view")).toBe(true);
+    expect(canOnSchool(person("receptionist", ["students.view"]), "students.view")).toBe(true);
+    expect(canOnSchool(person("receptionist", ["students.view"]), "students.add")).toBe(false);
+  });
+
+  it("a teacher or a parent only by what their staff role gives (a Coordinator who takes a class), never by their teacher's or parent's list", () => {
+    expect(canOnSchool(person("teacher", ["attendance.view"]), "attendance.view")).toBe(false);
+    expect(canOnSchool({ ...person("teacher", ["attendance.view", "students.view"]), schoolPermissions: ["students.view"] }, "students.view")).toBe(true);
+    expect(canOnSchool({ ...person("teacher", ["attendance.view", "students.view"]), schoolPermissions: ["students.view"] }, "attendance.view")).toBe(false);
+    expect(canOnSchool(person("parent", ["child.leave"]), "child.leave")).toBe(false);
+    expect(canOnSchool(null, "students.view")).toBe(false);
   });
 });
 

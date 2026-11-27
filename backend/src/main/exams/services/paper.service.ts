@@ -11,6 +11,7 @@ import { ExamMark } from "../models/ExamMark";
 import { ExamPaper, type IExamPaper } from "../models/ExamPaper";
 import type { AddPapersInput, UpdatePaperInput } from "../schemas/exams.schemas";
 import { PAPER_NOT_FOUND, asId, describePapers, fromDay, toDay, type PaperDto } from "./dto";
+import { isInAudience, type Whom } from "./audience";
 import { ExamService } from "./exam.service";
 import { clock12, shortDay } from "./text";
 
@@ -34,7 +35,7 @@ export class PaperService {
   static async add(tenantId: string, examId: string, input: AddPapersInput, actorId: string): Promise<{ items: PaperDto[] }> {
     const exam = await ExamService.find(tenantId, examId);
     const rows: Row[] = input.papers.map((p) => ({ subjectId: p.subjectId, date: p.date, start: clockToMinutes(p.startTime)!, duration: p.durationMinutes }));
-    const classNames = await PaperService.checkClassesAndSubjects(tenantId, input.classIds, rows.map((r) => r.subjectId), (i, f) => `papers.${i}.${f}`);
+    const classNames = await PaperService.checkClassesAndSubjects(tenantId, exam, input.classIds, rows.map((r) => r.subjectId), (i, f) => `papers.${i}.${f}`);
     PaperService.checkRows(exam, rows, (i, f) => `papers.${i}.${f}`);
     await PaperService.checkHolidays(tenantId, rows);
     await PaperService.checkClashes(exam, input.classIds, classNames, rows);
@@ -76,7 +77,7 @@ export class PaperService {
       duration: input.durationMinutes ?? current.duration,
     };
     await PaperService.marksStillFit(tenantId, current, { classIds, subjectId: row.subjectId, date: row.date, maxMarks: input.maxMarks });
-    const classNames = await PaperService.checkClassesAndSubjects(tenantId, classIds, [row.subjectId], (_i, f) => f);
+    const classNames = await PaperService.checkClassesAndSubjects(tenantId, exam, classIds, [row.subjectId], (_i, f) => f);
     PaperService.checkRows(exam, [row], (_i, f) => f);
     // A paper that stays on its day may stay on a holiday declared since: only a move to a day is checked against the holidays.
     if (row.date !== toDay(current.date)) await PaperService.checkHolidays(tenantId, [row]);
@@ -154,16 +155,21 @@ export class PaperService {
     return paper;
   }
 
-  /** The classes and subjects are this school's (a subject it still teaches). Returns each class's name, for the messages. */
-  private static async checkClassesAndSubjects(tenantId: string, classIds: string[], subjectIds: string[], pathOf: PathOf): Promise<Map<string, { name: string; order: number }>> {
+  /**
+   * The classes and subjects are this school's (a subject it still teaches), and the classes are ones the exam is for (2026-11-26: the whole school,
+   * its departments or its classes). Returns each class's name, for the messages.
+   */
+  private static async checkClassesAndSubjects(tenantId: string, exam: Whom, classIds: string[], subjectIds: string[], pathOf: PathOf): Promise<Map<string, { name: string; order: number }>> {
     const school = asId(tenantId);
     const subjects = [...new Set(subjectIds)];
     const [classes, found] = await Promise.all([
-      SchoolClass.find({ tenantId: school, _id: { $in: classIds.map(asId) } }).select("name order").lean(),
+      SchoolClass.find({ tenantId: school, _id: { $in: classIds.map(asId) } }).select("name order departmentId").lean(),
       Subject.find({ tenantId: school, _id: { $in: subjects.map(asId) }, isActive: true }).select("_id").lean(),
     ]);
     const problems: Detail[] = [];
+    const outside = [...classes].sort((a, b) => a.order - b.order).find((c) => !isInAudience(exam, c));
     if (classes.length !== classIds.length) problems.push({ path: "classIds", message: "Choose classes of this school" });
+    else if (outside) problems.push({ path: "classIds", message: `${outside.name} is not in this exam` });
     const known = new Set(found.map((s) => s._id.toString()));
     subjectIds.forEach((id, i) => {
       if (!known.has(id)) problems.push({ path: pathOf(i, "subjectId"), message: "Choose a subject of this school" });

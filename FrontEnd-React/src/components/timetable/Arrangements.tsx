@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { ArrowLeftRight, CalendarOff, Check, ClipboardCheck, Clock3, MailCheck, PartyPopper, UserRoundCheck, UserRoundX } from "lucide-react";
+import { useCan } from "../../hooks/useCan";
 import { useGetStaffLeavesQuery } from "../../redux/api/attendanceApi";
 import { useGetArrangementQuery, useHandBackPeriodMutation, useSaveArrangementMutation, useSaveAttendanceCoverMutation } from "../../redux/api/timetableApi";
 import { getApiError } from "../../utils/apiErrors";
@@ -49,9 +50,13 @@ function freeLabel(t: FreeTeacher): string {
  */
 export function Arrangements() {
   const [params, setParams] = useSearchParams();
-  const view: View = params.get("view") === "leave" ? "leave" : "arrangements";
+  const can = useCan();
+  // Each tab is its own permission (2026-11-26): the arrangements timetable.edit, the leave requests staffleaves.view. A person with one has that tab only.
+  const arranges = can("timetable.edit");
+  const seesLeave = can("staffleaves.view");
+  const view: View = !arranges || (seesLeave && params.get("view") === "leave") ? "leave" : "arrangements";
   // The same question as the Leave requests tab's first look (Waiting, everyone): asked once, the tab opens from it.
-  const waiting = useGetStaffLeavesQuery({ status: "pending", who: "all" });
+  const waiting = useGetStaffLeavesQuery({ status: "pending", who: "all" }, { skip: !seesLeave });
 
   const changeView = (next: View) =>
     setParams((prev) => {
@@ -71,8 +76,8 @@ export function Arrangements() {
         value={view}
         onChange={changeView}
         tabs={[
-          { id: "arrangements", label: "Arrangements", icon: ArrowLeftRight },
-          { id: "leave", label: "Leave requests", icon: MailCheck, count: waiting.currentData?.data.waiting },
+          ...(arranges ? [{ id: "arrangements" as const, label: "Arrangements", icon: ArrowLeftRight }] : []),
+          ...(seesLeave ? [{ id: "leave" as const, label: "Leave requests", icon: MailCheck, count: waiting.currentData?.data.waiting }] : []),
         ]}
       />
 

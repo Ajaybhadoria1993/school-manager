@@ -18,7 +18,6 @@ import { User } from "../../users/models/User";
  */
 
 const PASSWORD = "Sch00l@Admin";
-const TEACHER_PASSWORD = "Sch00l@Teach1";
 const side = (token: string, medium?: string) => ({ Authorization: `Bearer ${token}`, ...(medium ? { "X-School-Medium": medium } : {}) });
 
 /** Both mediums start at 08:00 with one period of 40 minutes, Monday to Friday: the same hours on both sides. */
@@ -66,7 +65,7 @@ async function unitWithMaths(token: string, medium: string | undefined, teacherI
 describe("a teacher in two mediums", () => {
   it("cannot be in the English side's class and the Hindi side's class at the same moment: the second timetable is refused, naming the other medium's class", async () => {
     const s = await twoMediums();
-    const english = (await request(app).post("/api/v1/staff/teachers").set(side(s.token)).send({ name: "Meena Singh", mobile: "9000000011", login: { username: "meena_clash", password: TEACHER_PASSWORD } })).body.data.id as string;
+    const english = (await request(app).post("/api/v1/staff/teachers").set(side(s.token)).send({ name: "Meena Singh", mobile: "9000000011", email: "meena_clash@mail.test", giveLogin: true })).body.data.id as string;
     expect((await request(app).post(`/api/v1/staff/teachers/${english}/mediums`).set(side(s.token)).send({ mediumId: s.hindi })).status).toBe(201);
     const hindiTeacher = (await Teacher.findOne({ tenantId: s.hindi, mobile: "9000000011" }).lean())!._id.toString();
 

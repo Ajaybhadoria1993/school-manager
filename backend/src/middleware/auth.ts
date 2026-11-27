@@ -95,6 +95,8 @@ async function openMedium(req: Request): Promise<void> {
         ? await Teacher.exists({ tenantId: new Types.ObjectId(wanted), userId: new Types.ObjectId(user.userId), isActive: true })
         : null;
   if (!allowed) throw MEDIUM_NOT_FOUND();
+  // Their own records (a staff member's role) stay on the side the login belongs to.
+  user.homeTenantId = user.tenantId;
   user.tenantId = wanted;
 }
 

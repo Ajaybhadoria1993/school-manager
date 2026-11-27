@@ -68,6 +68,14 @@ export const acceptInviteSchema = z.object({
   device: platformSchema.optional().default("web"),
 });
 
+/** `POST /auth/login-invite/accept`: the link a teacher or a staff member got by email, and the password they choose. */
+export const acceptLoginInviteSchema = z.object({
+  token: z.string().min(1, "Invitation token is required").max(200),
+  password: passwordSchema,
+  device: platformSchema.optional().default("web"),
+});
+export type AcceptLoginInviteInput = z.infer<typeof acceptLoginInviteSchema>;
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type SignupInput = z.infer<typeof signupSchema>;
 export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;

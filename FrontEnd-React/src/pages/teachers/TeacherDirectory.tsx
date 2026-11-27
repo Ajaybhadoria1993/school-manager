@@ -12,6 +12,7 @@ import { formatMobile } from "../../utils/students";
 import type { Teacher, TeacherQuery } from "../../types";
 import { StatTile } from "../../components/dashboard/school/StatTile";
 import { ExportTeachersButton } from "../../components/teachers/ExportTeachersButton";
+import { LoginStatusBadge } from "../../components/logins/LoginStatusBadge";
 import { StudentAvatar } from "../../components/students/StudentAvatar";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
@@ -136,6 +137,12 @@ function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName
                 <StatusPill active={false} />
               </span>
             )}
+            {/* Given login access and not signed up yet (2026-11-26): the invitation is still to be opened. */}
+            {t.isActive && t.login?.pending && (
+              <span className="mt-1 block">
+                <LoginStatusBadge login={t.login} long />
+              </span>
+            )}
           </div>
         </div>
       </td>
@@ -166,7 +173,7 @@ function TeacherRow({ teacher: t, subjectName }: { teacher: Teacher; subjectName
  * Teacher (the menu entry on top, `/teachers`), laid out like Infinity Medisetu's patient list: the title with Add teacher, four numbers
  * of the school (one request, not repeated by the filters), one line with the search and three dropdowns (Subject, Class,
  * Designation; no labels: each shows its name until something is picked), and the table (a row opens the teacher, the actions manage
- * them; Clear filters sits under it, by the count). The search (name, mobile, code, email, username) and every filter are a question to
+ * them; Clear filters sits under it, by the count). The search (name, mobile, code, email, an older login's username) and every filter are a question to
  * the server, kept in the address. (Employment, gender, login and class-teacher filters were taken off at the user's request; the API
  * still takes them.)
  */

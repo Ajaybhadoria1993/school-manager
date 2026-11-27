@@ -20,7 +20,7 @@ import TeacherDetailPage from "../TeacherDetail";
  */
 const PHYSICS: Subject = { id: "physics", name: "Physics", code: null, category: "academic", isActive: true, sections: 1 };
 // Meena teaches Mathematics and English.
-const FULL = { ...MEENA, subjectIds: ["maths", "english"], login: { username: "meena.singh", isActive: true } };
+const FULL = { ...MEENA, subjectIds: ["maths", "english"], login: { username: "meena.singh", email: null, isActive: true, pending: false } };
 const lesson = (subjectId: string) => ({ subjectId, teacherId: null, room: null });
 
 function openPage(extra: Record<string, Handler> = {}, permissions?: string[]) {

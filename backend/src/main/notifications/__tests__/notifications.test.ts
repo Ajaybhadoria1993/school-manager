@@ -146,7 +146,9 @@ describe("the diary", () => {
     expect((await bell(s.tokens.ravi)).items[0].link).toBe(`/my-children/${s.asha.id}`);
     expect((await bell(s.tokens.admin)).items[0]).toMatchObject({ kind: "diary.saved", title: "English diary of Class 5 - A" });
     expect(await kinds(s.tokens.anil)).toEqual([]);
-    expect(await kinds(s.tokens.meena)).toEqual([]);
+    // The class teacher follows their class (docs/teaching-progress.md): another teacher's diary reaches them too.
+    expect((await bell(s.tokens.meena)).items[0]).toMatchObject({ kind: "diary.saved", title: "English diary of Class 5 - A", link: `/class-work/${s.a.classId}?section=${s.a.sectionId}&tab=diary` });
+    expect(await kinds(s.tokens.kiran)).toEqual([]);
 
     await write("Learn the poem");
     expect((await bell(s.tokens.ravi)).items).toHaveLength(1);

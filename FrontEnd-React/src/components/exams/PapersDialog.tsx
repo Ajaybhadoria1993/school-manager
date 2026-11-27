@@ -5,7 +5,7 @@ import { useGetStructureQuery } from "../../redux/api/academicsApi";
 import { useAddPapersMutation, useUpdatePaperMutation } from "../../redux/api/examsApi";
 import { useGetSubjectsQuery } from "../../redux/api/timetableApi";
 import type { ExamDetail, ExamPaper } from "../../types";
-import { clock12, endClock, minutesOf, nextRowDefaults } from "../../utils/exams";
+import { durationText, endClock, minutesOf, nextRowDefaults } from "../../utils/exams";
 import { cn } from "../../utils/helpers";
 import { useSave } from "../classes/useSave";
 import { AppModal, ModalError } from "../ui/AppModal";
@@ -19,15 +19,18 @@ interface Row {
   subjectId: string;
   date: string;
   startTime: string;
-  minutes: string;
+  /** When it ends (2026-11-26: "9 se 12", the way a school says it); the minutes are worked out from it. */
+  endTime: string;
   marks: string;
   topic: string;
 }
 
-type RowField = "subject" | "date" | "start" | "minutes" | "marks" | "topic";
-const FIELD_OF: Record<string, RowField> = { subjectId: "subject", date: "date", startTime: "start", durationMinutes: "minutes", maxMarks: "marks", topic: "topic" };
+type RowField = "subject" | "date" | "start" | "end" | "marks" | "topic";
+const FIELD_OF: Record<string, RowField> = { subjectId: "subject", date: "date", startTime: "start", durationMinutes: "end", maxMarks: "marks", topic: "topic" };
 
-const rowFrom = (p: ExamPaper): Row => ({ subjectId: p.subject.id, date: p.date, startTime: p.startTime, minutes: String(p.durationMinutes), marks: p.maxMarks === null ? "" : String(p.maxMarks), topic: p.topic ?? "" });
+const rowFrom = (p: ExamPaper): Row => ({ subjectId: p.subject.id, date: p.date, startTime: p.startTime, endTime: p.endTime, marks: p.maxMarks === null ? "" : String(p.maxMarks), topic: p.topic ?? "" });
+/** The minutes from the start to the end (NaN while either is not a time). */
+const minutesBetween = (r: Pick<Row, "startTime" | "endTime">) => minutesOf(r.endTime) - minutesOf(r.startTime);
 
 /** What the server said, put where it belongs: under a row's box, under the classes, or (the rest) at the top. */
 function serverProblems(details: unknown) {
@@ -46,20 +49,23 @@ function serverProblems(details: unknown) {
 const joinNames = (names: string[]) => (names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
 
 /**
- * The timetable of an exam for some classes: tick the classes (or All classes: the whole school), then one row for each paper: the
- * subject, the day, the time it starts, how many minutes, the marks and the topic (the last two are optional). A new row follows the one
- * before it (the next day at the same time), so a whole timetable is filled in quickly. With `paper` it changes that one paper instead.
- * The classes and subjects are read when it opens, not before.
+ * The timetable of an exam for some classes: tick the classes (or All classes: every class the exam is for, 2026-11-26), then one row for each
+ * paper: the subject, the day, the time it starts and ends (the school's time for those classes that day), the marks and the topic (the last two
+ * are optional). A new row follows the one before it (the next day at the same time), so a whole timetable is filled in quickly. With `paper`
+ * it changes that one paper instead. The subjects are read when it opens; the classes are the exam's own (the school's layout only for an
+ * exam from an older server that does not say them).
  */
 export function PapersDialog({ exam, paper, onClose, onDone }: { exam: ExamDetail; paper?: ExamPaper | null; onClose: () => void; onDone: (title: string, message: string) => void }) {
-  const structure = useGetStructureQuery();
+  const structure = useGetStructureQuery(undefined, { skip: !!exam.audience });
   const subjects = useGetSubjectsQuery("active");
   const [add] = useAddPapersMutation();
   const [change] = useUpdatePaperMutation();
-  const classes = structure.data?.data.classes ?? [];
+  const classes = exam.audience?.classes ?? structure.data?.data.classes ?? [];
   const [classIds, setClassIds] = useState<string[]>(paper?.classIds ?? []);
   const first = nextRowDefaults(null, exam);
-  const [rows, setRows] = useState<Row[]>([paper ? rowFrom(paper) : { subjectId: "", date: first.date, startTime: first.startTime, minutes: String(first.durationMinutes), marks: "", topic: "" }]);
+  const [rows, setRows] = useState<Row[]>([
+    paper ? rowFrom(paper) : { subjectId: "", date: first.date, startTime: first.startTime, endTime: endClock(first.startTime, first.durationMinutes), marks: "", topic: "" },
+  ]);
   const [tried, setTried] = useState(false);
   const { busy, error, run } = useSave(() => undefined);
   const server = serverProblems(error?.details);
@@ -67,13 +73,19 @@ export function PapersDialog({ exam, paper, onClose, onDone }: { exam: ExamDetai
   const subjectOptions = [...(subjects.data?.data.items ?? [])].sort((a, b) => a.name.localeCompare(b.name)).map((s) => ({ value: s.id, label: s.name }));
 
   const rowProblem = (r: Row): Partial<Record<RowField, string>> => {
-    const minutes = Number(r.minutes);
+    const minutes = minutesBetween(r);
     const marks = Number(r.marks);
+    const endProblem = () => {
+      if (Number.isNaN(minutesOf(r.endTime))) return "Enter the end time";
+      if (Number.isNaN(minutes)) return undefined;
+      if (minutes <= 0) return "The paper must end after it starts";
+      return minutes < 5 || minutes > 600 ? "The time is 5 minutes to 10 hours" : undefined;
+    };
     return {
       subject: r.subjectId === "" ? "Choose the subject" : undefined,
       date: r.date === "" ? "Choose the day" : undefined,
       start: Number.isNaN(minutesOf(r.startTime)) ? "Enter the start time" : undefined,
-      minutes: r.minutes.trim() === "" || !Number.isInteger(minutes) || minutes < 5 || minutes > 600 ? "The time is 5 minutes to 10 hours" : undefined,
+      end: endProblem(),
       marks: r.marks.trim() !== "" && (!Number.isInteger(marks) || marks < 1 || marks > 1000) ? "The marks are 1 to 1000" : undefined,
     };
   };
@@ -86,8 +98,8 @@ export function PapersDialog({ exam, paper, onClose, onDone }: { exam: ExamDetai
 
   function addRow() {
     const last = rows[rows.length - 1];
-    const next = nextRowDefaults({ date: last.date || exam.startDate, startTime: last.startTime, durationMinutes: Number(last.minutes) || 0 }, exam);
-    setRows((all) => [...all, { subjectId: "", date: next.date, startTime: next.startTime, minutes: last.minutes, marks: "", topic: "" }]);
+    const next = nextRowDefaults({ date: last.date || exam.startDate, startTime: last.startTime, durationMinutes: minutesBetween(last) || 0 }, exam);
+    setRows((all) => [...all, { subjectId: "", date: next.date, startTime: next.startTime, endTime: last.endTime, marks: "", topic: "" }]);
   }
 
   function save() {
@@ -97,7 +109,7 @@ export function PapersDialog({ exam, paper, onClose, onDone }: { exam: ExamDetai
       subjectId: r.subjectId,
       date: r.date,
       startTime: r.startTime,
-      durationMinutes: Number(r.minutes),
+      durationMinutes: minutesBetween(r),
       maxMarks: r.marks.trim() === "" ? null : Number(r.marks),
       topic: r.topic.trim() || null,
     }));
@@ -186,15 +198,8 @@ export function PapersDialog({ exam, paper, onClose, onDone }: { exam: ExamDetai
           <Field id={`paper-${i}-start`} label="Starts" quiet className="sm:col-span-2" error={problemOf(i, "start")}>
             <Input id={`paper-${i}-start`} type="time" value={r.startTime} aria-invalid={problemOf(i, "start") ? true : undefined} onChange={(e) => update(i, { startTime: e.target.value })} />
           </Field>
-          <Field
-            id={`paper-${i}-minutes`}
-            label="Minutes"
-            quiet
-            className="sm:col-span-2"
-            error={problemOf(i, "minutes")}
-            hint={endClock(r.startTime, Number(r.minutes)) && Number(r.minutes) >= 5 ? `Ends ${clock12(endClock(r.startTime, Number(r.minutes)))}` : undefined}
-          >
-            <Input id={`paper-${i}-minutes`} type="number" min={5} max={600} step={5} value={r.minutes} aria-invalid={problemOf(i, "minutes") ? true : undefined} onChange={(e) => update(i, { minutes: e.target.value })} />
+          <Field id={`paper-${i}-end`} label="Ends" quiet className="sm:col-span-2" error={problemOf(i, "end")} hint={minutesBetween(r) >= 5 ? durationText(minutesBetween(r)) : undefined}>
+            <Input id={`paper-${i}-end`} type="time" value={r.endTime} aria-invalid={problemOf(i, "end") ? true : undefined} onChange={(e) => update(i, { endTime: e.target.value })} />
           </Field>
           <Field id={`paper-${i}-marks`} label="Marks" quiet className="sm:col-span-2" error={problemOf(i, "marks")}>
             <Input id={`paper-${i}-marks`} type="number" min={1} max={1000} value={r.marks} placeholder="Out of" aria-invalid={problemOf(i, "marks") ? true : undefined} onChange={(e) => update(i, { marks: e.target.value })} />

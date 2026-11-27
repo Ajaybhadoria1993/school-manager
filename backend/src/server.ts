@@ -6,6 +6,7 @@ import { connectDB } from "./config/db";
 import { getDummyHash } from "./utils/authUtils";
 import { PasswordService } from "./main/auth/services/password.service";
 import { NotificationService } from "./main/notifications/services/notification.service";
+import { startReminders } from "./main/classroom/services/reminders.service";
 import { startRealtime, stopRealtime } from "./realtime/socket";
 import { logger, reportError } from "./utils/logger";
 import { seedSuperAdmin } from "./seed/superAdmin.seed";
@@ -38,8 +39,12 @@ async function main() {
     }
   });
 
+  // The class diary and syllabus reminders, at each school's time (docs/teaching-progress.md). They go only while the server runs.
+  const stopReminders = startReminders();
+
   async function shutdown(signal: string) {
     logger.info("Shutting down", { signal });
+    stopReminders();
     await stopRealtime(); // closes the sockets, and the HTTP server with them
     httpServer.close();
     await PasswordService.idle(); // reset emails still being prepared after their response was sent

@@ -1,6 +1,7 @@
 import request from "supertest";
 import app from "../app";
 import { addClass, addSubject, addTeacher, auth, saveAllotments, timetableSchool } from "./timetable";
+import { emailOf } from "./logins";
 
 /** The password of every login made here. */
 export const LOGIN_PASSWORD = "Sch00l@Login1";
@@ -28,7 +29,7 @@ function admit(token: string, classId: string, sectionId: string | null, firstNa
 /**
  * A school for the daily flow of parents and teachers (docs/parent-teacher-flow.md): Class 5 - A with two children of two families
  * (Asha Verma, father Ravi: login `<prefix>ravi`; Kabir Rao, mother Sita: login `<prefix>sita`), Class 1 with one child (Mira Shah); Meena
- * Singh is the class teacher of 5 - A and teaches its Mathematics (login `<prefix>meena`); Dev Patel teaches 5 - A's English and is
+ * Singh is the class teacher of 5 - A and teaches its Mathematics (login `<prefix>meena@mail.test`: a teacher's login is their email); Dev Patel teaches 5 - A's English and is
  * nobody's class teacher (login `<prefix>dev`); Kiran Rao teaches nothing (login `<prefix>kiran`).
  */
 export async function classroomSchool(name = "Sunrise Public School", prefix = "sun.") {
@@ -70,9 +71,9 @@ export async function classroomSchool(name = "Sunrise Public School", prefix = "
     mira,
     tokens: {
       admin: s.token,
-      meena: await signInAs(`${prefix}meena`),
-      dev: await signInAs(`${prefix}dev`),
-      kiran: await signInAs(`${prefix}kiran`),
+      meena: await signInAs(emailOf(`${prefix}meena`)),
+      dev: await signInAs(emailOf(`${prefix}dev`)),
+      kiran: await signInAs(emailOf(`${prefix}kiran`)),
       ravi: await signInAs(`${prefix}ravi`),
       sita: await signInAs(`${prefix}sita`),
       anil: await signInAs(`${prefix}anil`),

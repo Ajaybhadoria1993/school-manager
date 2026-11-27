@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookOpenText, NotebookPen } from "lucide-react";
+import { BookOpenText, ListOrdered, NotebookPen } from "lucide-react";
 import { Button as HeroButton } from "@heroui/react";
 import { useGetDiaryQuery, useSaveDiaryMutation } from "../../redux/api/classroomApi";
 import { addDays } from "../../utils/calendar";
@@ -8,32 +8,51 @@ import { todayInIndia } from "../../utils/students";
 import type { DiaryDay } from "../../types";
 import { useSave } from "../classes/useSave";
 import { AppModal, ModalError } from "../ui/AppModal";
+import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
+import { ChapterBar } from "../progress/ChapterBar";
 import { DateBox } from "../ui/DateBox";
 import { Field } from "../ui/Field";
 import { useResultModal } from "../ui/ResultModal";
+import { Select } from "../ui/Select";
 import { Skeleton } from "../ui/Skeleton";
+import { ChaptersDialog } from "./ChaptersDialog";
 
 const areaClass =
   "w-full rounded-lg border border-border bg-surface px-3.5 py-2.5 text-sm text-foreground placeholder:text-[#94a3b8] focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/15";
 
 type Subject = DiaryDay["subjects"][number];
 
-/** Write one subject's day: what was taught, and the homework. */
+/** The "no chapter" row of the Chapter list. */
+const NO_CHAPTER = "none";
+/** "2. Fractions", or nothing for a chapter that is not in the list. */
+function chapterLine(subject: Subject, id: string | null | undefined): string | null {
+  const at = subject.chapters.findIndex((c) => c.id === id);
+  return at < 0 ? null : `${at + 1}. ${subject.chapters[at].name}`;
+}
+
+/** Write one subject's day: the chapter, what was taught, and the homework. */
 function WriteDialog({ day, subject, classId, sectionId, onClose, onSaved }: { day: DiaryDay; subject: Subject; classId: string; sectionId: string | null; onClose: () => void; onSaved: () => void }) {
   const [save] = useSaveDiaryMutation();
   const [taught, setTaught] = useState(subject.entry?.taught ?? "");
   const [homework, setHomework] = useState(subject.entry?.homework ?? "");
+  const [chapterId, setChapterId] = useState(subject.entry?.chapterId ?? "");
+  const chapter = subject.chapters.find((c) => c.id === chapterId);
+  // The tick as the teacher left it; until touched, whether the chosen chapter is finished already.
+  const [ticked, setTicked] = useState<boolean | null>(null);
+  const finished = ticked ?? !!chapter?.done;
   const [tried, setTried] = useState(false);
   const { busy, error, run } = useSave(() => undefined);
-  const empty = taught.trim() === "" && homework.trim() === "";
+  const empty = taught.trim() === "" && homework.trim() === "" && !chapter;
 
   function send() {
     setTried(true);
     if (empty) return;
     void run(async () => {
-      await save({ classId, sectionId, date: day.date, subjectId: subject.subjectId, taught: taught.trim(), homework: homework.trim() }).unwrap();
+      // A subject with no chapters sends nothing about them.
+      const about = subject.chapters.length === 0 ? {} : chapter ? { chapterId: chapter.id, chapterDone: finished } : { chapterId: null };
+      await save({ classId, sectionId, date: day.date, subjectId: subject.subjectId, taught: taught.trim(), homework: homework.trim(), ...about }).unwrap();
       onSaved();
     });
   }
@@ -55,6 +74,28 @@ function WriteDialog({ day, subject, classId, sectionId, onClose, onSaved }: { d
         </>
       }
     >
+      {subject.chapters.length > 0 && (
+        <div className="space-y-2">
+          <Field id="diary-chapter" label="Chapter" optional>
+            <Select
+              id="diary-chapter"
+              value={chapterId}
+              placeholder="Choose the chapter"
+              options={[{ value: NO_CHAPTER, label: "No chapter" }, ...subject.chapters.map((c, i) => ({ value: c.id, label: `${i + 1}. ${c.name}` }))]}
+              onChange={(v) => {
+                setChapterId(v === NO_CHAPTER ? "" : v);
+                setTicked(null);
+              }}
+            />
+          </Field>
+          {chapter && (
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-foreground">
+              <input type="checkbox" className="size-4 accent-primary" checked={finished} onChange={(e) => setTicked(e.target.checked)} />
+              Chapter finished
+            </label>
+          )}
+        </div>
+      )}
       <Field id="diary-taught" label="Taught today" error={tried && empty ? "Write what was taught or the homework" : undefined}>
         <textarea id="diary-taught" className={areaClass} rows={3} maxLength={500} placeholder="Fractions: adding and subtracting" value={taught} onChange={(e) => setTaught(e.target.value)} />
       </Field>
@@ -75,6 +116,7 @@ export function DiaryPanel({ classId, sectionId }: { classId: string; sectionId:
   const [date, setDate] = useState(today);
   const res = useGetDiaryQuery({ classId, sectionId, date: date || today });
   const [writing, setWriting] = useState<Subject | null>(null);
+  const [listing, setListing] = useState<Subject | null>(null);
   const result = useResultModal();
   const day = res.data?.data;
 
@@ -117,8 +159,26 @@ export function DiaryPanel({ classId, sectionId }: { classId: string; sectionId:
                   </Button>
                 )}
               </div>
+              {(s.chapters.length > 0 || s.canWrite) && (
+                <div className="flex items-center justify-between gap-3">
+                  {s.chapters.length > 0 ? <ChapterBar done={s.chapters.filter((c) => c.done).length} total={s.chapters.length} words="chapters done" className="flex-1" /> : <span />}
+                  {s.chapters.some((c) => c.late) && <Badge tone="danger">{s.chapters.filter((c) => c.late).length} late</Badge>}
+                  {s.canWrite && (
+                    <Button variant="ghost" size="sm" aria-label={s.chapters.length > 0 ? `Chapters of ${s.subjectName}` : `Add chapters of ${s.subjectName}`} onClick={() => setListing(s)}>
+                      <ListOrdered className="size-4" aria-hidden />
+                      {s.chapters.length > 0 ? "Chapters" : "Add chapters"}
+                    </Button>
+                  )}
+                </div>
+              )}
               {s.entry ? (
                 <dl className="space-y-1 text-sm">
+                  {chapterLine(s, s.entry.chapterId) && (
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">Chapter</dt>
+                      <dd className="font-semibold text-foreground">{chapterLine(s, s.entry.chapterId)}</dd>
+                    </div>
+                  )}
                   {s.entry.taught && (
                     <div>
                       <dt className="text-xs font-semibold uppercase tracking-wide text-foreground-muted">Taught today</dt>
@@ -150,6 +210,18 @@ export function DiaryPanel({ classId, sectionId }: { classId: string; sectionId:
           onSaved={() => {
             setWriting(null);
             result.done("Diary saved", `${writing.subjectName} of ${day.label}: the parents of the class see it now.`);
+          }}
+        />
+      )}
+      {listing && day && (
+        <ChaptersDialog
+          subject={listing}
+          classId={classId}
+          sectionId={sectionId}
+          onClose={() => setListing(null)}
+          onSaved={() => {
+            setListing(null);
+            result.done("Chapters saved", `${listing.subjectName} of ${day.label}: the school and the parents see how far it is.`);
           }}
         />
       )}

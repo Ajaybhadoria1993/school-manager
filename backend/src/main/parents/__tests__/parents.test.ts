@@ -5,6 +5,7 @@ import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { addClass, addSubject, addTeacher, addTiming, auth, saveAllotments, timetableSchool } from "../../../test/timetable";
 import { AuthToken } from "../../auth/models/AuthToken";
 import { PasswordService } from "../../auth/services/password.service";
+import { User } from "../../users/models/User";
 
 /**
  * A parent's login (2026-11-04, the user: "like the teacher's username and password, the school gives the parent one, and the parent sees
@@ -78,7 +79,8 @@ describe("the school gives a parent a login", () => {
 
   it("refuses a username that is anybody's on the platform (with free ones), and a second login for the same parent", async () => {
     const s = await family();
-    await addTeacher(s.token, "Dev Patel", { mobile: "9876500000", login: { username: "dev.patel", password: "Sch00l@Teach1" } });
+    // An older teacher login, from before teachers signed in with their email (2026-11-26), still holds its username.
+    await User.create({ name: "Dev Patel", username: "dev.patel", passwordHash: "not-a-real-hash", role: "teacher", tenantId: s.tenantId });
     const taken = await makeLogin(s.token, s.fatherId, "dev.patel");
     expect(taken.status).toBe(409);
     expect(taken.body.code).toBe("USERNAME_TAKEN");

@@ -11,7 +11,7 @@ describe("the headings of the menu (2026-11-22, the reference pictures)", () => 
   const sectionOfHref = (href: string) => sectionOf(NAV_ITEMS.find((i) => i.href === href)!);
 
   it("Main holds the daily pages, Finance & transport the money and the buses, Admin the school's own setting up", () => {
-    for (const href of ["/dashboard", "/school-class", "/school/students", "/teachers", "/attendance/students", "/attendance/teachers", "/attendance/staff", "/school/timings", "/school/timetable", "/staff"]) {
+    for (const href of ["/dashboard", "/school/exams", "/school-class", "/school/students", "/teachers", "/attendance/students", "/attendance/teachers", "/attendance/staff", "/school/timings", "/school/timetable", "/staff"]) {
       expect(sectionOfHref(href), href).toBe("Main");
     }
     for (const href of ["/transport/vehicles", "/transport/drivers", "/transport/routes", "/transport/tracking", "/fees/collect", "/fees/dues", "/fees/receipts", "/fees/structure", "/fees/heads", "/fees/concessions", "/fees/rules"]) {
@@ -24,7 +24,6 @@ describe("the headings of the menu (2026-11-22, the reference pictures)", () => 
 
   it("a page of a folding group (Manage school) and Settings keep their own heading", () => {
     expect(sectionOfHref("/documents")).toBe("Manage school");
-    expect(sectionOfHref("/school/exams")).toBe("Manage school");
     expect(sectionOfHref("/settings")).toBe("Account");
   });
 
@@ -59,6 +58,7 @@ describe("the small label above the page's name in the top bar", () => {
     expect(kickerOf(item("/transport/routes"), "KKR Public School")).toBe("Transport");
     expect(kickerOf(item("/school/timetable"), "KKR Public School")).toBe("Academics");
     expect(kickerOf(item("/school-class"), "KKR Public School")).toBe("Academics");
+    expect(kickerOf(item("/school/exams"), "KKR Public School")).toBe("Academics");
     expect(kickerOf(item("/permissions"), "KKR Public School")).toBe("Admin");
   });
 
@@ -73,6 +73,7 @@ describe("the menu of the people who run a school", () => {
   it("has Classes, ONE Students row and ONE Teachers row (their active / inactive lists are tabs on their pages)", () => {
     expect(forAdmin.filter((i) => i.group === "Overview").map((i) => [i.label, i.href])).toEqual([
       ["Dashboard", "/dashboard"],
+      ["Exam", "/school/exams"],
       ["Classes", "/school-class"],
       ["Students", "/school/students"],
       ["Teachers", "/teachers"],
@@ -82,6 +83,7 @@ describe("the menu of the people who run a school", () => {
       ["School timings", "/school/timings"],
       ["Class timetables", "/school/timetable"],
       ["Leave & arrangements", "/school/arrangements"],
+      ["Teaching progress", "/teaching-progress"],
       ["Staff", "/staff"],
       ["Vehicles", "/transport/vehicles"],
       ["Drivers", "/transport/drivers"],
@@ -102,7 +104,7 @@ describe("the menu of the people who run a school", () => {
   });
 
   it("gives teachers the Calendar and the leave requests, parents the Calendar (2026-11-04), and nothing of the school's setup, until the school says otherwise", () => {
-    expect(labelsOf(person("teacher"))).toEqual(["Dashboard", "My leave", "Calendar", "Leave requests", "Settings"]);
+    expect(labelsOf(person("teacher"))).toEqual(["Dashboard", "Teaching progress", "My leave", "Calendar", "Leave requests", "Settings"]);
     expect(labelsOf(person("parent"))).toEqual(["Dashboard", "Calendar", "Settings"]);
   });
 
@@ -145,6 +147,7 @@ describe("the menu of the people who run a school", () => {
     const keys = ["teachers.view", "staff.view", "classes.view", "classes.manage", "years.manage", "promotion.manage", "timetable.edit", "exams.manage"];
     expect(labelsOf(person("receptionist", keys))).toEqual([
       "Dashboard",
+      "Exam",
       "Classes",
       "Teachers",
       "School timings",
@@ -154,7 +157,6 @@ describe("the menu of the people who run a school", () => {
       "Staff",
       "Academic years",
       "Promotion",
-      "Test & Exam",
       "Settings",
     ]);
     // One key, one Teachers row (active / inactive are its tabs); view and setup share the single Classes entry.
@@ -166,6 +168,13 @@ describe("the menu of the people who run a school", () => {
     // A teacher (own classes) and a parent are not given the school's pages by these keys.
     expect(labelsOf(person("teacher", [...keys, "calendar.view"]))).toEqual(["Dashboard", "My leave", "Calendar", "Settings"]);
     expect(labelsOf(person("parent", keys))).toEqual(["Dashboard", "Settings"]);
+  });
+
+  it("Teaching progress: for a teacher who may see the diary and for staff the school allowed progress.view; never parents", () => {
+    expect(labelsOf(person("teacher", ["classwork.view"]))).toContain("Teaching progress");
+    expect(labelsOf(person("receptionist", ["progress.view"]))).toEqual(["Dashboard", "Teaching progress", "My leave", "Settings"]);
+    expect(labelsOf(person("receptionist", ["calendar.view"]))).not.toContain("Teaching progress");
+    expect(labelsOf(person("parent"))).not.toContain("Teaching progress");
   });
 
   it("Transport is one row that opens Vehicles, Drivers, Routes and Live tracking (2026-11-10), for the people allowed transport.view; not for teachers or parents", () => {
@@ -218,6 +227,29 @@ describe("the menu of the people who run a school", () => {
     expect(activeNavItem("/documents", forAdmin)?.label).toBe("Documents");
   });
 
+  it("Attendance > Staff and Leave & arrangements can be given to a kind of staff (2026-11-26); never to a teacher", () => {
+    expect(labelsOf(person("receptionist", ["attendance.staff"]))).toEqual(["Dashboard", "Staff", "My leave", "Settings"]);
+    expect(labelsOf(person("receptionist", ["staffleaves.view"]))).toEqual(["Dashboard", "Leave & arrangements", "My leave", "Settings"]);
+    expect(labelsOf(person("teacher", ["attendance.staff", "staffleaves.view", "calendar.view"]))).toEqual(["Dashboard", "My leave", "Calendar", "Settings"]);
+  });
+
+  it("a staff member who also teaches (a Coordinator who takes a class, 2026-11-26) sees the school's pages their role's list gives, beside their teacher's pages", () => {
+    const teaching = (permissions: string[], schoolPermissions: string[]): AuthUser => ({ ...person("teacher", permissions), schoolPermissions });
+    expect(labelsOf(teaching(["students.view", "attendance.view", "calendar.view", "fees.collect"], ["students.view", "fees.collect"]))).toEqual([
+      "Dashboard",
+      "Students",
+      "My leave",
+      "Collect fees",
+      "Dues",
+      "Receipts",
+      "Calendar",
+      "Settings",
+    ]);
+    // Their Class teacher list's attendance.view is their own class's: the whole school's Student attendance only when their role's list has it.
+    expect(labelsOf(teaching(["attendance.view"], []))).not.toContain("Student");
+    expect(labelsOf(teaching(["attendance.view"], ["attendance.view"]))).toContain("Student");
+  });
+
   it("a parent's Calendar and a teacher's pages go when the school takes the boxes away", () => {
     expect(labelsOf(person("parent", []))).toEqual(["Dashboard", "Settings"]);
     expect(labelsOf(person("teacher", ["calendar.view"]))).toEqual(["Dashboard", "My leave", "Calendar", "Settings"]);
@@ -250,12 +282,15 @@ describe("the menu of the people who run a school", () => {
     expect(new Set(labels).size).toBe(labels.length);
   });
 
-  it("has Test & Exam under Manage school for the people who run the school only (2026-11-06), lit up on an exam's own page too", () => {
-    const item = NAV_ITEMS.find((i) => i.label === "Test & Exam");
-    expect(item).toMatchObject({ href: "/school/exams", group: "Manage school" });
+  it("has Exam as its own row at the top, right under Dashboard (2026-11-26; it was Test & Exam under Manage school), lit up on an exam's own page too", () => {
+    expect(NAV_ITEMS.some((i) => i.label === "Test & Exam")).toBe(false);
+    const item = NAV_ITEMS.find((i) => i.label === "Exam");
+    expect(item).toMatchObject({ href: "/school/exams", group: "Overview", permission: ["exams.manage"], schoolWide: true });
+    expect(item?.submenu).toBeUndefined();
     expect(item?.roles).toEqual(["school_admin", "principal"]);
-    expect(activeNavItem("/school/exams")?.label).toBe("Test & Exam");
-    expect(activeNavItem("/school/exams/e1")?.label).toBe("Test & Exam");
+    expect(forAdmin.map((i) => i.label).slice(0, 2)).toEqual(["Dashboard", "Exam"]);
+    expect(activeNavItem("/school/exams")?.label).toBe("Exam");
+    expect(activeNavItem("/school/exams/e1")?.label).toBe("Exam");
   });
 
   it("has Attendance right under Teacher, as one row that opens Student, Teacher and Staff (2026-11-10), for the people who run the school only; teachers mark themselves on their home", () => {

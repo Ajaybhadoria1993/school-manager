@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { ApiError } from "../../../utils/ApiError";
 import { asyncHandler } from "../../../utils/asyncHandler";
-import { sendCreated, sendOk } from "../../../utils/response";
+import { sendCreated, sendFile, sendOk } from "../../../utils/response";
 import type {
   AddTestInput,
   AttendanceQuery,
@@ -13,6 +13,11 @@ import type {
   SaveAttendanceInput,
   SaveDiaryInput,
   SaveMarksInput,
+  SaveSyllabusInput,
+  SyllabusSourcesQuery,
+  ReminderInput,
+  ProgressLogQuery,
+  ProgressQuery,
   SetStandardShownInput,
   UnitDayQuery,
   UnitQuery,
@@ -20,6 +25,10 @@ import type {
 } from "../schemas/classroom.schemas";
 import type { StudentsQuery } from "../../attendance/schemas/attendance.schemas";
 import { WorkService } from "../services/work.service";
+import { SyllabusService } from "../services/syllabus.service";
+import { ProgressService } from "../services/progress.service";
+import { ProgressExportService } from "../services/progressExport.service";
+import { ReminderService } from "../services/reminders.service";
 import { myClasses, teacherOfUser } from "../services/access";
 import { AttendanceService } from "../services/attendance.service";
 import { CalendarService } from "../services/calendar.service";
@@ -46,8 +55,8 @@ export const setStandardHoliday = asyncHandler(async (req: Request, res: Respons
   return sendOk(res, await CalendarService.setStandardShown(tenantOf(req), key, shown, req.user!.userId), shown ? "Back on the calendar" : "Taken off the calendar");
 });
 
-/** Who is asking (their login and role), for the reads and answers that depend on it. */
-export const callerOf = (req: Request): Caller => ({ userId: req.user!.userId, role: req.user!.role });
+/** Who is asking (their login and role, and what works for them on the whole school), for the reads and answers that depend on it. */
+export const callerOf = (req: Request): Caller => ({ userId: req.user!.userId, role: req.user!.role, schoolPermissions: req.user!.schoolPermissions });
 
 // ---- Leave (the school's side) --------------------------------------------------------------------------------------------------------
 export const listLeaves = asyncHandler(async (req: Request, res: Response) => sendOk(res, await LeaveService.inbox(tenantOf(req), callerOf(req), req.validatedQuery as LeaveQuery)));
@@ -78,6 +87,17 @@ export const decideLeave = asyncHandler(async (req: Request, res: Response) => {
 // ---- Diary ---------------------------------------------------------------------------------------------------------------------------
 export const diaryDay = asyncHandler(async (req: Request, res: Response) => sendOk(res, await WorkService.diaryDay(tenantOf(req), callerOf(req), req.validatedQuery as UnitDayQuery)));
 export const saveDiary = asyncHandler(async (req: Request, res: Response) => sendOk(res, await WorkService.saveDiary(tenantOf(req), callerOf(req), body<SaveDiaryInput>(req)), "Diary saved"));
+
+// ---- Chapters and teaching progress --------------------------------------------------------------------------------------------------
+export const saveSyllabus = asyncHandler(async (req: Request, res: Response) => sendOk(res, await SyllabusService.save(tenantOf(req), callerOf(req), body<SaveSyllabusInput>(req)), "Chapters saved"));
+export const teachingProgress = asyncHandler(async (req: Request, res: Response) => sendOk(res, await ProgressService.overview(tenantOf(req), callerOf(req), req.validatedQuery as ProgressQuery)));
+export const teachingLog = asyncHandler(async (req: Request, res: Response) => sendOk(res, await ProgressService.log(tenantOf(req), callerOf(req), req.validatedQuery as ProgressLogQuery)));
+export const syllabusSources = asyncHandler(async (req: Request, res: Response) => sendOk(res, await SyllabusService.sources(tenantOf(req), callerOf(req), req.validatedQuery as SyllabusSourcesQuery)));
+export const teachingFile = asyncHandler(async (req: Request, res: Response) => sendFile(res, await ProgressExportService.file(tenantOf(req), callerOf(req), req.validatedQuery as ProgressQuery)));
+
+// ---- The daily class work reminder ----------------------------------------------------------------------------------------------------
+export const getReminder = asyncHandler(async (req: Request, res: Response) => sendOk(res, await ReminderService.settings(tenantOf(req))));
+export const saveReminder = asyncHandler(async (req: Request, res: Response) => sendOk(res, await ReminderService.saveSettings(tenantOf(req), body<ReminderInput>(req)), "Reminder saved"));
 
 // ---- Tests and marks -----------------------------------------------------------------------------------------------------------------
 export const listTests = asyncHandler(async (req: Request, res: Response) => sendOk(res, await WorkService.tests(tenantOf(req), callerOf(req), req.validatedQuery as UnitQuery)));

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider } from "react-redux";
 import { RouterProvider, createMemoryRouter } from "react-router";
@@ -30,7 +30,7 @@ const ASHA: StaffMember = {
   employeeCode: "S-1",
   joiningDate: null,
   status: "active",
-  login: { username: "asha.rao_41", isActive: true },
+  login: { username: "asha.rao_41", email: null, isActive: true, pending: false },
 };
 
 function openPage(extra: Record<string, Handler> = {}) {
@@ -80,7 +80,8 @@ describe("Change staff", () => {
     expect(screen.getByLabelText(/^Mobile number/)).toHaveValue("9876543210");
     expect(screen.getByLabelText(/^Designation/)).toHaveValue("Front desk");
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
-    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /staff/members/asha"]);
+    // The person, their photo, and the Role list's roles the school named (2026-11-26).
+    await waitFor(() => expect(calls.map((c) => `${c.method} ${c.path}`).sort()).toEqual(["GET /permissions/roles", "GET /staff/members/asha", "GET /staff/members/asha/photo"]));
   });
 
   it("saves in one request without any login, goes back to Staff, and says it is saved", async () => {

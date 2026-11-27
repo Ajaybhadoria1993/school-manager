@@ -6,11 +6,31 @@ import type { ExportColumn } from "./students";
 export type TeacherGender = "Male" | "Female" | "Other";
 export type EmploymentType = "full_time" | "part_time" | "contract";
 
-/** A teacher's sign-in. The password is never sent back: it is shown once, when it is made. */
+/**
+ * A teacher's (or staff member's) sign-in (2026-11-26): their email, Pending until they open the invitation emailed to it and choose a
+ * password. A login made before that has a username (and maybe an email too). The password is never sent back.
+ */
 export interface TeacherLogin {
-  username: string;
+  /** Only an older login has one. */
+  username: string | null;
+  email: string | null;
   /** Off while the teacher has left. */
   isActive: boolean;
+  /** The invitation was sent and not opened yet: no password, cannot sign in. */
+  pending: boolean;
+}
+
+/** What Give login access does, by the login the person has now: none (give it), Pending (the invitation again), or one that works (a password link). */
+export type LoginAction = "give" | "resend" | "reset";
+
+/** What the school is told after an invitation (Add teacher / Add staff with login access, Give login access, Resend). */
+export interface LoginInvite {
+  email: string;
+  inviteExpiresAt: string;
+  /** False: the email did not go out (send it again). */
+  emailSent: boolean;
+  /** Only on a development server with no email service: the link itself. */
+  devInviteLink?: string;
 }
 
 export interface TeacherAddress {
@@ -57,6 +77,8 @@ export interface Teacher {
   login: TeacherLogin | null;
   /** The units they are the class teacher of, this year and the next ("Class 5 - A"). */
   classTeacherOf: string[];
+  /** Only in the answer that sent an invitation. */
+  invite?: LoginInvite;
 }
 
 export interface LoginAccount {
@@ -98,22 +120,22 @@ export interface TeacherInput {
   employmentType?: EmploymentType | null;
   /** Answers to the school's own fields by key (a change: null clears one). */
   custom?: Record<string, string | number | boolean | null>;
-  /** Makes the teacher's login in the same step (Add teacher only). */
-  login?: LoginAccount;
+  /** Gives the teacher login access in the same step (Add teacher only): `email` is then needed, and the invitation goes to it. */
+  giveLogin?: boolean;
 }
 
 /** What the teacher list can be asked; the server applies every filter. */
 export interface TeacherQuery {
   status: "active" | "inactive" | "all";
-  /** Name, mobile number, employee code, email or username. */
+  /** Name, mobile number, employee code, email or (an older login's) username. */
   search?: string;
   /** Can teach this subject. */
   subjectId?: string;
   designation?: string;
   employmentType?: EmploymentType;
   gender?: TeacherGender;
-  /** with = a login that works, closed = switched off, without = none. */
-  login?: "with" | "without" | "closed";
+  /** with = a login that works, pending = invitation not opened, closed = switched off, without = none. */
+  login?: "with" | "without" | "pending" | "closed";
   /** Teaches a subject of this class, or is the class teacher of one of its units. */
   classId?: string;
   classTeacher?: "yes" | "no";
@@ -185,25 +207,20 @@ export interface SaveUnitTeachersInput {
 export interface TeacherImportRowInput {
   /** The row's number in the file. */
   row: number;
-  /** The boxes of Add teacher the file gave (an empty box is left out); the login and the subjects are not part of it. */
+  /** The boxes of Add teacher the file gave (an empty box is left out); the subjects are not part of it. A row makes no login. */
   teacher: TeacherInput;
   /** The subjects the teacher can teach, in words: a name the school has is that subject, any other is added. */
   subjectNames: string[];
-  /** The login the file gives; left out, the server makes them up. */
-  username?: string;
-  password?: string;
 }
 
 export interface TeacherImportRowResult {
   row: number;
   ok: boolean;
-  /** TEACHER_MOBILE_EXISTS (already in the school), TEACHER_CODE_EXISTS, USERNAME_TAKEN, LOGIN_EMAIL_TAKEN...; none for a row whose boxes are wrong. */
+  /** TEACHER_MOBILE_EXISTS (already in the school), TEACHER_CODE_EXISTS, TEACHER_EMAIL_EXISTS...; none for a row whose boxes are wrong. */
   code?: string;
-  /** By box ("name", "mobile", "address.pincode", "username"...; "" for the row as a whole). */
+  /** By box ("name", "mobile", "address.pincode"...; "" for the row as a whole). */
   errors: { path: string; message: string }[];
   teacher?: { id: string; name: string };
-  /** `password` is there only when the server made it up: it is told this once and never kept. */
-  login?: { username: string; password: string | null };
 }
 
 export interface TeacherImportResult {
@@ -233,8 +250,8 @@ export interface UpdateTeacherSettingsInput {
 }
 
 /**
- * A person who works for the school without teaching (`/staff/members`): added by the school with a username and a password it makes
- * (active, or inactive while the login is closed). *invited* is only a person added before that: they have no login until the school makes one.
+ * A person who works for the school without teaching (`/staff/members`): active or inactive (a login closes while they are inactive). The
+ * login is given with login access (their email, an invitation). *invited* is only a person added before 2026-11-08 who has no login.
  */
 export type StaffMemberStatus = "invited" | "active" | "inactive";
 
@@ -250,7 +267,7 @@ export interface StaffMember {
   alsoTeacher: boolean;
   isTeacher: boolean;
   subjectIds: string[];
-  /** Only a contact (and a second way to sign in): optional. */
+  /** Their login when they have one (then it cannot be emptied); otherwise only a contact. */
   email: string | null;
   mobile: string | null;
   gender: TeacherGender | null;
@@ -260,8 +277,10 @@ export interface StaffMember {
   employeeCode: string | null;
   joiningDate: string | null;
   status: StaffMemberStatus;
-  /** The username they sign in with (the password is never sent back); null: no login yet. */
+  /** Their login (the email, Pending until the invitation is opened); null: no login. */
   login: TeacherLogin | null;
+  /** Only in the answer that sent an invitation. */
+  invite?: LoginInvite;
 }
 
 export interface StaffMemberInput {
@@ -271,8 +290,8 @@ export interface StaffMemberInput {
   alsoTeacher?: boolean;
   subjectIds?: string[];
   email?: string | null;
-  /** What they sign in with: made with the person (Add staff only). */
-  login?: LoginAccount;
+  /** Login access (Add staff only): `email` is then needed, and the invitation goes to it. */
+  giveLogin?: boolean;
   mobile?: string | null;
   gender?: TeacherGender | null;
   dateOfBirth?: string | null;

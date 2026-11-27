@@ -6,7 +6,6 @@ import { ClassTeacherService } from "../../staff/services/classTeacher.service";
 import { TeacherLogin } from "../../staff/services/teacherLogin.service";
 import { Allotment } from "../../subjects/models/Allotment";
 import { openYearIds } from "../../subjects/services/subject.service";
-import type { UserRole } from "../../users/models/User";
 import { Timetable } from "../models/Timetable";
 import type { ReplaceTeacherBody } from "../schemas/timetable.schemas";
 import { minutesToClock } from "../time";
@@ -36,8 +35,8 @@ export interface TeacherWeek {
 }
 
 export class TeacherTimetableService {
-  /** A teacher's week across every class. A teacher sees only what is published; the people who make the timetables see drafts too. */
-  static async get(tenantId: string, role: UserRole, teacherId: string): Promise<TeacherWeek> {
+  /** A teacher's week across every class. A teacher sees only what is published; the people who make the timetables (`drafts`) see drafts too. */
+  static async get(tenantId: string, drafts: boolean, teacherId: string): Promise<TeacherWeek> {
     const teacher = await Teacher.findOne({ _id: teacherId, tenantId }).lean();
     if (!teacher) throw ApiError.notFound("Teacher not found", "TEACHER_NOT_FOUND");
     const year = await AcademicYearService.shownYear(tenantId);
@@ -47,7 +46,7 @@ export class TeacherTimetableService {
     const world = await loadWorld(tenantId, year._id);
     const lessons: TeacherWeek["lessons"] = [];
     for (const [key, timetable] of world.timetables) {
-      if (role === "teacher" && timetable.status !== "published") continue;
+      if (!drafts && timetable.status !== "published") continue;
       const periods = new Map(unitDays(world, timetable.classId).map((d) => [d.day, new Map(d.periods.map((p) => [p.period, p]))]));
       const allotments = world.allotments.get(key);
       for (const cell of timetable.cells) {

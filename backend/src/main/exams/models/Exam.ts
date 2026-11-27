@@ -1,6 +1,6 @@
 import { Schema, model, Types } from "mongoose";
 import { tenantScope } from "../../tenants/plugins/tenantScope";
-import { EXAM_TYPES, MAX_EXAM_NAME, MAX_NOTE, type ExamType } from "../constants";
+import { EXAM_SCOPES, EXAM_TYPES, MAX_EXAM_NAME, MAX_NOTE, type ExamScope, type ExamType } from "../constants";
 
 /**
  * An exam or a test of one academic year (Test & Exam, Manage school): Half-Yearly, Annual, Unit test, Monthly test, Class test. It has
@@ -19,6 +19,13 @@ export interface IExam {
   endDate: Date;
   schoolStart: number | null;
   schoolEnd: number | null;
+  /**
+   * Whom it is for (2026-11-26): the whole school (an exam made before had no scope: the whole school), the classes of `departmentIds`, or
+   * `classIds`. Its papers are only for those classes.
+   */
+  scope?: ExamScope;
+  departmentIds?: Types.ObjectId[];
+  classIds?: Types.ObjectId[];
   note: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -34,6 +41,9 @@ const examSchema = new Schema<IExam>(
     endDate: { type: Date, required: true },
     schoolStart: { type: Number, default: null, min: 0, max: 1439 },
     schoolEnd: { type: Number, default: null, min: 1, max: 1440 },
+    scope: { type: String, enum: EXAM_SCOPES, default: "school" },
+    departmentIds: { type: [{ type: Schema.Types.ObjectId, ref: "Department" }], default: [] },
+    classIds: { type: [{ type: Schema.Types.ObjectId, ref: "SchoolClass" }], default: [] },
     note: { type: String, default: null, trim: true, maxlength: MAX_NOTE },
   },
   { timestamps: true }

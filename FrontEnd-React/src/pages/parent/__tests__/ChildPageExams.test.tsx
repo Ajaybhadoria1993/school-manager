@@ -85,7 +85,7 @@ function openPage(extra: Record<string, Handler> = {}) {
     "GET /parent/children/s1/exams": () => EXAMS,
     "GET /parent/children/s1/attendance": () => ({ month: "2026-11", days: [], monthTally: { present: 0, absent: 0, late: 0, leave: 0, days: 0, percent: null }, year: { present: 0, absent: 0, late: 0, leave: 0, days: 0, percent: null } }),
     "GET /parent/children/s1/leaves": () => ({ items: [] }),
-    "GET /parent/children/s1/diary": () => ({ date: "2026-11-04", entries: [] }),
+    "GET /parent/children/s1/diary": () => ({ date: "2026-11-04", entries: [], progress: [] }),
     "GET /parent/children/s1/tests": () => ({ upcoming: [], results: [], average: null }),
     ...extra,
   });

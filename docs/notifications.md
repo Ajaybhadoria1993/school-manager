@@ -14,13 +14,16 @@ Rule: the people who run the school (school admin, principal) hear of **everythi
 | Attendance saved | Only when their child was marked **absent** or **late**, once per change | Class teacher (when the school saved it) | Yes, with the counts |
 | Teacher marks themselves present | | | Every open sheet of the school's admins refreshes (a quiet `attendance:teacher` push: **no bell line**, fifty teachers a day would flood it) |
 | The school marks or corrects a teacher's day | | The teacher (if they have a login): "Your attendance of 5 Nov is marked Leave", the note, by whom | |
-| Diary written / changed | All parents of the class: "Homework in English" | | Yes |
+| Diary written / changed | All parents of the class: "Homework in English" | The class teacher, when someone else wrote it | Yes |
+| Today's diary not written (at the school's reminder time, docs/teaching-progress.md) | | Each teacher: "Write today's diary", their classes and subjects | |
+| A chapter's planned day is gone and it is not finished (told once) | | The subject's teacher and the class teacher | Yes |
 | Test set / taken off | All parents of the class | | Yes |
 | Marks entered | Parents of the children whose marks are new or changed: "Asha Verma: 15 / 20 in Mathematics" | | Yes, with the class average |
 | Exam scheduled, changed (name, days, school hours), taken off | Everyone | Everyone | Everyone (but the admin who did it) |
 | Exam timetable added for some classes | The children's parents of those classes: "Half-Yearly Exam: Class 5 timetable" | The class teacher and the subject teachers of those classes | Yes |
 | Exam paper changed / taken away | Parents of the classes it is (still) for; a class taken off it is told it is taken off | Teachers of those classes | Yes |
 | Exam marks entered | The parent of a child whose mark is new or changed ("Asha Verma: 42 / 50 in Mathematics", or "was absent") | The class teacher (when the school entered them) | Yes, with the class average |
+| Exam duty (2026-11-27, `exam.duty`): a teacher put on duty in a room, taken off, or the room renamed | No | The teacher: "Exam duty: Room 101" (exam, days, "with Dev Patel"), "Exam duty taken off: Room 101", "Exam duty moved to Hall A"; opens their home | No (the school did it) |
 | Holiday / event added, changed, taken off | Everyone of the school | Everyone | Everyone (but the admin who did it) |
 | Class teacher changed | | The new one ("You are the class teacher of Class 5 - A") and the one before | Yes |
 | Subject teacher changed | | The new one ("You teach English in Class 5 - A") and the one before | Yes |

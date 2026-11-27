@@ -21,7 +21,7 @@ import TeacherDetailPage from "../TeacherDetail";
 const PHYSICS: Subject = { id: "physics", name: "Physics", code: null, category: "academic", isActive: true, sections: 1 };
 const CHEMISTRY: Subject = { id: "chemistry", name: "Chemistry", code: null, category: "academic", isActive: true, sections: 1 };
 // Meena teaches Mathematics and English.
-const FULL: Teacher = { ...MEENA, subjectIds: ["maths", "english"], login: { username: "meena.singh", isActive: true } };
+const FULL: Teacher = { ...MEENA, subjectIds: ["maths", "english"], login: { username: "meena.singh", email: null, isActive: true, pending: false } };
 
 /** The school's structure with a pre-school class that has no sections and studies nothing yet. */
 const WITH_PRE: AcademicStructure = {

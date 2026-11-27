@@ -1,23 +1,18 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { AtSign, KeyRound, Pencil, Plus, Power, RotateCcw, Search, Trash2, UserCog, UserRoundCog } from "lucide-react";
+import { KeyRound, Pencil, Plus, Power, RotateCcw, Search, Send, Trash2, UserCog } from "lucide-react";
 import { STAFF_ROLES, staffRoleLabel } from "../../constants/staffMembers";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { useReadOnlyYear } from "../../hooks/useReadOnlyYear";
-import {
-  useChangeStaffUsernameMutation,
-  useGetStaffMembersQuery,
-  useMakeStaffLoginMutation,
-  useRemoveStaffMemberMutation,
-  useResetStaffPasswordMutation,
-  useUpdateStaffMemberMutation,
-} from "../../redux/api/staffApi";
+import { useGetStaffMembersQuery, useGiveStaffLoginMutation, useRemoveStaffMemberMutation, useUpdateStaffMemberMutation } from "../../redux/api/staffApi";
 import type { StaffMember, StaffMemberQuery, StaffMemberStatus } from "../../types";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
 import { formatMobile } from "../../utils/students";
 import { ConfirmModal } from "../../components/classes/ConfirmModal";
-import { ChangeUsernameDialog, MakeLoginDialog, NewPasswordDialog } from "../../components/logins/LoginDialogs";
+import { GiveLoginDialog } from "../../components/logins/GiveLoginDialog";
+import { LOGIN_ACTION_LABELS, loginActionOf } from "../../utils/loginAccess";
+import { LoginStatusBadge } from "../../components/logins/LoginStatusBadge";
 import { StudentAvatar } from "../../components/students/StudentAvatar";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
@@ -29,10 +24,9 @@ import { Input } from "../../components/ui/Input";
 import { useResultModal } from "../../components/ui/ResultModal";
 import { Select } from "../../components/ui/Select";
 import { Skeleton } from "../../components/ui/Skeleton";
-import { useToast } from "../../components/ui/toast-context";
 
 const ALL_ROLES = "all";
-/** "invited" is a person added before the school made logins itself: they have no login until the school makes one. */
+/** "invited" is a person added before 2026-11-08 who has no login: the tab is there only while somebody is. */
 const TABS: { value: StaffMemberStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
   { value: "active", label: "Active" },
@@ -50,12 +44,12 @@ const TH = "whitespace-nowrap px-4 py-3 text-left text-[13.5px] font-semibold te
 
 /**
  * Staff (`/staff`, the menu's Staff): the people who work for the school without teaching, each with a role (Principal, Accountant,
- * Receptionist, Management...). The school adds a person with their details, a role and the username and password it makes for them
- * (Add staff): they sign in with those (there is no invitation email for staff). Here: everyone, by status (Active, No login, Inactive)
- * with the count of each, a role and a search (one request each, answered by the server), the username each signs in with, and for
- * each person what can be done: change them, change their username, give a new password, make them inactive (their login closes) or
- * active again; a person with no login yet (added before the school made logins itself) gets Make a login or is removed. The No login
- * tab is there only while somebody has none. Every action ends in a window that says what happened.
+ * Receptionist, Management...). The school adds a person with their details and a role (Add staff), with login access when it ticks it
+ * (2026-11-26: their email is the login, with an emailed invitation to choose a password; the school makes no username or password). Here:
+ * everyone, by status (Active, Inactive; No login only while a person from before 2026-11-08 is left) with the count of each, a role and a
+ * search (one request each, answered by the server), each login's state (No login, Pending, Active, Closed), and for each person what can
+ * be done: change them, Give login access / Resend invitation / Send password link, make them inactive (a login closes) or active again; a
+ * person with no login can be removed. Every action ends in a window that says what happened.
  */
 export default function StaffDirectoryPage() {
   // A year that is over is only looked at: no adding, changing, logins or making inactive (the server refuses them too).
@@ -71,13 +65,10 @@ export default function StaffDirectoryPage() {
   const res = useGetStaffMembersQuery(query);
   const [removeMember] = useRemoveStaffMemberMutation();
   const [update] = useUpdateStaffMemberMutation();
-  const [makeLogin] = useMakeStaffLoginMutation();
-  const [resetPassword] = useResetStaffPasswordMutation();
-  const [rename] = useChangeStaffUsernameMutation();
+  const [giveLogin] = useGiveStaffLoginMutation();
   const result = useResultModal();
-  const { push } = useToast();
   const [asking, setAsking] = useState<{ kind: "remove" | "off"; member: StaffMember } | null>(null);
-  const [dialog, setDialog] = useState<{ kind: "make" | "password" | "username"; member: StaffMember } | null>(null);
+  const [loginOf, setLoginOf] = useState<StaffMember | null>(null);
 
   const items = res.data?.data.items ?? [];
   const counts = res.data?.data.counts;
@@ -89,7 +80,8 @@ export default function StaffDirectoryPage() {
   async function turn(m: StaffMember, on: boolean) {
     try {
       await update({ id: m.id, isActive: on }).unwrap();
-      result.done(on ? `${m.name} is active again` : `${m.name} is inactive`, on ? "They can sign in again with their username and password." : "Their login is closed: they cannot sign in until they are made active again.");
+      const said = on ? (m.login ? "They can sign in again." : "They are on the staff list again.") : m.login ? "Their login is closed: they cannot sign in until they are made active again." : "They stay on the list as inactive.";
+      result.done(on ? `${m.name} is active again` : `${m.name} is inactive`, said);
     } catch (err) {
       result.failed(on ? "Not made active" : "Not made inactive", getApiError(err)?.message ?? "Could not save. Please try again.");
     }
@@ -140,7 +132,7 @@ export default function StaffDirectoryPage() {
         </div>
         <div className="relative min-w-56 flex-1 sm:max-w-sm">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-foreground-muted" aria-hidden />
-          <Input aria-label="Search staff" placeholder="Search by name, username or mobile" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input aria-label="Search staff" placeholder="Search by name, email or mobile" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
       </div>
 
@@ -158,7 +150,7 @@ export default function StaffDirectoryPage() {
           <p className="rounded-2xl border border-border bg-surface px-4 py-10 text-center text-sm text-foreground-muted">No staff matches.</p>
         ) : (
           <StudentsNotice icon={UserCog} tone="primary" title="No staff yet" actions={readOnly || !mayAdd ? undefined : add}>
-            <p>Add the people who work for your school without teaching, such as a receptionist or the management. You make a username and a password for each.</p>
+            <p>Add the people who work for your school without teaching, such as a receptionist or the management.</p>
           </StudentsNotice>
         )
       ) : (
@@ -177,6 +169,9 @@ export default function StaffDirectoryPage() {
                 </th>
                 <th scope="col" className={TH}>
                   Status
+                </th>
+                <th scope="col" className={TH}>
+                  Login
                 </th>
                 <th scope="col" className={TH}>
                   <span className="sr-only">Actions</span>
@@ -200,7 +195,7 @@ export default function StaffDirectoryPage() {
                         {m.login && (
                           <span className="flex items-center gap-1 text-xs text-foreground-muted">
                             <KeyRound className="size-3" aria-hidden />
-                            <span className="font-mono">{m.login.username}</span>
+                            <span className={cn("truncate", !m.login.email && "font-mono")}>{m.login.email ?? m.login.username}</span>
                           </span>
                         )}
                       </div>
@@ -221,6 +216,9 @@ export default function StaffDirectoryPage() {
                     </Badge>
                   </td>
                   <td className="px-4 py-3">
+                    <LoginStatusBadge login={m.login} />
+                  </td>
+                  <td className="px-4 py-3">
                     <div hidden={!mayChange} className={readOnly ? "hidden" : "flex flex-wrap justify-end gap-1.5"}>
                       <Link
                         to={`/staff/${m.id}/edit`}
@@ -229,36 +227,25 @@ export default function StaffDirectoryPage() {
                       >
                         <Pencil className="size-4" aria-hidden />
                       </Link>
-                      {m.login ? (
-                        <>
-                          <Button variant="outline" size="sm" aria-label={`Change the username of ${m.name}`} onClick={() => setDialog({ kind: "username", member: m })}>
-                            <AtSign className="size-4" aria-hidden />
-                            Username
-                          </Button>
-                          <Button variant="outline" size="sm" aria-label={`New password for ${m.name}`} onClick={() => setDialog({ kind: "password", member: m })}>
-                            <KeyRound className="size-4" aria-hidden />
-                            New password
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button variant="outline" size="sm" aria-label={`Make a login for ${m.name}`} onClick={() => setDialog({ kind: "make", member: m })}>
-                            <UserRoundCog className="size-4" aria-hidden />
-                            Make a login
-                          </Button>
-                          <Button variant="ghost" size="sm" aria-label={`Remove ${m.name}`} onClick={() => setAsking({ kind: "remove", member: m })}>
-                            <Trash2 className="size-4" aria-hidden />
-                            Remove
-                          </Button>
-                        </>
+                      {m.status !== "inactive" && (
+                        <Button variant="outline" size="sm" aria-label={`${LOGIN_ACTION_LABELS[loginActionOf(m.login)]}: ${m.name}`} onClick={() => setLoginOf(m)}>
+                          <Send className="size-4" aria-hidden />
+                          {LOGIN_ACTION_LABELS[loginActionOf(m.login)]}
+                        </Button>
                       )}
-                      {m.login && m.status === "active" && (
+                      {!m.login && (
+                        <Button variant="ghost" size="sm" aria-label={`Remove ${m.name}`} onClick={() => setAsking({ kind: "remove", member: m })}>
+                          <Trash2 className="size-4" aria-hidden />
+                          Remove
+                        </Button>
+                      )}
+                      {m.status !== "inactive" && (
                         <Button variant="outline" size="sm" aria-label={`Make ${m.name} inactive`} onClick={() => setAsking({ kind: "off", member: m })}>
                           <Power className="size-4" aria-hidden />
                           Make inactive
                         </Button>
                       )}
-                      {m.login && m.status === "inactive" && (
+                      {m.status === "inactive" && (
                         <Button variant="outline" size="sm" aria-label={`Make ${m.name} active`} onClick={() => void turn(m, true)}>
                           <RotateCcw className="size-4" aria-hidden />
                           Make active
@@ -287,34 +274,19 @@ export default function StaffDirectoryPage() {
           <p>
             {asking.kind === "remove"
               ? `${asking.member.name} has no login. They are taken off the list; you can add them again later.`
-              : "Their login is closed at once: they cannot sign in until you make them active again. Nothing they did is lost."}
+              : asking.member.login
+                ? "Their login is closed at once: they cannot sign in until you make them active again. Nothing they did is lost."
+                : "They stay on the list as inactive. Nothing they did is lost."}
           </p>
         </ConfirmModal>
       )}
-      {dialog?.kind === "make" && (
-        <MakeLoginDialog
-          name={dialog.member.name}
-          onCreate={async (username, password) => (await makeLogin({ id: dialog.member.id, username, password }).unwrap()).data.login?.username ?? username}
-          onClose={() => setDialog(null)}
-        />
-      )}
-      {dialog?.kind === "password" && dialog.member.login && (
-        <NewPasswordDialog
-          name={dialog.member.name}
-          username={dialog.member.login.username}
-          onSave={async (password) => void (await resetPassword({ id: dialog.member.id, password }).unwrap())}
-          onClose={() => setDialog(null)}
-        />
-      )}
-      {dialog?.kind === "username" && dialog.member.login && (
-        <ChangeUsernameDialog
-          name={dialog.member.name}
-          current={dialog.member.login.username}
-          onSave={async (username) => {
-            await rename({ id: dialog.member.id, username }).unwrap();
-            push("success", `${dialog.member.name}'s username is ${username}`);
-          }}
-          onClose={() => setDialog(null)}
+      {loginOf && (
+        <GiveLoginDialog
+          name={loginOf.name}
+          email={loginOf.login?.email ?? loginOf.email}
+          action={loginActionOf(loginOf.login)}
+          send={async (email) => (await giveLogin({ id: loginOf.id, email }).unwrap()).data.invite}
+          onClose={() => setLoginOf(null)}
         />
       )}
       {result.modal}

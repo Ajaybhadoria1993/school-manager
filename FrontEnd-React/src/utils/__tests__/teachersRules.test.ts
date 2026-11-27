@@ -9,8 +9,6 @@ const filled = (patch: Partial<TeacherFormValues> = {}): TeacherFormValues => ({
   name: "Meena Singh",
   gender: "Female",
   mobile: "9876543210",
-  username: "meena.singh_41",
-  password: "Sch00l@Teach1",
   ...patch,
 });
 const add = { login: true } as const;

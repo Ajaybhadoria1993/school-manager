@@ -29,14 +29,17 @@ const member = (over: Partial<StaffMember>): StaffMember => ({
   employeeCode: null,
   joiningDate: null,
   status: "active",
-  login: { username: "someone_10", isActive: true },
+  login: { username: "someone_10", email: null, isActive: true, pending: false },
   ...over,
 });
-const ASHA = member({ id: "asha", name: "Asha Rao", mobile: "9876543210", designation: "Front desk", login: { username: "asha.rao_41", isActive: true } });
+// A login that works (2026-11-26: the person's email, the invitation opened).
+const ASHA = member({ id: "asha", name: "Asha Rao", mobile: "9876543210", email: "asha@school.example", designation: "Front desk", login: { username: null, email: "asha@school.example", isActive: true, pending: false } });
+// Given login access, the invitation not opened yet.
+const PRIYA = member({ id: "priya", name: "Priya Nair", email: "priya@school.example", login: { username: null, email: "priya@school.example", isActive: true, pending: true } });
 // Added before the school made logins itself: no login yet.
 const RAVI = member({ id: "ravi", name: "Ravi Menon", email: "ravi@school.example", role: "management", roleLabel: "Management", status: "invited", login: null });
 const SUNITA = member({ id: "sunita", name: "Sunita Bose", role: "accountant", roleLabel: "Accountant", status: "invited", login: null });
-const KABIR = member({ id: "kabir", name: "Kabir Khan", role: "accountant", roleLabel: "Accountant", status: "inactive", login: { username: "kabir.khan_52", isActive: false } });
+const KABIR = member({ id: "kabir", name: "Kabir Khan", role: "accountant", roleLabel: "Accountant", status: "inactive", login: { username: "kabir.khan_52", email: null, isActive: false, pending: false } });
 
 function openPage(people: StaffMember[] = [ASHA, RAVI, SUNITA, KABIR], extra: Record<string, Handler> = {}, who: { role?: UserRole; permissions?: string[] } = {}) {
   // The school admin unless said: the page asks who is looking (what the school allowed them).
@@ -93,7 +96,7 @@ const names = () => within(table()).getAllByRole("row").slice(1).map((r) => with
 const server = (status: number, message: string, code?: string, details: object[] = []) => () => new Response(JSON.stringify({ success: false, message, code, details }), { status, headers: { "Content-Type": "application/json" } });
 
 describe("Staff", () => {
-  it("lists everyone with the role, the status and the username they sign in with, and the count of each status on the tabs; Add staff is in the header", async () => {
+  it("lists everyone with the role, the status and the login (what they sign in with, and its state), and the count of each status on the tabs; Add staff is in the header", async () => {
     openPage();
     expect(await screen.findByRole("heading", { name: "Staff", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Add staff" })).toHaveAttribute("href", "/staff/new");
@@ -104,10 +107,12 @@ describe("Staff", () => {
     expect(screen.getByRole("tab", { name: "Inactive 1" })).toBeInTheDocument();
     expect(rowOf("Asha Rao")).toHaveTextContent("Receptionist");
     expect(rowOf("Asha Rao")).toHaveTextContent("Front desk");
-    expect(rowOf("Asha Rao")).toHaveTextContent("asha.rao_41");
+    expect(rowOf("Asha Rao")).toHaveTextContent("asha@school.example");
     expect(rowOf("Asha Rao")).toHaveTextContent("Active");
+    // An older login with only a username still shows it.
     expect(rowOf("Kabir Khan")).toHaveTextContent("kabir.khan_52");
     expect(rowOf("Kabir Khan")).toHaveTextContent("Inactive");
+    expect(rowOf("Kabir Khan")).toHaveTextContent("Closed");
     expect(rowOf("Ravi Menon")).toHaveTextContent("No login");
     expect(screen.queryByRole("tab", { name: /Invited/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/invit/i)).not.toBeInTheDocument();
@@ -137,10 +142,10 @@ describe("Staff", () => {
     await waitFor(() => expect(new URLSearchParams(lists(calls).at(-1)!.query).get("search")).toBe("zzz"));
   });
 
-  it("searches by name, username or mobile", async () => {
+  it("searches by name, email or mobile", async () => {
     openPage();
     await screen.findByRole("table", { name: "Staff" });
-    expect(screen.getByLabelText("Search staff")).toHaveAttribute("placeholder", "Search by name, username or mobile");
+    expect(screen.getByLabelText("Search staff")).toHaveAttribute("placeholder", "Search by name, email or mobile");
   });
 
   it("says so when the school has no staff yet, with the way to add them", async () => {
@@ -158,70 +163,63 @@ describe("Staff", () => {
     expect(router.state.location.pathname).toBe("/staff/asha/edit");
   });
 
-  it("there is no invitation to send again or take back, and a person with a login is not removed", async () => {
-    openPage();
+  it("gives each person the login button their login needs (none, Pending, Active; nothing for an inactive person), and removes only a person with no login", async () => {
+    openPage([ASHA, PRIYA, RAVI, KABIR]);
     await screen.findByRole("table", { name: "Staff" });
-    expect(screen.queryByRole("button", { name: /Resend invite/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Take back/ })).not.toBeInTheDocument();
+    expect(within(rowOf("Ravi Menon")).getByRole("button", { name: "Give login access: Ravi Menon" })).toBeInTheDocument();
+    expect(within(rowOf("Priya Nair")).getByRole("button", { name: "Resend invitation: Priya Nair" })).toBeInTheDocument();
+    expect(rowOf("Priya Nair")).toHaveTextContent("Pending");
+    expect(within(rowOf("Asha Rao")).getByRole("button", { name: "Send password link: Asha Rao" })).toBeInTheDocument();
+    expect(within(rowOf("Kabir Khan")).queryByRole("button", { name: /Give login access|Resend invitation|Send password link/ })).not.toBeInTheDocument();
     expect(within(rowOf("Asha Rao")).queryByRole("button", { name: /Remove/ })).not.toBeInTheDocument();
-    expect(within(rowOf("Asha Rao")).queryByRole("button", { name: /Make a login/ })).not.toBeInTheDocument();
+    expect(within(rowOf("Ravi Menon")).getByRole("button", { name: "Remove Ravi Menon" })).toBeInTheDocument();
+    // No username or password is made by the school any more.
+    expect(screen.queryByRole("button", { name: /New password|Change the username|Make a login/ })).not.toBeInTheDocument();
   });
 
-  it("makes a login for a person who has none: the username from the name and a password already made, shown once, in one request", async () => {
-    const { calls, user } = openPage([ASHA, RAVI], {
-      "POST /staff/members/ravi/login": (body) => ({ ...RAVI, status: "active", login: { username: (body as { username: string }).username, isActive: true } }),
+  it("Give login access to a person with no email asks for it, sends it in one request, and the window says where the invitation went", async () => {
+    const { calls, user } = openPage([ASHA, SUNITA], {
+      "POST /staff/members/sunita/login": (body) => {
+        const email = (body as { email: string }).email;
+        return { ...SUNITA, email, status: "active", login: { username: null, email, isActive: true, pending: true }, invite: { email, inviteExpiresAt: "2026-11-29T10:00:00.000Z", emailSent: true } };
+      },
     });
     await screen.findByRole("table", { name: "Staff" });
-    expect(within(rowOf("Asha Rao")).queryByRole("button", { name: /Make a login/ })).not.toBeInTheDocument();
-    await user.click(within(rowOf("Ravi Menon")).getByRole("button", { name: "Make a login for Ravi Menon" }));
-    const dialog = await screen.findByRole("dialog", { name: "Make a login for Ravi Menon" });
-    expect((within(dialog).getByLabelText(/^Username/) as HTMLInputElement).value).toMatch(/^ravi\.menon_\d{2}$/);
-    const username = (within(dialog).getByLabelText(/^Username/) as HTMLInputElement).value;
-    const password = (within(dialog).getByLabelText(/^Password/) as HTMLInputElement).value;
+    await user.click(within(rowOf("Sunita Bose")).getByRole("button", { name: "Give login access: Sunita Bose" }));
+    const dialog = await screen.findByRole("dialog", { name: "Give login access to Sunita Bose" });
+    expect(within(dialog).getByLabelText(/^Email/)).toHaveValue("");
+    await user.click(within(dialog).getByRole("button", { name: "Send invitation" }));
+    expect(await within(dialog).findByText("Enter the email: the login invitation is sent to it")).toBeInTheDocument();
     expect(writes(calls)).toHaveLength(0);
-    await user.click(within(dialog).getByRole("button", { name: "Make login" }));
-    const details = await within(dialog).findByRole("region", { name: "Login details" });
-    expect(within(details).getByText(username)).toBeInTheDocument();
-    expect(within(details).getByText(password)).toBeInTheDocument();
-    expect(writes(calls)).toHaveLength(1);
-    expect(writes(calls)[0]).toMatchObject({ method: "POST", path: "/staff/members/ravi/login", body: { username, password } });
+    await user.type(within(dialog).getByLabelText(/^Email/), "Sunita@School.Example");
+    await user.click(within(dialog).getByRole("button", { name: "Send invitation" }));
+    const card = await within(dialog).findByRole("region", { name: "Login invitation" });
+    expect(card).toHaveTextContent("Invitation sent to sunita@school.example");
+    expect(writes(calls)).toEqual([expect.objectContaining({ method: "POST", path: "/staff/members/sunita/login", body: { email: "sunita@school.example" } })]);
   });
 
-  it("gives a person a new password the school made: shown once, the old one stops", async () => {
-    const { calls, user } = openPage([ASHA], { "POST /staff/members/asha/reset-password": () => ({}) });
+  it("Resend invitation uses the email they have", async () => {
+    const { calls, user } = openPage([PRIYA], {
+      "POST /staff/members/priya/login": () => ({ ...PRIYA, invite: { email: "priya@school.example", inviteExpiresAt: "2026-11-29T10:00:00.000Z", emailSent: true } }),
+    });
     await screen.findByRole("table", { name: "Staff" });
-    await user.click(within(rowOf("Asha Rao")).getByRole("button", { name: "New password for Asha Rao" }));
-    const dialog = await screen.findByRole("dialog", { name: "New password for Asha Rao" });
-    const password = (within(dialog).getByLabelText(/^Password/) as HTMLInputElement).value;
-    await user.click(within(dialog).getByRole("button", { name: "Change password" }));
-    const details = await within(dialog).findByRole("region", { name: "Login details" });
-    expect(within(details).getByText("asha.rao_41")).toBeInTheDocument();
-    expect(within(details).getByText(password)).toBeInTheDocument();
-    expect(writes(calls)).toHaveLength(1);
-    expect(writes(calls)[0]).toMatchObject({ method: "POST", path: "/staff/members/asha/reset-password", body: { password } });
+    await user.click(within(rowOf("Priya Nair")).getByRole("button", { name: "Resend invitation: Priya Nair" }));
+    const dialog = await screen.findByRole("dialog", { name: "Resend invitation to Priya Nair" });
+    expect(within(dialog).getByLabelText(/^Email/)).toHaveValue("priya@school.example");
+    await user.click(within(dialog).getByRole("button", { name: "Send invitation" }));
+    expect(await within(dialog).findByRole("region", { name: "Login invitation" })).toBeInTheDocument();
+    expect(writes(calls)[0]).toMatchObject({ path: "/staff/members/priya/login", body: { email: "priya@school.example" } });
   });
 
-  it("changes a username (the password stays), and says so", async () => {
-    const { calls, user } = openPage([ASHA], { "PATCH /staff/members/asha/login": (body) => ({ ...ASHA, login: { username: (body as { username: string }).username, isActive: true } }) });
-    await screen.findByRole("table", { name: "Staff" });
-    await user.click(within(rowOf("Asha Rao")).getByRole("button", { name: "Change the username of Asha Rao" }));
-    const dialog = await screen.findByRole("dialog", { name: "Change the username of Asha Rao" });
-    const box = within(dialog).getByLabelText(/^Username/);
-    await user.clear(box);
-    await user.type(box, "asha.desk");
-    await user.click(within(dialog).getByRole("button", { name: "Save username" }));
-    await waitFor(() => expect(writes(calls)).toHaveLength(1));
-    expect(writes(calls)[0]).toMatchObject({ method: "PATCH", path: "/staff/members/asha/login", body: { username: "asha.desk" } });
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Change the username of Asha Rao" })).not.toBeInTheDocument());
-  });
-
-  it("says why when a login could not be made, in the same window", async () => {
-    const { user } = openPage([RAVI], { "POST /staff/members/ravi/login": server(409, "This username is taken. Try another", "USERNAME_TAKEN", [{ path: "login.username", message: "This username is taken. Try another" }]) });
-    await user.click(await screen.findByRole("button", { name: "Make a login for Ravi Menon" }));
-    const dialog = await screen.findByRole("dialog", { name: "Make a login for Ravi Menon" });
-    await user.click(within(dialog).getByRole("button", { name: "Make login" }));
-    expect(await within(dialog).findByText("This username is taken. Try another")).toBeInTheDocument();
-    expect(within(dialog).queryByRole("region", { name: "Login details" })).not.toBeInTheDocument();
+  it("says why when the invitation could not be sent, under the email box, in the same window", async () => {
+    const message = "This email already has a login. Use another email, or leave it empty";
+    const { user } = openPage([RAVI], { "POST /staff/members/ravi/login": server(409, message, "LOGIN_EMAIL_TAKEN", [{ path: "email", message }]) });
+    await user.click(await screen.findByRole("button", { name: "Give login access: Ravi Menon" }));
+    const dialog = await screen.findByRole("dialog", { name: "Give login access to Ravi Menon" });
+    expect(within(dialog).getByLabelText(/^Email/)).toHaveValue("ravi@school.example");
+    await user.click(within(dialog).getByRole("button", { name: "Send invitation" }));
+    expect(await within(dialog).findByText(message)).toBeInTheDocument();
+    expect(within(dialog).queryByRole("region", { name: "Login invitation" })).not.toBeInTheDocument();
   });
 
   it("removes a person who has no login after asking, and a window says they are gone", async () => {
@@ -252,7 +250,7 @@ describe("Staff", () => {
 
     await user.click(within(rowOf("Kabir Khan")).getByRole("button", { name: "Make Kabir Khan active" }));
     const again = await screen.findByRole("dialog", { name: "Kabir Khan is active again" });
-    expect(again).toHaveTextContent("username and password");
+    expect(again).toHaveTextContent("They can sign in again.");
     expect(writes(calls)[1]).toMatchObject({ path: "/staff/members/kabir", body: { isActive: true } });
   });
 
@@ -304,19 +302,19 @@ describe("the Staff page for a person the school allowed (Permissions)", () => {
     await screen.findByText("Asha Rao");
     expect(screen.queryByRole("link", { name: "Add staff" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Asha Rao" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Make .* inactive|New password for|Change the username of|Make a login for|Remove /i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Make .* inactive|Give login access|Resend invitation|Send password link|Remove /i })).not.toBeInTheDocument();
   });
 
   it("allowed to add, they get Add staff; allowed to change, they get the buttons on each row", async () => {
     openPage(undefined, {}, person(["staff.view", "staff.add"]));
     expect(await screen.findByRole("link", { name: "Add staff" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /New password for/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Send password link/ })).not.toBeInTheDocument();
     cleanup();
 
     openPage(undefined, {}, person(["staff.view", "staff.edit"]));
     await screen.findByText("Asha Rao");
     expect(screen.queryByRole("link", { name: "Add staff" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New password for Asha Rao" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send password link: Asha Rao" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Asha Rao" })).toBeInTheDocument();
   });
 });

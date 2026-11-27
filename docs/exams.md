@@ -106,6 +106,102 @@ and the school with the class average. Nobody hears what they did themselves; sa
 * A calendar PATCH without `note` used to wipe the note (round 1 side fix).
 * `hashPassword` costs 12 bcrypt rounds for real passwords and **4 in tests** (`NODE_ENV=test`): the backend suite got several times faster.
 
+## Round 3 (2026-11-26): Exam at the top, whom it is for, the Exam Time Table tab
+
+The user (Hinglish, summarised): Exam gets its **own row at the top** of the menu, with a tab **Exam Time Table** inside it, "where I decide which
+class has which paper on which date at which time". An exam is for **the whole school, some departments or some classes**; dates and **times can
+differ** per class or department, or be the same. "I set the exam 9 to 12, so that day **the school's time is 9 to 12** for those classes (the exam
+has priority), and **parents see the exam time** too; when only some departments have the exam, only their time changes, the other classes keep
+their usual time."
+
+* **Menu**: *Exam* (`/school/exams`, `exams.manage`, schoolWide) right under Dashboard; *Test & Exam* under Manage school is gone. The page has two
+  tabs (`PageTabs` card, in the address `?tab=timetable`): **Exams** (the list, as before) and **Exam Time Table** (`ExamTimetableTab`: a Select of
+  the year's exams, the one that is on first, kept as `?exam=`; its timetable by date; only the chosen exam is read).
+* **Whom it is for** (`Exam.scope` `school` | `departments` | `classes`, `departmentIds`, `classIds`; an older exam has none = the whole school).
+  Schedule exam has **For: Whole school / Departments / Classes** with a MultiSelect (the school's layout is read only for those two). The server
+  keeps only this school's active ones (400 `Choose departments of this school` / `Choose classes of this school`, `Choose the departments` /
+  `Choose the classes` for none). The list and an exam's page carry `audience` (`label` "Whole school" / "Primary and Middle" / "Class 9 and Class 10",
+  `departments`, `classes` in the school's order: every active class, the active classes of its departments, or the classes it names). Papers only for
+  those classes (400 path `classIds` "Class 9 is not in this exam"); narrowing the scope past a class that has papers is 409 `PAPERS_OUTSIDE`
+  "Class 9 has papers in this exam: take them off first". A department's classes are worked out when asked, so a class put in the department later is in.
+* **The time is each paper's**: the dialog's "School hours while it is on" is gone (saving an older exam lets its hours go: `schoolStart/End: null`); a
+  paper is **Starts – Ends** (the minutes are worked out). **The school's time on an exam day** (`days.ts`): a class's day of a full exam has the
+  exam's own hours when an older exam kept them, else **the span of that class's papers that day** (9:00 to 12:00; two papers 9–11 and 12–1 make
+  9 to 1). It reaches the class week on the **parent's child page**, the school's class Timetable page and the teacher's Exams tab (`ClassWeekView`).
+  A class with no paper that day keeps its usual day.
+* **Exam Time Table / the exam's page** share `components/exams/ExamTimetable.tsx`: "Whole school · 8 of 12 classes have a timetable", "Not yet: Class 9,
+  Class 10", Add timetable (only the exam's classes; All classes = all of them; the school's layout is not read), By class / By date, pencil and bin.
+
+**2026-11-27, after the user's screenshot** ("time table mein upar class rahegi, wahan se select karunga, niche table form mein time table, time date
+sab rahe, fir click karke wahan subject dun; tab ka UI Students jaisa"): the page's tabs are the **line** tabs of Students (orange bar, Exams with its
+count). The Exam Time Table tab is now: the exam (Select), a card **Class** with "n of m classes have a timetable" and the exam's classes as chips (a
+green tick on the ones that have papers; `?class=`), **Same for several classes** (the old Add timetable window, for many classes at once), and
+`components/exams/ClassExamTable.tsx`: **a row for every day of the exam** (`examDates`; a Sunday says so), each paper of the class with subject, time
+(9:00 AM to 12:00 PM, the length), marks, topic. **Add subject** on an empty day (or **+** for another paper that day) and a paper's pencil open the row
+for writing: Subject, Starts to Ends, Marks, Topic, **Save** / Cancel; a new paper takes the time of the class's paper before it (`classDayDefaults`).
+The bin takes the paper **off this class** (PATCH `classIds` without it when it is shared, else DELETE). Errors (no subject, end before start, a
+clash from the server) show in the row, which stays open. The subjects are read the first time a day is clicked. The exam's own page keeps the
+By class / By date views (`ExamTimetable`).
+
+### Round 4 (2026-11-27): Students and Rooms tabs, the exam's page only reads, the parent sees roll number and room
+
+The user (after screenshots of the exam's page and the time table tab): "proper class name, accha visible UI; add timetable par modal nahi, mera Exam
+Time Table ka tab khule; ek tab jismein sab bacche hon, filter, naam, father name, roll number (admission ke time nahi diya to yahan de sakein);
+ek tab Room number: kitne se kitne bacche kis room mein; yeh sab parent ko bhi jaayega: exam yahan se yahan tak, time table, roll number, room."
+
+* **Tabs** of the Exam page: Exams | Exam Time Table | **Students** | **Rooms** (`?tab=`); the last three share the exam Select (`ExamWorkspace`), and
+  the exam and class stay when the tab changes. The filter boxes have no required star.
+* **Students** (`ExamStudents`): Class (the exam's), Section (All or one), Search (name, father's name, admission no.); "40 children · 3 without a
+  roll number · 5 without a room"; the table: Roll no. (a box), Student (and admission no.), Father's name, Section, Room. **Number the rest** fills
+  the empty boxes with the next numbers of each section, A to Z; **Save roll numbers** sends only what changed. API `GET /exams/:id/students?classId
+  &sectionId?` (400 "Class 9 is not in this exam"), `PUT /exams/:id/roll-numbers { rows: [{ studentId, rollNumber | null }] }`: the roll number is the
+  **child's own** (`Enrolment.rollNumber`, the admission's, used once in a section in a year); a child not in a class of the exam is 400; a number twice
+  in the list is 400 "Roll number 3 is given twice in Class 5 - A"; another child's is 409 `ROLL_NUMBER_TAKEN` "Roll number 1 of Class 5 - A is Kabir
+  Rao's" (inactive children's numbers stay theirs); everything is checked first, then the numbers are freed and given, so two children can swap.
+* **Rooms** (`ExamRoomsPanel`, model **`ExamRoom`** `{ examId, room, classId, sectionId, fromRoll, toRoll }`, tenantScope, academicYearId): a room
+  holds a run of roll numbers of a class (or one section of a class that has sections); several classes can share a room. The table: Room, Class,
+  Roll numbers, Children (counted from the roll numbers now); **Add room** / pencil write a row (Room, Class, Section, From, To: a new run starts after
+  the class's last one, thirty long), Save / Cancel; the bin takes a run away. On top: "Not in a room yet: Class 5 - A · 12 children · 3 without a roll
+  number". API `GET/POST /exams/:id/rooms`, `PATCH/DELETE /exams/:id/rooms/:roomId`: 400 "Enter the room", "Choose the section", "The last roll number
+  cannot be before the first", "Class 9 is not in this exam"; 409 `ROOM_OVERLAP` "Class 5 - A roll 1 to 30 is in Room 101 already". Deleting the exam
+  deletes its rooms. A child's room is found from their roll number, so a number given later finds its room by itself.
+* **The exam's own page** reads only: the class cards are headed by the classes' names (with "2 papers" and **Edit timetable**, the tab on that class);
+  rows are Day, Subject, Time, Marks, Topic; no pencil or bin on a paper; the classes card has a bar and "Not yet"; **Add timetable** goes to the Exam
+  Time Table tab on the first class without one (no window).
+* **The parent** (`GET /parent/children/:id/exams`) gets `seat: { rollNumber, room }` with each exam; the child's page shows "Roll no. 12" and "Room
+  101" beside the exam's days. An exam for other classes (a department's, some classes') is no longer on a child's or a class's list.
+
+Not done in round 3 (ask): the **school-level** day (teacher check-in late/absent times, the dashboard's "school now" line) does not follow an exam
+day; only each class's day does. Section-level papers are still not built.
+
+### Round 5 (2026-11-27): exam duty, and the Children of a run counted while it is written
+
+The user (screenshots of Rooms and Students): "roll number daala to Children blank aa raha hai, yahan total children dikhao jaise save ke baad aata hai;
+kis room mein kaun sa teacher rahega, duty rahegi, ek room mein 1 ya 2 teacher; jaise hi assign karun teacher ko pata chal jaaye ki mujhe is room mein
+duty hai, aur exam se related time, date, room sab information."
+
+* **Children while a run is written**: `GET /exams/:id/rooms` also sends `rolls: [{ classId, sectionId, numbers }]` (the roll numbers given in each class
+  or section of the exam); the editor row's Children cell (`<output aria-label="Children in this run">`) counts the numbers between From and To of the
+  chosen class/section, "–" until the run is valid.
+* **Exam duty** (model **`ExamDuty`** `{ examId, room, roomKey, teacherIds (1-2) }`, tenantScope, academicYearId, unique per exam + `roomKey` = the room's
+  name in small letters): one or two teachers watch a **room** (the name its runs share) for the **whole exam**; a teacher watches **one room of an exam**.
+  The Rooms table has an **On duty** column: the first row of each room shows its teachers (pencil "Change duty in Room 101") or **Add teacher**; it
+  opens a MultiSelect of the school's teachers (`GET /exams/:id/teachers`, read only then; a teacher on duty in another room is greyed out as "Kiran Rao ·
+  Room 102"; two picked = no third) with Save / Cancel. `PUT /exams/:id/duties { room, teacherIds }` (exams.manage): [] takes them off; 400 "Up to 2
+  teachers in a room", "Room 999 is not in this exam", "Choose teachers of this school"; 409 `DUTY_TAKEN` "Meena Singh is on duty in Room 101 already".
+  `GET /exams/:id/rooms` sends `duties: [{ room, teachers: [{ id, name }] }]`.
+* **The duty follows its room**: a run renamed while it is its room's last one moves the duty to the new name (its teachers hear "Exam duty moved to Hall
+  A", body "was Room 102"; if the new room already has a duty the old one goes); the last run taken away takes the duty ("Exam duty taken off: Room
+  101"); deleting the exam deletes its duties. A room with other runs left keeps its duty.
+* **The teacher** hears it in the bell (`exam.duty`, link `/dashboard`): "Exam duty: Room 101", body "Half-Yearly Exam · 15 Feb to 26 Feb · with Dev
+  Patel"; taken off: "Exam duty taken off: Room 101". Saving the same teachers again tells nobody; the school is not told (it did it). On their home
+  (`MyExamDuties`, `GET /exams/my-duties`, any login; a non-teacher gets []) a card per room of an exam that is not over: the room, the exam and its
+  days, "With Dev Patel", "29 children", the runs ("Class 5 - A · roll 1 to 30"), and a table of the days the room's classes have papers (Day, Time =
+  first paper's start to last one's end, Papers: "Mathematics · Class 5 · 9:00 AM to 12:00 PM"); today is tinted, past days grey. No duty: no card.
+
+Not done (ask): a different teacher **each day** (the duty is for the whole exam); a clash with the teacher's leave on an exam day, or with a duty in
+another exam on the same day; printing a duty chart; staff who are not teachers on duty.
+
 ## Decisions of mine (the user did not choose: change if asked)
 
 * A paper is for **whole classes** (all sections), not sections. Marks are entered section by section.
@@ -122,11 +218,12 @@ and the school with the class average. Nobody hears what they did themselves; sa
 * Grades (A+, B...), rank, report cards and printing a result; a school's own grade scheme.
 * Sections-level papers (a paper for 5-A only); a warning when a subject is set for a class that does not study it.
 * Copying one exam's timetable to another, printing a timetable, exam days on the school calendar page.
-* Invigilation (which teacher sits in which hall), hall tickets, seating.
+* Hall tickets; a duty chart to print (invigilation per room is built: round 5).
 * The teacher's own week (`TimetableTeacherWeek`) does not give way on exam days; only the class's week does.
 
 Tests: `backend/src/main/exams/__tests__/` (`exams`, `examPapers`, `examMarks`, `examViews`, `examDays`, `examScenarios` with the whole journey,
-`exams.isolation`), `backend/src/main/notifications/__tests__/examNotifications.test.ts`, `FrontEnd-React/src/utils/__tests__/exams.test.ts`,
+`exams.isolation` with the rooms, roll numbers and duties, `examScope` for round 3, `examSeating` for round 4, `examDuty` for round 5),
+`FrontEnd-React/src/pages/school/__tests__/ExamStudentsRooms.test.tsx`, `components/dashboard/__tests__/MyExamDuties.test.tsx`, `backend/src/main/notifications/__tests__/examNotifications.test.ts`, `FrontEnd-React/src/utils/__tests__/exams.test.ts`,
 `pages/school/__tests__/Exams.test.tsx`, `ExamDetail.test.tsx`, `SchoolClassTimetable.test.tsx`, `pages/classwork/__tests__/ClassWorkExams.test.tsx`,
 `pages/parent/__tests__/ChildExams.test.tsx`, `ChildPageExams.test.tsx`, `components/schoolClass/__tests__/ClassWeekView.test.tsx`,
 `components/layout/__tests__/NotificationsBell.test.tsx`.

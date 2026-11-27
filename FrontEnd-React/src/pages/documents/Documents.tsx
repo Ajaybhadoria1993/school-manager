@@ -145,7 +145,7 @@ export default function DocumentsPage() {
             <StudentsNotice icon={KINDS.find((k) => k.value === kind)!.icon} tone="primary" title="Choose a class to see its documents" />
           ) : needsExam && exams.length === 0 && !options.isLoading ? (
             <StudentsNotice icon={FileText} tone="warning" title="There is no exam in this session yet">
-              Make the exam in Test &amp; Exam{kind === "report-cards" ? " and enter its marks" : ""}, then its {kind === "report-cards" ? "report" : "admit"} cards are made here.
+              Make the exam in Exam{kind === "report-cards" ? " and enter its marks" : ""}, then its {kind === "report-cards" ? "report" : "admit"} cards are made here.
             </StudentsNotice>
           ) : active.isLoading || active.isFetching ? (
             <Skeleton className="h-64 rounded-2xl" />

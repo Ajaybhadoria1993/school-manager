@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { Provider } from "react-redux";
 import { MemoryRouter } from "react-router";
 import { ToastProvider } from "../../ui/toast-context";
@@ -18,7 +18,7 @@ import { Topbar } from "../Topbar";
  * the medium, the bell and the account.
  */
 
-function openBar(props: { kicker?: string } = {}) {
+function openBar(props: { kicker?: string } = {}, photo: string | null = null) {
   setTokens("token-1", "refresh-1");
   store.dispatch(
     sessionStarted({
@@ -35,7 +35,7 @@ function openBar(props: { kicker?: string } = {}) {
       },
     } as never)
   );
-  fakeApi({ "GET /notifications": () => ({ items: [], unread: 0, hasMore: false }), "GET /academics/academic-years": () => [] });
+  fakeApi({ "GET /notifications": () => ({ items: [], unread: 0, hasMore: false }), "GET /academics/academic-years": () => [], "GET /profile/photo": () => ({ photo }) });
   return render(
     <Provider store={store}>
       <AppThemeProvider>
@@ -65,6 +65,17 @@ afterEach(() => {
 const before = (a: Element, b: Element) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 
 describe("the top bar", () => {
+  it("shows the person's photo on the account button, and their initials when they have none", async () => {
+    openBar({}, "data:image/png;base64,aGk=");
+    const account = screen.getByRole("button", { name: "Account menu" });
+    await waitFor(() => expect(account.querySelector("img")).toHaveAttribute("src", "data:image/png;base64,aGk="));
+    cleanup();
+    for (const api of allApiSlices) store.dispatch(api.util.resetApiState());
+    openBar();
+    expect(screen.getByRole("button", { name: "Account menu" })).toHaveTextContent("AV");
+    expect(screen.getByRole("button", { name: "Account menu" }).querySelector("img")).toBeNull();
+  });
+
   it("names the school and the page at the left", async () => {
     openBar();
     expect(await screen.findByText("Sunrise Public School")).toBeInTheDocument();

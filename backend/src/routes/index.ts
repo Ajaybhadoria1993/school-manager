@@ -18,6 +18,7 @@ import transportRoutes from "../main/transport/routes/v1/transport.routes";
 import feesRoutes from "../main/fees/routes/v1/fees.routes";
 import permissionRoutes from "../main/permissions/routes/v1/permissions.routes";
 import publicRoutes from "../main/tenants/routes/v1/public.routes";
+import profileRoutes from "../main/profile/routes/v1/profile.routes";
 
 // One line per feature module. Add new modules here as they are built.
 const router = Router();
@@ -50,6 +51,8 @@ router.use("/documents", documentsRoutes);
 router.use("/fees", feesRoutes);
 // What each kind of person of the school (Receptionist, Teacher, Parent...) may do: the Permissions page.
 router.use("/permissions", permissionRoutes);
+// The signed-in person's own details and photo (Settings > Personal details).
+router.use("/profile", profileRoutes);
 // What needs no sign-in: a school's logo, for an image tag.
 router.use("/public", publicRoutes);
 

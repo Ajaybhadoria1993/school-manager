@@ -142,7 +142,7 @@ export class ParentService {
     let view;
     try {
       // Read as a teacher reads it: only a published timetable is given.
-      view = await GridService.get(tenantId, "teacher", s.place.classId, s.place.sectionId);
+      view = await GridService.get(tenantId, false, s.place.classId, s.place.sectionId);
     } catch (err) {
       if (err instanceof ApiError && err.statusCode === 404) return null;
       throw err;

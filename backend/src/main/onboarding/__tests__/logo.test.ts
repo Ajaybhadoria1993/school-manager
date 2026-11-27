@@ -129,6 +129,32 @@ describe("the school's logo", () => {
     expect(res.body.code).toBe("ONBOARDING_LOCKED");
   });
 
+  it("an approved school's administrator changes it, and takes it away, from Settings", async () => {
+    const s = await school("approved");
+    const added = await upload(s.token, PNG);
+    expect(added.status).toBe(200);
+    expect(logoUrlOf(added)).toContain(`/public/schools/${s.tenantId}/logo`);
+    expect((await upload(s.token, JPEG)).status).toBe(200);
+    expect((await request(app).get(`/api/v1/public/schools/${s.tenantId}/logo`)).headers["content-type"]).toBe("image/jpeg");
+    const gone = await request(app).delete("/api/v1/onboarding/logo").set(auth(s.token));
+    expect(gone.status).toBe(200);
+    expect(logoUrlOf(gone)).toBe("");
+  });
+
+  it("is the logo of every medium of the school", async () => {
+    const s = await school("approved");
+    const side = await Tenant.create({ name: "Logo School Hindi", nameKey: `side#${s.tenantId}`, slug: `side-${s.tenantId}`, parentTenantId: s.tenantId, medium: { key: "cbse|hindi", label: "Hindi Medium" }, approvalStatus: "approved", source: "signup", contactEmail: "side@school.example" });
+    const sideUpdated = async () => (await Tenant.findById(side._id).select("profile.logoUpdatedAt").lean())?.profile?.logoUpdatedAt;
+    await upload(s.token, PNG);
+    expect(await sideUpdated()).toBeInstanceOf(Date);
+    const shown = await request(app).get(`/api/v1/public/schools/${side._id}/logo`);
+    expect(shown.status).toBe(200);
+    expect(shown.headers["content-type"]).toBe("image/png");
+    await request(app).delete("/api/v1/onboarding/logo").set(auth(s.token));
+    expect(await sideUpdated()).toBeUndefined();
+    expect((await request(app).get(`/api/v1/public/schools/${side._id}/logo`)).status).toBe(404);
+  });
+
   it("does not make a step of the form count as done", async () => {
     const s = await school();
     const res = await upload(s.token, PNG);

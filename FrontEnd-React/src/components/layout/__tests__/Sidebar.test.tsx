@@ -87,7 +87,8 @@ describe("the menu: Timetable below Attendance with its two pages nested under i
   it("keeps class setup under the single Classes entry and Timetable outside Manage school", () => {
     openMenu("/school/classes");
     const names = screen.getAllByRole("link").map((a) => a.textContent);
-    expect(names).toEqual(expect.arrayContaining(["Classes", "Promotion", "Test & Exam", "Teachers"]));
+    // Exam is its own row at the top since 2026-11-26 (it was Test & Exam under Manage school).
+    expect(names).toEqual(expect.arrayContaining(["Classes", "Promotion", "Exam", "Teachers"]));
     expect(names).not.toContain("Active teachers");
     expect(names).not.toContain("Inactive teachers");
     expect(names).not.toContain("Manage Teacher");

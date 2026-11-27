@@ -6,9 +6,10 @@ import { STAFF_MEMBER_ROLES } from "../staff/constants";
  * Accountant, Teacher, Parent, Librarian...), not one by one.
  *
  * A key is "<what>.<action>". `for` says which kinds of person it can be given to: a `staff` member (the school's pages), a `teacher` (their
- * own classes), a `parent` (their own children). Only what has a page for that person is offered: more are added with their pages.
+ * own classes and subjects), a `class_teacher` (what only the class teacher does, in their own class: 2026-11-26), a `parent` (their own
+ * children). Only what has a page for that person is offered: more are added with their pages.
  */
-export type ProfileKind = "staff" | "teacher" | "parent";
+export type ProfileKind = "staff" | "teacher" | "class_teacher" | "parent";
 export interface PermissionDef {
   key: string;
   label: string;
@@ -54,57 +55,35 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
       { key: "staff.edit", label: "Change a staff member's details and login, and make them inactive", for: ["staff"] },
     ],
   },
-  {
-    key: "school",
-    label: "The school's set-up",
-    items: [
-      { key: "classes.view", label: "See classes, sections and their students", for: ["staff"] },
-      { key: "classes.manage", label: "Make and change classes, sections and departments", for: ["staff"] },
-      { key: "years.manage", label: "Set up the next academic year (switching it on stays with the school admin)", for: ["staff"] },
-      { key: "promotion.manage", label: "Prepare the promotion list (approving it stays with the school admin)", for: ["staff"] },
-    ],
-  },
-  {
-    key: "transport",
-    label: "Transport",
-    items: [
-      { key: "transport.view", label: "See the vehicles, drivers and routes", for: ["staff"] },
-      { key: "transport.manage", label: "Add and change vehicles, drivers and routes", for: ["staff"] },
-    ],
-  },
-  {
-    key: "fees",
-    label: "Fees",
-    items: [
-      { key: "fees.view", label: "See the fee heads, each class's fee chart, the concessions and the fee rules", for: ["staff"] },
-      { key: "fees.manage", label: "Set up the fees: the fee heads, each class's fee chart, the concessions and the fee rules; give and take back a student's concession; cancel a receipt", for: ["staff"] },
-      { key: "fees.collect", label: "Collect fees: see a student's fee account, take a payment and give the receipt, see the dues and the day's collection", for: ["staff"] },
-    ],
-  },
-  {
-    key: "documents",
-    label: "Documents",
-    items: [
-      { key: "documents.view", label: "See and print students' ID cards, exam report cards and admit cards, and the certificates issued (a student's photo is changed with Edit students)", for: ["staff"] },
-      { key: "documents.manage", label: "Write the remark on a report card, issue and cancel certificates, and set how the school grades", for: ["staff"] },
-    ],
-  },
+  // In the order of the menu (2026-11-26, user: "jitne bhi features hain sab yahan ho, clearly samajh aaye kis role ko kya de raha hoon").
   {
     key: "attendance",
     label: "Attendance",
     items: [
-      { key: "attendance.view", label: "See students' attendance", for: ["staff", "teacher"] },
-      // Only a class teacher takes attendance (2026-11-17): the school and its staff look, so this is offered to teachers only.
-      { key: "attendance.mark", label: "Take and correct students' attendance", for: ["teacher"] },
+      // A class teacher: their own class's (and a class they were given for a day its class teacher is away). The staff: every class's.
+      { key: "attendance.view", label: "See students' attendance", for: ["staff", "class_teacher"] },
+      // Only a class teacher takes attendance (2026-11-17): the school and its staff look, so this is offered to the class teacher only.
+      { key: "attendance.mark", label: "Take and correct students' attendance", for: ["class_teacher"] },
       { key: "attendance.teachers", label: "See and correct teachers' attendance", for: ["staff"] },
+      // Attendance > Staff (2026-11-26): the sheet only; a staff member marks their own day from their login.
+      { key: "attendance.staff", label: "See the staff's attendance", for: ["staff"] },
     ],
   },
   {
     key: "leaves",
-    label: "Leave requests",
+    label: "Students' leave (sent by parents)",
     items: [
-      { key: "leaves.view", label: "See leave requests", for: ["staff", "teacher"] },
-      { key: "leaves.decide", label: "Approve or reject leave requests", for: ["staff", "teacher"] },
+      { key: "leaves.view", label: "See the leave parents ask for their children", for: ["staff", "class_teacher"] },
+      { key: "leaves.decide", label: "Approve or reject it", for: ["staff", "class_teacher"] },
+    ],
+  },
+  {
+    // Leave & arrangements > Leave requests (2026-11-26): what the teachers and the staff ask from their own login.
+    key: "staffleaves",
+    label: "Teachers' and staff leave",
+    items: [
+      { key: "staffleaves.view", label: "See the leave teachers and staff ask for", for: ["staff"] },
+      { key: "staffleaves.decide", label: "Approve or reject it (never their own)", for: ["staff"] },
     ],
   },
   {
@@ -113,6 +92,8 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
     items: [
       { key: "classwork.view", label: "See the diary, homework, tests and marks", for: ["teacher"] },
       { key: "classwork.manage", label: "Write the diary and homework, make tests and enter their marks", for: ["teacher"] },
+      // Teaching progress (docs/teaching-progress.md): a teacher sees their own classes with classwork.view; this is every class's.
+      { key: "progress.view", label: "See every class's teaching progress: chapters, what was taught and the homework", for: ["staff"] },
     ],
   },
   {
@@ -126,10 +107,45 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
   },
   {
     key: "timetable",
-    label: "Timetable",
+    label: "Timetable and arrangements",
     items: [
       { key: "timetable.view", label: "See timetables", for: ["teacher"] },
-      { key: "timetable.edit", label: "Make and change the school's timings and the class timetables", for: ["staff"] },
+      { key: "timetable.edit", label: "Make and change the school timings, the class timetables and the subjects, and put in a substitute for a teacher who is away", for: ["staff"] },
+    ],
+  },
+  {
+    key: "school",
+    label: "Classes and the school year",
+    items: [
+      { key: "classes.view", label: "See classes, sections and their students", for: ["staff"] },
+      { key: "classes.manage", label: "Make and change classes, sections and departments", for: ["staff"] },
+      { key: "years.manage", label: "Set up the next academic year (switching it on stays with the school admin)", for: ["staff"] },
+      { key: "promotion.manage", label: "Prepare the promotion list (approving it stays with the school admin)", for: ["staff"] },
+    ],
+  },
+  {
+    key: "transport",
+    label: "Transport",
+    items: [
+      { key: "transport.view", label: "See the vehicles, drivers, routes and the live map", for: ["staff"] },
+      { key: "transport.manage", label: "Add and change vehicles, drivers and routes, and who rides each route", for: ["staff"] },
+    ],
+  },
+  {
+    key: "fees",
+    label: "Fees",
+    items: [
+      { key: "fees.collect", label: "Collect fees: take a payment, give the receipt, see the dues and the day's collection", for: ["staff"] },
+      { key: "fees.view", label: "See the fee set-up: fee heads, each class's fee chart, concessions and rules", for: ["staff"] },
+      { key: "fees.manage", label: "Change the fee set-up, give a student a concession, cancel a receipt", for: ["staff"] },
+    ],
+  },
+  {
+    key: "documents",
+    label: "Documents",
+    items: [
+      { key: "documents.view", label: "See and print ID cards, report cards, admit cards and certificates", for: ["staff"] },
+      { key: "documents.manage", label: "Write report card remarks, issue and cancel certificates, set the grading", for: ["staff"] },
     ],
   },
   {
@@ -184,14 +200,17 @@ export const IMPLIES: Readonly<Record<string, string>> = {
   "transport.manage": "transport.view",
   "fees.manage": "fees.view",
   "documents.manage": "documents.view",
+  "staffleaves.decide": "staffleaves.view",
 };
 
 /** The people who can do everything: no checkbox for them. */
 export const FULL_ACCESS_ROLES: readonly string[] = ["school_admin", "principal"];
 
 /**
- * The kinds of person a school sets permissions for: a teacher, a parent, and each kind of staff (Receptionist, Accountant, Librarian...). The
- * principal is not one (they run the school with the admin). "Other" stands for every role the school wrote itself.
+ * The kinds of person a school sets permissions for: a teacher, a class teacher, a parent, and each kind of staff (Receptionist, Accountant,
+ * Librarian...). The principal is not one (they run the school with the admin). "Other" stands for every role the school wrote itself.
+ * A class teacher is not a login of its own: a teacher's login has the Teacher list and the Class teacher list together, and what is on the
+ * class teacher's list works only in the class they are the class teacher of (the services check it: classroom/services/access.ts).
  */
 export interface ProfileDef {
   key: string;
@@ -200,10 +219,22 @@ export interface ProfileDef {
 }
 export const PROFILES: readonly ProfileDef[] = [
   { key: "teacher", label: "Teacher", kind: "teacher" },
+  { key: "class_teacher", label: "Class teacher", kind: "class_teacher" },
   { key: "parent", label: "Parent", kind: "parent" },
   ...STAFF_MEMBER_ROLES.filter((r) => r.key !== "principal").map((r) => ({ key: r.key, label: r.key === "other" ? "Other roles" : r.label, kind: "staff" as const })),
 ];
 export const PROFILE_KEYS: readonly string[] = PROFILES.map((p) => p.key);
+
+/**
+ * A role the school named itself (Staff > Add staff > Other: "Sports coach", "Gardener") is a kind of its own (2026-11-26, user: "Other ka bhi
+ * option rakho, jo other role rahe use bhi permission de sakein"): its key is "other:" and the name, written once however it was typed. Until the
+ * school chooses for it, it follows "Other roles" (the list of every named role without one of its own).
+ */
+export const NAMED_ROLE_PREFIX = "other:";
+export const namedRoleKey = (name: string) => `${NAMED_ROLE_PREFIX}${name.trim().replace(/\s+/g, " ").toLowerCase()}`;
+export const isNamedRoleKey = (key: string) => key.startsWith(NAMED_ROLE_PREFIX);
+/** What can be given to a kind (a named role is staff), or null for a key that is no kind. */
+export const kindOfProfile = (key: string): ProfileKind | null => PROFILES.find((p) => p.key === key)?.kind ?? (isNamedRoleKey(key) ? "staff" : null);
 
 /** The permissions that can be given to a kind of person. */
 export const permissionsFor = (kind: ProfileKind): readonly string[] => PERMISSIONS.filter((p) => p.for.includes(kind)).map((p) => p.key);
@@ -214,18 +245,9 @@ export const permissionsFor = (kind: ProfileKind): readonly string[] => PERMISSI
  */
 const SCHOOL_DEFAULT = ["calendar.view"];
 export const DEFAULT_PERMISSIONS: Readonly<Record<string, readonly string[]>> = {
-  teacher: [
-    "calendar.view",
-    "attendance.view",
-    "attendance.mark",
-    "leaves.view",
-    "leaves.decide",
-    "classwork.view",
-    "classwork.manage",
-    "exams.view",
-    "exams.marks",
-    "timetable.view",
-  ],
+  teacher: ["calendar.view", "classwork.view", "classwork.manage", "exams.view", "exams.marks", "timetable.view"],
+  // What was on every teacher's list and only a class teacher could use (2026-11-26: a list of its own).
+  class_teacher: ["attendance.view", "attendance.mark", "leaves.view", "leaves.decide"],
   // The bus and the fee chart are new and are only the parent's own child's: they start on, and the school unticks them in Permissions.
   parent: ["calendar.view", "child.attendance", "child.timetable", "child.exams", "child.diary", "child.leave", "child.transport", "child.fees", "child.documents"],
   // Fees are new: the accountant starts with them (the fee chart and taking fees are their work), so nobody loses anything.

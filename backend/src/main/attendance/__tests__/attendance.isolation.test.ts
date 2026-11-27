@@ -5,6 +5,7 @@ import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { itKeepsSchoolsApart } from "../../../test/tenantIsolation";
 import { addClass, addTeacher, auth } from "../../../test/timetable";
 import { clock } from "../../../utils/clock";
+import { postStaff } from "../../../test/logins";
 
 const api = "/api/v1/attendance";
 const DAY = "2026-11-05";
@@ -36,10 +37,7 @@ itKeepsSchoolsApart("attendance", {
 itKeepsSchoolsApart("staff attendance", {
   seed: async (a) => {
     await request(app).post("/api/v1/academics/academic-years/initial").set(auth(a.token)).send({ name: "2026-2027", startDate: "2026-04-01", endDate: "2027-03-31" });
-    const made = await request(app)
-      .post("/api/v1/staff/members")
-      .set(auth(a.token))
-      .send({ name: "Asha Rao", role: "receptionist", mobile: "9876543210", login: { username: "iso.asha_41", password: "Recep@Desk1" } });
+    const made = await postStaff(a.token, { name: "Asha Rao", role: "receptionist", mobile: "9876543210", login: { username: "iso.asha_41", password: "Recep@Desk1" } });
     return { staffId: made.body.data.id as string };
   },
   snapshot: async (a) => (await request(app).get(`${api}/staff?from=${DAY}&to=${DAY}`).set(auth(a.token))).body.data,
@@ -51,11 +49,8 @@ itKeepsSchoolsApart("staff attendance", {
 itKeepsSchoolsApart("staff leave", {
   seed: async (a) => {
     await request(app).post("/api/v1/academics/academic-years/initial").set(auth(a.token)).send({ name: "2026-2027", startDate: "2026-04-01", endDate: "2027-03-31" });
-    await request(app)
-      .post("/api/v1/staff/members")
-      .set(auth(a.token))
-      .send({ name: "Asha Rao", role: "receptionist", mobile: "9876543210", login: { username: "iso.leave_42", password: "Recep@Desk1" } });
-    const login = await request(app).post("/api/v1/auth/login").send({ identifier: "iso.leave_42", password: "Recep@Desk1" });
+    await postStaff(a.token, { name: "Asha Rao", role: "receptionist", mobile: "9876543210", login: { username: "iso.leave_42", password: "Recep@Desk1" } });
+    const login = await request(app).post("/api/v1/auth/login").send({ identifier: "iso.leave_42@mail.test", password: "Recep@Desk1" });
     const applied = await request(app).post(`${api}/leaves/mine`).set(auth(login.body.data.accessToken)).send({ fromDate: "2026-11-10", reason: "Family function" });
     return { leaveId: applied.body.data.id as string };
   },

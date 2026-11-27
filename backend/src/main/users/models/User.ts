@@ -44,6 +44,11 @@ export interface IUser {
   emailVerifiedAt?: Date;
   /** Access tokens issued before this moment are rejected (set on password reset/change). */
   passwordChangedAt?: Date;
+  /**
+   * The school gave a teacher or a staff member a login (2026-11-26) and emailed them an invitation, which they have not opened yet: there is no
+   * password to sign in with until they choose one from the link (LoginInviteService). Absent for everyone else.
+   */
+  invitePending?: boolean;
   lastLoginAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -67,6 +72,7 @@ const userSchema = new Schema<IUser>(
     isActive: { type: Boolean, default: true },
     emailVerifiedAt: { type: Date },
     passwordChangedAt: { type: Date },
+    invitePending: { type: Boolean },
     lastLoginAt: { type: Date },
   },
   { timestamps: true }
@@ -94,6 +100,11 @@ export interface PublicUser {
    * list of their kind for anyone else. The menu and the pages follow it; the server checks each request again. Only in a session (sign-in, /me).
    */
   permissions?: string[];
+  /**
+   * Which of `permissions` work on the whole school's pages (the menu's Students, Fees...): all of them for a staff login, none for a parent; for
+   * a teacher, what their staff role gives when they are also on the staff (a Coordinator who takes a class), else none. Only in a session.
+   */
+  schoolPermissions?: string[];
 }
 
 export function toPublicUser(user: Pick<IUser, "_id" | "name" | "email" | "username" | "role" | "tenantId" | "emailVerifiedAt"> & { roleLabel?: string | null }): PublicUser {

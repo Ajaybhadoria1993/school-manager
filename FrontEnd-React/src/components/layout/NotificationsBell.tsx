@@ -12,6 +12,7 @@ const LOOK: Record<string, { icon: LucideIcon; tone: string }> = {
   leave: { icon: CalendarClock, tone: "bg-warning-soft text-warning" },
   attendance: { icon: UserCheck, tone: "bg-success-soft text-success" },
   diary: { icon: BookOpenText, tone: "bg-primary-soft text-primary" },
+  syllabus: { icon: BookOpenText, tone: "bg-danger-soft text-danger" },
   test: { icon: ClipboardList, tone: "bg-info-soft text-info" },
   marks: { icon: ClipboardList, tone: "bg-info-soft text-info" },
   calendar: { icon: CalendarDays, tone: "bg-danger-soft text-danger" },

@@ -2,6 +2,8 @@ import { useState } from "react";
 import { BookOpenText, ChevronLeft, ChevronRight, ClipboardList } from "lucide-react";
 import { useGetChildDiaryQuery, useGetChildTestsQuery } from "../../redux/api/parentApi";
 import { addDays, shortDay } from "../../utils/calendar";
+import { ChapterBar } from "../progress/ChapterBar";
+import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Skeleton } from "../ui/Skeleton";
@@ -42,6 +44,12 @@ export function ChildDiary({ childId }: { childId: string }) {
               {diary.entries.map((e) => (
                 <li key={e.subjectName} className="space-y-1 py-2.5">
                   <p className="font-bold text-foreground">{e.subjectName}</p>
+                  {e.chapter && (
+                    <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-primary-deep">
+                      Chapter {e.chapter.number}: {e.chapter.name}
+                      {e.chapter.done && <Badge tone="success">Finished</Badge>}
+                    </p>
+                  )}
                   {e.taught && (
                     <p className="text-sm text-foreground">
                       <span className="font-semibold text-foreground-muted">Taught: </span>
@@ -52,6 +60,21 @@ export function ChildDiary({ childId }: { childId: string }) {
                     <p className="text-sm text-foreground">
                       <span className="font-semibold text-foreground-muted">Homework: </span>
                       {e.homework}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {diary.progress.length > 0 && (
+            <ul aria-label="Chapters done" className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
+              {diary.progress.map((p) => (
+                <li key={p.subjectName} className="space-y-1">
+                  <p className="text-sm font-bold text-foreground">{p.subjectName}</p>
+                  <ChapterBar done={p.done} total={p.total} />
+                  {p.current && (
+                    <p className="text-xs text-foreground-muted">
+                      Now: {p.current.number}. {p.current.name}
                     </p>
                   )}
                 </li>

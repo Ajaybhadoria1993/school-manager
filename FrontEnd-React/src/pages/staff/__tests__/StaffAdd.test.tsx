@@ -29,13 +29,21 @@ const MADE: StaffMember = {
   employeeCode: null,
   joiningDate: null,
   status: "active",
-  login: { username: "asha.rao_41", isActive: true },
+  login: null,
 };
 
 function openPage(extra: Record<string, Handler> = {}) {
   const calls = fakeApi({
-    "GET /staff/usernames/check": () => ({ available: true, suggestions: [] }),
-    "POST /staff/members": (body) => ({ ...MADE, ...(body as object), login: { username: (body as { login: { username: string } }).login.username, isActive: true } }),
+    // With login access the person's email is their login, Pending, and the answer says where the invitation went.
+    "POST /staff/members": (body) => {
+      const sent = body as { giveLogin?: boolean; email?: string };
+      return {
+        ...MADE,
+        ...sent,
+        login: sent.giveLogin ? { username: null, email: sent.email, isActive: true, pending: true } : null,
+        ...(sent.giveLogin ? { invite: { email: sent.email, inviteExpiresAt: "2026-11-29T10:00:00.000Z", emailSent: true } } : {}),
+      };
+    },
     ...extra,
   });
   const router = createMemoryRouter(
@@ -65,92 +73,82 @@ const writes = (calls: Call[]) => calls.filter((c) => c.method !== "GET");
 const send = (user: ReturnType<typeof userEvent.setup>) => user.click(screen.getByRole("button", { name: "Add staff" }));
 const server = (status: number, message: string, code: string, details: object[]) => () =>
   new Response(JSON.stringify({ success: false, message, code, details }), { status, headers: { "Content-Type": "application/json" } });
-const value = (label: RegExp) => (screen.getByLabelText(label) as HTMLInputElement).value;
 
 async function chooseRole(user: ReturnType<typeof userEvent.setup>, label: string) {
   await user.click(screen.getByRole("button", { name: /Role/ }));
   await user.click(await screen.findByRole("option", { name: label }));
 }
 
-async function typeUsername(user: ReturnType<typeof userEvent.setup>, username: string) {
-  await user.clear(screen.getByLabelText(/^Username/));
-  await user.type(screen.getByLabelText(/^Username/), username);
-}
-
-/** The role and the name (the username and the password are made from it); the username is then a known one. */
+/** The role and the name: all a person needs. */
 async function fillRequired(user: ReturnType<typeof userEvent.setup>) {
   await chooseRole(user, "Receptionist");
   await user.type(screen.getByLabelText(/^Name/), "Asha Rao");
-  await typeUsername(user, "asha.rao_41");
 }
 
+describe("Add staff: a photo (optional)", () => {
+  const photo = () => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "me.png", { type: "image/png" });
+
+  it("a chosen photo is saved for the new staff member, after they are added", async () => {
+    const { calls, user } = openPage({ "PUT /staff/members/new-staff/photo": () => ({ photo: "data:image/png;base64,aGk=" }) });
+    await user.upload(screen.getByLabelText("Choose a photo"), photo());
+    expect(await screen.findByRole("img", { name: /^Photo of/ })).toBeInTheDocument();
+    expect(writes(calls)).toHaveLength(0);
+    await user.type(screen.getByLabelText(/^Name/), "Asha Rao");
+    await chooseRole(user, "Receptionist");
+    await send(user);
+    await screen.findByText("Asha Rao is added");
+    await waitFor(() => expect(writes(calls).map((c) => c.path)).toEqual(["/staff/members", "/staff/members/new-staff/photo"]));
+  });
+
+  it("with none chosen, nothing about a photo is asked", async () => {
+    const { calls, user } = openPage();
+    await user.type(screen.getByLabelText(/^Name/), "Asha Rao");
+    await chooseRole(user, "Receptionist");
+    await send(user);
+    await screen.findByText("Asha Rao is added");
+    expect(calls.some((c) => c.path.endsWith("/photo"))).toBe(false);
+  });
+});
+
 describe("Add staff", () => {
-  it("opens as one page of boxes with a Login (username and a password already made) and the Add staff button, and asks the server for nothing", async () => {
+  it("opens as one page of boxes with Give login access (not ticked), no username or password, and the Add staff button; asks the server only for the school's own roles", async () => {
     const { calls } = openPage();
     expect(await screen.findByRole("heading", { name: "Add staff" })).toBeInTheDocument();
     expect(screen.getByLabelText(/^Name/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Email/)).toBeInTheDocument();
     expect(screen.getByLabelText(/^Mobile number/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Login" })).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Username/)).toHaveValue("");
-    const password = value(/^Password/);
-    expect(password).toHaveLength(10);
-    expect(password).toMatch(/[A-Z]/);
-    expect(password).toMatch(/[a-z]/);
-    expect(password).toMatch(/\d/);
-    expect(password).toMatch(/[^\w\s]/);
+    expect(screen.getByRole("checkbox", { name: "Give login access" })).not.toBeChecked();
+    expect(screen.queryByLabelText(/^Username/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Password/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add staff" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Send invitation" })).not.toBeInTheDocument();
-    expect(calls).toHaveLength(0);
+    // The Role list's roles the school named (2026-11-26): one read, nothing else.
+    await waitFor(() => expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /permissions/roles"]));
   });
 
-  it("makes the username from the name with a number, checks it is free, and keeps it once it is typed", async () => {
+  it("ticked, the email is needed: nothing is sent without it", async () => {
     const { calls, user } = openPage();
     await screen.findByRole("heading", { name: "Add staff" });
-    await user.type(screen.getByLabelText(/^Name/), "Asha Rao");
-    await waitFor(() => expect(value(/^Username/)).toMatch(/^asha\.rao_\d{2}$/));
-    expect(await screen.findByText("Available")).toBeInTheDocument();
-    expect(calls.filter((c) => c.path === "/staff/usernames/check").length).toBeGreaterThan(0);
-    // Once the person types their own, the name no longer changes it.
-    await typeUsername(user, "front.desk");
-    await user.type(screen.getByLabelText(/^Name/), " Devi");
-    expect(value(/^Username/)).toBe("front.desk");
-  });
-
-  it("makes another password with the button inside the box", async () => {
-    const { user } = openPage();
-    await screen.findByRole("heading", { name: "Add staff" });
-    const password = value(/^Password/);
-    await user.click(screen.getByRole("button", { name: "Make another password" }));
-    expect(value(/^Password/)).not.toBe(password);
-  });
-
-  it("a username made from the name that is already somebody's (in any school) is swapped for a free one", async () => {
-    const { user } = openPage({
-      "GET /staff/usernames/check": (_body, query) => (query.get("username") === "asha.rao_41" ? { available: true, suggestions: [] } : { available: false, suggestions: ["asha.rao_41", "asha.rao_73"] }),
-    });
-    await screen.findByRole("heading", { name: "Add staff" });
-    await user.type(screen.getByLabelText(/^Name/), "Asha Rao");
-    await waitFor(() => expect(screen.getByLabelText(/^Username/)).toHaveValue("asha.rao_41"));
-    expect(await screen.findByText("Available")).toBeInTheDocument();
-  });
-
-  it("one the person types that is taken is said so with free ones to click, and nothing is added while it is", async () => {
-    const { calls, user } = openPage({
-      "GET /staff/usernames/check": (_body, query) => (query.get("username") === "asha.rao_41" ? { available: true, suggestions: [] } : { available: false, suggestions: ["asha.rao_41", "asha.rao_73"] }),
-    });
-    await screen.findByRole("heading", { name: "Add staff" });
-    await chooseRole(user, "Receptionist");
-    await user.type(screen.getByLabelText(/^Name/), "Asha Rao");
-    await typeUsername(user, "asha.rao_30");
-    expect(await screen.findByText("This username is taken. Try another")).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Username/)).toHaveAttribute("aria-invalid", "true");
-    expect(value(/^Username/)).toBe("asha.rao_30");
+    await fillRequired(user);
+    await user.click(screen.getByRole("checkbox", { name: "Give login access" }));
     await send(user);
+    expect(await screen.findByText("Enter the email: the login invitation is sent to it")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText(/^Email/)).toHaveFocus());
     expect(writes(calls)).toHaveLength(0);
-    await user.click(screen.getByRole("button", { name: "asha.rao_41" }));
-    expect(value(/^Username/)).toBe("asha.rao_41");
-    expect(await screen.findByText("Available")).toBeInTheDocument();
+  });
+
+  it("ticked with an email: sends login access, and afterwards says where the invitation went and that it is Pending", async () => {
+    const { calls, user } = openPage();
+    await screen.findByRole("heading", { name: "Add staff" });
+    await fillRequired(user);
+    await user.type(screen.getByLabelText(/^Email/), "Asha@School.Example");
+    await user.click(screen.getByRole("checkbox", { name: "Give login access" }));
+    await send(user);
+    expect(await screen.findByRole("heading", { name: "Asha Rao is added" })).toBeInTheDocument();
+    expect(writes(calls)[0].body).toMatchObject({ email: "asha@school.example", giveLogin: true });
+    expect(writes(calls)[0].body).not.toHaveProperty("login");
+    const card = screen.getByRole("region", { name: "Login invitation" });
+    expect(within(card).getByText(/Invitation sent to/)).toHaveTextContent("Invitation sent to asha@school.example");
+    expect(within(card).getByText(/Pending until they open the link/)).toBeInTheDocument();
   });
 
   it("says what each role can do once it is chosen", async () => {
@@ -160,42 +158,35 @@ describe("Add staff", () => {
     expect(await screen.findByText(/who looks at how the school is doing/)).toBeInTheDocument();
   });
 
-  it("will not add with the role, the name, the username or the password missing, marks each in words, and sends nothing", async () => {
+  it("will not add with the role or the name missing, marks each in words, and sends nothing", async () => {
     const { calls, user } = openPage();
     await screen.findByRole("heading", { name: "Add staff" });
-    await user.clear(screen.getByLabelText(/^Password/));
     await send(user);
     // "Choose the role" is also the Select's placeholder: the message is the one in the alert under the box.
     expect(await screen.findByText("Enter the name")).toBeInTheDocument();
     expect(document.getElementById("staff-role-error")).toHaveTextContent("Choose the role");
     expect(document.getElementById("staff-name-error")).toHaveTextContent("Enter the name");
-    expect(document.getElementById("staff-username-error")).toHaveTextContent("A username is 3 to 30 letters, digits, dots or underscores, starting with a letter");
-    expect(document.getElementById("staff-password-error")).toHaveTextContent("Password must be 8-72 characters");
-    // The email is only a contact: it is not asked.
+    // Without login access the email is only a contact: it is not asked.
     expect(document.getElementById("staff-email-error")).toBeNull();
     expect(writes(calls)).toHaveLength(0);
   });
 
-  it("holds a password that is too weak, an email that is not one, and a mobile that is not 10 digits, until they are right", async () => {
+  it("holds an email that is not one and a mobile that is not 10 digits, until they are right", async () => {
     const { calls, user } = openPage();
     await screen.findByRole("heading", { name: "Add staff" });
     await fillRequired(user);
-    await user.clear(screen.getByLabelText(/^Password/));
-    await user.type(screen.getByLabelText(/^Password/), "weak");
     await user.type(screen.getByLabelText(/^Email/), "not-an-email");
     await user.type(screen.getByLabelText(/^Mobile number/), "12345");
     await send(user);
     expect(await screen.findByText("Enter a valid email address")).toBeInTheDocument();
     expect(screen.getByText("Enter a 10-digit mobile number starting with 6, 7, 8 or 9")).toBeInTheDocument();
-    expect(document.getElementById("staff-password-error")).toHaveTextContent("Password must be 8-72 characters");
     expect(writes(calls)).toHaveLength(0);
   });
 
-  it("adds the person in one request with the login the school made (no email needed, empty boxes as null), and shows the username and the password once", async () => {
+  it("adds the person in one request without a login when it is not ticked (no email needed, empty boxes as null)", async () => {
     const { calls, user } = openPage();
     await screen.findByRole("heading", { name: "Add staff" });
     await fillRequired(user);
-    const password = value(/^Password/);
     await send(user);
     expect(await screen.findByRole("heading", { name: "Asha Rao is added" })).toBeInTheDocument();
     expect(writes(calls)).toHaveLength(1);
@@ -206,21 +197,18 @@ describe("Add staff", () => {
         name: "Asha Rao",
         role: "receptionist",
         email: null,
-        login: { username: "asha.rao_41", password },
         mobile: null,
         designation: null,
         address: { line1: null, city: null, state: null, pincode: null },
       },
     });
-    const card = screen.getByRole("region", { name: "Login details" });
-    expect(within(card).getByText("asha.rao_41")).toBeInTheDocument();
-    expect(within(card).getByText(password)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copy login details" })).toBeInTheDocument();
-    expect(screen.queryByText(/invitation/i)).not.toBeInTheDocument();
+    expect(writes(calls)[0].body).not.toHaveProperty("giveLogin");
+    expect(writes(calls)[0].body).not.toHaveProperty("login");
+    expect(screen.queryByRole("region", { name: "Login invitation" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to staff" })).toHaveAttribute("href", "/staff");
   });
 
-  it("sends the email in lower case when one is given (a contact and a second way to sign in)", async () => {
+  it("sends the email in lower case when one is given", async () => {
     const { calls, user } = openPage();
     await screen.findByRole("heading", { name: "Add staff" });
     await fillRequired(user);
@@ -230,32 +218,17 @@ describe("Add staff", () => {
     expect(writes(calls)[0].body).toMatchObject({ email: "asha@school.example" });
   });
 
-  it("starts a clean form with a new password from Add another", async () => {
+  it("starts a clean form from Add another", async () => {
     const { user } = openPage();
     await screen.findByRole("heading", { name: "Add staff" });
     await fillRequired(user);
-    const first = value(/^Password/);
+    await user.type(screen.getByLabelText(/^Email/), "asha@school.example");
+    await user.click(screen.getByRole("checkbox", { name: "Give login access" }));
     await send(user);
     await user.click(await screen.findByRole("button", { name: "Add another" }));
     expect(await screen.findByLabelText(/^Name/)).toHaveValue("");
-    expect(screen.getByLabelText(/^Username/)).toHaveValue("");
     expect(screen.getByLabelText(/^Email/)).toHaveValue("");
-    expect(value(/^Password/)).not.toBe(first);
-    expect(value(/^Password/)).toHaveLength(10);
-  });
-
-  it("puts the server's refusal of a username under the username box (a taken one the check could not see)", async () => {
-    const { user } = openPage({
-      "POST /staff/members": server(409, "This username is taken. Try another, for example asha.rao_52", "USERNAME_TAKEN", [{ path: "login.username", message: "This username is taken. Try another, for example asha.rao_52" }]),
-    });
-    await screen.findByRole("heading", { name: "Add staff" });
-    await fillRequired(user);
-    await send(user);
-    expect(await screen.findByText("This username is taken. Try another, for example asha.rao_52")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByLabelText(/^Username/)).toHaveFocus());
-    // Typing in the box clears the refusal.
-    await user.type(screen.getByLabelText(/^Username/), "x");
-    expect(screen.queryByText("This username is taken. Try another, for example asha.rao_52")).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Give login access" })).not.toBeChecked();
   });
 
   it("puts the server's refusal of an email that already has a login under the email box", async () => {
@@ -265,9 +238,13 @@ describe("Add staff", () => {
     await screen.findByRole("heading", { name: "Add staff" });
     await fillRequired(user);
     await user.type(screen.getByLabelText(/^Email/), "asha@school.example");
+    await user.click(screen.getByRole("checkbox", { name: "Give login access" }));
     await send(user);
     expect(await screen.findByText("This email already has a login. Use another email, or leave it empty")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByLabelText(/^Email/)).toHaveFocus());
+    // Typing in the box clears the refusal.
+    await user.type(screen.getByLabelText(/^Email/), "x");
+    expect(screen.queryByText("This email already has a login. Use another email, or leave it empty")).not.toBeInTheDocument();
   });
 
   it("shows the server's words when the refusal names no box", async () => {
@@ -282,10 +259,10 @@ describe("Add staff", () => {
 describe("Add staff: the order of the boxes, the roles, Other, and a person who also teaches (2026-11-08)", () => {
   const openWithSubjects = (extra: Record<string, Handler> = {}) => openPage({ "GET /subjects": () => ({ items: [MATHS, ENGLISH] }), ...extra });
 
-  it("asks the person first (name, date of birth, gender, mobile, email), then the address, then the role, the designation and the employee code, and the login last", async () => {
+  it("asks the person first (name, date of birth, gender, mobile, email, login access), then the address, then the role, the designation and the employee code", async () => {
     openWithSubjects();
     await screen.findByRole("heading", { name: "Add staff" });
-    const ids = ["name", "dateOfBirth", "gender", "mobile", "email", "addressLine1", "role", "designation", "employeeCode", "joiningDate", "username", "password"].map((key) => `staff-${key}-label`);
+    const ids = ["name", "dateOfBirth", "gender", "mobile", "email", "giveLogin", "addressLine1", "role", "designation", "employeeCode", "joiningDate"].map((key) => (key === "giveLogin" ? "staff-giveLogin" : `staff-${key}-label`));
     const labels = ids.map((id) => document.getElementById(id));
     labels.forEach((label, i) => expect(label, ids[i]).not.toBeNull());
     for (let i = 1; i < labels.length; i++) {
@@ -322,6 +299,23 @@ describe("Add staff: the order of the boxes, the roles, Other, and a person who 
     expect(options).not.toContain("Teacher");
   });
 
+  it("the roles the school made (Permissions > New role, 2026-11-26) are in the Role list before Other; one is sent as Other with its name", async () => {
+    const { calls, user } = openWithSubjects({
+      "GET /permissions/roles": () => ({ items: [{ key: "other:gardener", label: "Gardener" }, { key: "other:sports coach", label: "Sports Coach" }] }),
+    });
+    await screen.findByRole("heading", { name: "Add staff" });
+    await user.click(screen.getByRole("button", { name: /Role/ }));
+    const options = (await screen.findAllByRole("option")).map((o) => o.textContent?.trim());
+    expect(options.slice(-3)).toEqual(["Gardener", "Sports Coach", "Other"]);
+    await user.click(screen.getByRole("option", { name: "Sports Coach" }));
+    // Its name is known: no Role name box.
+    expect(screen.queryByLabelText(/^Role name/)).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/^Name/), "Asha Rao");
+    await send(user);
+    expect(await screen.findByRole("heading", { name: "Asha Rao is added" })).toBeInTheDocument();
+    expect(writes(calls)[0].body).toMatchObject({ role: "other", roleOther: "Sports Coach" });
+  });
+
   it("Other asks for a role name of the school's own (in a box that only appears for it), and sends it", async () => {
     const { calls, user } = openWithSubjects();
     await screen.findByRole("heading", { name: "Add staff" });
@@ -329,7 +323,6 @@ describe("Add staff: the order of the boxes, the roles, Other, and a person who 
     await chooseRole(user, "Other");
     const box = await screen.findByLabelText(/^Role name/);
     await user.type(screen.getByLabelText(/^Name/), "Asha Rao");
-    await typeUsername(user, "asha.rao_41");
     await send(user);
     expect(document.getElementById("staff-roleOther-error")).toHaveTextContent("Enter the role's name");
     expect(writes(calls)).toHaveLength(0);

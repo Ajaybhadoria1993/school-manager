@@ -8,7 +8,7 @@ import { Card } from "../ui/Card";
 export const None = () => <span className="font-normal text-foreground-muted">Not given</span>;
 
 /** One block of the page: a coloured mark and a title, then rows. */
-export function Block({ icon: Icon, tone, title, index = 0, children }: { icon: LucideIcon; tone: Tone; title: string; index?: number; children: ReactNode }) {
+export function Block({ icon: Icon, tone, title, index = 0, lead, children }: { icon: LucideIcon; tone: Tone; title: string; index?: number; /** Above the rows (a photo). */ lead?: ReactNode; children: ReactNode }) {
   const t = TONES[tone];
   return (
     <Card role="region" aria-label={title} className="stagger-item relative overflow-hidden p-5" style={{ "--i": index } as React.CSSProperties}>
@@ -19,6 +19,7 @@ export function Block({ icon: Icon, tone, title, index = 0, children }: { icon: 
         </span>
         {title}
       </h2>
+      {lead && <div className="relative mt-4">{lead}</div>}
       <dl className="relative mt-4">{children}</dl>
     </Card>
   );

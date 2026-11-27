@@ -31,7 +31,11 @@ const ASHA: ChildDetail = {
   records: {},
   guardians: [],
 };
-const DIARY: ChildDiary = { date: "2026-11-04", entries: [{ subjectName: "Mathematics", taught: "Fractions: adding", homework: "Page 42", writtenBy: "Meena Singh" }] };
+const DIARY: ChildDiary = {
+  date: "2026-11-04",
+  entries: [{ subjectName: "Mathematics", chapter: { number: 2, name: "Fractions", done: false }, taught: "Fractions: adding", homework: "Page 42", writtenBy: "Meena Singh" }],
+  progress: [{ subjectName: "Mathematics", total: 12, done: 1, current: { number: 2, name: "Fractions" } }],
+};
 const TESTS: ChildTests = {
   upcoming: [{ id: "t2", subjectName: "English", date: "2026-11-10", topic: "Poems", maxMarks: 25 }],
   results: [
@@ -96,6 +100,15 @@ describe("the child's diary", () => {
     await waitFor(() => expect(diary).toHaveTextContent("Mathematics"));
     expect(diary).toHaveTextContent("Fractions: adding");
     expect(diary).toHaveTextContent("Page 42");
+  });
+
+  it("names the chapter of the day and shows how far each subject is", async () => {
+    openPage();
+    const diary = await screen.findByRole("region", { name: "Diary" });
+    await waitFor(() => expect(diary).toHaveTextContent("Chapter 2: Fractions"));
+    const progress = within(diary).getByRole("list", { name: "Chapters done" });
+    expect(progress).toHaveTextContent("Mathematics");
+    expect(progress).toHaveTextContent("1 of 12");
   });
 
   it("goes to the day before in one click", async () => {

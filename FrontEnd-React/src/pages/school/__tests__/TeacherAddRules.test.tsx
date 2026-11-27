@@ -17,7 +17,7 @@ function openPage(fields: Partial<TeacherFieldRules>) {
     "GET /staff/teachers/settings": () => ({ fields: { ...DEFAULT_TEACHER_RULES, ...fields }, customFields: [], exportColumns: [], exportIsDefault: true }),
     "GET /subjects": () => ({ items: [MATHS, ENGLISH] }),
     "GET /staff/usernames/check": () => ({ available: true, suggestions: [] }),
-    "POST /staff/teachers": (body) => ({ ...MEENA, id: "new-teacher", ...(body as object), login: { username: "meena.singh", isActive: true } }),
+    "POST /staff/teachers": (body) => ({ ...MEENA, id: "new-teacher", ...(body as object), login: { username: "meena.singh", email: null, isActive: true, pending: false } }),
   });
   const router = createMemoryRouter([{ path: "/teachers/new", element: <TeacherAddPage /> }], { initialEntries: ["/teachers/new"] });
   render(
@@ -99,7 +99,7 @@ describe("Add teacher: what the school asks", () => {
     await next(user);
     await next(user);
     expect(current()).toContain("Teaching");
-    await next(user);
+    await user.click(screen.getByRole("button", { name: "Add teacher" }));
     expect(await screen.findByText("Choose at least one subject")).toBeInTheDocument();
     expect(current()).toContain("Teaching");
   });

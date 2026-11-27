@@ -1,4 +1,9 @@
-import { Check, Moon, Palette, Sun } from "lucide-react";
+import { useSearchParams } from "react-router";
+import { Building2, Check, Moon, Palette, Sun, UserRound, type LucideIcon } from "lucide-react";
+import { PROFILE_ROLES } from "../../constants/profile";
+import { useAuth } from "../../hooks/useAuth";
+import { PersonalDetailsTab } from "../../components/settings/PersonalDetailsTab";
+import { SchoolDetailsTab } from "../../components/settings/SchoolDetailsTab";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -9,29 +14,60 @@ import { cn } from "../../utils/helpers";
 const choice =
   "flex min-h-14 items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 
+type Tab = "school" | "personal" | "appearance";
+
+/**
+ * Settings: **School details** (the school's administrator: the logo and the school's details), **Personal details** (everyone who works at
+ * the school: their photo and details, docs/profiles.md) and **Appearance** (this device's look). The tab is kept in the address.
+ */
 export default function SettingsPage() {
+  const role = useAuth().user?.role;
+  const [params, setParams] = useSearchParams();
+  const tabs: { id: Tab; label: string; icon: LucideIcon }[] = [
+    ...(role === "school_admin" ? [{ id: "school" as const, label: "School details", icon: Building2 }] : []),
+    ...(role && PROFILE_ROLES.includes(role) ? [{ id: "personal" as const, label: "Personal details", icon: UserRound }] : []),
+    { id: "appearance", label: "Appearance", icon: Palette },
+  ];
+  const tab = tabs.find((t) => t.id === params.get("tab"))?.id ?? tabs[0].id;
+
+  return (
+    <div className="mx-auto w-full max-w-6xl space-y-6">
+      <StudentFormHeader title="Settings" crumbs={[{ label: "Dashboard", to: "/dashboard" }]} />
+
+      <div className="grid items-start gap-5 xl:grid-cols-[15rem_minmax(0,1fr)]">
+        <Card className="p-3">
+          <nav aria-label="Settings sections" className="flex flex-wrap gap-1 xl:flex-col">
+            {tabs.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                aria-current={tab === id ? "page" : undefined}
+                onClick={() => setParams({ tab: id }, { replace: true })}
+                className={cn(
+                  "flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20",
+                  tab === id ? "bg-primary-soft text-primary-deep" : "text-foreground-muted hover:bg-surface-muted hover:text-foreground"
+                )}
+              >
+                <Icon className="size-4" aria-hidden />
+                {label}
+              </button>
+            ))}
+          </nav>
+        </Card>
+
+        {tab === "school" && <SchoolDetailsTab />}
+        {tab === "personal" && <PersonalDetailsTab />}
+        {tab === "appearance" && <Appearance />}
+      </div>
+    </div>
+  );
+}
+
+function Appearance() {
   const { mode, accent, theme, setMode, setAccent, setTheme } = useAppTheme();
   const pickedPreset = ACCENT_PRESETS.some((preset) => preset.color.toLowerCase() === accent.toLowerCase());
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6">
-      <StudentFormHeader
-        title="Settings"
-        subtitle="Personalize how EduShiksha looks on this device."
-        crumbs={[{ label: "Dashboard", to: "/dashboard" }]}
-      />
-
-      <div className="grid items-start gap-5 xl:grid-cols-[15rem_minmax(0,1fr)]">
-        <Card className="p-4">
-          <p className="px-2 pb-3 text-xs font-bold uppercase tracking-wide text-foreground-muted">Preferences</p>
-          <div className="rounded-xl bg-primary-soft px-3 py-2.5 text-sm font-semibold text-primary-deep" aria-current="page">
-            <span className="inline-flex items-center gap-2">
-              <Palette className="size-4" aria-hidden />
-              Appearance
-            </span>
-          </div>
-        </Card>
-
         <Card className="overflow-hidden p-0">
           <div className="flex items-center gap-3 border-b border-border px-5 py-4 sm:px-6">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
@@ -166,7 +202,5 @@ export default function SettingsPage() {
             </div>
           </div>
         </Card>
-      </div>
-    </div>
   );
 }

@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import { SchoolClass } from "../../academics/models/SchoolClass";
 import { AcademicYearService } from "../../academics/services/academicYear.service";
 import { accessTo } from "../../classroom/services/access";
 import { childrenOf } from "../../classroom/services/children";
@@ -12,9 +13,12 @@ import { minutesToClock } from "../../timetable/time";
 import { Exam, type IExam } from "../models/Exam";
 import { ExamMark } from "../models/ExamMark";
 import { ExamPaper, type IExamPaper } from "../models/ExamPaper";
+import { ExamRoom } from "../models/ExamRoom";
 import type { ChildExamsQuery, ClassExamsQuery } from "../schemas/exams.schemas";
+import { isInAudience } from "./audience";
 import { examWeekOf, weekOf, type ExamWeekDto } from "./days";
-import { asId, toDay, toExamDto, type ExamDto } from "./dto";
+import { roomFor } from "./seating.service";
+import { EXAMS_SCHOOL_WIDE, asId, toDay, toExamDto, type ExamDto } from "./dto";
 import { holidayNamesOn } from "./holidays";
 import { sortExams } from "./status";
 
@@ -51,7 +55,13 @@ export interface ChildExamDto extends ExamDto {
   papers: ChildPaperDto[];
   /** The marks of the papers with a result (not absent), out of what those papers are out of; null when there is none. */
   summary: { marks: number; outOf: number; percent: number; papers: number } | null;
+  /** Where the child sits for it (2026-11-27): their roll number in their class and the room that holds it; null for a child with no class this year. */
+  seat: { rollNumber: number | null; room: string | null } | null;
 }
+
+/** The exams a class reads: the ones for it (the whole school, its department, the class itself), and any other that has a paper for it. */
+const forClass = (exams: IExam[], klass: { _id: Types.ObjectId; departmentId: Types.ObjectId | null } | null, withPapers: Set<string>) =>
+  exams.filter((e) => withPapers.has(e._id.toString()) || (klass !== null && isInAudience(e, klass)));
 
 const percentOf = (marks: number, max: number) => Math.round((marks / max) * 100);
 
@@ -94,15 +104,18 @@ const groupByExam = <T extends { examId: Types.ObjectId }, P>(papers: T[], make:
 export class ClassExamsService {
   static async get(tenantId: string, caller: Caller, query: ClassExamsQuery): Promise<{ label: string; items: ClassExamDto[]; week: ExamWeekDto }> {
     const unit = await resolveUnit(tenantId, query.classId, query.sectionId === "none" ? null : query.sectionId);
-    const access = await accessTo(tenantId, caller, unit);
+    const access = await accessTo(tenantId, caller, unit, EXAMS_SCHOOL_WIDE);
     const school = asId(tenantId);
     const place = { classId: asId(unit.classId), sectionId: unit.sectionId ? asId(unit.sectionId) : null };
-    const [exams, papers, children, marked] = await Promise.all([
+    const [allExams, papers, children, marked, klass] = await Promise.all([
       Exam.find({ tenantId: school, academicYearId: unit.yearId }).lean(),
       ExamPaper.find({ tenantId: school, academicYearId: unit.yearId, classIds: place.classId }).lean(),
       childrenOf(tenantId, unit),
       ExamMark.aggregate<{ _id: Types.ObjectId; n: number }>([{ $match: { tenantId: school, academicYearId: unit.yearId, ...place } }, { $group: { _id: "$paperId", n: { $sum: 1 } } }]),
+      SchoolClass.findOne({ tenantId: school, _id: place.classId }).select("departmentId").lean(),
     ]);
+    // An exam for other classes (a department's, some classes') is not this class's (2026-11-26).
+    const exams = forClass(allExams, klass, new Set(papers.map((p) => p.examId.toString())));
     const [names, holidays] = await Promise.all([subjectNames(school, papers.map((p) => p.subjectId)), holidayNamesOn(tenantId, [...new Set(papers.map((p) => toDay(p.date)))])]);
     const markedBy = new Map(marked.map((m) => [m._id.toString(), m.n]));
     const today = todayInIndia();
@@ -134,15 +147,24 @@ export class ChildExamsService {
     // The child's results stay theirs when they change class: their marked papers are read whatever class they are in now.
     const results = await ExamMark.find({ tenantId: school, academicYearId: yearId, studentId: student._id }).lean();
     const resultOf = new Map(results.map((r) => [r.paperId.toString(), r]));
-    const [exams, papers] = await Promise.all([
+    const [allExams, papers, klass] = await Promise.all([
       Exam.find({ tenantId: school, academicYearId: yearId }).lean(),
       ExamPaper.find({
         tenantId: school,
         academicYearId: yearId,
         $or: [...(place ? [{ classIds: asId(place.classId) }] : []), { _id: { $in: results.map((r) => r.paperId) } }],
       }).lean(),
+      place ? SchoolClass.findOne({ tenantId: school, _id: asId(place.classId) }).select("departmentId").lean() : null,
     ]);
-    const names = await subjectNames(school, papers.map((p) => p.subjectId));
+    // Only the exams of the child's class (2026-11-26), and any other the child has a paper or a result in.
+    const exams = forClass(allExams, klass, new Set(papers.map((p) => p.examId.toString())));
+    const [names, rooms] = await Promise.all([
+      subjectNames(school, papers.map((p) => p.subjectId)),
+      place ? ExamRoom.find({ tenantId: school, examId: { $in: exams.map((e) => e._id) }, classId: asId(place.classId) }).lean() : [],
+    ]);
+    // Where the child sits for each exam: their roll number, and the room whose run holds it (2026-11-27).
+    const seatOf = (examId: string) =>
+      place ? { rollNumber: place.rollNumber ?? null, room: roomFor(rooms.filter((r) => r.examId.toString() === examId), { classId: place.classId, sectionId: place.sectionId }, place.rollNumber ?? null) } : null;
     const items = examsWith<ChildPaperDto>(
       exams,
       groupByExam(papers, (p) => {
@@ -158,7 +180,7 @@ export class ChildExamsService {
       const counted = e.papers.filter((p) => p.result && !p.result.absent && p.result.marks !== null && p.maxMarks);
       const marks = counted.reduce((sum, p) => sum + p.result!.marks!, 0);
       const outOf = counted.reduce((sum, p) => sum + p.maxMarks!, 0);
-      return { ...e, summary: counted.length === 0 ? null : { marks, outOf, percent: percentOf(marks, outOf), papers: counted.length } };
+      return { ...e, summary: counted.length === 0 ? null : { marks, outOf, percent: percentOf(marks, outOf), papers: counted.length }, seat: seatOf(e.id) };
     });
     const week = place ? await examWeekOf(tenantId, yearId, place.classId, query.date ?? today) : { ...weekOf(query.date ?? today), days: [] };
     return { items, week };

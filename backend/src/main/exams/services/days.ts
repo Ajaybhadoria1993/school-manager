@@ -9,7 +9,8 @@ import { asId, fromDay, toDay } from "./dto";
 /**
  * The class timetable gives way on exam days (2026-11-06). The timetable is a week of lessons that repeats; on a day the class has a
  * paper, that day is different. For one class and one week (Monday to Sunday) this says which days those are: a day of a **full exam**
- * (Half-yearly...) takes the place of the day's lessons and has the school's hours the exam gave; a **test** (Unit, Class test) goes on
+ * (Half-yearly...) takes the place of the day's lessons and has the school's hours the exam gave or, when it gave none, the time of the class's
+ * papers that day (2026-11-26: a class writing 9 to 12 is at school 9 to 12; a class with no paper keeps its day); a **test** (Unit, Class test) goes on
  * top of a day that runs as usual. A day with no paper of the class is not listed: it is a day as usual.
  */
 
@@ -59,6 +60,9 @@ export async function examWeekOf(tenantId: string, yearId: Types.ObjectId, class
   const subjectName = new Map(subjects.map((s) => [s._id.toString(), s.name]));
 
   const days = new Map<string, ExamDayDto>();
+  // The span of the class's papers of a full exam on each day: the school's time that day when the exam keeps no hours of its own (2026-11-26,
+  // the user: "9 se 12 exam hai to school ka time us din yahi ho jayega").
+  const spans = new Map<string, { start: number; end: number }>();
   for (const p of papers) {
     const exam = examOf.get(p.examId.toString());
     if (!exam) continue;
@@ -71,6 +75,8 @@ export async function examWeekOf(tenantId: string, yearId: Types.ObjectId, class
     if (full) {
       entry.replacesLessons = true;
       if (!entry.schoolHours && exam.schoolStart !== null && exam.schoolEnd !== null) entry.schoolHours = { start: minutesToClock(exam.schoolStart), end: minutesToClock(exam.schoolEnd) };
+      const span = spans.get(date);
+      spans.set(date, { start: Math.min(span?.start ?? p.start, p.start), end: Math.max(span?.end ?? 0, p.start + p.duration) });
     }
     entry.papers.push({
       id: p._id.toString(),
@@ -82,6 +88,10 @@ export async function examWeekOf(tenantId: string, yearId: Types.ObjectId, class
       maxMarks: p.maxMarks ?? null,
     });
     days.set(date, entry);
+  }
+  for (const entry of days.values()) {
+    const span = spans.get(entry.date);
+    if (!entry.schoolHours && span) entry.schoolHours = { start: minutesToClock(span.start), end: minutesToClock(span.end) };
   }
   return { from, to, days: [...days.values()].sort((a, b) => a.date.localeCompare(b.date)) };
 }

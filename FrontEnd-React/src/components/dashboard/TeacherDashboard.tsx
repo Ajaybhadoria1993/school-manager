@@ -11,6 +11,7 @@ import { Card } from "../ui/Card";
 import { Skeleton } from "../ui/Skeleton";
 import { MyAttendanceCard } from "./MyAttendanceCard";
 import { MyClasses } from "./MyClasses";
+import { MyExamDuties } from "./MyExamDuties";
 import { WelcomeHeader } from "./school/WelcomeHeader";
 
 /**
@@ -32,6 +33,9 @@ export function TeacherDashboard() {
 
       {/* The teacher's own attendance first: they mark themselves present here (2026-11-06). */}
       <MyAttendanceCard />
+
+      {/* The rooms they watch in an exam (2026-11-27): nothing when they have none. */}
+      <MyExamDuties />
 
       <MyClasses />
 
@@ -59,8 +63,8 @@ export function TeacherDashboard() {
             )}
           </Row>
           {t.login && (
-            <Row label="Your username">
-              <span className="font-mono">{t.login.username}</span>
+            <Row label="You sign in with">
+              <span className={t.login.email ? undefined : "font-mono"}>{t.login.email ?? t.login.username}</span>
             </Row>
           )}
         </Block>

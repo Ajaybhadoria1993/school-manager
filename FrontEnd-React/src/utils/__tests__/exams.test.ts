@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Exam, ExamPaper } from "../../types";
-import { clock12, defaultExamName, durationText, endClock, examDays, groupByDate, groupByTimetable, isHalfMark, nextRowDefaults, resultText, weekdayDay } from "../exams";
+import { classDayDefaults, clock12, defaultExamName, durationText, endClock, examDates, examDays, groupByDate, groupByTimetable, isHalfMark, nextRowDefaults, resultText, weekdayDay } from "../exams";
 
 const klass = (n: number) => ({ id: `c${n}`, name: `Class ${n}`, order: n });
 const MATHS = { id: "s1", name: "Mathematics" };
@@ -107,6 +107,25 @@ describe("the next row of a timetable", () => {
     expect(nextRowDefaults({ date: "2026-09-15", startTime: "09:30", durationMinutes: 120 }, exam)).toEqual({ date: "2026-09-16", startTime: "09:30", durationMinutes: 120 });
     expect(nextRowDefaults({ date: "2026-09-19", startTime: "09:00", durationMinutes: 120 }, exam).date).toBe("2026-09-21");
     expect(nextRowDefaults({ date: "2026-09-26", startTime: "09:00", durationMinutes: 120 }, exam).date).toBe("2026-09-26");
+  });
+});
+
+describe("one class's timetable, a day at a time (2026-11-27)", () => {
+  it("every day of the exam, the first to the last", () => {
+    expect(examDates("2026-11-05", "2026-11-09")).toEqual(["2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09"]);
+    expect(examDates("2026-11-30", "2026-11-30")).toEqual(["2026-11-30"]);
+    expect(examDates("2026-12-30", "2027-01-02")).toEqual(["2026-12-30", "2026-12-31", "2027-01-01", "2027-01-02"]);
+  });
+
+  it("a new paper of a class takes the time of the class's paper before it (else its first one); with none, the school's start for 3 hours, a test 40 minutes", () => {
+    const exam = { full: true, schoolHours: null } as Pick<Exam, "full" | "schoolHours">;
+    const before = paper([1], MATHS, "2026-11-05", "10:00", 120);
+    const after = paper([1], ENGLISH, "2026-11-09", "08:30", 90);
+    expect(classDayDefaults(exam, [after, before], "2026-11-06")).toEqual({ startTime: "10:00", endTime: "12:00" });
+    expect(classDayDefaults(exam, [after], "2026-11-06")).toEqual({ startTime: "08:30", endTime: "10:00" });
+    expect(classDayDefaults(exam, [], "2026-11-06")).toEqual({ startTime: "09:00", endTime: "12:00" });
+    expect(classDayDefaults({ full: false, schoolHours: null }, [], "2026-11-06")).toEqual({ startTime: "09:00", endTime: "09:40" });
+    expect(classDayDefaults({ full: true, schoolHours: { start: "08:00", end: "12:30" } }, [], "2026-11-06")).toEqual({ startTime: "08:00", endTime: "11:00" });
   });
 });
 

@@ -29,6 +29,11 @@ export interface AuthUser {
    * anyone else (utils/permissions.ts `can`). Sent with the session; the server checks every request again.
    */
   permissions?: string[];
+  /**
+   * Which of `permissions` work on the whole school's pages (Students, Fees, every class's attendance): all of them for a staff login, none for a
+   * parent; for a teacher, what their staff role gives when they are also on the staff (a Coordinator who takes a class, 2026-11-26).
+   */
+  schoolPermissions?: string[];
 }
 
 /** Returned by login, reset-password and accept-invite. */
@@ -53,6 +58,14 @@ export interface InviteInfo {
   expiresAt: string;
   /** "invite": the platform team invited this school. "signup": the visitor registered from the login page. */
   kind: "invite" | "signup";
+}
+
+/** What the "Set your password" page shows for the invitation a teacher or a staff member got with their login (2026-11-26). */
+export interface LoginInviteInfo {
+  name: string;
+  email: string;
+  schoolName: string;
+  expiresAt: string;
 }
 
 /** Why a session was ended for the user (shown on the sign-in page). */

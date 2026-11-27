@@ -3,7 +3,7 @@ import request from "supertest";
 import app from "../../../app";
 import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { itKeepsSchoolsApart } from "../../../test/tenantIsolation";
-import { addClass, addSubject, auth } from "../../../test/timetable";
+import { addClass, addSubject, addTeacher, auth } from "../../../test/timetable";
 
 const api = "/api/v1/exams";
 
@@ -23,7 +23,12 @@ itKeepsSchoolsApart("exams", {
         .set(auth(a.token))
         .send({ classIds: [klass.id], papers: [{ subjectId, date: "2026-09-15", startTime: "09:00", durationMinutes: 180, maxMarks: 50 }] })
     ).body.data.items[0];
-    return { examId: exam.id as string, paperId: paper.id as string, classId: klass.id as string, subjectId };
+    // Where its children sit (2026-11-27).
+    const room = (await request(app).post(`${api}/${exam.id}/rooms`).set(auth(a.token)).send({ room: "Room 101", classId: klass.id, sectionId: null, fromRoll: 1, toRoll: 30 })).body.data;
+    // Who watches it (2026-11-27).
+    const teacherId = await addTeacher(a.token, "Meena Singh");
+    await request(app).put(`${api}/${exam.id}/duties`).set(auth(a.token)).send({ room: "Room 101", teacherIds: [teacherId] });
+    return { examId: exam.id as string, paperId: paper.id as string, classId: klass.id as string, subjectId, roomId: room.id as string, teacherId };
   },
 
   snapshot: async (a, c) => ({
@@ -31,6 +36,8 @@ itKeepsSchoolsApart("exams", {
     exam: (await request(app).get(`${api}/${c.examId}`).set(auth(a.token))).body.data,
     classExams: (await request(app).get(`${api}/class?classId=${c.classId}&sectionId=none`).set(auth(a.token))).body.data,
     sheet: (await request(app).get(`${api}/papers/${c.paperId}/marks?classId=${c.classId}&sectionId=none`).set(auth(a.token))).body.data,
+    rooms: (await request(app).get(`${api}/${c.examId}/rooms`).set(auth(a.token))).body.data,
+    roster: (await request(app).get(`${api}/${c.examId}/students?classId=${c.classId}`).set(auth(a.token))).body.data,
   }),
 
   lists: [{ name: "the exams", path: api, showsRecords: (body) => body.data.items.length > 0 }],
@@ -56,5 +63,15 @@ itKeepsSchoolsApart("exams", {
       path: (c) => `${api}/papers/${c.paperId}/marks`,
       body: (c) => ({ classId: c.classId, sectionId: null, marks: [] }),
     },
+    // The children of an exam, their roll numbers and rooms (2026-11-27).
+    { name: "reading the children of its exam", method: "get", path: (c) => `${api}/${c.examId}/students?classId=${c.classId}` },
+    { name: "giving roll numbers in its exam", method: "put", path: (c) => `${api}/${c.examId}/roll-numbers`, body: () => ({ rows: [{ studentId: "6af2b7c87fdf3025aeb6d521", rollNumber: 1 }] }) },
+    { name: "reading the rooms of its exam", method: "get", path: (c) => `${api}/${c.examId}/rooms` },
+    { name: "adding a room to its exam", method: "post", path: (c) => `${api}/${c.examId}/rooms`, body: (c) => ({ room: "Hacked", classId: c.classId, sectionId: null, fromRoll: 31, toRoll: 40 }) },
+    { name: "changing its room", method: "patch", path: (c) => `${api}/${c.examId}/rooms/${c.roomId}`, body: (c) => ({ room: "Hacked", classId: c.classId, sectionId: null, fromRoll: 1, toRoll: 30 }) },
+    { name: "taking its room away", method: "delete", path: (c) => `${api}/${c.examId}/rooms/${c.roomId}` },
+    // Exam duty (2026-11-27).
+    { name: "reading the teachers for its exam", method: "get", path: (c) => `${api}/${c.examId}/teachers` },
+    { name: "naming the duty of its room", method: "put", path: (c) => `${api}/${c.examId}/duties`, body: (c) => ({ room: "Room 101", teacherIds: [c.teacherId] }) },
   ],
 });

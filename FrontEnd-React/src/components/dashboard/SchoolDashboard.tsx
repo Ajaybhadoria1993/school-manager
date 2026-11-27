@@ -9,6 +9,7 @@ import { todayInIndia } from "../../utils/students";
 import { Badge } from "../ui/Badge";
 import { Card } from "../ui/Card";
 import { MyAttendanceCard } from "./MyAttendanceCard";
+import { MyClasses } from "./MyClasses";
 import { AbsentClassesCard } from "./school/AbsentClassesCard";
 import { AcademicYearSetUp } from "./school/AcademicYearStatus";
 import { AdmissionsCard } from "./school/AdmissionsCard";
@@ -86,8 +87,10 @@ export function SchoolDashboard() {
       </header>
 
       {/* A staff member the school gave this dashboard (a principal, a receptionist...) marks their own attendance here, like on the staff home
-          (2026-11-22: the staff mark themselves, the school only looks). The school admin is not a staff member; anyone else who is not one sees no card. */}
-      {user.role !== "school_admin" && <MyAttendanceCard who="staff" />}
+          (2026-11-22: the staff mark themselves, the school only looks). The school admin is not a staff member; anyone else who is not one sees no card.
+          A staff member who also teaches signs in as a teacher: their teacher's attendance, and their classes (2026-11-26). */}
+      {user.role !== "school_admin" && <MyAttendanceCard who={user.role === "teacher" ? "teacher" : "staff"} />}
+      {user.role === "teacher" && <MyClasses />}
 
       <AcademicYearSetUp />
 

@@ -151,9 +151,34 @@ describe("attendance", () => {
     expect((await sheet(school.tokens.meena)).status).toBe(200);
     // Kiran teaches nothing here: not their class, whatever the permission.
     expect((await sheet(school.tokens.kiran)).status).toBe(403);
+    // Attendance is on the class teacher's list (2026-11-26): every teacher's list does not take it away.
     await tell(school.token, "teacher", ["calendar.view"]);
+    expect((await sheet(school.tokens.meena)).status).toBe(200);
+    await tell(school.token, "class_teacher", ["attendance.view"]);
+    expect((await sheet(school.tokens.meena)).status).toBe(200);
+    expect((await marks(school.tokens.meena)).status).toBe(403);
+    await tell(school.token, "class_teacher", []);
     expect((await sheet(school.tokens.meena)).status).toBe(403);
     expect((await marks(school.tokens.meena)).status).toBe(403);
+  });
+});
+
+describe("the staff's attendance and the teachers' and staff's own leave (2026-11-26)", () => {
+  it("the staff's attendance sheet is attendance.staff; a teacher is never let in", async () => {
+    expect(await status("get", "/attendance/staff", reception)).toBe(403);
+    await tell(school.token, "receptionist", ["attendance.staff"]);
+    expect(await status("get", "/attendance/staff", reception)).not.toBe(403);
+    expect(await status("get", "/attendance/staff", school.tokens.meena)).toBe(403);
+  });
+
+  it("seeing the leave the teachers and the staff ask for is staffleaves.view, answering it staffleaves.decide", async () => {
+    expect(await status("get", "/attendance/leaves?status=pending", reception)).toBe(403);
+    await tell(school.token, "receptionist", ["staffleaves.view"]);
+    expect(await status("get", "/attendance/leaves?status=pending", reception)).not.toBe(403);
+    expect(await status("post", `/attendance/leaves/${ANY_ID}/decide`, reception, { status: "approved" })).toBe(403);
+    await tell(school.token, "receptionist", ["staffleaves.decide"]);
+    expect(await status("post", `/attendance/leaves/${ANY_ID}/decide`, reception, { status: "approved" })).toBe(404);
+    expect(await status("get", "/attendance/leaves?status=pending", school.tokens.meena)).toBe(403);
   });
 });
 
@@ -218,6 +243,9 @@ describe("a teacher's classes", () => {
   it("the layout of classes is readable by anyone whose work is about a class, and by nobody else", async () => {
     expect(await status("get", "/academics/structure", school.tokens.meena)).toBe(200);
     await tell(school.token, "teacher", ["calendar.view"]);
+    // The class teacher's list (attendance, parents' leave) is about a class too (2026-11-26).
+    expect(await status("get", "/academics/structure", school.tokens.meena)).toBe(200);
+    await tell(school.token, "class_teacher", []);
     expect(await status("get", "/academics/structure", school.tokens.meena)).toBe(403);
   });
 });
@@ -289,7 +317,7 @@ describe("the school's own work, given key by key (Teachers, Staff, the set-up, 
 
     await as(["teachers.edit"]);
     expect(await status("patch", `/staff/teachers/${ANY_ID}`, reception, {})).not.toBe(403);
-    expect(await status("post", `/staff/teachers/${ANY_ID}/reset-password`, reception, {})).not.toBe(403);
+    expect(await status("post", `/staff/teachers/${ANY_ID}/login`, reception, {})).toBe(404);
     expect(await status("put", "/staff/class-teachers", reception, {})).toBe(400);
     expect(await status("put", "/subjects/allotments", reception, {})).toBe(400);
     expect(await status("post", "/staff/teachers", reception, {})).toBe(403);
@@ -312,7 +340,7 @@ describe("the school's own work, given key by key (Teachers, Staff, the set-up, 
     expect(await status("patch", `/staff/members/${ANY_ID}`, reception, {})).toBe(403);
     await as(["staff.edit"]);
     expect(await status("patch", `/staff/members/${ANY_ID}`, reception, {})).not.toBe(403);
-    expect(await status("post", `/staff/members/${ANY_ID}/reset-password`, reception, {})).not.toBe(403);
+    expect(await status("post", `/staff/members/${ANY_ID}/login`, reception, {})).toBe(404);
     expect(await status("delete", `/staff/members/${ANY_ID}`, reception)).not.toBe(403);
   });
 

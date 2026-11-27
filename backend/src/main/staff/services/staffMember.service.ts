@@ -6,8 +6,10 @@ import { nameKeyOf } from "../../tenants/services/tenantFactory";
 import { User } from "../../users/models/User";
 import { loginRoleOf, MAX_STAFF_MEMBERS, staffRoleLabel, type StaffMemberRole, type StaffMemberStatus } from "../constants";
 import { StaffMember, type IStaffMember } from "../models/StaffMember";
+import { PersonPhoto } from "../../profile/models/PersonPhoto";
 import { Teacher } from "../models/Teacher";
-import { ROLE_OTHER_MESSAGE, type CreateStaffMemberInput, type ListStaffMembersQuery, type LoginAccountInput, type UpdateStaffMemberInput } from "../schemas/staff.schemas";
+import { LoginInviteService, type LoginInviteDelivery } from "../../auth/services/loginInvite.service";
+import { NEEDS_EMAIL_MESSAGE, ROLE_OTHER_MESSAGE, type CreateStaffMemberInput, type GiveLoginInput, type ListStaffMembersQuery, type UpdateStaffMemberInput } from "../schemas/staff.schemas";
 import { StaffTeacher, type TeachingPerson } from "./staffTeacher.service";
 import { TeacherLogin, type TeacherLoginDto } from "./teacherLogin.service";
 import { TeacherService } from "./teacher.service";
@@ -45,7 +47,6 @@ const EMAIL_IN_USE = () =>
   ApiError.conflict("This email already belongs to a login or to another staff member. Use another email, or leave it empty.", "EMAIL_IN_USE", [{ path: "email", message: "This email already belongs to a login or to another staff member" }]);
 const CODE_IN_USE = () => ApiError.conflict("Another staff member already has this employee code.", "STAFF_CODE_EXISTS", [{ path: "employeeCode", message: "Another staff member already has this employee code" }]);
 const HAS_LOGIN = (name: string) => ApiError.conflict(`${name} already has a login.`, "STAFF_HAS_LOGIN");
-const NO_LOGIN = (name: string) => ApiError.conflict(`${name} has no login yet: make one first.`, "STAFF_HAS_NO_LOGIN");
 
 /** A duplicate the pre-check could not see (two requests at once): the email or the employee code, said as the pre-check says it. */
 function duplicateOf(err: unknown): ApiError {
@@ -80,9 +81,9 @@ export const toStaffMemberDto = (m: Like, login: TeacherLoginDto | null = null):
 type Account = TeachingPerson & Pick<IStaffMember, "role" | "roleOther" | "alsoTeacher">;
 
 /**
- * Staff (2026-11-08, the user): the school adds a person with the **username and password it makes itself** (as it does for a teacher or a
- * parent); there is no invitation email for staff (that stays for the school admin only). The login is made with the person: its role is
- * the one their kind gives (`loginRoleOf`); a person who also teaches is a Teacher of the school too.
+ * Staff: the school adds a person, and gives them login access when it ticks it (2026-11-26, the user: their **email** is the login, with an
+ * emailed invitation to choose a password; Pending until then; no username or password made by the school). The login's role is the one their
+ * kind gives (`loginRoleOf`); a person who also teaches is a Teacher of the school too, with or without a login.
  */
 export class StaffMemberService {
   private static async loginsOf(members: { userId?: Types.ObjectId | null }[]): Promise<Map<string, TeacherLoginDto>> {
@@ -123,15 +124,17 @@ export class StaffMemberService {
   }
 
   /**
-   * Makes the login (and, for a person who also teaches, their Teacher record) and returns their ids. Everything that can be checked has
-   * been checked before; a failure here undoes what it made.
+   * Makes the login (when asked: their email, Pending until they open the invitation) and, for a person who also teaches, their Teacher record,
+   * and returns their ids. Everything that can be checked has been checked before; a failure here undoes what it made.
    */
-  private static async makeAccount(tenantId: string, person: Account, login: LoginAccountInput): Promise<{ userId: Types.ObjectId; teacherId: Types.ObjectId | null }> {
+  private static async makeAccount(tenantId: string, person: Account, giveLogin: boolean): Promise<{ userId: Types.ObjectId | null; teacherId: Types.ObjectId | null }> {
     const loginRole = loginRoleOf(person.role, person.alsoTeacher);
     let userId: Types.ObjectId | null = null;
     let teacherId: Types.ObjectId | null = null;
     try {
-      userId = await TeacherLogin.create(tenantId, { name: person.name, mobile: person.mobile ?? null, email: person.email ?? null, isActive: true }, login, { role: loginRole, roleLabel: staffRoleLabel(person.role, person.roleOther) });
+      if (giveLogin && person.email) {
+        userId = await TeacherLogin.createInvited(tenantId, { name: person.name, mobile: person.mobile ?? null, email: person.email, isActive: true }, { role: loginRole, roleLabel: staffRoleLabel(person.role, person.roleOther) });
+      }
       if (person.alsoTeacher) teacherId = await StaffTeacher.make(tenantId, person, loginRole === "teacher" ? userId : null);
       return { userId, teacherId };
     } catch (err) {
@@ -142,23 +145,25 @@ export class StaffMemberService {
   }
 
   /** The Teacher record and the login of a person whose staff record could not be saved are taken away again. */
-  private static async undo(tenantId: string, made: { userId: Types.ObjectId; teacherId: Types.ObjectId | null }): Promise<void> {
+  private static async undo(tenantId: string, made: { userId: Types.ObjectId | null; teacherId: Types.ObjectId | null }): Promise<void> {
     if (made.teacherId) await Teacher.deleteOne({ _id: made.teacherId, tenantId });
-    await TeacherLogin.remove(made.userId);
+    if (made.userId) await TeacherLogin.remove(made.userId);
   }
 
   /**
-   * Adds a person with their login: the username and password the school made. Everything that could refuse them is checked first (room, the
-   * email, the employee code, the username, and, for a person who also teaches, whether they can be a teacher), so a refusal leaves nothing behind.
+   * Adds a person, with a login when the school ticks it (2026-11-26: their email, and an invitation to choose a password; no username or
+   * password made by the school). Everything that could refuse them is checked first (room, the email, the employee code, and, for a person
+   * who also teaches, whether they can be a teacher), so a refusal leaves nothing behind.
    */
-  static async create(tenantId: string, input: CreateStaffMemberInput, addedBy: string | null): Promise<StaffMemberDto> {
+  static async create(tenantId: string, input: CreateStaffMemberInput, addedBy: string | null): Promise<StaffMemberDto & { invite?: LoginInviteDelivery }> {
     if ((await StaffMember.countDocuments({ tenantId })) >= MAX_STAFF_MEMBERS) {
       throw ApiError.conflict(`A school can have up to ${MAX_STAFF_MEMBERS} staff members.`, "LIMIT_REACHED");
     }
     const email = input.email ?? null;
+    const giveLogin = input.giveLogin === true;
     if (email && (await StaffMember.exists({ tenantId, email }))) throw EMAIL_IN_USE();
     if (input.employeeCode && (await StaffMember.exists({ tenantId, employeeCode: input.employeeCode }))) throw CODE_IN_USE();
-    await TeacherLogin.assertFree(input.login.username, email);
+    if (giveLogin) await TeacherLogin.assertFree(null, email);
     const alsoTeacher = input.alsoTeacher === true;
     const subjectIds = alsoTeacher ? (input.subjectIds ?? []) : [];
     if (alsoTeacher) await StaffTeacher.assertCan(tenantId, { mobile: input.mobile ?? null, employeeCode: input.employeeCode ?? null, subjectIds }, null);
@@ -178,7 +183,7 @@ export class StaffMemberService {
       employeeCode: input.employeeCode ?? null,
       joiningDate: input.joiningDate ?? null,
     };
-    const made = await StaffMemberService.makeAccount(tenantId, details, input.login);
+    const made = await StaffMemberService.makeAccount(tenantId, details, giveLogin);
     let member;
     try {
       member = await StaffMember.create({ tenantId, ...details, nameKey: nameKeyOf(input.name), status: "active", userId: made.userId, teacherId: made.teacherId, invitedBy: addedBy ? new Types.ObjectId(addedBy) : null });
@@ -187,40 +192,56 @@ export class StaffMemberService {
       if (isDuplicateKey(err)) throw duplicateOf(err);
       throw err;
     }
-    return toStaffMemberDto(member, { username: input.login.username, isActive: true });
+    if (!made.userId || !email) return toStaffMemberDto(member);
+    // The person and the login are made: an email that does not go out is told to the school (it sends it again), never undone.
+    const invite = await LoginInviteService.send(made.userId);
+    return { ...toStaffMemberDto(member, { username: null, email, isActive: true, pending: true }), invite };
   }
 
-  /** A login for a person who has none (added before the school made logins itself): the same checks, then they are active. */
-  static async makeLogin(tenantId: string, id: string, login: LoginAccountInput): Promise<StaffMemberDto> {
+  /**
+   * Give login access (2026-11-26): a person with no login gets one (their email, and the invitation); a login still pending gets the
+   * invitation again; a login that works gets a link to choose a new password (an older login with only a username gets an email this way).
+   * `email`: their email when they have none, or another one (it becomes theirs and the login's). Someone made inactive gets nothing.
+   */
+  static async giveLogin(tenantId: string, id: string, input: GiveLoginInput): Promise<StaffMemberDto & { invite: LoginInviteDelivery }> {
     const member = await StaffMember.findOne({ _id: id, tenantId }).lean();
     if (!member) throw NOT_FOUND();
-    if (member.userId) throw HAS_LOGIN(member.name);
-    await TeacherLogin.assertFree(login.username, member.email ?? null);
-    if (member.alsoTeacher) await StaffTeacher.assertCan(tenantId, { mobile: member.mobile ?? null, employeeCode: member.employeeCode ?? null, subjectIds: member.subjectIds.map(String) }, null);
-    const made = await StaffMemberService.makeAccount(tenantId, { ...member, subjectIds: member.subjectIds }, login);
-    const linked = await StaffMember.updateOne({ _id: id, tenantId, userId: null }, { $set: { status: "active", userId: made.userId, teacherId: made.teacherId } });
-    if (linked.modifiedCount !== 1) {
-      await StaffMemberService.undo(tenantId, made);
-      throw HAS_LOGIN(member.name);
+    if (member.status === "inactive") throw BAD_STATE(`${member.name} is inactive. Make them active first.`);
+    const email = input.email ?? member.email ?? null;
+    if (!email) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "email", message: NEEDS_EMAIL_MESSAGE }]);
+    const changed = email !== (member.email ?? null);
+    if (changed && (await StaffMember.exists({ tenantId, email, _id: { $ne: member._id } }))) throw EMAIL_IN_USE();
+    if (changed || !member.userId) await TeacherLogin.assertFree(null, email, member.userId ?? null);
+    // A person who also teaches and has no Teacher record yet (added before 2026-11-26 without a login) becomes one now: checked first.
+    if (!member.userId && member.alsoTeacher && !member.teacherId) {
+      await StaffTeacher.assertCan(tenantId, { mobile: member.mobile ?? null, employeeCode: member.employeeCode ?? null, subjectIds: member.subjectIds.map(String) }, null);
     }
-    return StaffMemberService.get(tenantId, id);
-  }
 
-  /** A new password the school made. Every session they have ends. */
-  static async resetPassword(tenantId: string, id: string, password: string): Promise<void> {
-    const member = await StaffMember.findOne({ _id: id, tenantId }).select("name userId").lean();
-    if (!member) throw NOT_FOUND();
-    if (!member.userId) throw NO_LOGIN(member.name);
-    await TeacherLogin.setPassword(member.userId, password);
-  }
-
-  /** Another username for their login (the password and the sessions stay). */
-  static async changeUsername(tenantId: string, id: string, username: string): Promise<StaffMemberDto> {
-    const member = await StaffMember.findOne({ _id: id, tenantId }).select("name userId").lean();
-    if (!member) throw NOT_FOUND();
-    if (!member.userId) throw NO_LOGIN(member.name);
-    await TeacherLogin.setUsername(member.userId, username);
-    return StaffMemberService.get(tenantId, id);
+    let userId = member.userId ?? null;
+    if (!userId) {
+      const loginRole = loginRoleOf(member.role, member.alsoTeacher);
+      const made = await TeacherLogin.createInvited(tenantId, { name: member.name, mobile: member.mobile ?? null, email, isActive: true }, { role: loginRole, roleLabel: staffRoleLabel(member.role, member.roleOther) });
+      const linked = await StaffMember.updateOne({ _id: id, tenantId, userId: null }, { $set: { userId: made, email, ...(member.status === "invited" ? { status: "active" } : {}) } });
+      if (linked.modifiedCount !== 1) {
+        await TeacherLogin.remove(made);
+        throw HAS_LOGIN(member.name);
+      }
+      userId = made;
+      // Their Teacher record signs in with this login when it is a teacher's (the staff role has no pages of its own).
+      if (member.alsoTeacher) {
+        const person: TeachingPerson = { ...member, email, subjectIds: member.subjectIds };
+        const linkedLogin = loginRole === "teacher" ? made : null;
+        if (member.teacherId) await StaffTeacher.sync(tenantId, member.teacherId, person, linkedLogin);
+        else await StaffMember.updateOne({ _id: id, tenantId }, { $set: { teacherId: await StaffTeacher.make(tenantId, person, linkedLogin) } });
+      }
+    } else if (changed) {
+      await StaffMember.updateOne({ _id: id, tenantId }, { $set: { email } });
+      // The invitation is sent once, below.
+      await TeacherLogin.sync(userId, { email }, { resend: false });
+      if (member.teacherId && loginRoleOf(member.role, member.alsoTeacher) === "teacher") await Teacher.updateOne({ _id: member.teacherId, tenantId }, { $set: { email } });
+    }
+    const invite = await LoginInviteService.send(userId);
+    return { ...(await StaffMemberService.get(tenantId, id)), invite };
   }
 
   /** Takes a person with no login away (there is no login to close). Someone with a login is made inactive instead. */
@@ -229,6 +250,8 @@ export class StaffMemberService {
     if (!member) throw NOT_FOUND();
     if (member.userId) throw BAD_STATE(`${member.name} has a login: make them inactive instead.`);
     await StaffMember.deleteOne({ _id: member._id, tenantId });
+    // Their photo goes with them (a teacher record they have keeps its own).
+    await PersonPhoto.deleteOne({ tenantId: new Types.ObjectId(tenantId), ownerType: "staff", ownerId: member._id });
   }
 
   /**
@@ -239,10 +262,10 @@ export class StaffMemberService {
   static async update(tenantId: string, id: string, input: UpdateStaffMemberInput): Promise<StaffMemberDto> {
     const current = await StaffMember.findOne({ _id: id, tenantId }).lean();
     if (!current) throw NOT_FOUND();
-    if (input.isActive !== undefined && !current.userId) throw NO_LOGIN(current.name);
     if (input.email && input.email !== current.email && (await StaffMember.exists({ tenantId, email: input.email, _id: { $ne: current._id } }))) throw EMAIL_IN_USE();
-    // The login repeats the email: it must be free before the staff member is changed.
+    // The login repeats the email: it must be free before the staff member is changed, and a login that is the email cannot lose it.
     if (current.userId && input.email) await TeacherLogin.assertFree(null, input.email, current.userId);
+    await TeacherLogin.assertKeepsEmail(current.userId, input.email);
     if (input.employeeCode && input.employeeCode !== current.employeeCode && (await StaffMember.exists({ tenantId, employeeCode: input.employeeCode, _id: { $ne: current._id } }))) throw CODE_IN_USE();
 
     // The role (Other needs its name), and who also teaches. Whoever teaches now is a teacher for good here: they are made inactive as one.
@@ -260,7 +283,7 @@ export class StaffMemberService {
     const employeeCode = input.employeeCode !== undefined ? input.employeeCode : (current.employeeCode ?? null);
     // Everything that could refuse them as a teacher is checked before anything is changed.
     const teacherId = current.teacherId ? String(current.teacherId) : null;
-    if (alsoTeacher && (!current.alsoTeacher || input.mobile !== undefined || input.employeeCode !== undefined || input.subjectIds !== undefined)) {
+    if (alsoTeacher && (!current.teacherId || !current.alsoTeacher || input.mobile !== undefined || input.employeeCode !== undefined || input.subjectIds !== undefined)) {
       await StaffTeacher.assertCan(tenantId, { mobile, employeeCode, subjectIds }, teacherId);
     }
     // Their teacher record is on and off with them: first, because it may refuse (classes still given to them) and then nothing changes.
@@ -282,28 +305,30 @@ export class StaffMemberService {
     }
     if (!updated) throw NOT_FOUND();
 
+    const loginRole = loginRoleOf(role, alsoTeacher);
     if (current.userId) {
       // The login's role is the one the role and the teaching give (a teacher's, a staff member's...); the title shown is the role's name.
-      const loginRole = loginRoleOf(role, alsoTeacher);
       const user = await User.findById(current.userId).select("role").lean();
       const userSet: Record<string, unknown> = { roleLabel: staffRoleLabel(role, roleOther) };
       if (input.name !== undefined) userSet.name = input.name;
       if (input.mobile !== undefined && input.mobile) userSet.phone = input.mobile;
       if (user && user.role !== loginRole) userSet.role = loginRole;
       await User.updateOne({ _id: current.userId }, { $set: userSet });
-      // The email is the login's too (an empty one takes it away: the username still opens it).
+      // The email is the login's too (an empty one takes it away, only from an older login a username still opens; a pending login gets
+      // its invitation again at the new email).
       if (input.email !== undefined) await TeacherLogin.sync(current.userId, { email: input.email });
       // The new role is the login's from the next sign-in: the sessions of the old one end now.
       if (userSet.role) await TokenService.revokeAllForUser(current.userId);
       if (input.isActive !== undefined) await TeacherLogin.setActive(current.userId, input.isActive);
+    }
 
-      // The person as a teacher: made when it is switched on for someone with a login; kept in step (details, subjects, the login's link) after.
-      if (alsoTeacher) {
-        const person: TeachingPerson = { ...updated.toObject(), subjectIds: updated.subjectIds };
-        const linked = loginRole === "teacher" ? current.userId : null;
-        if (current.teacherId) await StaffTeacher.sync(tenantId, current.teacherId, person, linked);
-        else await StaffMember.updateOne({ _id: id, tenantId }, { $set: { teacherId: await StaffTeacher.make(tenantId, person, linked, updated.status !== "inactive") } });
-      }
+    // The person as a teacher: made when it is switched on (with a login or, since 2026-11-26, without one); kept in step (details, subjects,
+    // the login's link) after.
+    if (alsoTeacher) {
+      const person: TeachingPerson = { ...updated.toObject(), subjectIds: updated.subjectIds };
+      const linked = current.userId && loginRole === "teacher" ? current.userId : null;
+      if (current.teacherId) await StaffTeacher.sync(tenantId, current.teacherId, person, linked);
+      else await StaffMember.updateOne({ _id: id, tenantId }, { $set: { teacherId: await StaffTeacher.make(tenantId, person, linked, updated.status !== "inactive") } });
     }
     return StaffMemberService.get(tenantId, id);
   }

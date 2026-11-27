@@ -7,6 +7,7 @@ import { clock } from "../../../utils/clock";
 import { LOGIN_PASSWORD, classroomSchool, signInAs } from "../../../test/classroom";
 import { addTiming, auth } from "../../../test/timetable";
 import { StaffMember } from "../../staff/models/StaffMember";
+import { postStaff } from "../../../test/logins";
 
 /**
  * Staff attendance (2026-11-22, asked for: "staff me bhi aisa karo, class ka filter mat, department rakho: reception, management, kaam karne wale;
@@ -24,10 +25,7 @@ async function setUp() {
   const s = await classroomSchool();
   await addTiming(s.token);
   const add = async (name: string, role: string, username: string, over: object = {}) => {
-    const res = await request(app)
-      .post("/api/v1/staff/members")
-      .set(auth(s.token))
-      .send({ name, role, mobile: `98765${String(43210 + username.length + name.length).padStart(5, "0")}`, login: { username, password: LOGIN_PASSWORD }, ...over });
+    const res = await postStaff(s.token, { name, role, mobile: `98765${String(43210 + username.length + name.length).padStart(5, "0")}`, login: { username, password: LOGIN_PASSWORD }, ...over });
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     return res.body.data.id as string;
   };
@@ -39,7 +37,7 @@ async function setUp() {
   await add("Neha Joshi", "vice_principal", "sun.vice", { alsoTeacher: true });
   // Everyone joined at the start of the year, so the days asked about count.
   await StaffMember.collection.updateMany({ tenantId: new Types.ObjectId(s.tenantId) }, { $set: { createdAt: new Date("2026-04-01T00:00:00.000Z"), joiningDate: new Date("2026-04-01T00:00:00.000Z") } });
-  const tokens = { asha: await signInAs("sun.desk"), ravi: await signInAs("sun.accounts"), ramesh: await signInAs("sun.helper") };
+  const tokens = { asha: await signInAs("sun.desk@mail.test"), ravi: await signInAs("sun.accounts@mail.test"), ramesh: await signInAs("sun.helper@mail.test") };
   return { s, ids: { asha, ravi, ramesh }, tokens };
 }
 

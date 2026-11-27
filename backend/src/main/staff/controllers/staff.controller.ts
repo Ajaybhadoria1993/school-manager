@@ -5,7 +5,7 @@ import { asyncHandler } from "../../../utils/asyncHandler";
 import { sendCreated, sendFile, sendOk } from "../../../utils/response";
 import { readSheet } from "../../students/services/sheetReader";
 import { MAX_TEACHER_EXPORT_PREVIEW_ROWS, MAX_TEACHER_IMPORT_ROWS, STAFF_WRITERS } from "../constants";
-import type { ChangeUsernameInput, CreateStaffMemberInput, CreateTeacherInput, ImportTeachersInput, ListStaffMembersQuery, UpdateStaffMemberInput, UpdateTeacherSettingsInput, ListTeachersQuery, LoginAccountInput, ResetPasswordInput, SetClassTeacherInput, UpdateTeacherInput, UsernameCheckQuery } from "../schemas/staff.schemas";
+import type { CreateStaffMemberInput, CreateTeacherInput, GiveLoginInput, ImportTeachersInput, ListStaffMembersQuery, UpdateStaffMemberInput, UpdateTeacherSettingsInput, ListTeachersQuery, SetClassTeacherInput, UpdateTeacherInput, UsernameCheckQuery } from "../schemas/staff.schemas";
 import { ClassTeacherService } from "../services/classTeacher.service";
 import { StaffMemberService } from "../services/staffMember.service";
 import { TeacherExportService } from "../services/teacherExport.service";
@@ -61,10 +61,6 @@ export const getTeacherClasses = asyncHandler(async (req: Request, res: Response
   return sendOk(res, await TeacherService.classes(tenantOf(req), idOf(req)));
 });
 
-export const changeTeacherUsername = asyncHandler(async (req: Request, res: Response) => {
-  return sendOk(res, await TeacherService.changeUsername(tenantOf(req), idOf(req), body<ChangeUsernameInput>(req).username), "Username changed");
-});
-
 export const setClassTeacher = asyncHandler(async (req: Request, res: Response) => {
   return sendOk(res, await ClassTeacherService.set(tenantOf(req), body<SetClassTeacherInput>(req), req.user!.userId), "Class teacher saved");
 });
@@ -81,13 +77,9 @@ export const addTeacherToMedium = asyncHandler(async (req: Request, res: Respons
   return sendCreated(res, await TeacherMediumService.add(tenantOf(req), idOf(req), body<{ mediumId: string }>(req).mediumId), "Added");
 });
 
-export const createTeacherLogin = asyncHandler(async (req: Request, res: Response) => {
-  return sendCreated(res, await TeacherService.createLogin(tenantOf(req), idOf(req), body<LoginAccountInput>(req)), "Login made");
-});
-
-export const resetTeacherPassword = asyncHandler(async (req: Request, res: Response) => {
-  await TeacherService.resetPassword(tenantOf(req), idOf(req), body<ResetPasswordInput>(req).password);
-  return sendOk(res, {}, "Password changed");
+/** Give login access: a login (the teacher's email) with an invitation, or the invitation again, or a link to choose a new password. */
+export const giveTeacherLogin = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await TeacherService.giveLogin(tenantOf(req), idOf(req), body<GiveLoginInput>(req)), "Invitation sent");
 });
 
 /** The sample spreadsheet for a bulk upload of teachers, made for this school (its subjects listed). */
@@ -104,7 +96,7 @@ export const readTeachersFile = asyncHandler(async (req: Request, res: Response)
   return sendOk(res, await readSheet(req.file.originalname, req.file.buffer, { noun: "teachers", titleExamples: "Name, Mobile, Gender", maxRows: MAX_TEACHER_IMPORT_ROWS }));
 });
 
-/** A part of a bulk upload: each row is made as a teacher with a login, or refused with its reasons. */
+/** A part of a bulk upload: each row is made as a teacher (with no login), or refused with its reasons. */
 export const importTeachers = asyncHandler(async (req: Request, res: Response) => {
   const result = await TeacherImportService.run(tenantOf(req), body<ImportTeachersInput>(req));
   return sendOk(res, result, result.ok === 1 ? "1 teacher added" : `${result.ok} teachers added`);
@@ -153,18 +145,9 @@ export const updateStaffMember = asyncHandler(async (req: Request, res: Response
   return sendOk(res, await StaffMemberService.update(tenantOf(req), idOf(req), body<UpdateStaffMemberInput>(req)), "Staff member saved");
 });
 
-/** A login for a person added before the school made logins itself. */
-export const makeStaffLogin = asyncHandler(async (req: Request, res: Response) => {
-  return sendCreated(res, await StaffMemberService.makeLogin(tenantOf(req), idOf(req), body<LoginAccountInput>(req)), "Login made");
-});
-
-export const resetStaffPassword = asyncHandler(async (req: Request, res: Response) => {
-  await StaffMemberService.resetPassword(tenantOf(req), idOf(req), body<ResetPasswordInput>(req).password);
-  return sendOk(res, {}, "Password changed");
-});
-
-export const changeStaffUsername = asyncHandler(async (req: Request, res: Response) => {
-  return sendOk(res, await StaffMemberService.changeUsername(tenantOf(req), idOf(req), body<ChangeUsernameInput>(req).username), "Username changed");
+/** Give login access to a staff member (as for a teacher). */
+export const giveStaffLogin = asyncHandler(async (req: Request, res: Response) => {
+  return sendOk(res, await StaffMemberService.giveLogin(tenantOf(req), idOf(req), body<GiveLoginInput>(req)), "Invitation sent");
 });
 
 /** Takes away a person who has no login. */

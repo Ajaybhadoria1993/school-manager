@@ -123,7 +123,7 @@ const indiaMinutes = (at: Date) => {
 };
 
 /** Everything the day is made of, read once: what the page shows and what a change is checked against. */
-async function readDay(tenantId: string, date: string, yearId: Types.ObjectId) {
+export async function readDay(tenantId: string, date: string, yearId: Types.ObjectId) {
   const school = new Types.ObjectId(tenantId);
   const weekday = weekdayOf(date);
   const [world, marks, specials, holidays, subs, leaveEnds, headRows, loginRows] = await Promise.all([

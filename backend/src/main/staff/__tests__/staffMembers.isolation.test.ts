@@ -15,11 +15,13 @@ beforeEach(async () => {
 
 itKeepsSchoolsApart("staff members (Staff > Add staff)", {
   seed: async (a) => {
-    const username = `asha.${a.tenantId.slice(-6)}`;
-    const made = await request(app).post(api).set(bearer(a.token)).send({ name: "Asha Rao", role: "receptionist", login: { username, password: "Recep@Desk1" } });
-    // A person with no login yet (added before the school made logins itself), for the one route that only they have.
-    const bare = await StaffMember.create({ tenantId: a.tenantId, name: "Ravi Menon", nameKey: nameKeyOf("Ravi Menon"), email: null, role: "librarian", status: "invited" });
-    return { staffId: made.body.data.id as string, bareId: bare._id.toString(), username };
+    const email = `asha.${a.tenantId.slice(-6)}@mail.test`;
+    const made = await request(app).post(api).set(bearer(a.token)).send({ name: "Asha Rao", role: "receptionist", email, giveLogin: true });
+    // A person with no login (added without one), for the routes that only they have.
+    const bare = await request(app).post(api).set(bearer(a.token)).send({ name: "Ravi Menon", role: "librarian" });
+    // And one added before 2026-11-08, when a person could be waiting for a login ("invited").
+    await StaffMember.create({ tenantId: a.tenantId, name: "Old Person", nameKey: nameKeyOf("Old Person"), email: null, role: "librarian", status: "invited" });
+    return { staffId: made.body.data.id as string, bareId: bare.body.data.id as string, email };
   },
 
   snapshot: async (a) => (await request(app).get(`${api}?status=all`).set(bearer(a.token))).body.data,
@@ -29,9 +31,8 @@ itKeepsSchoolsApart("staff members (Staff > Add staff)", {
   probes: [
     { name: "reading its staff member", method: "get", path: (c) => `${api}/${c.staffId}` },
     { name: "changing its staff member", method: "patch", path: (c) => `${api}/${c.staffId}`, body: () => ({ name: "Hacked", role: "management" }) },
-    { name: "giving its staff member a new password", method: "post", path: (c) => `${api}/${c.staffId}/reset-password`, body: () => ({ password: "Hacked@Pass1" }) },
-    { name: "changing its staff member's username", method: "patch", path: (c) => `${api}/${c.staffId}/login`, body: () => ({ username: "hacker_10" }) },
-    { name: "making a login for its person with none", method: "post", path: (c) => `${api}/${c.bareId}/login`, body: () => ({ username: "hacker_10", password: "Hacked@Pass1" }) },
+    { name: "sending its staff member's invitation again (to the intruder's email)", method: "post", path: (c) => `${api}/${c.staffId}/login`, body: () => ({ email: "hacker@mail.test" }) },
+    { name: "giving its person with no login access (to the intruder's email)", method: "post", path: (c) => `${api}/${c.bareId}/login`, body: () => ({ email: "hacker@mail.test" }) },
     { name: "removing its person with no login", method: "delete", path: (c) => `${api}/${c.bareId}` },
   ],
 });

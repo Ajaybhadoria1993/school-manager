@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { Link } from "react-router";
 import { CircleCheck, UserPlus } from "lucide-react";
-import { useUsernameCheck, useFreeUsername } from "../../hooks/useUsernameCheck";
+import { useNewPhoto } from "../../hooks/useNewPhoto";
 import { useCreateStaffMemberMutation } from "../../redux/api/staffApi";
+import { PhotoPicker } from "../../components/profile/PhotoPicker";
 import type { StaffMember } from "../../types";
 import { getApiError } from "../../utils/apiErrors";
 import { emptyStaffForm, staffFieldId, staffKeyOfPath, staffProblems, toStaffInput, type StaffFormKey, type StaffFormValues, type StaffProblems } from "../../utils/staffMembers";
-import { generatePassword, usernameFor } from "../../utils/teachers";
 import { StaffForm } from "../../components/staff/StaffForm";
 import { FormActionBar } from "../../components/students/form/FormActionBar";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
-import { CredentialsCard } from "../../components/teachers/CredentialsCard";
+import { InviteSentCard } from "../../components/logins/InviteSentCard";
 import { ModalError } from "../../components/ui/AppModal";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -18,37 +18,29 @@ import { Card } from "../../components/ui/Card";
 const outlineLink =
   "inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground shadow-sm transition-all duration-150 hover:border-[#cbd5e1] hover:bg-background focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20";
 
-/** A clean form with a password already made (the school reads it out or sends it; it can be typed or made again). */
-const freshForm = (): StaffFormValues => ({ ...emptyStaffForm(), password: generatePassword() });
+const freshForm = (): StaffFormValues => emptyStaffForm();
 
 /**
- * Staff > Add staff (`/staff/new`): a person who works for the school without teaching. Their details, a role and the **username and
- * password the school makes for them** (the username follows the name until it is typed, and is checked free on the whole platform; the
- * password is made already). **Add staff** adds them and shows the username and the password once, to hand over: they sign in with
- * those (the role decides what they see). There is no invitation email for staff: that stays for the school admin. Nothing is sent
- * until the button; a box that is wrong says so under it, and what the server refuses (a username that was taken a moment ago) says so
- * under its box too.
+ * Staff > Add staff (`/staff/new`): a person who works for the school without teaching. Their details and a role, and **Give login access**
+ * (2026-11-26): ticked, the email is needed; it becomes their login and gets an invitation to choose a password (the login is Pending until
+ * then; the role decides what they see). The school makes no username or password. Nothing is sent until the button; a box that is wrong
+ * says so under it, and what the server refuses (an email that is somebody's login) says so under its box too.
  */
 export default function StaffAddPage() {
   const [create, { isLoading: sending }] = useCreateStaffMemberMutation();
   const [values, setValues] = useState<StaffFormValues>(freshForm);
-  const [typedUsername, setTypedUsername] = useState(false);
   const [revealed, setRevealed] = useState<ReadonlySet<StaffFormKey>>(new Set());
   const [refused, setRefused] = useState<StaffProblems>({});
   const [formError, setFormError] = useState<string | null>(null);
-  const [added, setAdded] = useState<{ member: StaffMember; username: string; password: string } | null>(null);
-
-  const check = useUsernameCheck(values.username, added === null);
-  // A username made from the name is swapped for a free one when somebody (in any school) already has it; a typed one is left as typed.
-  useFreeUsername(check, typedUsername, (free) => setValues((now) => ({ ...now, username: free })));
+  const [added, setAdded] = useState<StaffMember | null>(null);
+  // Optional: kept until the person is made, then saved for them.
+  const photo = useNewPhoto();
 
   const problems = staffProblems(values);
   const errors: StaffProblems = { ...Object.fromEntries([...revealed].flatMap((k) => (problems[k] ? [[k, problems[k]]] : []))), ...refused };
 
   const change = <K extends StaffFormKey>(key: K, value: StaffFormValues[K]) => {
-    if (key === "username") setTypedUsername(true);
-    const followName = key === "name" && !typedUsername ? { username: usernameFor(values.username, value as string) } : {};
-    setValues((now) => ({ ...now, [key]: value, ...followName }));
+    setValues((now) => ({ ...now, [key]: value }));
     setRefused(({ [key]: _gone, ...rest }) => rest);
   };
   const reveal = (key: StaffFormKey) => setRevealed((now) => new Set([...now, key]));
@@ -59,16 +51,16 @@ export default function StaffAddPage() {
     if (sending) return;
     setFormError(null);
     const wrong = Object.keys(problems) as StaffFormKey[];
-    // A username the check says is somebody's is not tried: the box already says so, with free ones to take.
-    if (wrong.length > 0 || check.state === "taken") {
+    if (wrong.length > 0) {
       setRevealed((now) => new Set([...now, ...wrong]));
       setFormError("Some boxes need a change: see the messages in red.");
-      focus(wrong[0] ?? "username");
+      focus(wrong[0]);
       return;
     }
     try {
       const made = (await create(toStaffInput(values)).unwrap()).data;
-      setAdded({ member: made, username: made.login?.username ?? values.username.trim().toLowerCase(), password: values.password });
+      await photo.saveFor({ kind: "staff", id: made.id });
+      setAdded(made);
     } catch (err) {
       const error = getApiError(err);
       const found: StaffProblems = {};
@@ -88,11 +80,11 @@ export default function StaffAddPage() {
 
   function again() {
     setValues(freshForm());
-    setTypedUsername(false);
     setRevealed(new Set());
     setRefused({});
     setFormError(null);
     setAdded(null);
+    photo.clear();
   }
 
   const crumbs = [{ label: "Staff", to: "/staff" }];
@@ -103,9 +95,10 @@ export default function StaffAddPage() {
         <StudentFormHeader title="Add staff" crumbs={crumbs} />
         <Card role="status" className="flex items-center gap-3 border-success-line bg-success-soft/40 px-5 py-4">
           <CircleCheck className="size-6 shrink-0 text-success" aria-hidden />
-          <h2 className="text-section-heading">{added.member.name} is added</h2>
+          <h2 className="text-section-heading">{added.name} is added</h2>
         </Card>
-        <CredentialsCard teacher={added.member.name} username={added.username} password={added.password} />
+        {photo.problem && <ModalError message={photo.problem} />}
+        {added.invite && <InviteSentCard invite={added.invite} />}
         <div className="flex flex-wrap items-center gap-2.5">
           <Link to="/staff" className={outlineLink}>
             Back to staff
@@ -123,7 +116,13 @@ export default function StaffAddPage() {
     <form onSubmit={submit} noValidate className="space-y-6">
       <StudentFormHeader title="Add staff" crumbs={crumbs} />
       {formError && <ModalError message={formError} />}
-      <StaffForm values={values} errors={errors} onChange={change} onReveal={reveal} check={check} />
+      <StaffForm
+        values={values}
+        errors={errors}
+        onChange={change}
+        onReveal={reveal}
+        photo={<PhotoPicker label="Photo" optional name={values.name} photo={photo.preview} onPick={photo.pick} onRemove={photo.clear} />}
+      />
       <FormActionBar>
         <span />
         <Button type="submit" size="lg" loading={sending}>

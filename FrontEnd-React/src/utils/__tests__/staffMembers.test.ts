@@ -1,25 +1,26 @@
 import { describe, expect, it } from "vitest";
 import type { StaffMember } from "../../types";
-import { emptyStaffForm, formFromStaff, staffKeyOfPath, staffProblems, toStaffInput } from "../staffMembers";
+import { emptyStaffForm, formFromStaff, namedRoleKey, staffKeyOfPath, staffProblems, toStaffInput } from "../staffMembers";
 
-const GOOD = { ...emptyStaffForm(), name: "Asha Rao", role: "receptionist", username: "asha.rao_41", password: "Recep@Desk1" };
+const GOOD = { ...emptyStaffForm(), name: "Asha Rao", role: "receptionist" };
+
+describe("a role the school named", () => {
+  it("is one role however its name is typed (the server's key)", () => {
+    expect(namedRoleKey("Sports Coach")).toBe("other:sports coach");
+    expect(namedRoleKey("  sports   COACH ")).toBe("other:sports coach");
+  });
+});
 
 describe("the staff form", () => {
-  it("needs a name, a role, a username and a password, and nothing else (the email is only a contact)", () => {
+  it("needs a name and a role, and nothing else (no username or password: the school makes none)", () => {
     expect(staffProblems(GOOD)).toEqual({});
-    expect(staffProblems(emptyStaffForm())).toEqual({
-      name: "Enter the name",
-      role: "Choose the role",
-      username: "A username is 3 to 30 letters, digits, dots or underscores, starting with a letter",
-      password: "Password must be 8-72 characters with an uppercase letter, a lowercase letter, a number and a special character",
-    });
+    expect(staffProblems(emptyStaffForm())).toEqual({ name: "Enter the name", role: "Choose the role" });
   });
 
-  it("holds the username and the password to the server's rules", () => {
-    expect(staffProblems({ ...GOOD, username: "1asha" }).username).toBe("A username is 3 to 30 letters, digits, dots or underscores, starting with a letter");
-    expect(staffProblems({ ...GOOD, username: "as" }).username).toBeDefined();
-    expect(staffProblems({ ...GOOD, username: "Asha.Rao_41" })).toEqual({});
-    expect(staffProblems({ ...GOOD, password: "weakpass" }).password).toBeDefined();
+  it("needs the email when Give login access is ticked: the invitation goes to it", () => {
+    expect(staffProblems({ ...GOOD, giveLogin: true })).toEqual({ email: "Enter the email: the login invitation is sent to it" });
+    expect(staffProblems({ ...GOOD, giveLogin: true, email: "nope" })).toEqual({ email: "Enter a valid email address" });
+    expect(staffProblems({ ...GOOD, giveLogin: true, email: "asha@school.example" })).toEqual({});
   });
 
   it("an email is optional, but one that is typed has to be an email", () => {
@@ -28,8 +29,8 @@ describe("the staff form", () => {
     expect(staffProblems({ ...GOOD, email: "not-an-email" })).toEqual({ email: "Enter a valid email address" });
   });
 
-  it("does not ask for a login when a person is changed (the Staff list changes the username and the password)", () => {
-    expect(staffProblems({ ...GOOD, username: "", password: "" }, { editing: true })).toEqual({});
+  it("does not ask about login access when a person is changed (the Staff list gives it)", () => {
+    expect(staffProblems({ ...GOOD, giveLogin: true }, { editing: true })).toEqual({});
   });
 
   it("the role Other needs a name of the school's own, up to 40 letters; any other role needs none", () => {
@@ -53,16 +54,16 @@ describe("the staff form", () => {
     expect(staffProblems({ ...GOOD, dateOfBirth: "1990-02-31" }).dateOfBirth).toBe("Choose a valid date of birth");
   });
 
-  it("sends the login with a new person (username in lower case), an empty box as null, the mobile as its 10 digits", () => {
-    const sent = toStaffInput({ ...GOOD, username: " Asha.Rao_41 ", mobile: "+91 98765 43210", gender: "Female", designation: " Front desk ", addressLine1: "5 MG Road", city: "", state: "", pincode: "" });
+  it("sends login access with a new person when it is ticked, an empty box as null, the mobile as its 10 digits", () => {
+    const sent = toStaffInput({ ...GOOD, giveLogin: true, email: "asha@school.example", mobile: "+91 98765 43210", gender: "Female", designation: " Front desk ", addressLine1: "5 MG Road", city: "", state: "", pincode: "" });
     expect(sent).toEqual({
       name: "Asha Rao",
       role: "receptionist",
       roleOther: null,
       alsoTeacher: false,
       subjectIds: [],
-      email: null,
-      login: { username: "asha.rao_41", password: "Recep@Desk1" },
+      email: "asha@school.example",
+      giveLogin: true,
       mobile: "9876543210",
       gender: "Female",
       dateOfBirth: null,
@@ -75,7 +76,9 @@ describe("the staff form", () => {
 
   it("sends the email in lower case when there is one; a person who is changed sends no login (and an emptied email as null)", () => {
     expect(toStaffInput({ ...GOOD, email: " Asha@School.Example " })).toMatchObject({ email: "asha@school.example" });
-    const changed = toStaffInput({ ...GOOD, email: "" }, { editing: true });
+    expect(toStaffInput(GOOD)).not.toHaveProperty("giveLogin");
+    const changed = toStaffInput({ ...GOOD, giveLogin: true, email: "" }, { editing: true });
+    expect(changed).not.toHaveProperty("giveLogin");
     expect(changed).not.toHaveProperty("login");
     expect(changed).toMatchObject({ email: null });
   });
@@ -106,15 +109,13 @@ describe("the staff form", () => {
       employeeCode: "S-1",
       joiningDate: null,
       status: "active",
-      login: { username: "asha.rao_41", isActive: true },
+      login: { username: "asha.rao_41", email: null, isActive: true, pending: false },
     };
-    expect(formFromStaff(member)).toMatchObject({ name: "Asha Rao", role: "other", roleOther: "Lab technician", alsoTeacher: true, subjectIds: ["maths"], email: "", mobile: "", gender: "Female", addressLine1: "5 MG Road", state: "Madhya Pradesh", employeeCode: "S-1", username: "", password: "" });
+    expect(formFromStaff(member)).toMatchObject({ name: "Asha Rao", role: "other", roleOther: "Lab technician", alsoTeacher: true, subjectIds: ["maths"], email: "", mobile: "", gender: "Female", addressLine1: "5 MG Road", state: "Madhya Pradesh", employeeCode: "S-1", giveLogin: false });
     expect(staffKeyOfPath("address.pincode")).toBe("pincode");
     expect(staffKeyOfPath("email")).toBe("email");
     expect(staffKeyOfPath("roleOther")).toBe("roleOther");
     expect(staffKeyOfPath("subjectIds")).toBe("subjectIds");
-    expect(staffKeyOfPath("login.username")).toBe("username");
-    expect(staffKeyOfPath("login.password")).toBe("password");
     expect(staffKeyOfPath("custom.c_x")).toBeNull();
   });
 });

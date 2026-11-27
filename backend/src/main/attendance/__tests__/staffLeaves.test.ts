@@ -10,6 +10,7 @@ import { Notification } from "../../notifications/models/Notification";
 import { NotificationService } from "../../notifications/services/notification.service";
 import { StaffMember } from "../../staff/models/StaffMember";
 import { everyoneAddedToTheApp } from "../../../test/teachers";
+import { postStaff } from "../../../test/logins";
 
 /**
  * The leave of the teachers and the staff (2026-11-24, user: "teacher login karega to leave daal sake; admin side teacher aur staff ki leaves aa jayein
@@ -27,10 +28,7 @@ async function setUp() {
   const s = await classroomSchool();
   await addTiming(s.token);
   const addStaff = async (name: string, role: string, username: string) => {
-    const res = await request(app)
-      .post("/api/v1/staff/members")
-      .set(auth(s.token))
-      .send({ name, role, mobile: `98765${String(43210 + username.length + name.length).padStart(5, "0")}`, login: { username, password: LOGIN_PASSWORD } });
+    const res = await postStaff(s.token, { name, role, mobile: `98765${String(43210 + username.length + name.length).padStart(5, "0")}`, login: { username, password: LOGIN_PASSWORD } });
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     return res.body.data.id as string;
   };
@@ -39,7 +37,7 @@ async function setUp() {
   // Everyone joined at the start of the year, so the days asked about count.
   await StaffMember.collection.updateMany({ tenantId: new Types.ObjectId(s.tenantId) }, { $set: { createdAt: new Date("2026-04-01T00:00:00.000Z"), joiningDate: new Date("2026-04-01T00:00:00.000Z") } });
   await everyoneAddedToTheApp(s.tenantId);
-  return { s, desk, head, tokens: { ...s.tokens, desk: await signInAs("sun.desk"), head: await signInAs("sun.head") } };
+  return { s, desk, head, tokens: { ...s.tokens, desk: await signInAs("sun.desk@mail.test"), head: await signInAs("sun.head@mail.test") } };
 }
 
 const apply = (token: string, body: object) => request(app).post(`${api}/mine`).set(auth(token)).send(body);

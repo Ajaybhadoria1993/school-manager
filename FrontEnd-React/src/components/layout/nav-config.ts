@@ -4,6 +4,7 @@ import {
   BadgePercent,
   FileText,
   CircleAlert,
+  ChartColumn,
   HandCoins,
   ReceiptText,
   Building2,
@@ -34,7 +35,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { AuthUser, UserRole } from "../../types";
-import { FULL_ACCESS_ROLES, can } from "../../utils/permissions";
+import { FULL_ACCESS_ROLES, can, canOnSchool } from "../../utils/permissions";
 
 export interface NavItem {
   label: string;
@@ -47,8 +48,9 @@ export interface NavItem {
    */
   permission?: string[];
   /**
-   * A page about the WHOLE school (every student, every class's attendance): a teacher, a parent or a student is not given it by a permission,
-   * because what they may do is about their own classes or children (the server refuses them these pages too).
+   * A page about the WHOLE school (every student, every class's attendance): a teacher, a parent or a student is not given it by their own
+   * list, because what they may do is about their own classes or children (the server refuses them these pages too). A teacher who is also on
+   * the staff (a Coordinator who takes a class) is given it by what their staff role's list has (`schoolPermissions`, 2026-11-26).
    */
   schoolWide?: boolean;
   /** The menu heading this item sits under. Items of one group are kept next to each other. */
@@ -85,6 +87,17 @@ export const NAV_ITEMS: NavItem[] = [
       "parent",
       "student",
     ],
+    group: "Overview",
+  },
+  {
+    // Exams and tests of the year (2026-11-06): Half-Yearly, Annual, Unit, Monthly, Class test. Its own row at the top (2026-11-26, the user:
+    // "Exam ka alag tab, sabse upar"; it was Test & Exam under Manage school): the page has the tabs Exams and Exam Time Table.
+    label: "Exam",
+    href: "/school/exams",
+    icon: ClipboardList,
+    roles: ["school_admin", "principal"],
+    permission: ["exams.manage"],
+    schoolWide: true,
     group: "Overview",
   },
   {
@@ -147,6 +160,8 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/attendance/staff",
     icon: UserRoundCog,
     roles: ["school_admin", "principal"],
+    permission: ["attendance.staff"],
+    schoolWide: true,
     group: "Overview",
     submenu: "Attendance",
   },
@@ -179,8 +194,19 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/school/arrangements",
     icon: ArrowLeftRight,
     roles: ["school_admin", "principal"],
-    permission: ["timetable.edit"],
+    // Its Arrangements tab is timetable.edit, its Leave requests tab staffleaves.view (2026-11-26): either opens the page.
+    permission: ["timetable.edit", "staffleaves.view"],
     schoolWide: true,
+    group: "Overview",
+  },
+  {
+    // Teaching progress (docs/teaching-progress.md): who taught what, the chapters and the homework. The school sees every class, a teacher
+    // their own (as class teacher every subject of the class), staff every class when the school allowed it. Not `schoolWide`: it is a teacher's page too.
+    label: "Teaching progress",
+    href: "/teaching-progress",
+    icon: ChartColumn,
+    roles: ["school_admin", "principal"],
+    permission: ["progress.view", "classwork.view"],
     group: "Overview",
   },
   {
@@ -383,16 +409,6 @@ export const NAV_ITEMS: NavItem[] = [
     group: "Manage school",
   },
   {
-    // Exams and tests of the year (2026-11-06): Half-Yearly, Annual, Unit, Monthly, Class test; which classes write what, when and for how long.
-    label: "Test & Exam",
-    href: "/school/exams",
-    icon: ClipboardList,
-    roles: ["school_admin", "principal"],
-    permission: ["exams.manage"],
-    schoolWide: true,
-    group: "Manage school",
-  },
-  {
     label: "Settings",
     href: "/settings",
     icon: Settings2,
@@ -405,8 +421,7 @@ export const NAV_ITEMS: NavItem[] = [
 export function navVisible(item: NavItem, user: AuthUser): boolean {
   if (item.roles.includes(user.role)) return true;
   if (!item.permission || user.role === "super_admin" || FULL_ACCESS_ROLES.includes(user.role)) return false;
-  if (item.schoolWide && (user.role === "teacher" || user.role === "parent" || user.role === "student")) return false;
-  return can(user, ...item.permission);
+  return item.schoolWide ? canOnSchool(user, ...item.permission) : can(user, ...item.permission);
 }
 
 /**
@@ -501,7 +516,7 @@ export function kickerOf(item: NavItem | undefined, school: string): string {
   if (href.startsWith("/fees")) return "Finance";
   if (href.startsWith("/transport")) return "Transport";
   if (href.startsWith("/school/students") || href.startsWith("/teachers") || href === "/staff") return "People";
-  if (href.startsWith("/school/timings") || href.startsWith("/school/timetable") || href.startsWith("/school/arrangements") || href === "/school-class") return "Academics";
+  if (href.startsWith("/school/timings") || href.startsWith("/school/timetable") || href.startsWith("/school/arrangements") || href.startsWith("/school/exams") || href === "/school-class" || href === "/teaching-progress") return "Academics";
   if (["/permissions", "/calendar", "/leaves"].includes(href)) return "Admin";
   return school;
 }

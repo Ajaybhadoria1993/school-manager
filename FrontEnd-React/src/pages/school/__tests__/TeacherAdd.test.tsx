@@ -23,8 +23,17 @@ function openPage(extra: Record<string, Handler> = {}, path = "/school/teachers/
       subjects.push(made);
       return made;
     },
-    "GET /staff/usernames/check": () => ({ available: true, suggestions: [] }),
-    "POST /staff/teachers": (body) => ({ ...MEENA, id: "new-teacher", ...(body as object), login: { username: "meena.singh", isActive: true } }),
+    // With login access the teacher's email is their login, Pending, and the answer says where the invitation went.
+    "POST /staff/teachers": (body) => {
+      const sent = body as { giveLogin?: boolean; email?: string };
+      return {
+        ...MEENA,
+        id: "new-teacher",
+        ...sent,
+        login: sent.giveLogin ? { username: null, email: sent.email, isActive: true, pending: true } : null,
+        ...(sent.giveLogin ? { invite: { email: sent.email, inviteExpiresAt: "2026-11-29T10:00:00.000Z", emailSent: true } } : {}),
+      };
+    },
     ...extra,
   });
   const router = createMemoryRouter(
@@ -69,20 +78,84 @@ async function fillPersonal(user: User) {
   await user.type(screen.getByLabelText(/^Mobile number/), "9876543210");
 }
 
-async function toLoginStep(user: User) {
+/** Personal info filled, and on to the last step (Teaching), where Add teacher is. */
+async function toLastStep(user: User) {
   await fillPersonal(user);
   await next(user);
   await next(user);
-  await next(user);
-  await screen.findByLabelText(/^Username/);
+  await screen.findByRole("button", { name: "Add teacher" });
 }
 
+describe("Add teacher: a photo (optional)", () => {
+  const photo = () => new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "me.png", { type: "image/png" });
+
+  it("a chosen photo is saved for the new teacher, after they are added", async () => {
+    const { calls, user } = openPage({ "PUT /staff/teachers/new-teacher/photo": () => ({ photo: "data:image/png;base64,aGk=" }) });
+    await user.upload(screen.getByLabelText("Choose a photo"), photo());
+    expect(await screen.findByRole("img", { name: /^Photo of/ })).toBeInTheDocument();
+    expect(writes(calls)).toHaveLength(0);
+    await toLastStep(user);
+    await user.click(screen.getByRole("button", { name: "Add teacher" }));
+    await screen.findByText("Meena Singh is added");
+    await waitFor(() => expect(writes(calls).map((c) => c.path)).toEqual(["/staff/teachers", "/staff/teachers/new-teacher/photo"]));
+  });
+
+  it("a photo that could not be saved is said; the teacher is added all the same", async () => {
+    const { user } = openPage({ "PUT /staff/teachers/new-teacher/photo": server(400, "The photo must be a PNG, JPG or WebP picture.", "PHOTO_NOT_IMAGE", []) });
+    await user.upload(screen.getByLabelText("Choose a photo"), photo());
+    await toLastStep(user);
+    await user.click(screen.getByRole("button", { name: "Add teacher" }));
+    await screen.findByText("Meena Singh is added");
+    expect(await screen.findByText(/The photo was not saved/)).toBeInTheDocument();
+  });
+});
+
+describe("Add teacher: a resume (optional)", () => {
+  const cv = () => new File([new Uint8Array(40)], "meena-cv.pdf", { type: "application/pdf" });
+
+  it("a chosen resume is saved for the new teacher, after they are added", async () => {
+    const { calls, user } = openPage({ "PUT /staff/teachers/new-teacher/resume": () => ({ resume: { name: "meena-cv.pdf", size: 40, uploadedAt: "2026-11-27T00:00:00.000Z" } }) });
+    await user.upload(screen.getByLabelText("Choose a resume"), cv());
+    expect(screen.getByText("meena-cv.pdf")).toBeInTheDocument();
+    expect(writes(calls)).toHaveLength(0);
+    await toLastStep(user);
+    await user.click(screen.getByRole("button", { name: "Add teacher" }));
+    await screen.findByText("Meena Singh is added");
+    await waitFor(() => expect(writes(calls).map((c) => c.path)).toEqual(["/staff/teachers", "/staff/teachers/new-teacher/resume"]));
+  });
+
+  it("kept while moving between the steps, taken out again, and nothing asked without one", async () => {
+    const { calls, user } = openPage();
+    await user.upload(screen.getByLabelText("Choose a resume"), cv());
+    await fillPersonal(user);
+    await next(user);
+    await user.click(screen.getByRole("button", { name: "Previous step" }));
+    expect(screen.getByText("meena-cv.pdf")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Remove the resume" }));
+    expect(screen.queryByText("meena-cv.pdf")).not.toBeInTheDocument();
+    await next(user);
+    await next(user);
+    await user.click(await screen.findByRole("button", { name: "Add teacher" }));
+    await screen.findByText("Meena Singh is added");
+    expect(calls.some((c) => c.path.endsWith("/resume"))).toBe(false);
+  });
+
+  it("a resume that could not be saved is said; the teacher is added all the same", async () => {
+    const { user } = openPage({ "PUT /staff/teachers/new-teacher/resume": server(400, "The resume must be a PDF or Word file.", "RESUME_NOT_DOCUMENT", []) });
+    await user.upload(screen.getByLabelText("Choose a resume"), cv());
+    await toLastStep(user);
+    await user.click(screen.getByRole("button", { name: "Add teacher" }));
+    await screen.findByText("Meena Singh is added");
+    expect(await screen.findByText(/The resume was not saved/)).toBeInTheDocument();
+  });
+});
+
 describe("Add teacher: the steps", () => {
-  it("opens on Personal info, with the four steps and no Back button", async () => {
+  it("opens on Personal info, with the three steps and no Back button (no Login step since 2026-11-26)", async () => {
     openPage();
     expect(await screen.findByRole("heading", { name: "Add teacher" })).toBeInTheDocument();
     const steps = within(screen.getByRole("list", { name: "Steps" }));
-    expect(steps.getAllByRole("listitem").map((li) => li.textContent?.replace(/^\d/, "").trim())).toEqual(["Personal info", "Job details", "Teaching", "Login"]);
+    expect(steps.getAllByRole("listitem").map((li) => li.textContent?.replace(/^\d/, "").trim())).toEqual(["Personal info", "Job details", "Teaching"]);
     expect(current()).toContain("Personal info");
     expect(screen.queryByRole("button", { name: "Previous step" })).not.toBeInTheDocument();
     expect(screen.getByLabelText(/^Name/)).toBeInTheDocument();
@@ -184,7 +257,6 @@ describe("Add teacher: the boxes", () => {
     const box = screen.getByRole("group", { name: /^Joining date/ });
     expect(within(box).getAllByRole("spinbutton").map((s) => s.textContent)).toEqual([day, month, year]);
     await next(user);
-    await next(user);
     await user.click(await screen.findByRole("button", { name: "Add teacher" }));
     await waitFor(() => expect(writes(calls)).toHaveLength(1));
     expect(writes(calls)[0].body).toMatchObject({ joiningDate: today });
@@ -201,7 +273,6 @@ describe("Add teacher: the boxes", () => {
     await user.click(within(grid).getAllByRole("button", { name: /\b1[0-9]?\b/ }).find((b) => b.textContent === "15") as HTMLElement);
     await waitFor(() => expect(screen.queryByRole("grid")).not.toBeInTheDocument());
     const [year, month] = todayInIndia().split("-");
-    await next(user);
     await next(user);
     await user.click(await screen.findByRole("button", { name: "Add teacher" }));
     await waitFor(() => expect(writes(calls)).toHaveLength(1));
@@ -220,7 +291,6 @@ describe("Add teacher: the boxes", () => {
     expect(writes(calls)).toEqual([expect.objectContaining({ method: "POST", path: "/subjects", body: { name: "Robotics" } })]);
     expect(current()).toContain("Teaching");
     expect(screen.queryByRole("textbox", { name: "New subject" })).not.toBeInTheDocument();
-    await next(user);
     await user.click(await screen.findByRole("button", { name: "Add teacher" }));
     await waitFor(() => expect(writes(calls)).toHaveLength(2));
     expect(writes(calls)[1].body).toMatchObject({ subjectIds: ["robotics"] });
@@ -265,114 +335,53 @@ describe("Add teacher: the boxes", () => {
   });
 });
 
-describe("Add teacher: the login", () => {
-  it("puts the name with a number in the username box, checks it is free, and makes a first password that passes the rules", async () => {
-    const { calls, user } = openPage();
-    await screen.findByLabelText(/^Name/);
-    await toLoginStep(user);
-    const username = (screen.getByLabelText(/^Username/) as HTMLInputElement).value;
-    expect(username).toMatch(/^meena\.singh_\d{2}$/);
-    expect(await screen.findByText("Available")).toBeInTheDocument();
-    expect(reads(calls).filter((c) => c.path === "/staff/usernames/check").map((c) => c.query)).toEqual([`?username=${encodeURIComponent(username)}`]);
-    const password = (screen.getByLabelText(/^Password/) as HTMLInputElement).value;
-    expect(password).toHaveLength(10);
-    expect(password).toMatch(/[A-Z]/);
-    expect(password).toMatch(/[a-z]/);
-    expect(password).toMatch(/\d/);
-    expect(password).toMatch(/[^\w\s]/);
-    await user.click(screen.getByRole("button", { name: "Make another password" }));
-    expect((screen.getByLabelText(/^Password/) as HTMLInputElement).value).not.toBe(password);
-  });
-
-  it("keeps the same username when the Login step is opened again", async () => {
+describe("Add teacher: login access (2026-11-26: the email and an invitation, no username or password)", () => {
+  it("has a Give login access box, not ticked, and nowhere a username or a password", async () => {
     const { user } = openPage();
     await screen.findByLabelText(/^Name/);
-    await toLoginStep(user);
-    const first = (screen.getByLabelText(/^Username/) as HTMLInputElement).value;
-    await user.click(screen.getByRole("button", { name: "Previous step" }));
-    await next(user);
-    expect(await screen.findByLabelText(/^Username/)).toHaveValue(first);
+    const box = screen.getByRole("checkbox", { name: "Give login access" });
+    expect(box).not.toBeChecked();
+    expect(screen.queryByLabelText(/^Username/)).not.toBeInTheDocument();
+    await toLastStep(user);
+    expect(screen.queryByLabelText(/^Username/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^Password/)).not.toBeInTheDocument();
   });
 
-  it("a username made from the name that is already somebody's (in any school) is swapped at once for a free one (2026-11-04)", async () => {
-    const { user } = openPage({
-      "GET /staff/usernames/check": (_body, query) =>
-        query.get("username") === "meena.singh_41" ? { available: true, suggestions: [] } : { available: false, suggestions: ["meena.singh_41", "meena.singh_73"] },
-    });
-    await screen.findByLabelText(/^Name/);
-    await toLoginStep(user);
-    await waitFor(() => expect(screen.getByLabelText(/^Username/)).toHaveValue("meena.singh_41"));
-    expect(await screen.findByText("Available")).toBeInTheDocument();
-    expect(screen.queryByText("This username is taken. Try another")).not.toBeInTheDocument();
-  });
-
-  it("one the person types that is taken (in any school) is said so, with free ones, and one click takes one", async () => {
-    const { user } = openPage({
-      "GET /staff/usernames/check": (_body, query) =>
-        query.get("username") === "meena.singh_41" ? { available: true, suggestions: [] } : { available: false, suggestions: ["meena.singh_41", "meena.singh_73"] },
-    });
-    await screen.findByLabelText(/^Name/);
-    await toLoginStep(user);
-    await waitFor(() => expect(screen.getByLabelText(/^Username/)).toHaveValue("meena.singh_41"));
-    await user.clear(screen.getByLabelText(/^Username/));
-    await user.type(screen.getByLabelText(/^Username/), "meena.singh_30");
-    expect(await screen.findByText("This username is taken. Try another")).toBeInTheDocument();
-    expect(screen.getByLabelText(/^Username/)).toHaveAttribute("aria-invalid", "true");
-    // A typed one stays as typed: nothing is swapped behind the person's back.
-    expect(screen.getByLabelText(/^Username/)).toHaveValue("meena.singh_30");
-    await user.click(screen.getByRole("button", { name: "meena.singh_41" }));
-    expect(screen.getByLabelText(/^Username/)).toHaveValue("meena.singh_41");
-    expect(await screen.findByText("Available")).toBeInTheDocument();
-  });
-
-  it("will not add the teacher while the username is taken", async () => {
-    const { calls, user } = openPage({ "GET /staff/usernames/check": () => ({ available: false, suggestions: ["meena.singh_41"] }) });
-    await screen.findByLabelText(/^Name/);
-    await toLoginStep(user);
-    // The one made from the name is swapped for the offered one; here that one is taken too (it was taken a moment ago).
-    await waitFor(() => expect(screen.getByLabelText(/^Username/)).toHaveValue("meena.singh_41"));
-    await waitFor(() => expect(screen.getByLabelText(/^Username/)).toHaveAttribute("aria-invalid", "true"));
-    await screen.findByText("This username is taken. Try another");
-    await user.click(screen.getByRole("button", { name: "Add teacher" }));
-    expect(writes(calls)).toHaveLength(0);
-    expect(screen.getByLabelText(/^Username/)).toHaveFocus();
-  });
-
-  it("keeps a username the person typed, even when the name is changed afterwards", async () => {
-    const { user } = openPage();
-    await screen.findByLabelText(/^Name/);
-    await toLoginStep(user);
-    await user.clear(screen.getByLabelText(/^Username/));
-    await user.type(screen.getByLabelText(/^Username/), "meena_s");
-    await user.click(screen.getByRole("button", { name: "Previous step" }));
-    await user.click(screen.getByRole("button", { name: "Previous step" }));
-    await user.click(screen.getByRole("button", { name: "Previous step" }));
-    await user.type(screen.getByLabelText(/^Name/), " Rathore");
-    await next(user);
-    await next(user);
-    await next(user);
-    expect(await screen.findByLabelText(/^Username/)).toHaveValue("meena_s");
-  });
-
-  it("will not add with a username or password that is wrong, and says so under the box", async () => {
+  it("not ticked: the teacher is added without a login, the email may be empty, and nothing about logins is sent", async () => {
     const { calls, user } = openPage();
     await screen.findByLabelText(/^Name/);
-    await toLoginStep(user);
-    await user.clear(screen.getByLabelText(/^Username/));
-    await user.type(screen.getByLabelText(/^Username/), "9x");
-    await user.clear(screen.getByLabelText(/^Password/));
-    await user.type(screen.getByLabelText(/^Password/), "weak");
+    await toLastStep(user);
     await user.click(screen.getByRole("button", { name: "Add teacher" }));
-    expect(await screen.findByText(/A username is 3 to 30/)).toBeInTheDocument();
-    expect(screen.getByText(/Password must be 8-72 characters/)).toBeInTheDocument();
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0].body).not.toHaveProperty("giveLogin");
+    expect(writes(calls)[0].body).not.toHaveProperty("login");
+    expect(await screen.findByRole("heading", { name: "Meena Singh is added" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Login invitation" })).not.toBeInTheDocument();
+  });
+
+  it("ticked: the email is needed before Next, even when the school does not ask the email", async () => {
+    const { calls, user } = openPage({ "GET /staff/teachers/settings": () => ({ fields: { email: "hidden" }, customFields: [], exportColumns: [], exportIsDefault: true }) });
+    await screen.findByLabelText(/^Name/);
+    expect(screen.queryByLabelText(/^Email/)).not.toBeInTheDocument();
+    await fillPersonal(user);
+    await user.click(screen.getByRole("checkbox", { name: "Give login access" }));
+    // The email box comes with the tick, needed.
+    const email = await screen.findByLabelText(/^Email/);
+    await next(user);
+    expect(await screen.findByText("Enter the email: the login invitation is sent to it")).toBeInTheDocument();
+    expect(current()).toContain("Personal info");
+    await user.type(email, "meena@school.example");
+    await next(user);
+    expect(await screen.findByLabelText(/^Employee code/)).toBeInTheDocument();
     expect(writes(calls)).toHaveLength(0);
   });
 
-  it("makes the teacher and the login in one request, with everything that was filled in", async () => {
+  it("makes the teacher in one request with everything filled in and login access; afterwards says where the invitation went and that it is Pending", async () => {
     const { calls, user } = openPage();
     await screen.findByLabelText(/^Name/);
     await fillPersonal(user);
     await user.type(screen.getByLabelText(/^Email/), "meena@school.example");
+    await user.click(screen.getByRole("checkbox", { name: "Give login access" }));
     await user.type(screen.getByLabelText(/^PIN code/), "462001");
     await next(user);
     await user.type(screen.getByLabelText(/^Employee code/), "t-14");
@@ -383,9 +392,6 @@ describe("Add teacher: the login", () => {
     await user.click(await screen.findByRole("button", { name: "Mathematics" }));
     await user.type(screen.getByLabelText(/^Most periods a day/), "6");
     await user.click(screen.getByRole("button", { name: "Saturday" }));
-    await next(user);
-    await user.clear(await screen.findByLabelText(/^Password/));
-    await user.type(screen.getByLabelText(/^Password/), "Sch00l@Teach1");
     await user.click(screen.getByRole("button", { name: "Add teacher" }));
 
     await waitFor(() => expect(writes(calls)).toHaveLength(1));
@@ -407,40 +413,46 @@ describe("Add teacher: the login", () => {
       maxPeriodsPerDay: 6,
       maxPeriodsPerWeek: null,
       offDays: [6],
-      login: { username: expect.stringMatching(/^meena\.singh_\d{2}$/), password: "Sch00l@Teach1" },
+      giveLogin: true,
     });
+    const card = await screen.findByRole("region", { name: "Login invitation" });
+    expect(within(card).getByText(/Invitation sent to/)).toHaveTextContent("Invitation sent to meena@school.example");
+    expect(within(card).getByText(/Pending until they open the link/)).toBeInTheDocument();
+  });
+
+  it("says plainly when the invitation email could not be sent", async () => {
+    const { user } = openPage({
+      "POST /staff/teachers": (body) => ({ ...MEENA, id: "new-teacher", ...(body as object), login: { username: null, email: "meena@school.example", isActive: true, pending: true }, invite: { email: "meena@school.example", inviteExpiresAt: "2026-11-29T10:00:00.000Z", emailSent: false } }),
+    });
+    await screen.findByLabelText(/^Name/);
+    await fillPersonal(user);
+    await user.type(screen.getByLabelText(/^Email/), "meena@school.example");
+    await user.click(screen.getByRole("checkbox", { name: "Give login access" }));
+    await next(user);
+    await next(user);
+    await user.click(await screen.findByRole("button", { name: "Add teacher" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("could not be sent");
   });
 });
 
 describe("Add teacher: after it is added", () => {
   async function addIt(user: User) {
     await screen.findByLabelText(/^Name/);
-    await toLoginStep(user);
-    await user.clear(screen.getByLabelText(/^Password/));
-    await user.type(screen.getByLabelText(/^Password/), "Sch00l@Teach1");
+    await toLastStep(user);
     await user.click(screen.getByRole("button", { name: "Add teacher" }));
   }
 
-  it("shows the username and the password once, so they can be given to the teacher", async () => {
-    const { user } = openPage();
-    await addIt(user);
-    expect(await screen.findByRole("heading", { name: "Meena Singh is added" })).toBeInTheDocument();
-    const card = screen.getByRole("region", { name: "Login details" });
-    expect(within(card).getByText("meena.singh")).toBeInTheDocument();
-    expect(within(card).getByText("Sch00l@Teach1")).toBeInTheDocument();
-  });
-
-  it("copies the sign-in details as a message the school can send", async () => {
+  it("copies the invitation link on a development server that has no email service", async () => {
     const written: string[] = [];
-    const { user } = openPage();
+    const link = "http://localhost:5173/set-password?token=abc";
+    const { user } = openPage({
+      "POST /staff/teachers": (body) => ({ ...MEENA, id: "new-teacher", ...(body as object), login: { username: null, email: "meena@school.example", isActive: true, pending: true }, invite: { email: "meena@school.example", inviteExpiresAt: "2026-11-29T10:00:00.000Z", emailSent: false, devInviteLink: link } }),
+    });
     Object.defineProperty(navigator, "clipboard", { value: { writeText: async (text: string) => void written.push(text) }, configurable: true });
     await addIt(user);
-    await user.click(await screen.findByRole("button", { name: "Copy login details" }));
-    await waitFor(() => expect(written).toHaveLength(1));
-    expect(written[0]).toContain("Meena Singh");
-    expect(written[0]).toContain("Username: meena.singh");
-    expect(written[0]).toContain("Password: Sch00l@Teach1");
-    expect(written[0]).toContain("/login");
+    expect(await screen.findByText(link)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Copy link" }));
+    await waitFor(() => expect(written).toEqual([link]));
     expect(await screen.findByRole("button", { name: "Copied" })).toBeInTheDocument();
   });
 
@@ -470,17 +482,23 @@ describe("Add teacher: after it is added", () => {
 describe("Add teacher: what the server says", () => {
   async function submit(user: User) {
     await screen.findByLabelText(/^Name/);
-    await toLoginStep(user);
+    await toLastStep(user);
     await user.click(screen.getByRole("button", { name: "Add teacher" }));
   }
 
-  it("takes a username that is taken back to the Login step with the suggestion under the box", async () => {
-    const message = "This username is taken. Try meena.singh2";
-    const { user } = openPage({ "POST /staff/teachers": server(409, message, "USERNAME_TAKEN", [{ path: "login.username", message }]) });
-    await submit(user);
+  it("takes an email that already has a login back to Personal info, under the email box", async () => {
+    const message = "This email already has a login. Use another email, or leave it empty";
+    const { user } = openPage({ "POST /staff/teachers": server(409, message, "LOGIN_EMAIL_TAKEN", [{ path: "email", message }]) });
+    await screen.findByLabelText(/^Name/);
+    await fillPersonal(user);
+    await user.type(screen.getByLabelText(/^Email/), "school@school.example");
+    await user.click(screen.getByRole("checkbox", { name: "Give login access" }));
+    await next(user);
+    await next(user);
+    await user.click(await screen.findByRole("button", { name: "Add teacher" }));
     expect(await screen.findByText(message)).toBeInTheDocument();
-    expect(current()).toContain("Login");
-    expect(screen.getByLabelText(/^Username/)).toHaveAttribute("aria-invalid", "true");
+    expect(current()).toContain("Personal info");
+    expect(screen.getByLabelText(/^Email/)).toHaveAttribute("aria-invalid", "true");
   });
 
   it("opens the step that a refused box is on", async () => {

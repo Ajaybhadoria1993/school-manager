@@ -27,7 +27,7 @@ const FULL: Teacher = {
   employmentType: "full_time",
   maxPeriodsPerDay: 6,
   offDays: [6],
-  login: { username: "meena.singh", isActive: true },
+  login: { username: "meena.singh", email: null, isActive: true, pending: false },
 };
 
 function openPage(teacher: Teacher, extra: Record<string, Handler> = {}, who?: { role: UserRole; permissions: string[] }) {
@@ -106,7 +106,7 @@ describe("A teacher's page", () => {
     const { calls } = openPage(FULL);
     await screen.findByRole("heading", { name: "Meena Singh" });
     await screen.findByText("Mathematics");
-    expect(calls.filter((c) => c.method === "GET").map((c) => c.path).sort()).toEqual(["/staff/teachers/meena", "/staff/teachers/meena/classes", "/staff/teachers/settings", "/subjects"]);
+    expect(calls.filter((c) => c.method === "GET").map((c) => c.path).sort()).toEqual(["/staff/teachers/meena", "/staff/teachers/meena/classes", "/staff/teachers/meena/photo", "/staff/teachers/meena/resume", "/staff/teachers/settings", "/subjects"]);
   });
 
   it("goes to the week and to the change form", async () => {
@@ -123,93 +123,98 @@ describe("A teacher's page", () => {
   });
 });
 
-describe("A teacher's login", () => {
-  it("shows the username and that it works, but never a password", async () => {
+describe("A teacher's login (2026-11-26: their email and an invitation; the school never sets a password)", () => {
+  const invite = (email: string) => ({ email, inviteExpiresAt: "2026-11-29T10:00:00.000Z", emailSent: true });
+
+  it("shows an older login's username and that it works, but never a password; Send password link is its button", async () => {
     openPage(FULL);
     const card = await screen.findByRole("region", { name: "Login" });
     expect(card).toHaveTextContent("meena.singh");
     expect(card).toHaveTextContent("Active");
     expect(card).not.toHaveTextContent(/password:/i);
+    expect(within(card).getByRole("button", { name: "Send password link" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /New password|Change username|Make a login/ })).not.toBeInTheDocument();
   });
 
-  it("says the login is closed for a teacher who has left, and brings the teacher back", async () => {
-    const left = { ...FULL, isActive: false, load: { sections: 0, periodsAllotted: 0 }, login: { username: "meena.singh", isActive: false } };
-    const { calls, user } = openPage(left, { "PATCH /staff/teachers/meena": () => ({ ...left, isActive: true, login: { username: "meena.singh", isActive: true } }) });
+  it("shows the email of a login and that it is Pending until the invitation is opened; Resend invitation sends it again to that email", async () => {
+    const pending = { ...FULL, login: { username: null, email: "meena@school.example", isActive: true, pending: true } };
+    const { calls, user } = openPage(pending, { "POST /staff/teachers/meena/login": () => ({ ...pending, invite: invite("meena@school.example") }) });
+    const card = await screen.findByRole("region", { name: "Login" });
+    expect(card).toHaveTextContent("meena@school.example");
+    expect(card).toHaveTextContent("Pending");
+    await user.click(within(card).getByRole("button", { name: "Resend invitation" }));
+    const d = await screen.findByRole("dialog", { name: "Resend invitation to Meena Singh" });
+    expect(within(d).getByLabelText(/^Email/)).toHaveValue("meena@school.example");
+    await user.click(within(d).getByRole("button", { name: "Send invitation" }));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0]).toMatchObject({ method: "POST", path: "/staff/teachers/meena/login", body: { email: "meena@school.example" } });
+    expect(await within(d).findByRole("region", { name: "Login invitation" })).toHaveTextContent("Invitation sent to meena@school.example");
+  });
+
+  it("says the login is closed for a teacher who has left, offers no login button, and brings the teacher back", async () => {
+    const left = { ...FULL, isActive: false, load: { sections: 0, periodsAllotted: 0 }, login: { username: "meena.singh", email: null, isActive: false, pending: false } };
+    const { calls, user } = openPage(left, { "PATCH /staff/teachers/meena": () => ({ ...left, isActive: true, login: { username: "meena.singh", email: null, isActive: true, pending: false } }) });
     const card = await screen.findByRole("region", { name: "Login" });
     expect(card).toHaveTextContent("Closed");
+    expect(within(card).queryByRole("button")).not.toBeInTheDocument();
     expect(screen.getByText("Left")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Bring back" }));
     await waitFor(() => expect(writes(calls)).toHaveLength(1));
     expect(writes(calls)[0]).toMatchObject({ path: "/staff/teachers/meena", body: { isActive: true } });
   });
 
-  it("gives a new password: made for the school, sent once, then shown to hand over", async () => {
-    const { calls, user } = openPage(FULL, { "POST /staff/teachers/meena/reset-password": () => ({}) });
-    await user.click(await screen.findByRole("button", { name: "New password" }));
-    const d = await screen.findByRole("dialog", { name: "New password for Meena Singh" });
-    const box = within(d).getByLabelText(/^Password/) as HTMLInputElement;
-    expect(box.value).toHaveLength(10);
-    await user.clear(box);
-    await user.type(box, "N3w@Passw0rd");
-    await user.click(within(d).getByRole("button", { name: "Change password" }));
-    await waitFor(() => expect(writes(calls)).toHaveLength(1));
-    expect(writes(calls)[0]).toMatchObject({ method: "POST", path: "/staff/teachers/meena/reset-password", body: { password: "N3w@Passw0rd" } });
-    const card = await within(d).findByRole("region", { name: "Login details" });
-    expect(card).toHaveTextContent("meena.singh");
-    expect(card).toHaveTextContent("N3w@Passw0rd");
-    expect(within(d).queryByLabelText(/^Password/)).not.toBeInTheDocument();
-  });
-
-  it("will not send a password that breaks the rules", async () => {
-    const { calls, user } = openPage(FULL);
-    await user.click(await screen.findByRole("button", { name: "New password" }));
-    const d = await screen.findByRole("dialog");
-    await user.clear(within(d).getByLabelText(/^Password/));
-    await user.type(within(d).getByLabelText(/^Password/), "weak");
-    await user.click(within(d).getByRole("button", { name: "Change password" }));
-    expect(await within(d).findByText(/Password must be 8-72 characters/)).toBeInTheDocument();
-    expect(writes(calls)).toHaveLength(0);
-  });
-
-  it("makes a login for a teacher who has none, with a username from the name, and shows what to hand over", async () => {
-    const bare = { ...MEENA };
-    const { calls, user } = openPage(bare, { "POST /staff/teachers/meena/login": (body) => ({ ...bare, login: { username: (body as { username: string }).username, isActive: true } }) });
+  it("gives a teacher with no login (a bulk upload) login access with the email they have, in one request", async () => {
+    const bare = { ...MEENA, email: "meena@school.example" };
+    const { calls, user } = openPage(bare, {
+      "POST /staff/teachers/meena/login": () => ({ ...bare, login: { username: null, email: "meena@school.example", isActive: true, pending: true }, invite: invite("meena@school.example") }),
+    });
     const card = await screen.findByRole("region", { name: "Login" });
-    expect(card).toHaveTextContent("No login yet");
-    await user.click(within(card).getByRole("button", { name: "Make a login" }));
-    const d = await screen.findByRole("dialog", { name: "Make a login for Meena Singh" });
-    expect(within(d).getByLabelText(/^Username/)).toHaveValue("meena.singh");
-    const password = (within(d).getByLabelText(/^Password/) as HTMLInputElement).value;
-    await user.click(within(d).getByRole("button", { name: "Make login" }));
-    await waitFor(() => expect(writes(calls)).toHaveLength(1));
-    expect(writes(calls)[0]).toMatchObject({ method: "POST", path: "/staff/teachers/meena/login", body: { username: "meena.singh", password } });
-    const details = await within(d).findByRole("region", { name: "Login details" });
-    expect(details).toHaveTextContent(password);
-  });
-
-  it("asks for the mobile number first when the teacher has none", async () => {
-    openPage({ ...DEV, id: "dev" });
-    const card = await screen.findByRole("region", { name: "Login" });
-    await userEvent.setup().click(within(card).getByRole("button", { name: "Make a login" }));
-    const d = await screen.findByRole("dialog");
-    expect(d).toHaveTextContent("mobile number");
+    expect(card).toHaveTextContent("No login");
+    await user.click(within(card).getByRole("button", { name: "Give login access" }));
+    const d = await screen.findByRole("dialog", { name: "Give login access to Meena Singh" });
+    expect(within(d).getByLabelText(/^Email/)).toHaveValue("meena@school.example");
     expect(within(d).queryByLabelText(/^Username/)).not.toBeInTheDocument();
-    expect(within(d).getByRole("link", { name: "Change Dev Patel" })).toHaveAttribute("href", "/school/teachers/dev/edit");
+    expect(within(d).queryByLabelText(/^Password/)).not.toBeInTheDocument();
+    await user.click(within(d).getByRole("button", { name: "Send invitation" }));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0]).toMatchObject({ method: "POST", path: "/staff/teachers/meena/login", body: { email: "meena@school.example" } });
+    expect(await within(d).findByRole("region", { name: "Login invitation" })).toBeInTheDocument();
   });
 
-  it("shows the server's reason under the username, and keeps the dialog", async () => {
-    const message = "This username is taken. Try meena.singh2";
-    const { user } = openPage(MEENA, { "POST /staff/teachers/meena/login": server(409, message, "USERNAME_TAKEN", [{ path: "login.username", message }]) });
-    await user.click(await screen.findByRole("button", { name: "Make a login" }));
+  it("asks for the email when the teacher has none, and will not send without a right one", async () => {
+    const { calls, user } = openPage({ ...DEV, id: "dev" }, {
+      "POST /staff/teachers/dev/login": (body) => ({ ...DEV, login: { username: null, email: (body as { email: string }).email, isActive: true, pending: true }, invite: invite((body as { email: string }).email) }),
+    });
+    const card = await screen.findByRole("region", { name: "Login" });
+    await user.click(within(card).getByRole("button", { name: "Give login access" }));
+    const d = await screen.findByRole("dialog", { name: "Give login access to Dev Patel" });
+    expect(within(d).getByLabelText(/^Email/)).toHaveValue("");
+    await user.click(within(d).getByRole("button", { name: "Send invitation" }));
+    expect(await within(d).findByText("Enter the email: the login invitation is sent to it")).toBeInTheDocument();
+    await user.type(within(d).getByLabelText(/^Email/), "dev@");
+    await user.click(within(d).getByRole("button", { name: "Send invitation" }));
+    expect(await within(d).findByText("Enter a valid email address")).toBeInTheDocument();
+    expect(writes(calls)).toHaveLength(0);
+    await user.type(within(d).getByLabelText(/^Email/), "school.example");
+    await user.click(within(d).getByRole("button", { name: "Send invitation" }));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0].body).toEqual({ email: "dev@school.example" });
+  });
+
+  it("shows the server's reason under the email, and keeps the dialog", async () => {
+    const message = "This email already has a login. Use another email, or leave it empty";
+    const { user } = openPage({ ...MEENA, email: "taken@school.example" }, { "POST /staff/teachers/meena/login": server(409, message, "LOGIN_EMAIL_TAKEN", [{ path: "email", message }]) });
+    await user.click(await screen.findByRole("button", { name: "Give login access" }));
     const d = await screen.findByRole("dialog");
-    await user.click(within(d).getByRole("button", { name: "Make login" }));
+    await user.click(within(d).getByRole("button", { name: "Send invitation" }));
     expect(await within(d).findByText(message)).toBeInTheDocument();
+    expect(within(d).queryByRole("region", { name: "Login invitation" })).not.toBeInTheDocument();
   });
 });
 
 describe("A teacher who leaves, from their page", () => {
   it("is marked as left after a question", async () => {
-    const dev = { ...DEV, login: { username: "dev.patel", isActive: true } };
+    const dev = { ...DEV, login: { username: "dev.patel", email: null, isActive: true, pending: false } };
     const { calls, user } = openPage(dev, { "PATCH /staff/teachers/dev": () => ({ ...dev, isActive: false }) });
     await user.click(await screen.findByRole("button", { name: "Has left" }));
     const d = await screen.findByRole("dialog", { name: "Dev Patel has left?" });
@@ -303,7 +308,7 @@ describe("a teacher's page for a person the school allowed (Permissions)", () =>
   it("a person who may only see teachers reads their details, classes and login, and has nothing to change", async () => {
     openPage(FULL, {}, reception(["teachers.view"]));
     expect(await screen.findByRole("heading", { name: FULL.name, level: 1 })).toBeInTheDocument();
-    for (const name of ["Change", "Give classes", "Has left", "Assign class", "New password", "Change username", "Make a login", "Week"]) {
+    for (const name of ["Change", "Give classes", "Has left", "Assign class", "Send password link", "Give login access", "Resend invitation", "Week"]) {
       expect(screen.queryByRole("button", { name }) ?? screen.queryByRole("link", { name }), name).toBeNull();
     }
   });
@@ -312,7 +317,7 @@ describe("a teacher's page for a person the school allowed (Permissions)", () =>
     openPage(FULL, {}, reception(["teachers.view", "teachers.edit"]));
     expect(await screen.findByRole("link", { name: "Change" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Assign class" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New password" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send password link" })).toBeInTheDocument();
     // The week is the timetable's page: its own permission.
     expect(screen.queryByRole("link", { name: "Week" })).not.toBeInTheDocument();
   });

@@ -8,14 +8,14 @@ import { Subject } from "../../subjects/models/Subject";
 import { resolveUnit } from "../../timetable/services/unit";
 import { Notify } from "../../notifications/services/events";
 import { User } from "../../users/models/User";
-import { ClassTest, DiaryEntry, type IClassTest } from "../models/ClassWork";
+import { ClassTest, DiaryEntry, Syllabus, type IClassTest } from "../models/ClassWork";
+import { CHAPTER_NOT_FOUND, chapterDto, chapterText, numberedChapter, syllabusProgress } from "./chapters";
 import type { AddTestInput, SaveDiaryInput, SaveMarksInput, UnitDayQuery, UnitQuery } from "../schemas/classroom.schemas";
-import { accessTo, unitFilter } from "./access";
+import { accessTo, NOT_THEIR_SUBJECT, unitFilter } from "./access";
 import { childrenOf } from "./children";
 import { fromDay, toDay } from "./calendar.service";
 import type { Caller } from "./leave.service";
 
-const NOT_THEIRS = () => ApiError.forbidden("Only this subject's teacher, the class teacher or the school writes it.", "NOT_THEIR_SUBJECT");
 const TEST_NOT_FOUND = () => ApiError.notFound("Test not found", "TEST_NOT_FOUND");
 
 async function subjectNames(tenantId: string, ids: (Types.ObjectId | string)[]) {
@@ -51,11 +51,13 @@ export class WorkService {
   static async diaryDay(tenantId: string, caller: Caller, query: UnitDayQuery) {
     const unit = await resolveUnit(tenantId, query.classId, query.sectionId === "none" ? null : query.sectionId);
     const access = await accessTo(tenantId, caller, unit);
-    const [entries, names] = await Promise.all([
+    const [entries, names, plans] = await Promise.all([
       DiaryEntry.find({ ...unitFilter(tenantId, unit), date: fromDay(query.date) }).lean(),
       subjectNames(tenantId, access.allotments.map((a) => a.subjectId)),
+      Syllabus.find({ ...unitFilter(tenantId, unit), academicYearId: unit.yearId }).lean(),
     ]);
     const bySubject = new Map(entries.map((e) => [e.subjectId.toString(), e]));
+    const chaptersOf = new Map(plans.map((p) => [p.subjectId.toString(), p.chapters]));
     const subjects = access.allotments
       .map((a) => {
         const e = bySubject.get(a.subjectId.toString());
@@ -63,7 +65,8 @@ export class WorkService {
           subjectId: a.subjectId.toString(),
           subjectName: names.get(a.subjectId.toString()) ?? "A subject",
           canWrite: access.subjects.has(a.subjectId.toString()),
-          entry: e ? { taught: e.taught, homework: e.homework, writtenBy: { name: e.writtenBy.name, role: e.writtenBy.role } } : null,
+          chapters: (chaptersOf.get(a.subjectId.toString()) ?? []).map(chapterDto),
+          entry: e ? { taught: e.taught, homework: e.homework, chapterId: e.chapterId?.toString() ?? null, writtenBy: { name: e.writtenBy.name, role: e.writtenBy.role } } : null,
         };
       })
       .sort((x, y) => x.subjectName.localeCompare(y.subjectName));
@@ -73,18 +76,47 @@ export class WorkService {
   static async saveDiary(tenantId: string, caller: Caller, input: SaveDiaryInput) {
     const unit = await resolveUnit(tenantId, input.classId, input.sectionId ?? null);
     const access = await accessTo(tenantId, caller, unit);
-    if (!access.subjects.has(input.subjectId)) throw NOT_THEIRS();
+    if (!access.subjects.has(input.subjectId)) throw NOT_THEIR_SUBJECT();
     if (input.date > todayInIndia()) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "date", message: "The diary is written on the day or after it" }]);
+    const subjectId = new Types.ObjectId(input.subjectId);
+    const plan = await Syllabus.findOne({ ...unitFilter(tenantId, unit), academicYearId: unit.yearId, subjectId }).lean();
+    // Checked before anything is written (no transactions).
+    if (input.chapterId && !numberedChapter(plan?.chapters, input.chapterId)) throw CHAPTER_NOT_FOUND();
     const user = await User.findById(caller.userId).select("name").lean();
     const before = await DiaryEntry.findOneAndUpdate(
-      { ...unitFilter(tenantId, unit), date: fromDay(input.date), subjectId: new Types.ObjectId(input.subjectId) },
-      { $set: { academicYearId: unit.yearId, taught: input.taught, homework: input.homework, writtenBy: { name: user?.name ?? "The school", role: caller.role } } },
+      { ...unitFilter(tenantId, unit), date: fromDay(input.date), subjectId },
+      {
+        $set: {
+          academicYearId: unit.yearId,
+          taught: input.taught,
+          homework: input.homework,
+          writtenBy: { name: user?.name ?? "The school", role: caller.role },
+          ...(input.chapterId === undefined ? {} : { chapterId: input.chapterId ? new Types.ObjectId(input.chapterId) : null }),
+        },
+      },
       { upsert: true, new: false }
     ).lean();
+    const earlierChapter = before?.chapterId?.toString() ?? null;
+    const chapterId = input.chapterId === undefined ? earlierChapter : input.chapterId;
+    const chapter = numberedChapter(plan?.chapters, chapterId);
+    if (plan && chapter && input.chapterId && input.chapterDone !== undefined) {
+      await Syllabus.updateOne(
+        { _id: plan._id, tenantId: plan.tenantId, "chapters._id": chapter.chapter._id },
+        { $set: { "chapters.$.completedOn": input.chapterDone ? (chapter.chapter.completedOn ?? fromDay(input.date)) : null } }
+      );
+    }
     // Saved again with the same words: the parents are not told twice.
-    if (!before || before.taught !== input.taught || before.homework !== input.homework) {
+    if (!before || before.taught !== input.taught || before.homework !== input.homework || earlierChapter !== chapterId) {
       const subjectName = (await subjectNames(tenantId, [input.subjectId])).get(input.subjectId) ?? "A subject";
-      Notify.diarySaved(tenantId, caller.userId, { unit, date: input.date, subjectName, taught: input.taught, homework: input.homework, by: user?.name ?? "The school" });
+      Notify.diarySaved(tenantId, caller.userId, {
+        unit,
+        date: input.date,
+        subjectName,
+        taught: input.taught,
+        homework: input.homework,
+        chapter: chapter ? chapterText(chapter) : null,
+        by: user?.name ?? "The school",
+      });
     }
     return WorkService.diaryDay(tenantId, caller, { classId: unit.classId, sectionId: unit.sectionId ?? "none", date: input.date });
   }
@@ -106,7 +138,7 @@ export class WorkService {
   static async addTest(tenantId: string, caller: Caller, input: AddTestInput) {
     const unit = await resolveUnit(tenantId, input.classId, input.sectionId ?? null);
     const access = await accessTo(tenantId, caller, unit);
-    if (!access.subjects.has(input.subjectId)) throw NOT_THEIRS();
+    if (!access.subjects.has(input.subjectId)) throw NOT_THEIR_SUBJECT();
     const user = await User.findById(caller.userId).select("name").lean();
     const made = await ClassTest.create({
       ...unitFilter(tenantId, unit),
@@ -145,7 +177,7 @@ export class WorkService {
 
   static async saveMarks(tenantId: string, caller: Caller, id: string, input: SaveMarksInput) {
     const { test, unit, canWrite } = await WorkService.testWithAccess(tenantId, caller, id);
-    if (!canWrite) throw NOT_THEIRS();
+    if (!canWrite) throw NOT_THEIR_SUBJECT();
     if (toDay(test.date) > todayInIndia()) throw ApiError.conflict("The marks are entered once the test is held.", "TEST_NOT_HELD");
     const over = input.marks.find((m) => m.marks !== null && m.marks > test.maxMarks);
     if (over) throw ApiError.badRequest("Invalid request data", "VALIDATION_ERROR", [{ path: "marks", message: `Marks are out of ${test.maxMarks}` }]);
@@ -178,7 +210,7 @@ export class WorkService {
 
   static async removeTest(tenantId: string, caller: Caller, id: string) {
     const { test, unit, canWrite } = await WorkService.testWithAccess(tenantId, caller, id);
-    if (!canWrite) throw NOT_THEIRS();
+    if (!canWrite) throw NOT_THEIR_SUBJECT();
     await ClassTest.deleteOne({ _id: test._id, tenantId: new Types.ObjectId(tenantId) });
     const subjectName = (await subjectNames(tenantId, [test.subjectId])).get(test.subjectId.toString()) ?? "A subject";
     Notify.testRemoved(tenantId, caller.userId, { unit, subjectName, date: toDay(test.date), topic: test.topic });
@@ -196,20 +228,33 @@ export class WorkService {
   /** The child's class's diary of a day (today when none is asked). */
   static async childDiary(tenantId: string, userId: string, studentId: string, date?: string) {
     const day = date ?? todayInIndia();
-    const { place, school } = await WorkService.childUnit(tenantId, userId, studentId);
-    if (!place) return { date: day, entries: [] };
-    const entries = await DiaryEntry.find({
-      tenantId: school,
-      classId: new Types.ObjectId(place.classId),
-      sectionId: place.sectionId ? new Types.ObjectId(place.sectionId) : null,
-      date: fromDay(day),
-    }).lean();
-    const names = await subjectNames(tenantId, entries.map((e) => e.subjectId));
+    const { place, school, yearId } = await WorkService.childUnit(tenantId, userId, studentId);
+    if (!place) return { date: day, entries: [], progress: [] };
+    const unit = { tenantId: school, classId: new Types.ObjectId(place.classId), sectionId: place.sectionId ? new Types.ObjectId(place.sectionId) : null };
+    const [entries, plans] = await Promise.all([
+      DiaryEntry.find({ ...unit, date: fromDay(day) }).lean(),
+      yearId ? Syllabus.find({ ...unit, academicYearId: yearId }).lean() : Promise.resolve([]),
+    ]);
+    const progress = yearId ? await syllabusProgress({ ...unit, academicYearId: yearId }, plans) : [];
+    const names = await subjectNames(tenantId, [...entries.map((e) => e.subjectId), ...plans.map((p) => p.subjectId)]);
+    const nameOf = (id: Types.ObjectId) => names.get(id.toString()) ?? "A subject";
+    const chaptersOf = new Map(plans.map((p) => [p.subjectId.toString(), p.chapters]));
     return {
       date: day,
       entries: entries
-        .map((e) => ({ subjectName: names.get(e.subjectId.toString()) ?? "A subject", taught: e.taught, homework: e.homework, writtenBy: e.writtenBy.name }))
+        .map((e) => {
+          const found = numberedChapter(chaptersOf.get(e.subjectId.toString()), e.chapterId?.toString());
+          return {
+            subjectName: nameOf(e.subjectId),
+            chapter: found ? { number: found.number, name: found.chapter.name, done: !!found.chapter.completedOn } : null,
+            taught: e.taught,
+            homework: e.homework,
+            writtenBy: e.writtenBy.name,
+          };
+        })
         .sort((a, b) => a.subjectName.localeCompare(b.subjectName)),
+      // How far each subject's chapters are, and the one going on.
+      progress: progress.map(({ subjectId, ...p }) => ({ subjectName: nameOf(subjectId), ...p })).sort((a, b) => a.subjectName.localeCompare(b.subjectName)),
     };
   }
 

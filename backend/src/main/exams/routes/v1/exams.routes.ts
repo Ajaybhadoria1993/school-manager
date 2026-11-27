@@ -4,16 +4,43 @@ import { requirePermission, requireSchoolPermission } from "../../../../middlewa
 import { yearView } from "../../../../middleware/yearView";
 import { validate } from "../../../../middleware/validate";
 import { EXAM_READERS, EXAM_WRITERS } from "../../constants";
-import { addPapers, createExam, deleteExam, deletePaper, examExists, getClassExams, getExam, getMarksSheet, listExams, saveMarks, updateExam, updatePaper } from "../../controllers/exams.controller";
+import {
+  addPapers,
+  addRoom,
+  createExam,
+  deleteExam,
+  deletePaper,
+  deleteRoom,
+  examExists,
+  getClassExams,
+  getExam,
+  getMarksSheet,
+  getRoster,
+  listDutyTeachers,
+  listExams,
+  listMyDuties,
+  listRooms,
+  saveDuty,
+  saveMarks,
+  saveRollNumbers,
+  updateExam,
+  updatePaper,
+  updateRoom,
+} from "../../controllers/exams.controller";
 import {
   addPapersSchema,
   classExamsQuerySchema,
   createExamSchema,
+  dutySchema,
   examIdParamSchema,
   listExamsQuerySchema,
   marksSheetQuerySchema,
   paperIdParamSchema,
   paperParamsSchema,
+  rollNumbersSchema,
+  roomParamsSchema,
+  roomSchema,
+  rosterQuerySchema,
   saveExamMarksSchema,
   updateExamSchema,
   updatePaperSchema,
@@ -41,6 +68,8 @@ const markers = requirePermission("exams.marks", "exams.manage");
 // A class's exams, its papers with the marks counts, and the exam days of its week; a paper's marks sheet and the marks (2026-11-06).
 // Declared before "/:id" so "class" and "papers" are not taken for an exam's id.
 router.get("/class", classReaders, validate(classExamsQuerySchema, "query"), getClassExams);
+// The rooms the signed-in teacher watches in the exams that are not over (their home, 2026-11-27); anyone else has none.
+router.get("/my-duties", listMyDuties);
 router.get("/papers/:paperId/marks", classReaders, validate(paperIdParamSchema, "params"), validate(marksSheetQuerySchema, "query"), getMarksSheet);
 router.put("/papers/:paperId/marks", markers, validate(paperIdParamSchema, "params"), validate(saveExamMarksSchema), saveMarks);
 
@@ -54,5 +83,16 @@ router.delete("/:id", writers, validate(examIdParamSchema, "params"), deleteExam
 router.post("/:id/papers", writers, validate(examIdParamSchema, "params"), examExists, validate(addPapersSchema), addPapers);
 router.patch("/:id/papers/:paperId", writers, validate(paperParamsSchema, "params"), examExists, validate(updatePaperSchema), updatePaper);
 router.delete("/:id/papers/:paperId", writers, validate(paperParamsSchema, "params"), deletePaper);
+
+// The children of an exam (a class, or one section): their father's name, roll number and room; roll numbers given; the rooms (2026-11-27).
+router.get("/:id/students", readers, validate(examIdParamSchema, "params"), examExists, validate(rosterQuerySchema, "query"), getRoster);
+router.put("/:id/roll-numbers", writers, validate(examIdParamSchema, "params"), examExists, validate(rollNumbersSchema), saveRollNumbers);
+router.get("/:id/rooms", readers, validate(examIdParamSchema, "params"), listRooms);
+router.post("/:id/rooms", writers, validate(examIdParamSchema, "params"), examExists, validate(roomSchema), addRoom);
+router.patch("/:id/rooms/:roomId", writers, validate(roomParamsSchema, "params"), examExists, validate(roomSchema), updateRoom);
+router.delete("/:id/rooms/:roomId", writers, validate(roomParamsSchema, "params"), deleteRoom);
+// Exam duty (2026-11-27): the school's teachers to choose from, and the one or two teachers who watch a room for the whole exam.
+router.get("/:id/teachers", readers, validate(examIdParamSchema, "params"), examExists, listDutyTeachers);
+router.put("/:id/duties", writers, validate(examIdParamSchema, "params"), examExists, validate(dutySchema), saveDuty);
 
 export default router;

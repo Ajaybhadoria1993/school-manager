@@ -42,10 +42,9 @@ itKeepsSchoolsApart("staff", {
     { name: "reading its teacher", method: "get", path: (c) => `${api}/${c.teacherId}` },
     { name: "changing its teacher", method: "patch", path: (c) => `${api}/${c.teacherId}`, body: () => ({ name: "Hacked" }) },
     { name: "making its teacher inactive", method: "patch", path: (c) => `${api}/${c.teacherId}`, body: () => ({ isActive: false }) },
-    { name: "making a login for its teacher", method: "post", path: (c) => `${api}/${c.teacherId}/login`, body: () => ({ username: "hacker", password: "Sch00l@Teach1" }) },
-    { name: "giving its teacher's login a new password", method: "post", path: (c) => `${api}/${c.withLoginId}/reset-password`, body: () => ({ password: "Sch00l@Hacked1" }) },
+    { name: "giving its teacher login access (to the intruder's email)", method: "post", path: (c) => `${api}/${c.teacherId}/login`, body: () => ({ email: "hacker@mail.test" }) },
+    { name: "sending its teacher's login a password link (to the intruder's email)", method: "post", path: (c) => `${api}/${c.withLoginId}/login`, body: () => ({ email: "hacker@mail.test" }) },
     { name: "making its teacher with a login inactive", method: "patch", path: (c) => `${api}/${c.withLoginId}`, body: () => ({ isActive: false }) },
-    { name: "changing its teacher's username", method: "patch", path: (c) => `${api}/${c.withLoginId}/login`, body: () => ({ username: "hacker" }) },
     { name: "reading its teacher's classes", method: "get", path: (c) => `${api}/${c.teacherId}/classes` },
     {
       name: "taking away the class teacher of its section",

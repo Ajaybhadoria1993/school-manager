@@ -25,6 +25,8 @@ const routes: RouteObject[] = [
       { path: "forgot-password", ...lazyRoute(() => import("../pages/auth/ForgotPassword")) },
       { path: "reset-password", ...lazyRoute(() => import("../pages/auth/ResetPassword")) },
       { path: "accept-invite", ...lazyRoute(() => import("../pages/auth/AcceptInvite")) },
+      // A teacher's or a staff member's login invitation (2026-11-26): they choose their password.
+      { path: "set-password", ...lazyRoute(() => import("../pages/auth/SetPassword")) },
       // A driver's phone: no sign-in, the private link of the vehicle (after the #) is the proof. Shares the phone's GPS with the live map.
       { path: "driver-track", ...lazyRoute(() => import("../pages/driver/DriverTrack")) },
 
@@ -60,7 +62,6 @@ const routes: RouteObject[] = [
             ...lazyRoute(() => import("./SchoolManagerRoute")),
             children: [
               { path: "attendance", ...lazyRoute(() => import("../pages/attendance/AttendanceRedirect")) },
-              { path: "attendance/staff", ...lazyRoute(() => import("../pages/attendance/StaffAttendance")) },
               { path: "permissions", ...lazyRoute(() => import("../pages/permissions/Permissions")) },
               // Keep old bookmarks working while the teacher directory and management now share one page.
               { path: "school/teachers", element: <Navigate to="/teachers" replace /> },
@@ -115,8 +116,6 @@ const routes: RouteObject[] = [
             element: <PermissionRoute keys={["timetable.edit"]} />,
             children: [
               { path: "school/timings", ...lazyRoute(() => import("../pages/school/SchoolTimings")) },
-              // The day's arrangement is for the running year: a year that is over says so (2026-11-22).
-              { ...lazyRoute(() => import("./RunningYearRoute")), children: [{ path: "school/arrangements", ...lazyRoute(() => import("../pages/school/Arrangements")) }] },
               { path: "school/timetable", ...lazyRoute(() => import("../pages/school/ClassTimetables")) },
               { path: "school/timetable/timings", ...lazyRoute(() => import("../pages/school/TimetableRedirect")) },
               { path: "school/timetable/subjects", ...lazyRoute(() => import("../pages/school/TimetableSubjects")) },
@@ -126,7 +125,18 @@ const routes: RouteObject[] = [
               { path: "school/timetable/teacher/:teacherId", ...lazyRoute(() => import("../pages/school/TimetableTeacherWeek")) },
             ],
           },
-          // Test & Exam: the year's exams and tests, and one exam's timetable.
+          // Leave & arrangements: the Arrangements tab is timetable.edit, the teachers' and staff's Leave requests staffleaves.view (2026-11-26).
+          // The day's arrangement is for the running year: a year that is over says so (2026-11-22).
+          {
+            element: <PermissionRoute keys={["timetable.edit", "staffleaves.view"]} />,
+            children: [{ ...lazyRoute(() => import("./RunningYearRoute")), children: [{ path: "school/arrangements", ...lazyRoute(() => import("../pages/school/Arrangements")) }] }],
+          },
+          // Teaching progress: a teacher's own classes (classwork.view) or every class (the school, staff with progress.view).
+          {
+            element: <PermissionRoute keys={["progress.view", "classwork.view"]} />,
+            children: [{ path: "teaching-progress", ...lazyRoute(() => import("../pages/progress/TeachingProgressPage")) }],
+          },
+          // Exam (its tabs Exams and Exam Time Table): the year's exams and tests, and one exam's timetable.
           {
             element: <PermissionRoute keys={["exams.manage"]} />,
             children: [
@@ -260,7 +270,8 @@ const routes: RouteObject[] = [
             ],
           },
           {
-            element: <PermissionRoute keys={["attendance.view"]} />,
+            // Every class's attendance: a class teacher's attendance.view is their own class's (they take it in its work page), so it does not open these.
+            element: <PermissionRoute keys={["attendance.view"]} schoolWide />,
             children: [
               { path: "attendance/students", ...lazyRoute(() => import("../pages/attendance/StudentAttendance")) },
               // The old register (a week, a month, a range), one click from the day of one class (2026-11-23).
@@ -270,6 +281,11 @@ const routes: RouteObject[] = [
           {
             element: <PermissionRoute keys={["attendance.teachers"]} />,
             children: [{ path: "attendance/teachers", ...lazyRoute(() => import("../pages/attendance/TeacherAttendance")) }],
+          },
+          // Attendance > Staff: the sheet only (2026-11-26: a permission of its own).
+          {
+            element: <PermissionRoute keys={["attendance.staff"]} />,
+            children: [{ path: "attendance/staff", ...lazyRoute(() => import("../pages/attendance/StaffAttendance")) }],
           },
           {
             path: "super-admin",

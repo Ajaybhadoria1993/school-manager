@@ -131,10 +131,10 @@ describe("who sees a teacher's details", () => {
   it("keeps a colleague's birthday, address and login name from the other teachers, who see the names", async () => {
     const { tenantId, token } = await createSchool("Sunrise Public School");
     const colleague = await addColleague(tenantId, "teacher");
-    await post(token, { ...FULL, login: { username: "meena.singh", password: "Sch00l@Teach1" } });
+    await post(token, { ...FULL, email: "meena@school.example", giveLogin: true });
 
     const asAdmin = (await request(app).get(api).set(auth(token))).body.data.items[0];
-    expect(asAdmin).toMatchObject({ dateOfBirth: "1988-07-14", login: { username: "meena.singh", isActive: true } });
+    expect(asAdmin).toMatchObject({ dateOfBirth: "1988-07-14", login: { email: "meena@school.example", isActive: true, pending: true } });
 
     const asTeacher = (await request(app).get(api).set(auth(colleague))).body.data.items[0];
     expect(asTeacher).toMatchObject({ name: "Meena Singh", designation: "TGT" });

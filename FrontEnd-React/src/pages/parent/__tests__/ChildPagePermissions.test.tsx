@@ -40,7 +40,7 @@ function openPage(permissions: string[]) {
     "GET /parent/children/s1/exams": () => ({ items: [], week: { from: "2026-09-14", to: "2026-09-20", days: [] } }),
     "GET /parent/children/s1/attendance": () => MONTH,
     "GET /parent/children/s1/leaves": () => ({ items: [] }),
-    "GET /parent/children/s1/diary": () => ({ date: "2026-11-04", entries: [] }),
+    "GET /parent/children/s1/diary": () => ({ date: "2026-11-04", entries: [], progress: [] }),
     "GET /parent/children/s1/tests": () => ({ upcoming: [], results: [], average: null }),
   });
   const router = createMemoryRouter([{ path: "/my-children/:id", element: <ChildPage /> }], { initialEntries: ["/my-children/s1"] });

@@ -6,6 +6,51 @@ Built 2026-11-03. Backend: `backend/src/main/staff` (the Teacher record and its 
 `components/teachers/`; it was called *Teachers* until the evening of 2026-11-03). Before this the teacher was only a name for the timetable and there was no
 screen to add one (the handoff of the same day, open point 1).
 
+## Logins since 2026-11-26: the teacher's email and an invitation (replaces the username and password below)
+
+The user (Hinglish, 2026-11-26): *"teacher aur staff ko static username aur password nahi dena; add ho to uska email mange, invitation link uske
+mail par jaye, jab tak pending status rahe; teacher link click karke password set karega, phir pending se complete; mail aur password se login, forget
+bhi kar sake jaisa admin mein hota hai; add karte waqt ek checkbox ho ki login ki permission deni hai, tick ho to mail mange; bulk upload waale
+teachers ko baad mein login ki permission de saken"*. The same holds for **Staff** (`docs/staff.md`). Parents are unchanged (username and password).
+
+* **Add teacher** has three steps (Personal info, Job details, Teaching; the Login step is gone). Personal info has a **Give login access** box
+  (not ticked to start with). Ticked, the **email is needed** (shown even when the school does not ask the email) and is sent with `giveLogin: true`.
+  The server makes the teacher and a login that is **their email** (`User.invitePending: true`, a random password nobody knows) and emails an
+  **invitation** (`templates/loginInvite.ts`, a one-time link `/set-password?token=`, valid `INVITE_TOKEN_TTL_HOURS`, 72 by default). The page then
+  shows *Invitation sent to …* and *Login is Pending until they open the link and set their password* (or that the email could not be sent;
+  on a development server with no email service, the link itself with **Copy link**). Not ticked: no login, nothing emailed.
+* **The teacher opens the link** (`pages/auth/SetPassword.tsx`): the school and their email are shown, they choose a password (the platform's rule),
+  and are signed in. The login is then **Active**; they sign in with **the email and that password**, and **Forgot password** works for them like
+  for the school admin (a reset link to the email; a teacher who lost the invitation can use it too: the reset is their first password).
+  The link works once; an expired / used / replaced link says so (`INVITE_EXPIRED`, `ALREADY_REGISTERED`, `INVITE_INVALID`). A Pending login cannot
+  sign in at all.
+* **Give login access later** (a teacher from a **bulk upload**, which makes no login): the teacher's page, Login card, **Give login access** opens a
+  window with the email (theirs, or empty to type one: it becomes their email too) and **Send invitation**. The same button is **Resend invitation** for
+  a Pending login (a fresh link; the old one stops working) and **Send password link** for a login that works (an older login with only a username
+  gets an email this way). A teacher who has left gets nothing (brought back first); a staff member's teacher record gets its login from Staff.
+* **Status** of a login, everywhere the same words: **No login**, **Pending**, **Active**, **Closed** (left). Manage Teacher's Login column shows it with the
+  email; the Teacher list shows *Login pending* under the name; the teacher's page shows it in the Login card; the Excel export's **Login** column has
+  the email (and "(invitation pending)").
+* **Changing the email** of a Pending login sends the invitation again to the new email and the old link stops; the email of a login that is its email
+  cannot be emptied (400 `email`). Two teachers of a school cannot have the same email (409 `TEACHER_EMAIL_EXISTS`), with or without a login.
+* **Gone:** the school's username and password for a teacher (Login step, Make a login, New password, Change username, the bulk upload's Username and
+  Password columns and its logins file). `POST /staff/teachers/:id/reset-password` and `PATCH /staff/teachers/:id/login` no longer exist (404).
+  **Older logins keep working** (username and password as before); Send password link gives them an email and a password of their own.
+* **API:** `POST /staff/teachers` `{ …, giveLogin?: true }` (then `email` needed) answers the teacher with `invite: { email, inviteExpiresAt, emailSent,
+  devInviteLink? }`; `POST /staff/teachers/:id/login` `{ email? }` = Give login access / Resend / password link (answer: the teacher + `invite`;
+  409 `TEACHER_HAS_LEFT`, `LOGIN_FROM_STAFF`, `LOGIN_EMAIL_TAKEN`, `TEACHER_EMAIL_EXISTS`; 400 `email` when there is none); `login` in a teacher is
+  `{ username: string | null, email: string | null, isActive, pending }`; the list's `login` filter takes `pending` too. Public:
+  `POST /auth/login-invite/check { token }` → `{ name, email, schoolName, expiresAt }`, `POST /auth/login-invite/accept { token, password }` → a session.
+  Code: `auth/services/loginInvite.service.ts`, `TeacherLogin.createInvited` / `sync` (staff/services/teacherLogin.service.ts),
+  `TeacherService.giveLogin`, `StaffMemberService.giveLogin`; FE `components/logins/{LoginAccessBox,GiveLoginDialog,InviteSentCard,LoginStatusBadge}.tsx`,
+  `utils/loginAccess.ts`.
+* **Tests:** backend `staff/__tests__/teacherLogin.test.ts` (the whole flow), `staffMembers.test.ts`; `src/test/logins.ts` turns the old test
+  shorthand `login: { username, password }` into the invitation, accepted (email `<username>@mail.test`). FE `SetPassword.test.tsx`, TeacherAdd,
+  TeacherDetail, StaffAdd, StaffDirectory, TeacherImport, `loginAccess.test.ts`.
+
+The sections below describe the first version (2026-11-03 to 2026-11-25); where they speak of a username and password the school makes for a
+teacher, the section above is what holds now.
+
 ## What the school does
 
 0. **Teacher** (the menu's Overview group, under Classes and Students; `/teachers`, title *All Teachers*) is for finding and opening teachers, laid

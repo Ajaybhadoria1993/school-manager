@@ -1,10 +1,9 @@
-import { BookOpen, Briefcase, Hash, Home, KeyRound, Mail, Phone, User, UserRound } from "lucide-react";
+import { BookOpen, Briefcase, Hash, Home, Mail, Phone, UserRound } from "lucide-react";
 import { DESIGNATIONS, EMPLOYMENT_OPTIONS, TEACHER_LIMITS } from "../../constants/teachers";
 import { STATES } from "../../constants/schoolOptions";
 import { GENDERS } from "../../constants/students";
 import { teacherFieldId, type TeacherForm } from "../../hooks/useTeacherForm";
-import type { UsernameStatus } from "../../hooks/useUsernameCheck";
-import { birthDateRange, generatePassword, jobAsked, joiningShortcuts, latestJoiningDate, onlyDigits } from "../../utils/teachers";
+import { birthDateRange, jobAsked, joiningShortcuts, latestJoiningDate, onlyDigits } from "../../utils/teachers";
 import { mobileDigits, todayInIndia } from "../../utils/students";
 import { FormCard } from "../students/form/FormCard";
 import { ChipPicker } from "../ui/ChipPicker";
@@ -14,14 +13,14 @@ import { Input } from "../ui/Input";
 import { SearchSelect } from "../ui/SearchSelect";
 import { Select } from "../ui/Select";
 import { DayChips } from "../timetable/DayChips";
-import { PasswordBox } from "./PasswordBox";
+import { LoginAccessBox } from "../logins/LoginAccessBox";
 import { SubjectChips } from "./SubjectChips";
-import { UsernameState } from "./UsernameState";
 
 /**
  * The boxes of a teacher, one card for each kind of detail. Add teacher puts them on its steps, Change teacher puts the first three on
  * one page. A box shows the star when it is needed and "(optional)" when it is not; `needed` says which of the two a box is on the
- * form that shows it (a teacher who is added needs a gender and a mobile number, one who is only changed does not).
+ * form that shows it (a teacher who is added needs a gender and a mobile number, one who is only changed does not). `loginAccess` (Add
+ * teacher): the "Give login access" box under the details; ticked, the email box is shown and needed (the invitation goes to it).
  */
 
 /** Three boxes to a row on a laptop, two on a tablet, one on a phone: the page is as wide as the screen allows. */
@@ -29,13 +28,15 @@ export const TEACHER_GRID = "grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-3"
 
 const twoDigits = onlyDigits(2);
 
-export function PersonalFields({ form, needed, genderNeeded = needed, index = 0 }: { form: TeacherForm; needed: boolean; genderNeeded?: boolean; index?: number }) {
+export function PersonalFields({ form, needed, genderNeeded = needed, index = 0, loginAccess = false, uploads }: { form: TeacherForm; needed: boolean; genderNeeded?: boolean; index?: number; loginAccess?: boolean; /** The photo and the resume, at the top of the first card. */ uploads?: React.ReactNode }) {
   const { values, rules } = form;
+  const loginEmail = loginAccess && values.giveLogin;
   const born = birthDateRange(todayInIndia());
   const addressAsked = (["address", "city", "state", "pincode"] as const).some((k) => rules[k] !== "hidden");
   return (
     <>
       <FormCard index={index} icon={UserRound} tone="primary" title="Teacher">
+        {uploads && <div className="mb-5 flex flex-wrap items-start gap-x-10 gap-y-4">{uploads}</div>}
         <div className={TEACHER_GRID}>
           <Field id={teacherFieldId("name")} label="Name" error={form.errorOf("name")}>
             <Input {...form.bind("name")} maxLength={TEACHER_LIMITS.name} autoComplete="off" placeholder="For example Meena Singh" />
@@ -68,12 +69,24 @@ export function PersonalFields({ form, needed, genderNeeded = needed, index = 0 
           <Field id={teacherFieldId("mobile")} label="Mobile number" optional={!needed} error={form.errorOf("mobile")}>
             <Input {...form.bind("mobile", mobileDigits)} icon={Phone} prefix="+91" type="tel" inputMode="numeric" autoComplete="off" placeholder="98765 43210" />
           </Field>
-          {rules.email !== "hidden" && (
-            <Field id={teacherFieldId("email")} label="Email" optional={rules.email !== "required"} error={form.errorOf("email")}>
+          {(rules.email !== "hidden" || loginEmail) && (
+            <Field id={teacherFieldId("email")} label="Email" optional={rules.email !== "required" && !loginEmail} error={form.errorOf("email")}>
               <Input {...form.bind("email")} icon={Mail} type="email" maxLength={254} autoComplete="off" placeholder="meena@example.com" />
             </Field>
           )}
         </div>
+        {loginAccess && (
+          <LoginAccessBox
+            id={teacherFieldId("giveLogin")}
+            className="mt-5 w-fit"
+            checked={values.giveLogin}
+            onChange={(on) => {
+              form.set("giveLogin", on);
+              // Unticked, an empty email is fine again: its message goes.
+              if (on && values.email.trim() !== "") form.reveal(["email"]);
+            }}
+          />
+        )}
       </FormCard>
 
       {/* autoComplete off: the browser would fill in the address of the person typing, not the teacher's. */}
@@ -207,33 +220,3 @@ export function TeachingFields({ form, index = 0 }: { form: TeacherForm; index?:
   );
 }
 
-/**
- * A username and a first password. The password is shown, not hidden: the school is making it for someone else and gives it to them.
- * Under the username: whether it is free on the platform (`check`), and when it is taken, free ones to take in one click.
- */
-export function LoginFields({ form, check, index = 0 }: { form: TeacherForm; check: UsernameStatus; index?: number }) {
-  const error = form.errorOf("username");
-  const taken = !error && check.state === "taken";
-  return (
-    <FormCard index={index} icon={KeyRound} tone="warning" title="Login">
-      <div className={TEACHER_GRID}>
-        <Field id={teacherFieldId("username")} label="Username" error={error}>
-          <Input
-            {...form.bind("username")}
-            aria-invalid={error !== undefined || taken ? true : undefined}
-            aria-describedby={error ? `${teacherFieldId("username")}-error` : taken ? "username-taken" : undefined}
-            icon={User}
-            maxLength={30}
-            autoComplete="off"
-            autoCapitalize="none"
-            spellCheck={false}
-          />
-          {!error && <UsernameState check={check} onPick={(name) => form.set("username", name, true)} />}
-        </Field>
-        <Field id={teacherFieldId("password")} label="Password" error={form.errorOf("password")}>
-          <PasswordBox {...form.bind("password")} onMakeAnother={() => form.set("password", generatePassword())} />
-        </Field>
-      </div>
-    </FormCard>
-  );
-}

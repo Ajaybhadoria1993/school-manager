@@ -4,7 +4,8 @@ import { SchoolClass } from "../../academics/models/SchoolClass";
 import { Subject } from "../../subjects/models/Subject";
 import type { ExamFacts } from "../../notifications/services/events";
 import { clockToMinutes, minutesToClock } from "../../timetable/time";
-import { EXAM_TYPE_INFO, type ExamType } from "../constants";
+import { EXAM_TYPE_INFO, type ExamScope, type ExamType } from "../constants";
+import type { AudienceDto } from "./audience";
 import type { IExam } from "../models/Exam";
 import type { IExamPaper } from "../models/ExamPaper";
 import { ExamMark } from "../models/ExamMark";
@@ -23,6 +24,10 @@ export interface ExamDto {
   startDate: string;
   endDate: string;
   schoolHours: { start: string; end: string } | null;
+  /** Whom it is for (2026-11-26): the whole school, some departments or some classes. */
+  scope: ExamScope;
+  /** Whom it is for, named, with its classes: on the school's list and an exam's page (not on a class's or a child's reading). */
+  audience?: AudienceDto;
   note: string | null;
   status: ExamStatus;
   paperCount: number;
@@ -58,13 +63,15 @@ export const asId = (id: string | Types.ObjectId) => new Types.ObjectId(String(i
 
 export const EXAM_NOT_FOUND = () => ApiError.notFound("This exam is not on the school's list any more", "EXAM_NOT_FOUND");
 export const PAPER_NOT_FOUND = () => ApiError.notFound("This paper is not in the exam any more", "PAPER_NOT_FOUND");
+/** What lets a teacher who is also on the staff (a Coordinator who takes a class) see and mark every class's exams: their role's exams.manage. */
+export const EXAMS_SCHOOL_WIDE: readonly string[] = ["exams.manage"];
 
 export interface Counts {
   papers: number;
   classes: Set<string>;
 }
 
-export const toExamDto = (e: IExam, counts: Counts | undefined, today: string): ExamDto => {
+export const toExamDto = (e: IExam, counts: Counts | undefined, today: string, audience?: AudienceDto): ExamDto => {
   const startDate = toDay(e.startDate);
   const endDate = toDay(e.endDate);
   return {
@@ -76,6 +83,8 @@ export const toExamDto = (e: IExam, counts: Counts | undefined, today: string): 
     startDate,
     endDate,
     schoolHours: e.schoolStart !== null && e.schoolEnd !== null ? { start: minutesToClock(e.schoolStart), end: minutesToClock(e.schoolEnd) } : null,
+    scope: e.scope ?? "school",
+    ...(audience ? { audience } : {}),
     note: e.note ?? null,
     status: examStatus(startDate, endDate, today),
     paperCount: counts?.papers ?? 0,

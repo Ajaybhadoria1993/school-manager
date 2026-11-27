@@ -20,6 +20,9 @@ import { Allotment } from "../main/subjects/models/Allotment";
 import { Subject } from "../main/subjects/models/Subject";
 import { HiddenHoliday } from "../main/classroom/models/HiddenHoliday";
 import { TeacherAttendance } from "../main/attendance/models/TeacherAttendance";
+import { ClassworkReminder } from "../main/classroom/models/ClassworkReminder";
+import { PersonPhoto } from "../main/profile/models/PersonPhoto";
+import { TeacherResume } from "../main/profile/models/TeacherResume";
 import { Exam } from "../main/exams/models/Exam";
 import { ExamMark } from "../main/exams/models/ExamMark";
 import { ExamPaper } from "../main/exams/models/ExamPaper";
@@ -56,6 +59,9 @@ beforeAll(async () => {
     ExamPaper.syncIndexes(),
     ExamMark.syncIndexes(),
     TeacherAttendance.syncIndexes(),
+    ClassworkReminder.syncIndexes(),
+    PersonPhoto.syncIndexes(),
+    TeacherResume.syncIndexes(),
     Notification.syncIndexes(),
   ]);
 });

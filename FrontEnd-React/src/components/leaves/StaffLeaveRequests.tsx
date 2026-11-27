@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { ArrowLeftRight, Check, MailCheck, X } from "lucide-react";
 import { Button as HeroButton } from "@heroui/react";
+import { useCan } from "../../hooks/useCan";
 import { useDecideStaffLeaveMutation, useGetStaffLeavesQuery } from "../../redux/api/attendanceApi";
 import { getApiError } from "../../utils/apiErrors";
 import { cn } from "../../utils/helpers";
@@ -44,6 +45,11 @@ const emptyTitle = (status: "pending" | "all", who: StaffLeaveWho) =>
 export function StaffLeaveRequests() {
   const [status, setStatus] = useState<"pending" | "all">("pending");
   const [who, setWho] = useState<StaffLeaveWho>("all");
+  // Seeing the leave is staffleaves.view; Approve and Decline are staffleaves.decide (2026-11-26).
+  const can = useCan();
+  const mayDecide = can("staffleaves.decide");
+  // Arrange periods opens the Arrangements tab, which is timetable.edit.
+  const mayArrange = can("timetable.edit");
   const res = useGetStaffLeavesQuery({ status, who });
   const [decide, { isLoading: deciding }] = useDecideStaffLeaveMutation();
   const [declining, setDeclining] = useState<StaffLeave | null>(null);
@@ -115,7 +121,7 @@ export function StaffLeaveRequests() {
                 <p className="text-sm font-semibold text-foreground">{leaveDays(l)}</p>
                 <p className="rounded-lg bg-background px-3 py-2 text-sm text-foreground">{l.reason}</p>
                 {answerLine(l) && <p className="text-xs font-semibold text-foreground-muted">{answerLine(l)}</p>}
-                {l.status === "pending" && (
+                {l.status === "pending" && mayDecide && (
                   <div className="flex gap-2">
                     <Button size="sm" disabled={deciding} onClick={() => void answer(l, "approved")}>
                       <Check className="size-4" aria-hidden />
@@ -127,7 +133,7 @@ export function StaffLeaveRequests() {
                     </Button>
                   </div>
                 )}
-                {l.status === "approved" && l.kind === "teacher" && l.toDate >= today && (
+                {mayArrange && l.status === "approved" && l.kind === "teacher" && l.toDate >= today && (
                   <Link
                     to={`/school/arrangements?date=${l.fromDate > today ? l.fromDate : today}`}
                     className="inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm font-bold text-foreground transition-colors hover:border-primary/50 hover:bg-primary-soft hover:text-primary-deep focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20"

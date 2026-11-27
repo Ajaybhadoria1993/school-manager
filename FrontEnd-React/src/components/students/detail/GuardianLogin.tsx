@@ -1,9 +1,7 @@
 import { useState } from "react";
 import { AtSign, KeyRound, UserRoundCog } from "lucide-react";
-import { useAuth } from "../../../hooks/useAuth";
 import { useCan } from "../../../hooks/useCan";
 import { useReadOnlyYear } from "../../../hooks/useReadOnlyYear";
-import { FULL_ACCESS_ROLES } from "../../../utils/permissions";
 import { useChangeGuardianUsernameMutation, useCreateGuardianLoginMutation, useResetGuardianPasswordMutation } from "../../../redux/api/studentsApi";
 import type { StudentGuardian } from "../../../types";
 import { ChangeUsernameDialog, MakeLoginDialog, NewPasswordDialog } from "../../logins/LoginDialogs";
@@ -21,10 +19,8 @@ export function GuardianLogin({ guardian }: { guardian: StudentGuardian }) {
   const [rename] = useChangeGuardianUsernameMutation();
   const { push } = useToast();
   const readOnly = useReadOnlyYear();
-  const { user } = useAuth();
   const can = useCan();
-  // Making a login goes with adding students; a new password or username is for the people who run the school.
-  const runsSchool = !!user && FULL_ACCESS_ROLES.includes(user.role);
+  // Making a login goes with adding students; a new password or username with changing students (the server's rule, docs/permissions.md).
   const login = guardian.login ?? null;
 
   return (
@@ -34,7 +30,7 @@ export function GuardianLogin({ guardian }: { guardian: StudentGuardian }) {
         {login ? <span className={login.isActive ? "font-mono font-semibold text-foreground" : "font-mono text-foreground-muted line-through"}>{login.username}</span> : <span className="text-foreground-muted">No login yet</span>}
       </p>
       {/* A year that is over is only looked at: the login is read, not changed. */}
-      <div hidden={login ? !runsSchool : !can("students.add")} className={readOnly ? "hidden" : "flex flex-wrap gap-1.5"}>
+      <div hidden={login ? !can("students.edit") : !can("students.add")} className={readOnly ? "hidden" : "flex flex-wrap gap-1.5"}>
         {login ? (
           <>
             <Button variant="outline" size="sm" aria-label={`Change the username of ${guardian.name}`} onClick={() => setDialog("username")}>

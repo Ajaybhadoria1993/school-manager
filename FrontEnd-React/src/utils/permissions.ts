@@ -10,7 +10,7 @@ export const FULL_ACCESS_ROLES: readonly UserRole[] = ["school_admin", "principa
 const USUAL: Partial<Record<UserRole, readonly string[]>> = {
   teacher: ["calendar.view", "attendance.view", "attendance.mark", "leaves.view", "leaves.decide", "classwork.view", "classwork.manage", "exams.view", "exams.marks", "timetable.view"],
   parent: ["calendar.view", "child.attendance", "child.timetable", "child.exams", "child.diary", "child.leave", "child.transport", "child.fees", "child.documents"],
-  accountant: ["dashboard.view", "students.view", "students.export", "calendar.view"],
+  accountant: ["dashboard.view", "students.view", "students.export", "calendar.view", "fees.view", "fees.manage", "fees.collect"],
   receptionist: ["calendar.view"],
   management: ["calendar.view"],
   staff: ["calendar.view"],
@@ -24,6 +24,20 @@ export function can(user: AuthUser | null | undefined, ...keys: string[]): boole
   if (!user) return false;
   if (FULL_ACCESS_ROLES.includes(user.role)) return true;
   const list = user.permissions ?? USUAL[user.role] ?? [];
+  return keys.some((key) => list.includes(key));
+}
+
+/** A login that works on its own classes or children, not on the school. */
+const OWN_ONLY_ROLES: readonly UserRole[] = ["teacher", "parent", "student"];
+
+/**
+ * Whether this person may do it on the WHOLE school's pages (the menu's Students, Fees, every class's attendance): a teacher or a parent only
+ * by what their staff role gives (a Coordinator who takes a class: 2026-11-26), never by their teacher's or parent's list; anyone else as `can`.
+ */
+export function canOnSchool(user: AuthUser | null | undefined, ...keys: string[]): boolean {
+  if (!user) return false;
+  if (!OWN_ONLY_ROLES.includes(user.role)) return can(user, ...keys);
+  const list = user.schoolPermissions ?? [];
   return keys.some((key) => list.includes(key));
 }
 
@@ -50,6 +64,8 @@ export const IMPLIES: Readonly<Record<string, string>> = {
   "years.manage": "classes.view",
   "transport.manage": "transport.view",
   "fees.manage": "fees.view",
+  "documents.manage": "documents.view",
+  "staffleaves.decide": "staffleaves.view",
 };
 
 /** The list after one box is ticked or cleared: ticking brings what it needs, clearing takes away what needed it. */

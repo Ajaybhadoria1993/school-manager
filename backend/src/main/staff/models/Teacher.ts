@@ -8,7 +8,8 @@ import { EMPLOYMENT_TYPES, MAX_DESIGNATION, MAX_EMPLOYEE_CODE, MAX_QUALIFICATION
  * inactive, and every old timetable still says who taught it.
  *
  * A login is optional: the timetable is made by the school for the teacher. When the school gives one, `userId` is the User (role
- * "teacher") who signs in with a username and a password; that User is switched off when the teacher is made inactive.
+ * "teacher") who signs in with their email and the password they chose from the invitation (2026-11-26; an older login has a username);
+ * that User is switched off when the teacher is made inactive.
  */
 export interface ITeacher {
   _id: Types.ObjectId;

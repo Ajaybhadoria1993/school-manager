@@ -1,17 +1,17 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../../../../middleware/auth";
-import { requirePermission, requireRoleOrPermission } from "../../../../middleware/permission";
+import { requirePermission, requireRoleOrPermission, requireSchoolPermission } from "../../../../middleware/permission";
+import { photoFile } from "../../../../middleware/uploadPhoto";
+import { downloadResume, getPersonPhoto, getResume, removePersonPhoto, removeResume, savePersonPhoto, saveResume, staffPhotoOwner, teacherPhotoOwner } from "../../../profile/controllers/profile.controller";
+import { resumeFile } from "../../../../middleware/uploadResume";
 import { yearView } from "../../../../middleware/yearView";
 import { importFile } from "../../../../middleware/uploadSheet";
 import { validate } from "../../../../middleware/validate";
 import {
-  changeStaffUsername,
   addTeacherToMedium,
-  changeTeacherUsername,
   checkUsernameFree,
   createTeacher,
   createStaffMember,
-  createTeacherLogin,
   exportTeachers,
   exportTeachersPreview,
   getMyTeacher,
@@ -20,15 +20,14 @@ import {
   getStaffMember,
   getTeacherSettings,
   getTeacherSummary,
+  giveStaffLogin,
+  giveTeacherLogin,
   importTeachers,
   listStaffMembers,
   listTeacherMediums,
   listTeachers,
-  makeStaffLogin,
   readTeachersFile,
   removeStaffMember,
-  resetStaffPassword,
-  resetTeacherPassword,
   staffMemberExists,
   setClassTeacher,
   teacherExists,
@@ -40,15 +39,13 @@ import {
 import { STAFF_READERS, STAFF_WRITERS } from "../../constants";
 import {
   addTeacherMediumSchema,
-  changeUsernameSchema,
   createStaffMemberSchema,
   createTeacherSchema,
+  giveLoginSchema,
   idParamSchema,
   importTeachersSchema,
   listStaffMembersQuerySchema,
   listTeachersQuerySchema,
-  loginAccountSchema,
-  resetPasswordSchema,
   setClassTeacherSchema,
   updateStaffMemberSchema,
   updateTeacherSchema,
@@ -79,14 +76,13 @@ const editStaff = requirePermission("staff.edit");
 router.get("/usernames/check", requirePermission("teachers.add", "teachers.edit", "staff.add", "staff.edit", "students.add", "students.edit"), validate(usernameCheckQuerySchema, "query"), checkUsernameFree);
 // The numbers on top of the Teacher page (before ":id" so "summary" is not read as an id).
 router.get("/teachers/summary", seeTeachers, getTeacherSummary);
-// Staff: the people who work for the school without teaching. The school makes their username and password (there is no invitation for staff).
+// Staff: the people who work for the school without teaching. A login is their email, given with an invitation (2026-11-26).
 router.get("/members", seeStaff, validate(listStaffMembersQuerySchema, "query"), listStaffMembers);
 router.post("/members", addStaff, validate(createStaffMemberSchema), createStaffMember);
 router.get("/members/:id", seeStaff, validate(idParamSchema, "params"), getStaffMember);
 router.patch("/members/:id", editStaff, validate(idParamSchema, "params"), staffMemberExists, validate(updateStaffMemberSchema), updateStaffMember);
-router.post("/members/:id/login", editStaff, validate(idParamSchema, "params"), staffMemberExists, validate(loginAccountSchema), makeStaffLogin);
-router.post("/members/:id/reset-password", editStaff, validate(idParamSchema, "params"), staffMemberExists, validate(resetPasswordSchema), resetStaffPassword);
-router.patch("/members/:id/login", editStaff, validate(idParamSchema, "params"), staffMemberExists, validate(changeUsernameSchema), changeStaffUsername);
+// Give login access (2026-11-26): their email becomes the login, Pending until they choose a password from the invitation; again = the invitation again.
+router.post("/members/:id/login", editStaff, validate(idParamSchema, "params"), staffMemberExists, validate(giveLoginSchema), giveStaffLogin);
 router.delete("/members/:id", editStaff, validate(idParamSchema, "params"), staffMemberExists, removeStaffMember);
 // The school's own fields for its teachers (before ":id").
 router.get("/teachers/settings", requirePermission("teachers.view"), getTeacherSettings);
@@ -102,14 +98,26 @@ router.post("/teachers/import", addTeachers, validate(importTeachersSchema), imp
 router.get("/teachers/:id", seeTeachers, validate(idParamSchema, "params"), getTeacher);
 router.post("/teachers", addTeachers, validate(createTeacherSchema), createTeacher);
 router.patch("/teachers/:id", editTeachers, validate(idParamSchema, "params"), teacherExists, validate(updateTeacherSchema), updateTeacher);
-router.post("/teachers/:id/login", editTeachers, validate(idParamSchema, "params"), teacherExists, validate(loginAccountSchema), createTeacherLogin);
-router.post("/teachers/:id/reset-password", editTeachers, validate(idParamSchema, "params"), teacherExists, validate(resetPasswordSchema), resetTeacherPassword);
-router.patch("/teachers/:id/login", editTeachers, validate(idParamSchema, "params"), teacherExists, validate(changeUsernameSchema), changeTeacherUsername);
+// Give login access (2026-11-26), as for staff.
+router.post("/teachers/:id/login", editTeachers, validate(idParamSchema, "params"), teacherExists, validate(giveLoginSchema), giveTeacherLogin);
 // What a teacher has been given (their page): class teacher of, and the subjects of classes they teach.
 router.get("/teachers/:id/classes", seeTeachers, validate(idParamSchema, "params"), getTeacherClasses);
 // A teacher who teaches in more than one medium of the school keeps one login: only the school's administrator, who can see every medium, adds them.
 router.get("/teachers/:id/mediums", requireRole("school_admin"), validate(idParamSchema, "params"), listTeacherMediums);
 router.post("/teachers/:id/mediums", requireRole("school_admin"), validate(idParamSchema, "params"), teacherExists, validate(addTeacherMediumSchema), addTeacherToMedium);
+// A teacher's and a staff member's profile photo (docs/profiles.md). "Is there such a person" is asked before the file is read (404 before 400).
+router.get("/teachers/:id/photo", requireSchoolPermission("teachers.view", "teachers.add", "teachers.edit"), validate(idParamSchema, "params"), teacherPhotoOwner, getPersonPhoto);
+router.put("/teachers/:id/photo", requireSchoolPermission("teachers.add", "teachers.edit"), validate(idParamSchema, "params"), teacherPhotoOwner, photoFile, savePersonPhoto("teachers.edit"));
+router.delete("/teachers/:id/photo", requireSchoolPermission("teachers.edit"), validate(idParamSchema, "params"), teacherPhotoOwner, removePersonPhoto);
+router.get("/members/:id/photo", requireSchoolPermission("staff.view", "staff.add", "staff.edit"), validate(idParamSchema, "params"), staffPhotoOwner, getPersonPhoto);
+router.put("/members/:id/photo", requireSchoolPermission("staff.add", "staff.edit"), validate(idParamSchema, "params"), staffPhotoOwner, photoFile, savePersonPhoto("staff.edit"));
+router.delete("/members/:id/photo", requireSchoolPermission("staff.edit"), validate(idParamSchema, "params"), staffPhotoOwner, removePersonPhoto);
+// A teacher's resume (docs/profiles.md): like the photo; downloaded only by someone who may see the teacher.
+const seeResume = requireSchoolPermission("teachers.view", "teachers.add", "teachers.edit");
+router.get("/teachers/:id/resume", seeResume, validate(idParamSchema, "params"), teacherPhotoOwner, getResume);
+router.get("/teachers/:id/resume/file", seeResume, validate(idParamSchema, "params"), teacherPhotoOwner, downloadResume);
+router.put("/teachers/:id/resume", requireSchoolPermission("teachers.add", "teachers.edit"), validate(idParamSchema, "params"), teacherPhotoOwner, resumeFile, saveResume);
+router.delete("/teachers/:id/resume", requireSchoolPermission("teachers.edit"), validate(idParamSchema, "params"), teacherPhotoOwner, removeResume);
 // The class teacher of a section (or of a class without sections), from the class's page or the teacher's.
 router.put("/class-teachers", requirePermission("teachers.edit", "classes.manage"), validate(setClassTeacherSchema), setClassTeacher);
 

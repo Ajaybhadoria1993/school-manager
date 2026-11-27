@@ -12,8 +12,10 @@ import { requireAuthLoose } from "../../../../middleware/auth";
 import { validate } from "../../../../middleware/validate";
 import {
   acceptInvite,
+  acceptLoginInvite,
   forgotPassword,
   getInvite,
+  getLoginInvite,
   login,
   logout,
   me,
@@ -23,6 +25,7 @@ import {
 } from "../../controllers/auth.controller";
 import {
   acceptInviteSchema,
+  acceptLoginInviteSchema,
   forgotPasswordSchema,
   inviteTokenSchema,
   loginSchema,
@@ -41,6 +44,9 @@ router.post("/signup", signupLimiter, validate(signupSchema), signup);
 // A POST with the token in the body, not a GET with it in the path: URLs end up in access logs.
 router.post("/invite/check", inviteLinkLimiter, validate(inviteTokenSchema), getInvite);
 router.post("/accept-invite", inviteLinkLimiter, validate(acceptInviteSchema), acceptInvite);
+// A teacher's or a staff member's login: the emailed link, then the password they choose with it.
+router.post("/login-invite/check", inviteLinkLimiter, validate(inviteTokenSchema), getLoginInvite);
+router.post("/login-invite/accept", inviteLinkLimiter, validate(acceptLoginInviteSchema), acceptLoginInvite);
 router.post("/forgot-password", forgotPasswordLimiter, validate(forgotPasswordSchema), forgotPassword);
 router.post("/reset-password", resetPasswordLimiter, validate(resetPasswordSchema), resetPassword);
 

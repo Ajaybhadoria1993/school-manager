@@ -10,6 +10,27 @@ for the school admin only** (the platform's invitation and the confirmation of a
 `school_signup`, `AcceptInviteService`, `/accept-invite`). Staff have no invitation, no accept page and no "forgot password" link. More roles will
 come later, one line each (see "Adding a role").
 
+## Logins since 2026-11-26: the email and an invitation (replaces the username and password below)
+
+The user asked (2026-11-26) for the same as the school admin: no username or password made by the school. Everything in `docs/teachers.md` >
+"Logins since 2026-11-26" holds for staff too:
+
+* **Add staff** has a **Give login access** box under the email (not ticked to start with). Ticked, the email is needed; the person is added
+  *Active* with a **Pending** login (their email) and an emailed invitation; the page shows where it went. Not ticked: no login (the email is
+  only a contact). A person who also teaches is a Teacher of the school at once, **with or without a login** (before, only with one).
+* **Staff list:** a **Login** column (No login / Pending / Active / Closed, with the email under the name) and one button for it per person:
+  **Give login access** (asks the email when they have none), **Resend invitation** (Pending), **Send password link** (Active). None for an inactive
+  person. **Make inactive / Make active** works with or without a login now; **Remove** only for a person with no login. The Username and New
+  password buttons are gone.
+* The person opens the link (`/set-password`), chooses a password and signs in with the email; **Forgot password** works for every staff
+  role (`SCHOOL_SET_PASSWORD` is only `parent` now). A login whose role is a teacher's links their Teacher record to it.
+* **API:** `POST /members` `{ …, giveLogin?: true }` (then `email` needed) → the person + `invite`; `POST /members/:id/login` `{ email? }` = give /
+  resend / password link (409 `INVALID_STATE` for an inactive person, `LOGIN_EMAIL_TAKEN`, `EMAIL_IN_USE`); `login` is
+  `{ username, email, isActive, pending }`. `POST /members/:id/reset-password` and `PATCH /members/:id/login` are gone (404). Older logins
+  (username and password) keep working.
+
+The sections below are the version of 2026-11-08 to 2026-11-25.
+
 ## What the school does
 
 1. **Staff** (menu, Overview group, after Attendance; school admin and principal only) lists everyone: name, **the username they sign in with**, role,

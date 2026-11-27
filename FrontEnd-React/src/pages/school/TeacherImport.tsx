@@ -15,7 +15,6 @@ import {
   autoMapTeachers,
   crossCheckTeachers,
   inTeacherParts,
-  loginsCsv,
   newFieldCandidates,
   normaliseOwnCell,
   normaliseTeacherCell,
@@ -42,7 +41,7 @@ import { ImportStepper } from "../../components/students/import/ImportStepper";
 import { PreviewToolbar, type RowFilter } from "../../components/students/import/PreviewPanels";
 import { StudentFormHeader } from "../../components/students/StudentFormHeader";
 import { StudentsNotice } from "../../components/students/StudentsNotice";
-import { TeacherDoneCard, TeacherLogins, type AddedTeacher } from "../../components/teachers/import/TeacherDoneCard";
+import { TeacherDoneCard, type AddedTeacher } from "../../components/teachers/import/TeacherDoneCard";
 import { TeacherPreviewGrid, type TeacherGridRow } from "../../components/teachers/import/TeacherPreviewGrid";
 import { TeacherUploadStep } from "../../components/teachers/import/TeacherUploadStep";
 import { Button } from "../../components/ui/Button";
@@ -70,14 +69,14 @@ const withCell = (cells: string[], column: number, value: string): string[] => {
  *  1. Upload: the sample file (made by the server with the school's subjects) or the school's own sheet (.xlsx / .csv). The server reads it
  *     (nothing is kept) and sends back its column titles and rows.
  *  2. Preview & fix: the file as a table, and nothing else: everything is fixed in the table itself. Each column is recognised by its
- *     title; the name and the mobile number (every teacher gets a login, which needs it) are added empty when the file has no column for
+ *     title; the name and the mobile number (how a teacher of the file is known again) are added empty when the file has no column for
  *     them. A box that needs a fix is red and says under it what is wrong, and the row's Status takes the person to it. Only the ready
  *     rows are uploaded.
- *  3. Done: the ready rows are made, 10 a request, each with a login (the username and password the file gives, or ones the server makes
- *     up); the server checks every row again. The logins are listed with a download, because the made-up passwords are told only now.
- *     The rows it did not make (a username taken, a code another teacher has) stay in the table with its reason; a teacher already in the
- *     school (the same mobile number) moves to "Already in school", so the same file can be uploaded again safely.
- * Leaving with rows in the table, or with logins not downloaded yet, asks first. The lists are refreshed once after an upload.
+ *  3. Done: the ready rows are made, 10 a request, with no login (2026-11-26: the school gives login access later from a teacher's page,
+ *     by email); the server checks every row again. The rows it did not make (a code another teacher has) stay in the table with its
+ *     reason; a teacher already in the school (the same mobile number) moves to "Already in school", so the same file can be uploaded again
+ *     safely.
+ * Leaving with rows in the table asks first. The lists are refreshed once after an upload.
  */
 export default function TeacherImportPage() {
   const dispatch = useAppDispatch();
@@ -109,8 +108,7 @@ export default function TeacherImportPage() {
   const [readError, setReadError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Map<number, ServerAnswer>>(() => new Map());
   const [added, setAdded] = useState<(AddedTeacher & { source: PreparedTeacher })[]>([]);
-  const [downloaded, setDownloaded] = useState(false);
-  // How many teachers the last upload made (the logins listed are those of every upload of this file).
+  // How many teachers the last upload made.
   const [lastRun, setLastRun] = useState(0);
   const [filter, setFilter] = useState<RowFilter>("all");
   // The rows that needed a fix when "Need a fix" was opened: they stay in it while they are fixed (a fixed row shows Ready there).
@@ -191,7 +189,6 @@ export default function TeacherImportPage() {
     setOwnColumns(own);
     setAnswers(new Map());
     setAdded([]);
-    setDownloaded(false);
     setFilter("all");
     setFixing(new Set());
     setPage(1);
@@ -224,7 +221,6 @@ export default function TeacherImportPage() {
     setReadError(null);
     setAnswers(new Map());
     setAdded([]);
-    setDownloaded(false);
     setStopped(null);
   }
 
@@ -355,8 +351,8 @@ export default function TeacherImportPage() {
         for (const result of res.data.results) {
           const p = part.find((x) => x.row === result.row);
           if (!p) continue;
-          if (result.ok && result.teacher && result.login) {
-            made.push({ row: p.row, id: result.teacher.id, name: result.teacher.name, mobile: p.mobile, username: result.login.username, password: result.login.password ?? p.input.password ?? "", source: p });
+          if (result.ok && result.teacher) {
+            made.push({ row: p.row, id: result.teacher.id, name: result.teacher.name, mobile: p.mobile, source: p });
           } else {
             refused.set(p.row, {
               problems: result.errors.map((e) => serverTeacherProblem(e.path, e.message, active)),
@@ -380,7 +376,6 @@ export default function TeacherImportPage() {
     setAnswers((a) => new Map([...[...a].filter(([row]) => !gone.has(row)), ...refused]));
     if (made.length > 0) {
       setAdded((list) => [...list, ...made]);
-      setDownloaded(false);
       dispatch(refreshAfterTeacherImport());
     }
     if (failure) {
@@ -403,53 +398,27 @@ export default function TeacherImportPage() {
     saveBlob(problemsCsv(sheet.headers, bad), `${(file?.name ?? "teachers").replace(/\.[^.]+$/, "")}-to-fix.csv`);
   }
 
-  /** Saves the logins as a file named after the school's file. */
-  function saveLogins(list: readonly AddedTeacher[]) {
-    saveBlob(loginsCsv(list, `${window.location.origin}/login`), `${(file?.name ?? "teachers").replace(/\.[^.]+$/, "")}-logins.csv`);
-  }
-
-  function downloadLogins() {
-    saveLogins(added);
-    setDownloaded(true);
-  }
-
-  /**
-   * The upload is over and every row is in: the logins file is saved on its own when the server made up any password (it tells them only
-   * now, so the page that lists them is about to go), and the person is taken to the teachers, told what happened. False (nothing is
-   * done, the Done step stays with the logins on it) when that file could not be saved.
-   */
-  function finish(everyone: readonly (AddedTeacher & { source: PreparedTeacher })[], already: number): boolean {
-    const madeUp = everyone.some((a) => !a.source.input.password);
-    if (madeUp) {
-      try {
-        saveLogins(everyone);
-      } catch {
-        return false;
-      }
-    }
+  /** The upload is over and every row is in: the person is taken to the teachers, told what happened. */
+  function finish(everyone: readonly AddedTeacher[], already: number): boolean {
     leaving.current = true;
-    push(
-      "success",
-      `${everyone.length} teacher${everyone.length === 1 ? "" : "s"} added.${already > 0 ? ` ${already} row${already === 1 ? " was" : "s were"} already in your school.` : ""}${madeUp ? " The login details are saved to your downloads." : ""}`
-    );
+    push("success", `${everyone.length} teacher${everyone.length === 1 ? "" : "s"} added.${already > 0 ? ` ${already} row${already === 1 ? " was" : "s were"} already in your school.` : ""}`);
     navigate(base);
     return true;
   }
 
   // ---- Leaving ------------------------------------------------------------------------------------------------------------------
 
-  // Logins made and not downloaded yet (the passwords are not shown again), or rows in the table that were not uploaded.
-  const unseen = added.length > 0 && !downloaded;
+  // Rows in the table that were not uploaded.
   const unsent = step === 1 && rows.length > 0 && !busy;
-  // The page itself is going to the teachers (everything is in, the logins are saved): nothing to ask.
+  // The page itself is going to the teachers (everything is in): nothing to ask.
   const leaving = useRef(false);
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => !leaving.current && (unseen || unsent) && currentLocation.pathname !== nextLocation.pathname);
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => !leaving.current && unsent && currentLocation.pathname !== nextLocation.pathname);
   useEffect(() => {
-    if (!unseen && !unsent && !busy) return;
+    if (!unsent && !busy) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [unseen, unsent, busy]);
+  }, [unsent, busy]);
 
   // ---- The page -----------------------------------------------------------------------------------------------------------------
 
@@ -584,8 +553,7 @@ export default function TeacherImportPage() {
         )}
 
         {step === 2 && (
-          <>
-            <TeacherDoneCard
+          <TeacherDoneCard
               added={lastRun}
               notAdded={rows.length - skipped.length}
               already={skipped.length}
@@ -598,8 +566,6 @@ export default function TeacherImportPage() {
               onDownloadProblems={downloadProblems}
               onAnother={startOver}
             />
-            {added.length > 0 && <TeacherLogins added={added} onDownload={downloadLogins} />}
-          </>
         )}
       </div>
 
@@ -621,7 +587,7 @@ export default function TeacherImportPage() {
       )}
       {ask === "upload" && (
         <AskDialog title={`Upload ${ready.length} teacher${ready.length === 1 ? "" : "s"}?`} icon={UserPlus} confirmLabel="Upload and add" onClose={() => setAsk(null)} onConfirm={() => void upload()}>
-          <p>Each is added with a login of their own: the username and password of the file, or ones made up. You download the list when it is done.</p>
+          <p>They are added without a login: give login access later from a teacher's page.</p>
           {toFix > 0 && (
             <p>
               The {toFix} row{toFix === 1 ? "" : "s"} that need a fix {toFix === 1 ? "is" : "are"} not uploaded; {toFix === 1 ? "it stays" : "they stay"} in the table.
@@ -636,16 +602,12 @@ export default function TeacherImportPage() {
       )}
       {blocker.state === "blocked" && (
         <ConfirmModal
-          title={unseen ? "Leave without the login details?" : "Leave without uploading?"}
-          confirmLabel={unseen ? "Leave without the details" : "Leave without uploading"}
+          title="Leave without uploading?"
+          confirmLabel="Leave without uploading"
           onClose={() => blocker.reset()}
           onConfirm={async () => blocker.proceed()}
         >
-          <p>
-            {unseen
-              ? "The passwords of the teachers just added are shown only on this page. Download the login details first, or you will have to set a new password for each teacher."
-              : "Nothing from this file has been uploaded yet, and your changes to the table are not kept. You can upload the file again at any time."}
-          </p>
+          <p>Nothing from this file has been uploaded yet, and your changes to the table are not kept. You can upload the file again at any time.</p>
         </ConfirmModal>
       )}
     </>

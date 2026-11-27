@@ -138,7 +138,7 @@ const address = z.object({
  */
 const customAnswers = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]), { invalid_type_error: "Answer your school's own fields" });
 
-const fields = {
+export const fields = {
   name: label("teacher's name", MAX_TEACHER_NAME),
   mobile,
   email,
@@ -171,7 +171,16 @@ export type LoginAccountInput = z.infer<typeof loginAccountSchema>;
 export const resetPasswordSchema = z.object({ password: passwordSchema });
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 
-export const NEEDS_MOBILE_MESSAGE = "Enter the teacher's mobile number: their login needs it";
+export const NEEDS_MOBILE_MESSAGE = "Enter the teacher's mobile number";
+/** Said under the email box when the login is ticked and the email is empty (Add teacher, Add staff, Give login access). */
+export const NEEDS_EMAIL_MESSAGE = "Enter the email: the login invitation is sent to it";
+
+/**
+ * `POST /staff/teachers/:id/login` and `POST /staff/members/:id/login` (2026-11-26): give a login, or send the invitation again. `email` is the
+ * person's email when they have none yet (or another one); left out, the email they have is used.
+ */
+export const giveLoginSchema = z.object({ email: fields.email.optional() });
+export type GiveLoginInput = z.infer<typeof giveLoginSchema>;
 
 export const createTeacherSchema = z
   .object({
@@ -192,11 +201,14 @@ export const createTeacherSchema = z
     joiningDate: fields.joiningDate.optional(),
     employmentType: fields.employmentType.optional(),
     custom: fields.custom.optional(),
-    /** Gives the teacher a login in the same step. */
-    login: loginAccountSchema.optional(),
+    /**
+     * Gives the teacher a login in the same step (2026-11-26): their email is the login, and an invitation goes to it to choose a password
+     * (Pending until they do). There is no username or password made by the school any more.
+     */
+    giveLogin: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
-    if (value.login && !value.mobile) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["mobile"], message: NEEDS_MOBILE_MESSAGE });
+    if (value.giveLogin && !value.email) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["email"], message: NEEDS_EMAIL_MESSAGE });
   });
 export type CreateTeacherInput = z.infer<typeof createTeacherSchema>;
 
@@ -226,7 +238,7 @@ export const listTeachersQuerySchema = z.object({
   designation: optionalText(MAX_DESIGNATION),
   employmentType: z.enum(EMPLOYMENT_TYPES).optional(),
   gender: z.enum(TEACHER_GENDERS).optional(),
-  login: z.enum(["with", "without", "closed"]).optional(),
+  login: z.enum(["with", "without", "pending", "closed"]).optional(),
   classId: objectId.optional(),
   classTeacher: z.enum(["yes", "no"]).optional(),
 });
@@ -253,8 +265,8 @@ export type ChangeUsernameInput = z.infer<typeof changeUsernameSchema>;
 
 /**
  * `POST /staff/teachers/import`: a part of a file (up to MAX_TEACHER_IMPORT_ROWS_PER_REQUEST rows). Each row is a teacher as Add teacher
- * takes one (its boxes, kept loose here: a wrong box refuses that row, never the whole part), the subjects by their names, and the
- * username and password when the file gives them (left out, they are made up). The boxes are judged row by row by the same schema as
+ * takes one (its boxes, kept loose here: a wrong box refuses that row, never the whole part) and the subjects by their names. A row makes
+ * no login (2026-11-26): the school gives one later from the teacher's page, by email. The boxes are judged row by row by the same schema as
  * Add teacher (TeacherImportService), so a refusal says the same words.
  */
 export const importTeachersSchema = z.object({
@@ -265,8 +277,6 @@ export const importTeachersSchema = z.object({
         row: z.number().int().min(1),
         teacher: z.record(z.string(), z.unknown()),
         subjectNames: z.array(z.string().max(300)).max(200).default([]),
-        username: z.string().max(100).optional(),
-        password: z.string().max(200).optional(),
       })
     )
     .min(1, "Send at least one teacher")
@@ -348,9 +358,9 @@ const roleOther = textOrNull("role's name", MAX_ROLE_OTHER);
 export const ROLE_OTHER_MESSAGE = "Enter the role's name";
 
 /**
- * `POST /staff/members`: a name, the role and the **login** the school makes (username and password, like a teacher's); an email and the rest
- * of the details may be left out. `roleOther` is needed for the role Other. `alsoTeacher` makes the person a teacher of the school too
- * (with `subjectIds`, what they can teach).
+ * `POST /staff/members`: a name and the role; an email and the rest of the details may be left out. `giveLogin` (2026-11-26) gives them a
+ * login: their email (then needed), with an invitation to choose a password. `roleOther` is needed for the role Other. `alsoTeacher` makes
+ * the person a teacher of the school too (with `subjectIds`, what they can teach).
  */
 export const createStaffMemberSchema = z
   .object({
@@ -358,7 +368,7 @@ export const createStaffMemberSchema = z
     role: staffRole,
     roleOther: roleOther.optional(),
     email: fields.email.optional(),
-    login: loginAccountSchema,
+    giveLogin: z.boolean().optional(),
     mobile: fields.mobile.optional(),
     gender: fields.gender.optional(),
     dateOfBirth: staffBirthday.optional(),
@@ -371,6 +381,7 @@ export const createStaffMemberSchema = z
   })
   .superRefine((value, ctx) => {
     if (value.role === "other" && !value.roleOther) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["roleOther"], message: ROLE_OTHER_MESSAGE });
+    if (value.giveLogin && !value.email) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["email"], message: NEEDS_EMAIL_MESSAGE });
   });
 export type CreateStaffMemberInput = z.infer<typeof createStaffMemberSchema>;
 

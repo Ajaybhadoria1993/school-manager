@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import { ApiError } from "../../../utils/ApiError";
 import { asyncHandler } from "../../../utils/asyncHandler";
 import { sendCreated, sendOk } from "../../../utils/response";
+import { worksOnAllClasses } from "../../classroom/services/access";
 import type { UnitQuery } from "../../subjects/schemas/subjects.schemas";
 import type { ArrangementInput, ArrangementQuery, AttendanceCoverInput, HandBackInput, AutofillBody, ClassDayInput, CopyBody, CreateScheduleInput, OverviewQuery, ReplaceTeacherBody, SaveGridInput, SchoolDayInput, SpecialDayInput, TeacherPeriodsInput, UnitBody, UpdateScheduleInput } from "../schemas/timetable.schemas";
 import { ArrangementService } from "../services/arrangement.service";
@@ -40,9 +41,12 @@ export const updateSchedule = asyncHandler(async (req: Request, res: Response) =
   return sendOk(res, await ScheduleService.update(tenantOf(req), idOf(req), body<UpdateScheduleInput>(req)), "Timing saved");
 });
 
+/** Whether the caller makes timetables, and so sees drafts: anyone but a teacher (who got here with timetable.edit), and a teacher whose staff role may (2026-11-26). */
+const seesDrafts = (req: Request) => worksOnAllClasses(req.user!, "timetable.edit");
+
 export const getGrid = asyncHandler(async (req: Request, res: Response) => {
   const { classId, sectionId } = req.validatedQuery as UnitQuery;
-  return sendOk(res, await GridService.get(tenantOf(req), req.user!.role, classId, sectionId === "none" ? null : sectionId));
+  return sendOk(res, await GridService.get(tenantOf(req), seesDrafts(req), classId, sectionId === "none" ? null : sectionId));
 });
 
 export const saveGrid = asyncHandler(async (req: Request, res: Response) => {
@@ -81,7 +85,7 @@ export const listPublished = asyncHandler(async (req: Request, res: Response) =>
 });
 
 export const getTeacherWeek = asyncHandler(async (req: Request, res: Response) => {
-  return sendOk(res, await TeacherTimetableService.get(tenantOf(req), req.user!.role, idOf(req)));
+  return sendOk(res, await TeacherTimetableService.get(tenantOf(req), seesDrafts(req), idOf(req)));
 });
 
 export const replaceTeacher = asyncHandler(async (req: Request, res: Response) => {

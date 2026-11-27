@@ -65,7 +65,7 @@ describe("the classes that have not taken today's attendance", () => {
     // Class 1's own class teacher takes it.
     const anita = await addTeacher(s.token, "Anita Rao", { mobile: "9876500002", login: { username: "sun.anita", password: "Sch00l@Login1" } });
     await request(app).put("/api/v1/staff/class-teachers").set(auth(s.token)).send({ ...s.one, teacherId: anita });
-    const anitaToken = (await request(app).post("/api/v1/auth/login").send({ identifier: "sun.anita", password: "Sch00l@Login1" })).body.data.accessToken as string;
+    const anitaToken = (await request(app).post("/api/v1/auth/login").send({ identifier: "sun.anita@mail.test", password: "Sch00l@Login1" })).body.data.accessToken as string;
     const taken = await request(app).put("/api/v1/classroom/attendance").set(auth(anitaToken)).send({ ...s.one, date: THU, marks: [{ studentId: s.mira.id, status: "present" }] });
     expect(taken.status, JSON.stringify(taken.body)).toBe(200);
     expect((await today(s.token)).body.data.pending).toEqual([]);

@@ -27,7 +27,7 @@ async function hasActiveChild(g: Pick<IGuardian, "_id" | "tenantId">): Promise<b
 }
 
 async function answer(guardianId: string, userId: Types.ObjectId): Promise<GuardianLoginDto> {
-  const login = (await TeacherLogin.byIds([userId])).get(userId.toString());
+  const login = (await TeacherLogin.usernamesByIds([userId])).get(userId.toString());
   return { guardianId, login: login ?? { username: "", isActive: false } };
 }
 

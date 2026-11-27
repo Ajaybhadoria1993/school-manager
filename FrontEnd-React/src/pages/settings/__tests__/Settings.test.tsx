@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
+import { Provider } from "react-redux";
+import store from "../../../redux/store";
 import { AppThemeProvider } from "../../../theme/AppThemeProvider";
 import SettingsPage from "../Settings";
 
@@ -12,11 +14,13 @@ afterEach(cleanup);
 
 function openPage() {
   render(
-    <MemoryRouter>
-      <AppThemeProvider>
-        <SettingsPage />
-      </AppThemeProvider>
-    </MemoryRouter>
+    <Provider store={store}>
+      <MemoryRouter>
+        <AppThemeProvider>
+          <SettingsPage />
+        </AppThemeProvider>
+      </MemoryRouter>
+    </Provider>
   );
   return userEvent.setup();
 }

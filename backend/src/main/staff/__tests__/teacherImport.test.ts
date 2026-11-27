@@ -6,6 +6,7 @@ import { seedSuperAdmin } from "../../../seed/superAdmin.seed";
 import { addColleague, createSchool } from "../../../test/schools";
 import { generatePassword, PASSWORD_POLICY_REGEX } from "../../../utils/authUtils";
 import { Subject } from "../../subjects/models/Subject";
+import { User } from "../../users/models/User";
 import { Teacher } from "../models/Teacher";
 import { usernameBase } from "../services/usernames.service";
 
@@ -92,15 +93,13 @@ describe("the sample template", () => {
       "Joining Date",
       "Employment Type",
       "Subjects",
-      "Username",
-      "Password",
     ]);
     expect(sheet.getCell("A2").note).toBeTruthy();
-    // Only the name and the mobile number (the login needs it) are green; the rest is yellow.
+    // Only the name and the mobile number are green; the rest is yellow.
     const fill = (cell: string) => (sheet.getCell(cell).fill as ExcelJS.FillPattern).fgColor?.argb;
     expect(fill("A2")).toBe(fill("B2"));
     expect(fill("A2")).not.toBe(fill("C2"));
-    expect(fill("C2")).toBe(fill("R2"));
+    expect(fill("C2")).toBe(fill("P2"));
     expect(sheet.getCell("C3").dataValidation).toMatchObject({ type: "list", formulae: ['"Male,Female,Other"'] });
     expect(sheet.getCell("O3").dataValidation).toMatchObject({ type: "list", formulae: ['"Full time,Part time,Contract"'] });
     expect(sheet.getCell("H3").dataValidation).toMatchObject({ type: "list" });
@@ -111,7 +110,8 @@ describe("the sample template", () => {
     expect([subjects.getCell("A2").value, subjects.getCell("A3").value]).toEqual(["Hindi", "Mathematics"]);
     const help = (workbook.getWorksheet("How to fill")!.getColumn(1).values as unknown[]).map(String);
     expect(help.some((line) => line.includes("Green columns are the only ones every teacher needs: Name, Mobile"))).toBe(true);
-    expect(help.some((line) => line.includes("Username and Password"))).toBe(true);
+    expect(help.some((line) => line.includes("The upload makes no login"))).toBe(true);
+    expect(help.some((line) => line.includes("Username and Password"))).toBe(false);
   });
 
   it("is for the people who run the school only", async () => {
@@ -180,42 +180,39 @@ describe("reading an uploaded file", () => {
 });
 
 describe("bringing the teachers in", () => {
-  it("makes each teacher with a login of their own: a username and a password made up, which sign in", async () => {
+  it("makes each teacher with no login (2026-11-26): the school gives it later by email, from the teacher's page", async () => {
     const s = await createSchool("Sunrise Public School");
     const res = await importRows(s.token, [row(3, meena), row(4, { name: "Dev Patel", mobile: "9876500000", email: "Dev@School.Example", gender: "Male" })]);
     expect(res.status).toBe(200);
     expect(res.body.data).toMatchObject({ ok: 2, failed: 0 });
-    const [first, second] = res.body.data.results;
-    expect(first).toMatchObject({ row: 3, ok: true, errors: [], teacher: { name: "Meena Singh" } });
-    expect(first.login.username).toMatch(/^meena\.singh_\d{2,4}$/);
-    expect(first.login.password).toMatch(PASSWORD_POLICY_REGEX);
-    expect(second.login.username).toMatch(/^dev\.patel_\d{2,4}$/);
-
-    // The login works for the person: with the username and with the made-up password.
-    const signed = await signIn(first.login.username, first.login.password);
-    expect(signed.status).toBe(200);
-    expect(signed.body.data.user.role).toBe("teacher");
-    expect((await signIn(first.login.username, "Wrong@Pass1")).status).toBe(401);
+    const [first] = res.body.data.results;
+    expect(first).toEqual({ row: 3, ok: true, errors: [], teacher: { id: expect.any(String), name: "Meena Singh" } });
 
     const list = await request(app).get(`${api}?status=all`).set(auth(s.token));
     expect(list.body.data.items.map((t: { name: string }) => t.name)).toEqual(["Dev Patel", "Meena Singh"]);
-    expect(list.body.data.items[1]).toMatchObject({ mobile: "9876543210", gender: "Female", login: { username: first.login.username, isActive: true } });
-    expect(list.body.data.items[0].email).toBe("dev@school.example");
+    expect(list.body.data.items[1]).toMatchObject({ mobile: "9876543210", gender: "Female", login: null });
+    expect(list.body.data.items[0]).toMatchObject({ email: "dev@school.example", login: null });
+    expect(await User.countDocuments({ tenantId: s.tenantId, role: "teacher" })).toBe(0);
+
+    // Give login access: the email the file gave is used, and the login is Pending until the invitation is opened.
+    const given = await request(app).post(`${api}/${list.body.data.items[0].id}/login`).set(auth(s.token)).send({});
+    expect(given.status).toBe(200);
+    expect(given.body.data.login).toEqual({ username: null, email: "dev@school.example", isActive: true, pending: true });
+    expect(given.body.data.invite).toMatchObject({ email: "dev@school.example", devInviteLink: expect.stringContaining("/set-password?token=") });
   });
 
-  it("keeps the username and the password the file gives, and does not send the password back", async () => {
+  it("reads no username or password from a file (an old file that still has them makes no login)", async () => {
     const s = await createSchool("Sunrise Public School");
     const res = await importRows(s.token, [row(3, meena, { username: "Meena.S", password: "Sch00l@Teach1" })]);
-    expect(res.body.data.results[0]).toMatchObject({ ok: true, login: { username: "meena.s", password: null } });
-    expect((await signIn("meena.s", "Sch00l@Teach1")).status).toBe(200);
+    expect(res.body.data.results[0]).toMatchObject({ ok: true });
+    expect(res.body.data.results[0].login).toBeUndefined();
+    expect((await signIn("meena.s", "Sch00l@Teach1")).status).toBe(401);
   });
 
-  it("gives two teachers of the same name two different usernames", async () => {
+  it("needs the mobile number of every row: it is how a teacher of the file is known again", async () => {
     const s = await createSchool("Sunrise Public School");
-    const res = await importRows(s.token, [row(3, meena), row(4, { ...meena, mobile: "9876543211" }), row(5, { ...meena, mobile: "9876543212" })]);
-    expect(res.body.data.ok).toBe(3);
-    const usernames = res.body.data.results.map((r: { login: { username: string } }) => r.login.username);
-    expect(new Set(usernames).size).toBe(3);
+    const res = await importRows(s.token, [row(3, { name: "Meena Singh" })]);
+    expect(res.body.data.results[0]).toMatchObject({ ok: false, errors: [{ path: "mobile", message: "Enter the teacher's mobile number" }] });
   });
 
   it("keeps the details as Add teacher keeps them (tidy name, 10-digit mobile, upper-case code, the day, the address)", async () => {
@@ -273,7 +270,7 @@ describe("bringing the teachers in", () => {
     expect(byRow.get(12)!.ok).toBe(true);
     expect(paths(4).sort()).toEqual(["mobile", "name"]);
     expect(paths(5)).toEqual(["mobile"]);
-    expect(byRow.get(5)!.errors[0].message).toContain("their login needs it");
+    expect(byRow.get(5)!.errors[0].message).toBe("Enter the teacher's mobile number");
     expect(paths(6)).toEqual(["email"]);
     expect(paths(7)).toEqual(["dateOfBirth"]);
     expect(paths(8)).toEqual(["gender"]);
@@ -284,26 +281,7 @@ describe("bringing the teachers in", () => {
     expect(await Teacher.countDocuments({ tenantId: s.tenantId })).toBe(2);
   });
 
-  it("refuses a username or a password that cannot be one, and a taken username with free ones like it", async () => {
-    const s = await createSchool("Sunrise Public School");
-    await importRows(s.token, [row(3, { name: "Dev Patel", mobile: "9876500000" }, { username: "dev.patel", password: "Sch00l@Teach1" })]);
-    const res = await importRows(s.token, [
-      row(3, meena, { username: "9bad name" }),
-      row(4, { ...meena, mobile: "9876543211" }, { password: "weak" }),
-      row(5, { ...meena, mobile: "9876543212" }, { username: "dev.patel" }),
-      row(6, { name: "मीना सिंह", mobile: "9876543213" }),
-    ]);
-    const results = res.body.data.results;
-    expect(results[0].errors[0]).toMatchObject({ path: "username" });
-    expect(results[1].errors[0]).toMatchObject({ path: "password" });
-    expect(results[2]).toMatchObject({ ok: false, code: "USERNAME_TAKEN", errors: [{ path: "username" }] });
-    expect(results[2].errors[0].message).toMatch(/for example dev\.patel_\d+/);
-    // A name with no letters a-z gets no made-up username: the school types one.
-    expect(results[3]).toMatchObject({ ok: false, errors: [{ path: "username" }] });
-    expect(results[3].errors[0].message).toContain("username");
-  });
-
-  it("does not take a teacher twice: the mobile number, the employee code and the login's email are another person's", async () => {
+  it("does not take a teacher twice: the mobile number, the employee code and the email are another teacher's", async () => {
     const s = await createSchool("Sunrise Public School");
     const first = await importRows(s.token, [row(3, { ...meena, employeeCode: "EMP-1", email: "meena@school.example" })]);
     expect(first.body.data.ok).toBe(1);
@@ -316,7 +294,7 @@ describe("bringing the teachers in", () => {
     const [a, b, c, d] = again.body.data.results;
     expect(a).toMatchObject({ ok: false, code: "TEACHER_MOBILE_EXISTS", errors: [{ path: "mobile", message: "Meena Singh already has this mobile number" }] });
     expect(b).toMatchObject({ ok: false, code: "TEACHER_CODE_EXISTS", errors: [{ path: "employeeCode" }] });
-    expect(c).toMatchObject({ ok: false, code: "LOGIN_EMAIL_TAKEN", errors: [{ path: "email" }] });
+    expect(c).toMatchObject({ ok: false, code: "TEACHER_EMAIL_EXISTS", errors: [{ path: "email", message: "Meena Singh already has this email" }] });
     expect(d.code).toBe("TEACHER_MOBILE_EXISTS");
     expect(await Teacher.countDocuments({ tenantId: s.tenantId })).toBe(1);
   });
@@ -387,8 +365,5 @@ describe("bringing the teachers in", () => {
     expect(res.body.data).toMatchObject({ ok: 1, failed: 0 });
     expect(await Teacher.countDocuments({ tenantId: a.tenantId })).toBe(1);
     expect(await Teacher.countDocuments({ tenantId: b.tenantId })).toBe(1);
-    // A username is one on the whole platform: the second school's Meena got another one.
-    const names = (await Promise.all([a, b].map(async (x) => (await request(app).get(api).set(auth(x.token))).body.data.items[0].login.username))) as string[];
-    expect(new Set(names).size).toBe(2);
   });
 });

@@ -165,16 +165,53 @@ export const Notify = {
 
   // ---- Diary and tests ---------------------------------------------------------------------------------------------------------------
 
-  /** A subject's diary of a day was written or changed: the class's parents (the homework first) and the school. */
-  diarySaved(tenantId: string, actorId: string, facts: { unit: UnitWithYear; date: string; subjectName: string; taught: string; homework: string; by: string }) {
+  /** A subject's diary of a day was written or changed: the class's parents (the homework first), its class teacher and the school. */
+  diarySaved(tenantId: string, actorId: string, facts: { unit: UnitWithYear; date: string; subjectName: string; taught: string; homework: string; chapter: string | null; by: string }) {
     NotificationService.later(tenantId, actorId, async () => {
       const { unit, subjectName } = facts;
       const children = await Audience.parentsOfUnit(tenantId, unit);
-      const forParents = facts.homework ? { title: `Homework in ${subjectName}`, body: facts.homework } : { title: `Taught in ${subjectName} today`, body: facts.taught };
+      const forParents = facts.homework ? { title: `Homework in ${subjectName}`, body: facts.homework } : { title: `Taught in ${subjectName} today`, body: joined(facts.chapter, facts.taught) };
+      const forSchool = { kind: "diary.saved" as const, title: `${subjectName} diary of ${unit.label}`, body: joined(shortDay(facts.date), `by ${facts.by}`), link: classWorkLink(unit, "diary") };
       return [
         ...toParents(children, () => ({ kind: "diary.saved", ...forParents })),
-        { kind: "diary.saved", title: `${subjectName} diary of ${unit.label}`, body: joined(shortDay(facts.date), `by ${facts.by}`), link: classWorkLink(unit, "diary"), to: "admins" },
+        // The class teacher follows their class: told when somebody else writes its diary (the writer is never told).
+        { ...forSchool, to: await Audience.classTeachersOf(tenantId, unit) },
+        { ...forSchool, to: "admins" },
       ];
+    });
+  },
+
+  /** Today's diary still to be written: each teacher hears their own classes and subjects, and opens the first one's diary. */
+  diaryReminder(tenantId: string, teachers: { teacherId: string; classes: { unit: Unit; subjects: string[] }[] }[]) {
+    if (teachers.length === 0) return;
+    NotificationService.later(tenantId, null, () =>
+      Promise.all(
+        teachers.map(async (t) => ({
+          kind: "diary.reminder" as const,
+          title: "Write today's diary",
+          body: t.classes.map((c) => `${c.unit.label}: ${c.subjects.join(", ")}`).join("; "),
+          link: classWorkLink(t.classes[0].unit, "diary"),
+          to: await Audience.teacherLogins(tenantId, [t.teacherId]),
+        }))
+      )
+    );
+  },
+
+  /** Chapters past their planned day: each teacher hears of theirs (as the subject's teacher or the class teacher), the school of all. */
+  syllabusBehind(tenantId: string, chapters: { line: string; teacherIds: string[] }[]) {
+    if (chapters.length === 0) return;
+    NotificationService.later(tenantId, null, async () => {
+      const words = (mine: { line: string }[]) => ({
+        kind: "syllabus.behind" as const,
+        title: mine.length === 1 ? "A chapter is behind schedule" : `${mine.length} chapters are behind schedule`,
+        body: mine.map((c) => c.line).join("; "),
+        link: "/teaching-progress?tab=chapters&behind=1",
+      });
+      const teacherIds = [...new Set(chapters.flatMap((c) => c.teacherIds))];
+      const forTeachers = await Promise.all(
+        teacherIds.map(async (id) => ({ ...words(chapters.filter((c) => c.teacherIds.includes(id))), to: await Audience.teacherLogins(tenantId, [id]) }))
+      );
+      return [...forTeachers, { ...words(chapters), to: "admins" as const }];
     });
   },
 
@@ -355,6 +392,34 @@ export const Notify = {
         { ...staff, to: await Audience.classTeachersOf(tenantId, unit) },
         { ...staff, to: "admins" },
       ];
+    });
+  },
+
+  /**
+   * Exam duty (2026-11-27, the user: "jaise hi teacher assign karun, teacher ko pata chal jaaye ki mujhe is room mein duty hai"): each teacher put on
+   * duty in a room hears the room, the exam, its days and who else is there; one taken off hears it is off; when the room's last run is renamed its
+   * teachers hear where they are now. The bell opens their home, which has the days and times.
+   */
+  examDuty(
+    tenantId: string,
+    actorId: string,
+    facts: { change: "added" | "removed" | "moved"; teacherIds: string[]; room: string; examName: string; startDate: string; endDate: string; /** Each teacher's name, for "with ...". */ names?: Map<string, string>; /** The room before it was renamed. */ was?: string }
+  ) {
+    if (facts.teacherIds.length === 0) return;
+    NotificationService.later(tenantId, actorId, async () => {
+      const messages: Message[] = [];
+      for (const id of facts.teacherIds) {
+        const to = await Audience.teacherLogins(tenantId, [id]);
+        const others = [...(facts.names?.entries() ?? [])].filter(([other]) => other !== id).map(([, name]) => name);
+        const words =
+          facts.change === "added"
+            ? { title: `Exam duty: ${facts.room}`, body: joined(facts.examName, dayRange(facts.startDate, facts.endDate), others.length > 0 ? `with ${joinNames(others)}` : null) }
+            : facts.change === "moved"
+              ? { title: `Exam duty moved to ${facts.room}`, body: joined(facts.examName, facts.was ? `was ${facts.was}` : null) }
+              : { title: `Exam duty taken off: ${facts.room}`, body: facts.examName };
+        messages.push({ kind: "exam.duty", ...words, link: "/dashboard", to });
+      }
+      return messages;
     });
   },
 

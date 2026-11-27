@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import { ApiError } from "../../../../utils/ApiError";
 import { asyncHandler } from "../../../../utils/asyncHandler";
 import { SchoolLogo } from "../../models/SchoolLogo";
+import { Tenant } from "../../models/Tenant";
 
 const router = Router();
 
@@ -15,7 +16,9 @@ router.get(
   asyncHandler(async (req: Request, res: Response) => {
     const notFound = () => ApiError.notFound("This school has no logo", "NOT_FOUND");
     if (!Types.ObjectId.isValid(req.params.id)) throw notFound();
-    const logo = await SchoolLogo.findOne({ tenantId: new Types.ObjectId(req.params.id) }).select("data contentType").lean();
+    // Another medium of a school shows the school's one logo.
+    const parent = (await Tenant.findById(req.params.id).select("parentTenantId").lean())?.parentTenantId;
+    const logo = await SchoolLogo.findOne({ tenantId: parent ?? new Types.ObjectId(req.params.id) }).select("data contentType").lean();
     if (!logo) throw notFound();
     res.set({
       "Content-Type": logo.contentType,

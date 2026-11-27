@@ -15,7 +15,7 @@ import TeacherAssignClassPage from "../TeacherAssignClass";
 import TeacherDetailPage from "../TeacherDetail";
 
 /** Assign class is a page of its own (2026-11-13: it was a window, "naya page hi open karo, modal nahi"). */
-const FULL: Teacher = { ...MEENA, subjectIds: ["maths", "english"], login: { username: "meena.singh", isActive: true } };
+const FULL: Teacher = { ...MEENA, subjectIds: ["maths", "english"], login: { username: "meena.singh", email: null, isActive: true, pending: false } };
 
 function openPage(start: string, extra: Record<string, Handler> = {}, teacher: Teacher = FULL) {
   signInAs("school_admin");

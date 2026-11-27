@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_CHAPTER_NAME, MAX_CHAPTERS } from "../models/ClassWork";
 import { ATTENDANCE_STATUSES, MAX_REASON } from "../models/AttendanceDay";
 import { CALENDAR_KINDS } from "../models/CalendarEvent";
 
@@ -132,11 +133,79 @@ export type UnitDayQuery = z.infer<typeof unitDayQuerySchema>;
 
 const text500 = (what: string) => z.string().trim().max(500, `${what} is up to 500 letters`).optional().default("");
 export const saveDiarySchema = z
-  .object({ classId: objectId, sectionId: objectId.nullable().optional(), date: dayText("day"), subjectId: objectId, taught: text500("What was taught"), homework: text500("The homework") })
+  .object({
+    classId: objectId,
+    sectionId: objectId.nullable().optional(),
+    date: dayText("day"),
+    subjectId: objectId,
+    taught: text500("What was taught"),
+    homework: text500("The homework"),
+    // The chapter taught: left out, the day keeps the one it has; null takes it away.
+    chapterId: objectId.nullable().optional(),
+    // Whether that chapter is finished now; left out, it stays as it is.
+    chapterDone: z.boolean().optional(),
+  })
   .superRefine((v, ctx) => {
-    if (!v.taught && !v.homework) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["taught"], message: "Write what was taught or the homework" });
+    if (!v.taught && !v.homework && !v.chapterId) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["taught"], message: "Write what was taught or the homework" });
   });
 export type SaveDiaryInput = z.infer<typeof saveDiarySchema>;
+
+export const saveSyllabusSchema = z.object({
+  classId: objectId,
+  sectionId: objectId.nullable().optional(),
+  subjectId: objectId,
+  chapters: z
+    .array(
+      z.object({
+        id: objectId.optional(),
+        name: z.string({ required_error: "Write the chapter's name" }).trim().min(1, "Write the chapter's name").max(MAX_CHAPTER_NAME, `A chapter's name is up to ${MAX_CHAPTER_NAME} letters`),
+        done: z.boolean().optional(),
+        // The day it is to be finished by: left out, the chapter keeps its own; null takes it away.
+        plannedOn: dayText("planned day").nullable().optional(),
+      })
+    )
+    .max(MAX_CHAPTERS, `A subject has up to ${MAX_CHAPTERS} chapters`)
+    .refine((list) => new Set(list.flatMap((c) => c.id ?? [])).size === list.filter((c) => c.id).length, "A chapter is written once"),
+});
+export type SaveSyllabusInput = z.infer<typeof saveSyllabusSchema>;
+
+/** The class subject a list of chapters is wanted for (copying). */
+export const syllabusSourcesQuerySchema = unitQuerySchema.extend({ subjectId: objectId });
+export type SyllabusSourcesQuery = z.infer<typeof syllabusSourcesQuerySchema>;
+
+// ---- The daily class work reminder ----------------------------------------------------------------------------------------------------
+/** Noon to 9 PM: a reminder is about a school day that is over, and nobody is rung at night. */
+export const REMINDER_HOURS = { from: "12:00", to: "21:00" };
+export const reminderSchema = z.object({
+  enabled: z.boolean({ required_error: "Say whether teachers are reminded" }),
+  time: z
+    .string({ required_error: "Choose the time" })
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Choose the time")
+    .refine((t) => t >= REMINDER_HOURS.from && t <= REMINDER_HOURS.to, "Choose a time from 12 PM to 9 PM"),
+});
+export type ReminderInput = z.infer<typeof reminderSchema>;
+
+// ---- Teaching progress ---------------------------------------------------------------------------------------------------------------
+/** Up to a year of days at a time. */
+const MAX_PROGRESS_DAYS = 366;
+const progressShape = z.object({
+  from: dayText("first day"),
+  to: dayText("last day"),
+  classId: objectId.optional(),
+  sectionId: sectionOrNone.optional(),
+  subjectId: objectId.optional(),
+  teacherId: objectId.optional(),
+});
+const checkDays = (v: { from: string; to: string }, ctx: z.RefinementCtx) => {
+  if (v.from > v.to) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "The last day is not before the first" });
+  else if ((Date.parse(v.to) - Date.parse(v.from)) / 86_400_000 >= MAX_PROGRESS_DAYS) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "Choose up to a year of days" });
+};
+export const progressQuerySchema = progressShape.superRefine(checkDays);
+export type ProgressQuery = z.infer<typeof progressQuerySchema>;
+export const progressLogQuerySchema = progressShape
+  .extend({ page: z.coerce.number().int().min(1).default(1), limit: z.coerce.number().int().min(1).max(100).default(25) })
+  .superRefine(checkDays);
+export type ProgressLogQuery = z.infer<typeof progressLogQuerySchema>;
 
 export const addTestSchema = z.object({
   classId: objectId,

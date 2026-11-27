@@ -1,6 +1,5 @@
 import { Types } from "mongoose";
 import { ApiError } from "../../../utils/ApiError";
-import type { UserRole } from "../../users/models/User";
 import { isDuplicateKey } from "../../academics/services/shared";
 import { ClassTeacher } from "../../staff/models/ClassTeacher";
 import { Allotment } from "../../subjects/models/Allotment";
@@ -151,12 +150,12 @@ async function stamps(tenantId: string, unit: Unit, world: World): Promise<{ pub
 }
 
 export class GridService {
-  /** A class's timetable as it stands. A teacher sees only published ones. */
-  static async get(tenantId: string, role: UserRole, classId: string, sectionId: string | null): Promise<GridView> {
+  /** A class's timetable as it stands. `drafts`: the caller makes timetables; anyone else (a teacher, a parent) sees only published ones. */
+  static async get(tenantId: string, drafts: boolean, classId: string, sectionId: string | null): Promise<GridView> {
     const unit = await resolveUnit(tenantId, classId, sectionId);
     const world = await loadWorld(tenantId, unit.yearId);
     const stored = world.timetables.get(unitKey(unit.classId, unit.sectionId));
-    if (role === "teacher" && stored?.status !== "published") {
+    if (!drafts && stored?.status !== "published") {
       throw ApiError.notFound("This timetable has not been published yet.", "TIMETABLE_NOT_PUBLISHED");
     }
     return { ...buildView(world, unit), ...(await stamps(tenantId, unit, world)) };
